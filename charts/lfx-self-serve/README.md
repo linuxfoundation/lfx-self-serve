@@ -200,6 +200,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS`    | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                                                                                                                                 | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`            | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` | Applies the flight dates to Microsoft Ads, sent as `microsoftConfig.startDate` / `endDate`. Requires [campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409) deployed (v1.0.21 drops the dates silently) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                    | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`     | Offers X (`twitter-ads`) in the create flow, sent as `twitterConfig` (budget, flight dates, an authored promoted-only tweet, optional image). A product decision rather than a release wait: campaign-service creates X campaigns from v1.0.21. Requires the create pipeline on; see `values.yaml`                                                                                                                                                                                                             | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`      | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`      | Offers the brief's stored image library in each Google creative image slot — upload, or pick a stored image that fits the slot — sent as `{ imageAssetId }` entries beside pasted image URLs. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                       | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS`        | Offers a PNG/JPEG image upload in the Meta create section, sent as `imageAssetId` on every ad. NOT about URL signing: Meta's dispatch uploads the stored bytes to the ad account's image library. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | `"true"` |
@@ -224,7 +225,7 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._INSIGHTS`,
+The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._TWITTER_CREATE`, `..._INSIGHTS`,
 `..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`, `..._META_ASSETS`) and `..._MONITOR`
 -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
@@ -234,7 +235,7 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._TWITTER_CREATE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
   are about the create pipeline only; each of the flags outside the enable order carries its own note in `values.yaml`.
@@ -398,6 +399,16 @@ the legacy creator never reads Microsoft dates. Off (the default), the form send
 and keeps its "ignores the flight dates" warning, and a create request carrying either key is
 refused with a 400. On, the form sends the flight dates on `microsoftConfig` exactly as it does on
 `metaConfig`.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE` is a ninth, and unlike the Bidding kind it waits on no
+release: every campaign-service from v1.0.21 creates X campaigns, so **turning it on is a product
+decision** to open X creation. It needs the create pipeline on, because the legacy creator has no X
+path. Off (the default), X stays "Coming soon" in the Plan picker, and a create request selecting
+`twitter-ads` or carrying `twitterConfig` is refused with a 400. On, X becomes selectable and the
+Implement tab sends `twitterConfig` with an authored, promoted-only tweet. `twitterConfig` carries
+no location targeting, so an X campaign created here can serve everywhere X serves once it is
+enabled; it is created PAUSED. The upload route also admits the tweet image on this flag's authority.
+The Monitor tab and the pause-only treatment of adopted X rows do not change.
 
 **Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
 creates a Video campaign, so campaign-service refuses one in the first statement of

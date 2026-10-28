@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, CAMPAIGN_PLATFORMS_WITHOUT_BRIEF_GENERATION } from '@lfx-one/shared/constants';
 import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -135,6 +135,14 @@ export class PlanningTabComponent implements OnInit {
   public readonly savedBriefRefreshToken = input(0);
 
   /**
+   * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`, read
+   * by the parent for the open brief. `CAMPAIGN_PLATFORMS` keeps X `disabled: true` as the static
+   * default, and only an explicit yes lifts it here: `null` (unanswered, as before any brief is
+   * saved) and `false` keep the tile "Coming soon".
+   */
+  public readonly twitterCreateEnabled = input<boolean | null>(null);
+
+  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -185,7 +193,14 @@ export class PlanningTabComponent implements OnInit {
   }>();
 
   // === Constants ===
-  protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
+  /**
+   * The picker's tiles: `CAMPAIGN_PLATFORMS`, with X's static `disabled` lifted on an explicit yes
+   * from `twitterCreateEnabled`. Every other platform keeps its own flag untouched.
+   */
+  protected readonly platforms = computed<CampaignPlatformOption[]>(() => {
+    const twitterSelectable = this.twitterCreateEnabled() === true;
+    return CAMPAIGN_PLATFORMS.map((p) => (p.id === 'twitter-ads' && twitterSelectable ? { ...p, disabled: false } : p));
+  });
   protected readonly goals = computed(() => {
     const goalLabel = this.programTypeConfig().goalLabel;
     return CAMPAIGN_GOALS.map((g) => (g.id === 'conversions' ? { ...g, label: goalLabel } : g));
@@ -933,6 +948,16 @@ export class PlanningTabComponent implements OnInit {
     return this.selectedPlatforms().has(platformId);
   }
 
+  /**
+   * Whether a tile can be clicked: an enabled one always, a disabled one only to DESELECT it. X can
+   * be chosen while `twitterCreateEnabled` says yes and then lose the capability (a foundation
+   * switch, a flag turned off), and a selected tile nobody can clear would carry X into the brief
+   * with no way back but a new one. The Implement tab blocks a held X with its own Remove.
+   */
+  protected isPlatformClickable(platform: CampaignPlatformOption): boolean {
+    return !platform.disabled || this.isPlatformSelected(platform.id);
+  }
+
   protected asArray(value: unknown): unknown[] | null {
     return Array.isArray(value) ? value.filter((v) => v != null) : null;
   }
@@ -1326,7 +1351,7 @@ export class PlanningTabComponent implements OnInit {
       // Still omitted for email — `[]` would claim the user deselected every channel rather than
       // that ad channels do not apply here. With `deliveryType` above, the server no longer has
       // to infer anything from its absence.
-      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
+      ...(this.isEmail() ? {} : { platforms: this.generatorPlatforms() }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
@@ -1631,7 +1656,7 @@ export class PlanningTabComponent implements OnInit {
       // exercised that path when nothing did. The server guard stays for direct callers; this
       // sends the paid shape unconditionally.
       deliveryType: this.deliveryType(),
-      platforms: [...this.selectedPlatforms()],
+      platforms: this.generatorPlatforms(),
       programType: this.programTypeConfig().id,
     };
 
@@ -1703,6 +1728,14 @@ export class PlanningTabComponent implements OnInit {
   }
 
   // === Private Methods ===
+  /**
+   * The selected platforms the brief generator serves, for the generate and refine requests — see
+   * `CAMPAIGN_PLATFORMS_WITHOUT_BRIEF_GENERATION`. The brief's own `selectedPlatforms` keeps them all.
+   */
+  private generatorPlatforms(): CampaignPlatform[] {
+    return [...this.selectedPlatforms()].filter((p) => !CAMPAIGN_PLATFORMS_WITHOUT_BRIEF_GENERATION.has(p));
+  }
+
   private getLinkedInCopy(): LinkedInBriefCopy | undefined {
     if (!this.selectedPlatforms().has('linkedin-ads')) return undefined;
     const liCopy = this.linkedInSponsoredCopy();

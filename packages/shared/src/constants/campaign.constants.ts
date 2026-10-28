@@ -76,6 +76,17 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
 ] as const;
 
 /**
+ * Selectable platforms the brief GENERATOR does not serve, so the Plan tab leaves them out of the
+ * generate and refine requests while keeping them in the brief's `selectedPlatforms`.
+ *
+ * X is the one: the generator writes no X copy (the tweet is typed on the Implement tab) and its
+ * `SUPPORTED_PLATFORMS` refuses `twitter-ads` with "Unsupported platforms", so sending it would fail
+ * the whole brief over a platform that needs nothing from it. Only reachable while
+ * `CampaignListResult.twitterCreateEnabled` makes X selectable.
+ */
+export const CAMPAIGN_PLATFORMS_WITHOUT_BRIEF_GENERATION: ReadonlySet<string> = new Set<string>(['twitter-ads'] satisfies CampaignPlatform[]);
+
+/**
  * Whether the Monitoring tab offers this platform's monitor.
  *
  * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits
@@ -992,11 +1003,11 @@ export const CAMPAIGN_BIDDING_STRATEGIES = ['automatic', 'manual'] as const;
 export const CAMPAIGN_BIDDING_PLATFORMS = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'] as const;
 
 /**
- * The bidding platforms the create flow renders a control for, in section order. X is a bidding
- * platform upstream but is not here: the create flow builds no `twitterConfig` yet, and the BFF
- * refuses `twitter-ads` until one exists. Its rule below is ready for when it does.
+ * The bidding platforms the create flow renders a control for, in section order. X's section, and
+ * so its control, exists only while `CampaignListResult.twitterCreateEnabled` is an explicit yes;
+ * every reader of this list also requires the platform to be selected.
  */
-export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'];
 
 /**
  * campaign-service's own synchronous refusal of a `bidding` object, e.g.
@@ -2943,6 +2954,38 @@ export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
 
 /** Shown when a LinkedIn image exceeds `LINKEDIN_IMAGE_MAX_BYTES`. */
 export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
+
+/**
+ * The largest image X takes on an authored tweet, in bytes: campaign-service's
+ * `twitter.MaxImageBytes` (`5 << 20`, X's simple-upload limit). It refuses a larger stored asset at
+ * dispatch, so the Implement tab checks it before uploading rather than storing an image the create
+ * would then fail on.
+ */
+export const TWITTER_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Shown when an X image exceeds `TWITTER_IMAGE_MAX_BYTES`. */
+export const TWITTER_IMAGE_TOO_LARGE_MESSAGE = 'X accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
+
+/**
+ * X's per-tweet cap, in WEIGHTED characters (`maxTweetWeightedChars`,
+ * `internal/platform/twitter/client.go`). campaign-service counts the COMPOSED tweet: the operator's
+ * copy plus the destination link it appends, so the copy alone has less room than this.
+ */
+export const TWITTER_MAX_TWEET_WEIGHTED_CHARS = 280;
+
+/**
+ * The fixed weight X gives any http(s) link, whatever its length, because it is wrapped to a t.co
+ * link at post time (`tcoURLWeight`). The appended destination counts this plus one space.
+ */
+export const TWITTER_TCO_URL_WEIGHT = 23;
+
+/**
+ * Upper bound on an X daily budget (`maxBudgetUsd`, `internal/platform/twitter/client.go`), in the
+ * ad ACCOUNT's currency. Refused by the client before any request, so a larger value is a dead job
+ * rather than a refused request — the same reasoning as `MICROSOFT_MAX_BUDGET`. The floor is this
+ * app's house floor of 1, as for every other paid platform.
+ */
+export const TWITTER_MAX_BUDGET = 1_000_000_000;
 
 /**
  * The creative-asset type the leading bytes of an image actually are, or `null`.

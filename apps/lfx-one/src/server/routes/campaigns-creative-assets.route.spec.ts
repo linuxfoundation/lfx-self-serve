@@ -196,19 +196,48 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
   it.each([
     [
       'only Reddit',
-      [ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMetaAssets, ServerFeatureFlag.CampaignServiceLinkedInAssets],
+      [
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
+      ],
     ],
     [
       'only Google',
-      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceMetaAssets, ServerFeatureFlag.CampaignServiceLinkedInAssets],
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
+      ],
     ],
     [
       'only Meta',
-      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceLinkedInAssets],
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
+      ],
     ],
     [
       'only LinkedIn',
-      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMetaAssets],
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
+      ],
+    ],
+    [
+      'only X (the tweet image)',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+      ],
     ],
   ])('admits an upload when %s can consume the asset', async (_label, offFlags) => {
     isServerFeatureEnabled.mockImplementation((flag: unknown) => !(offFlags as unknown[]).includes(flag));

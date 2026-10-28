@@ -111,7 +111,7 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
  * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
  * upload still running in another, as a second Meta pick replaces the first.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'twitter';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -1114,6 +1114,21 @@ export interface CampaignImplementationDraft {
   linkedInImageUploadFailedMessage?: string;
   linkedInImageUploadFailedBriefId?: string;
   /**
+   * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
+   * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
+   * upload fields' terms above. All optional and restored only when present, so a draft written
+   * before the section existed changes nothing. Round-trips regardless of `twitterCreateEnabled`.
+   */
+  twitterBudget?: string;
+  twitterTweetText?: string;
+  twitterImageAssetId?: string;
+  twitterImageAssetName?: string;
+  twitterImageAssetBriefId?: string;
+  twitterImageUploadPendingName?: string;
+  twitterImageUploadPendingBriefId?: string;
+  twitterImageUploadFailedMessage?: string;
+  twitterImageUploadFailedBriefId?: string;
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1873,6 +1888,63 @@ export interface MicrosoftCampaignCreateRequest {
    * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. When it is sent,
    * `cpcBid` is not: campaign-service refuses an automatic `bidding` beside any `cpcBid`, and a
    * manual one beside a different `cpcBid`.
+   */
+  bidding?: CampaignBiddingConfig;
+}
+
+/**
+ * X's per-platform config, typed to the wire: the `twitterConfig` campaign-service decodes
+ * (`internal/dispatch/twitter.go`, `type twitterConfig`), less the two fields this app never sends.
+ *
+ * Unlike the Meta and Microsoft requests it carries the service's own field names, so the BFF's
+ * `buildTwitterConfig` validates and projects rather than renames. What the wire does NOT have is
+ * as load-bearing as what it does:
+ *
+ * - No geo. campaign-service sets no location targeting on an X line item, so an X campaign
+ *   created here is eligible to serve in every market X serves once it is enabled. The Implement
+ *   tab says so rather than offering a control that would be sent nowhere.
+ * - No destination URL and no objective. The destination is the SAVED brief's registration URL,
+ *   which campaign-service tags with UTM parameters and appends to the tweet; every campaign is
+ *   `WEBSITE_CLICKS`.
+ * - No `tweetId` / `asUserId`. This app always authors a new promoted-only (nullcast) tweet from
+ *   `tweetText`, which never posts to the public timeline, and leaves the publishing handle to the
+ *   connection: campaign-service prefers the connection's `as_user_id` over a caller's for exactly
+ *   that reason.
+ *
+ * Every X campaign is created PAUSED (campaign and line item), so nothing spends until a human
+ * enables it.
+ */
+export interface TwitterCampaignCreateRequest {
+  /**
+   * DAILY budget in the ad ACCOUNT's currency, not USD — sent as `daily_budget_amount_local_micro`,
+   * with no FX conversion (the known gap LFXV2-3251 shares with Meta and Microsoft). Finite, at
+   * least 1 and at most `TWITTER_MAX_BUDGET`.
+   */
+  budgetAmount: number;
+  /**
+   * Flight start, `"YYYY-MM-DD"`, REQUIRED. Sent to X as UTC midnight, which X requires to be in
+   * the future (with five minutes' headroom), so today's date is always refused: the earliest
+   * start is tomorrow, UTC.
+   */
+  startDate: string;
+  /** Flight end, `"YYYY-MM-DD"`, REQUIRED and strictly after `startDate`. */
+  endDate: string;
+  /**
+   * The authored tweet's copy, REQUIRED. campaign-service appends the UTM-tagged destination link
+   * (unless the copy already carries it) and refuses the composed text above
+   * `TWITTER_MAX_TWEET_WEIGHTED_CHARS` weighted characters, every link counting
+   * `TWITTER_TCO_URL_WEIGHT`.
+   */
+  tweetText: string;
+  /**
+   * OPTIONAL creative asset uploaded to THIS brief, attached to the authored tweet as its image. At
+   * most `TWITTER_IMAGE_MAX_BYTES`; refused at dispatch otherwise.
+   */
+  imageAssetId?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means X AUTO; a
+   * manual bid must be at most `budgetAmount`, since X does not accept a line-item bid above its
+   * campaign's daily budget.
    */
   bidding?: CampaignBiddingConfig;
 }
@@ -2966,6 +3038,8 @@ export interface CampaignCreateRequest {
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
   microsoftConfig?: MicrosoftCampaignCreateRequest;
+  /** Sent only while `CampaignListResult.twitterCreateEnabled` is an explicit yes; see {@link TwitterCampaignCreateRequest}. */
+  twitterConfig?: TwitterCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 
@@ -5113,6 +5187,17 @@ export interface CampaignListResult {
    */
   microsoftScheduleEnabled: boolean;
   /**
+   * Whether the create flow may offer X (`twitter-ads`) at all, sent as `twitterConfig`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE` flag is on. The cutover half is not optional:
+   * the legacy creator has no X path. `CAMPAIGN_PLATFORMS` keeps X `disabled: true` as the static
+   * default, and the Plan picker and the Implement tab consult this instead, on an explicit yes
+   * only. Modelled on the client like the capabilities above (`boolean | null`, `null` for
+   * unanswered), which keeps X unselectable and blocks a create that still holds it.
+   */
+  twitterCreateEnabled: boolean;
+  /**
    * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
    *
    * Per CALLER, unlike every capability above: true only when the campaign-service create path
@@ -5368,6 +5453,23 @@ export interface CampaignGoogleImageAssetBlock {
 /** `CampaignMetaImageAssetBlock`'s LinkedIn sibling, with the same kinds. */
 export interface CampaignLinkedInImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */
+export interface CampaignTwitterImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked while the Implement tab holds X (`twitter-ads`) but this deployment has not
+ * said, with an explicit yes, that it can create there (`CampaignListResult.twitterCreateEnabled`).
+ * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
+ * brief is saved, or answered no.
+ */
+export interface CampaignTwitterCreateBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 

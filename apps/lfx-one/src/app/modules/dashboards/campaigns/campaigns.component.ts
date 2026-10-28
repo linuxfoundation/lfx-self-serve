@@ -947,6 +947,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
+  /** Whether the create flow may offer X at all — `CampaignListResult.twitterCreateEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
    * read and cleared like the capabilities above. Per caller, not per deployment: root only.
@@ -2515,6 +2517,7 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+        this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
@@ -4616,6 +4619,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+          this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsCapabilityRead.set('ready');
         },
@@ -4638,6 +4642,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+          this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
@@ -4706,6 +4711,7 @@ export class CampaignsComponent {
     this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+    this.briefCampaignsTwitterCreateEnabled.set(null);
     this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
     this.briefCampaignsCapabilityRead.set('unknown');
@@ -4744,6 +4750,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+            this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsCapabilityRead.set('ready');
           }
@@ -4772,6 +4779,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+            this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }

@@ -8,6 +8,7 @@
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
@@ -61,6 +62,7 @@ import type {
   GoogleCreativeImageRef,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
+  TwitterCampaignCreateRequest,
   MicrosoftKeywordsWindow,
   MonitorConnectionAccount,
   MonitorConnectionPlatform,
@@ -175,6 +177,7 @@ import {
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
   TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  TWITTER_MAX_BUDGET,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
@@ -213,6 +216,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateMicrosoftSchedule,
+  canCreateTwitter,
   canCreateWithAudienceSegments,
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
@@ -785,6 +789,38 @@ export class CampaignController {
               service: 'campaign_controller',
             }
           )
+        );
+        return;
+      }
+
+      // X is refused, not dropped, while this deployment cannot create there — the same rule as
+      // `bidding` above, applied to a whole platform. The legacy creator has no X path, so with the
+      // cutover dark the X half of a request would vanish while the rest went ahead, and
+      // `CampaignServiceTwitterCreate` off is a product answer that X creation is not open. The form
+      // never sends either in that state (`twitterCreateEnabled` keeps X unselectable and blocks a
+      // held one); this protects the endpoint from a caller that is not the form.
+      const unservedTwitterField = this.unservedTwitterField(body);
+      if (unservedTwitterField !== null) {
+        next(
+          ServiceValidationError.forField(unservedTwitterField, 'X campaign creation is not enabled on this deployment; remove twitter-ads and twitterConfig', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // With X enabled, each `twitterConfig` field is judged here by name, before anything is
+      // queued, for the reason Microsoft's are judged by its builder: campaign-service refuses every
+      // one of these during dispatch, after the job exists, which reaches the operator as a failed
+      // job rather than as an error on the request they just made.
+      const twitterRefusal = this.twitterConfigRefusal(body);
+      if (twitterRefusal !== null) {
+        next(
+          ServiceValidationError.forField(twitterRefusal.field, twitterRefusal.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
         );
         return;
       }
@@ -2457,7 +2493,7 @@ export class CampaignController {
    * the image was stored and 200 when an identical one already was (the id is usable either way).
    *
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
-   * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets` and `canUseLinkedInCreativeAssets` —
+   * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets` and `canCreateTwitter` (the tweet image) —
    * nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
    * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
    * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
@@ -2476,7 +2512,13 @@ export class CampaignController {
     // flag were on would mean a Google-only deployment could read and delete the library it is not
     // allowed to add to. On GOOGLE_ASSETS the upload is what the Google image slots name as
     // `{ imageAssetId }` in a create.
-    if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets() && !canUseMetaCreativeAssets() && !canUseLinkedInCreativeAssets()) {
+    if (
+      !canUseRedditCreativeAssets() &&
+      !canUseGoogleCreativeAssets() &&
+      !canUseMetaCreativeAssets() &&
+      !canUseLinkedInCreativeAssets() &&
+      !canCreateTwitter()
+    ) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
       return;
     }
@@ -4713,7 +4755,7 @@ export class CampaignController {
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
   private unservedBiddingField(body: CampaignCreateRequest): string | null {
     if (canCreateWithBidding()) return null;
-    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const) {
+    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig', 'twitterConfig'] as const) {
       const config: unknown = body?.[key];
       // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
       // campaign-service would refuse it rather than read it as automatic.
@@ -4741,6 +4783,83 @@ export class CampaignController {
       return 'proximityTargets';
     }
     return null;
+  }
+
+  /**
+   * `twitterConfig` or `platforms` when a request asks for X while this deployment cannot create
+   * there (`canCreateTwitter`), else `null`.
+   *
+   * `in` for the config, as for bidding: an explicit `twitterConfig: null` is still the field. The
+   * config is named first because it is the more specific answer; a bare `twitter-ads` in the
+   * platform list, with no config, is named as `platforms`.
+   */
+  private unservedTwitterField(body: CampaignCreateRequest): string | null {
+    if (canCreateTwitter()) return null;
+    if (body !== null && typeof body === 'object' && 'twitterConfig' in body) return 'twitterConfig';
+    if (Array.isArray(body?.platforms) && body.platforms.includes('twitter-ads')) return 'platforms';
+    return null;
+  }
+
+  /**
+   * The first `twitterConfig` field campaign-service would refuse, by name, or `null`.
+   *
+   * Only for a request that selects X with X enabled; otherwise `unservedTwitterField` has already
+   * answered. Each rule is the X client's own (`CreateCampaign`, `internal/platform/twitter/client.go`)
+   * except the budget floor, which is this app's house floor of 1:
+   *
+   * - `budgetAmount`: a finite number, at least 1 and at most `TWITTER_MAX_BUDGET`.
+   * - `startDate` / `endDate`: real `YYYY-MM-DD` dates, untrimmed as Go reads them, the end strictly
+   *   after the start. That the start is in the future is left to campaign-service, for the
+   *   clock-boundary reason Meta's past-start check is.
+   * - `tweetText`: non-blank, and within X's weighted cap once the destination link is appended.
+   * - `imageAssetId`: when present, a non-blank string; whether it names an asset is upstream's call.
+   *
+   * A missing `twitterConfig` with `twitter-ads` selected is NOT refused here: `hasPlatformConfig`
+   * already refuses an unconfigured platform by name inside `createCampaigns`.
+   */
+  private twitterConfigRefusal(body: CampaignCreateRequest): { field: string; message: string } | null {
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('twitter-ads')) return null;
+    const config: unknown = body?.twitterConfig;
+    if (config === undefined) return null;
+    if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+      return { field: 'twitterConfig', message: 'twitterConfig must be an object' };
+    }
+    const raw = config as Partial<Record<keyof TwitterCampaignCreateRequest, unknown>>;
+    const budget = raw.budgetAmount;
+    if (typeof budget !== 'number' || !Number.isFinite(budget) || budget < 1 || budget > TWITTER_MAX_BUDGET) {
+      return {
+        field: 'twitterConfig.budgetAmount',
+        message: `the X daily budget must be a number from 1 to ${TWITTER_MAX_BUDGET.toLocaleString('en-US')} in the ad account's currency`,
+      };
+    }
+    for (const key of ['startDate', 'endDate'] as const) {
+      if (!this.isCalendarDate(raw[key])) {
+        return { field: `twitterConfig.${key}`, message: `the X ${key === 'startDate' ? 'start' : 'end'} date must be a real date written YYYY-MM-DD` };
+      }
+    }
+    if ((raw.endDate as string) <= (raw.startDate as string)) {
+      return {
+        field: 'twitterConfig.endDate',
+        message:
+          'the X end date must be after its start date, and X will refuse this flight. Set an end date at least one day after the start date and create again.',
+      };
+    }
+    const tweetError = typeof raw.tweetText === 'string' ? twitterTweetTextError(raw.tweetText) : 'Enter the tweet text.';
+    if (tweetError !== null) return { field: 'twitterConfig.tweetText', message: tweetError };
+    if ('imageAssetId' in raw && (typeof raw.imageAssetId !== 'string' || raw.imageAssetId.trim() === '')) {
+      return {
+        field: 'twitterConfig.imageAssetId',
+        message: 'the X image must be the id of an image uploaded to this brief; omit imageAssetId for a tweet with no image',
+      };
+    }
+    return null;
+  }
+
+  /** A real `YYYY-MM-DD` date, exactly as written: Go's `validateDate` does not trim, so neither does this. */
+  private isCalendarDate(value: unknown): value is string {
+    if (typeof value !== 'string' || !ISO_CALENDAR_DATE_PATTERN.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   }
 
   /**
@@ -4786,6 +4905,9 @@ export class CampaignController {
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
     if (microsoftConfig) envelope['microsoftConfig'] = microsoftConfig;
+
+    const twitterConfig = this.buildTwitterConfig(body);
+    if (twitterConfig) envelope['twitterConfig'] = twitterConfig;
 
     const hubspotConfig = this.buildHubSpotConfig(body);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
@@ -6901,6 +7023,36 @@ export class CampaignController {
       geoTargets: cleanGeoTargets,
       ...(Number.isFinite(cpcBid) && (cpcBid as number) >= MICROSOFT_MIN_CPC_BID && (cpcBid as number) <= MICROSOFT_MAX_CPC_BID ? { cpcBid } : {}),
       ...(typeof timeZone === 'string' && timeZone.trim() ? { timeZone: timeZone.trim() } : {}),
+    };
+  }
+
+  /**
+   * X's config, projected from `twitterConfig` on the request — which already carries the
+   * service's own field names, so unlike Meta and Microsoft nothing is renamed.
+   *
+   * A PROJECTION, not a pass-through: only the fields `TwitterCampaignCreateRequest` declares are
+   * sent. `tweetId` and `asUserId` are the two the dispatcher also reads and this app never sends —
+   * a `tweetId` would silently replace the authored tweet (an explicit id wins over `tweetText`
+   * upstream), and the publishing handle belongs to the connection, which campaign-service prefers
+   * over a caller's `asUserId` for exactly that reason.
+   *
+   * Returns null (UNCONFIGURED, refused by `hasPlatformConfig`) for a config that is not an
+   * object; `twitterConfigRefusal` has already named every field it would refuse, so a request
+   * that reaches here with X selected is one the X client will accept on these fields. `bidding`
+   * travels untouched, as on every lane: `unservedBiddingField` has refused it already when the
+   * deployment cannot honour it, and campaign-service judges it otherwise.
+   */
+  private buildTwitterConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    const config: unknown = body?.twitterConfig;
+    if (config === null || typeof config !== 'object' || Array.isArray(config)) return null;
+    const { budgetAmount, startDate, endDate, tweetText, imageAssetId } = config as Partial<TwitterCampaignCreateRequest>;
+    return {
+      budgetAmount,
+      startDate,
+      endDate,
+      tweetText,
+      ...(typeof imageAssetId === 'string' && imageAssetId.trim() !== '' ? { imageAssetId: imageAssetId.trim() } : {}),
+      ...('bidding' in config ? { bidding: (config as { bidding?: unknown }).bidding } : {}),
     };
   }
 

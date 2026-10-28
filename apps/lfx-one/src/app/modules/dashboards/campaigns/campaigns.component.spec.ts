@@ -1949,6 +1949,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -1990,6 +1991,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2042,6 +2044,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2079,6 +2082,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2112,6 +2116,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: true,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: true,
           })
         );
@@ -2149,6 +2154,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleAudienceSegmentsEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
           })
         );
 
@@ -2254,6 +2260,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2305,6 +2312,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2327,6 +2335,7 @@ describe('CampaignsComponent brief persistence', () => {
           linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           googleAudienceSegmentsEnabled: false,
         });
         capability.complete();
@@ -2365,6 +2374,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2404,6 +2414,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2438,6 +2449,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2485,6 +2497,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2533,6 +2546,7 @@ describe('CampaignsComponent brief persistence', () => {
           linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           googleAudienceSegmentsEnabled: false,
         });
         pending.complete();
@@ -2581,6 +2595,7 @@ describe('CampaignsComponent brief persistence', () => {
           linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           googleAudienceSegmentsEnabled: false,
         });
         second.complete();
@@ -2613,6 +2628,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2647,6 +2663,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2671,6 +2688,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2704,6 +2722,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2749,6 +2768,7 @@ describe('CampaignsComponent brief persistence', () => {
           linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           googleAudienceSegmentsEnabled: false,
         });
         await fixture.whenStable();
@@ -2788,6 +2808,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2827,6 +2848,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -2869,6 +2891,7 @@ describe('CampaignsComponent brief persistence', () => {
           linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           googleAudienceSegmentsEnabled: false,
         });
         await fixture.whenStable();
@@ -2942,6 +2965,7 @@ describe('CampaignsComponent brief persistence', () => {
             linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             googleAudienceSegmentsEnabled: false,
           })
         );
@@ -11296,7 +11320,12 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean, microsoftScheduleEnabled = false, googleAudienceSegmentsEnabled = false): Observable<CampaignListResult> =>
+  const capability = (
+    biddingEnabled: boolean,
+    microsoftScheduleEnabled = false,
+    googleAudienceSegmentsEnabled = false,
+    twitterCreateEnabled = false
+  ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11312,6 +11341,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       linkedInAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
+      twitterCreateEnabled,
       googleAudienceSegmentsEnabled,
     });
 
@@ -11400,6 +11430,25 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /**
+   * The X create capability travels the same path into the tab: the real page reads it and binds
+   * it to `twitterCreateEnabled`, and the tab either renders the X fields or holds X behind its block.
+   */
+  it.each([
+    [true, 'implementation-twitter-budget', 'implementation-twitter-create-block-unsupported'],
+    [false, 'implementation-twitter-create-block-unsupported', 'implementation-twitter-budget'],
+  ])('hands an X create capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
+    const withTwitter = { ...brief, selectedPlatforms: ['twitter-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withTwitter);
+    await settle();
+
+    expect(tab()['twitterCreateEnabled']()).toBe(enabled);
     expect(q(shown)).not.toBeNull();
     expect(q(hidden)).toBeNull();
   });

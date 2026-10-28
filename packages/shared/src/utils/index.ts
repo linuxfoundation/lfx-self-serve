@@ -123,6 +123,7 @@ export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
+export * from './campaign-twitter.utils';
 export * from './campaign-google-assets.utils';
 export * from './campaign-google-creative.utils';
 export * from './campaign-event-details.utils';

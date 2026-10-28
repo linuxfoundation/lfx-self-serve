@@ -1230,6 +1230,65 @@ describe('PlanningTabComponent delivery-type mode', () => {
   });
 
   /**
+   * X in the picker (`twitterCreateEnabled`). `CAMPAIGN_PLATFORMS` keeps it `disabled: true`; only an
+   * explicit yes makes the tile selectable, and a chosen X is kept in the brief but left out of the
+   * generator's request, which refuses `twitter-ads`.
+   */
+  describe('X tile', () => {
+    const tile = (): HTMLButtonElement =>
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platform-twitter-ads"]') as HTMLButtonElement;
+
+    it.each([
+      ['unanswered', null],
+      ['answered no', false],
+    ])('keeps X "Coming soon" and unclickable while the capability is %s', async (_label, enabled) => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', enabled);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(true);
+      expect(tile().textContent).toContain('Coming soon');
+      tile().click();
+      expect((fixture.componentInstance as unknown as { isPlatformSelected(p: string): boolean }).isPlatformSelected('twitter-ads')).toBe(false);
+    });
+
+    it('makes X selectable on an explicit yes, and keeps it out of the generate request only', async () => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', true);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(false);
+      expect(tile().textContent).not.toContain('Coming soon');
+      tile().click();
+      fixture.detectChanges();
+      fillRequiredFields();
+      (fixture.componentInstance as unknown as { generate(): void }).generate();
+      await fixture.whenStable();
+
+      expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
+      const selected = (fixture.componentInstance as unknown as { selectedPlatforms(): Set<string> }).selectedPlatforms();
+      expect([...selected]).toEqual(['google-ads', 'twitter-ads']);
+    });
+
+    it('lets a selected X be cleared after the capability is withdrawn, and not chosen again', async () => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', true);
+      fixture.detectChanges();
+      tile().click();
+      fixture.componentRef.setInput('twitterCreateEnabled', false);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(false);
+      tile().click();
+      fixture.detectChanges();
+
+      const selected = (fixture.componentInstance as unknown as { isPlatformSelected(p: string): boolean }).isPlatformSelected('twitter-ads');
+      expect(selected).toBe(false);
+      expect(tile().disabled).toBe(true);
+    });
+  });
+
+  /**
    * LFXV2 issue #2439: `generate()` never unsubscribed a prior in-flight stream before starting a
    * new one, so both fetch streams ran concurrently and whichever answered LAST won regardless of
    * which the user was looking at. This pins the fix's actual mechanism -- retiring the old
