@@ -8788,6 +8788,25 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
     ]);
   });
 
+  /** Not a string is not "use the connection's pixel" either, so it is refused, not dropped. */
+  it.each([
+    ['a number', 123],
+    ['an object', { id: 't2_synthpixel' }],
+  ])('refuses %s as conversionPixelId while the cutover is dark', async (_label, pixel) => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, conversionPixelId: pixel } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'redditConfig.conversionPixelId' })]);
+  });
+
   it.each([
     ['an empty string', ''],
     ['whitespace', '   '],

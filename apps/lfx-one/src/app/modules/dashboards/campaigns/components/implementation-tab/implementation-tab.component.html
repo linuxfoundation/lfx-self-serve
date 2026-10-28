@@ -3246,14 +3246,14 @@
             @if (redditConversionPixelAvailable()) {
               <div class="flex flex-col gap-1">
                 <label class="text-xs font-medium text-gray-700" for="reddit-conversion-pixel">Conversion Pixel ID (optional)</label>
-                <input
-                  id="reddit-conversion-pixel"
+                <lfx-input-text
+                  [form]="redditConversionPixelForm"
+                  control="conversionPixelId"
+                  inputId="reddit-conversion-pixel"
                   type="text"
-                  [value]="redditConversionPixelId()"
-                  (input)="onRedditConversionPixelIdInput($event)"
-                  aria-describedby="reddit-conversion-pixel-hint"
-                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  data-testid="implementation-reddit-conversion-pixel" />
+                  size="small"
+                  describedBy="reddit-conversion-pixel-hint"
+                  dataTest="implementation-reddit-conversion-pixel" />
                 <p id="reddit-conversion-pixel-hint" class="text-xs text-gray-500">
                   Find it in Reddit Ads under Events Manager. Leave it blank to use the pixel on this project's Reddit connection.
                 </p>

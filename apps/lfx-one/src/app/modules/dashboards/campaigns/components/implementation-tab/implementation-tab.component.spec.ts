@@ -3574,7 +3574,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   }
 
   function redditPixelInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
-    return f.nativeElement.querySelector('[data-testid="implementation-reddit-conversion-pixel"]') as HTMLInputElement | null;
+    return f.nativeElement.querySelector('#reddit-conversion-pixel') as HTMLInputElement | null;
   }
 
   function typeRedditPixel(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
@@ -3640,6 +3640,15 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(at(f).redditConversionPixelId()).toBe('t2_synthpixel');
     expect('conversionPixelId' in submitReddit(f)).toBe(false);
+  });
+
+  it('renders the pixel through the shared lfx-input-text wrapper, tied to its hint', async () => {
+    const f = (await mountWithPixel(null, true)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+
+    expect(redditPixelInput(f)?.closest('lfx-input-text')).not.toBeNull();
+    expect(redditPixelInput(f)?.getAttribute('aria-describedby')).toBe('reddit-conversion-pixel-hint');
   });
 
   it('carries the typed pixel across a tab round-trip through the draft', async () => {

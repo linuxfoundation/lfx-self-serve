@@ -857,6 +857,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaInstagramDsaForm = this.fb.nonNullable.group({ instagramUserId: '', dsaBeneficiary: '', dsaPayor: '' });
   private readonly metaInstagramDsaDraft = this.initFormDraft(this.metaInstagramDsaForm);
 
+  /**
+   * The Reddit per-campaign conversion pixel override (#3484), on the wrapper's form-control API.
+   * Its own group for the reason `metaInstagramDsaForm` is. The raw text goes to the draft so a value
+   * stays on screen as typed; the request reads the trimmed `redditConversionPixelId`, where blank
+   * means "use the connection's pixel".
+   */
+  protected readonly redditConversionPixelForm = this.fb.nonNullable.group({ conversionPixelId: '' });
+  private readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
+  protected readonly redditConversionPixelId = computed<string>(() => this.redditConversionPixelDraft().conversionPixelId.trim());
+
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
@@ -1015,8 +1025,6 @@ export class ImplementationTabComponent implements OnInit {
    * its button — so the template says so rather than leaving an operator to wonder which won.
    */
   protected readonly redditImageUrl = signal('');
-  /** The per-campaign conversion pixel override, trimmed; blank means "use the connection's pixel". */
-  protected readonly redditConversionPixelId = signal('');
   protected readonly redditCallToAction = signal<RedditCallToAction | ''>('');
   /**
    * An image UPLOADED for this brief — the creative-asset id campaign-service returned and the file
@@ -3086,6 +3094,11 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+    // Nor is the Reddit pixel group.
+    this.redditConversionPixelForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
 
     // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
     // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
@@ -3331,11 +3344,6 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditPostUrlInput(event: Event): void {
     this.redditPostUrl.set((event.target as HTMLInputElement).value.trim());
-    this.emitDraft();
-  }
-
-  protected onRedditConversionPixelIdInput(event: Event): void {
-    this.redditConversionPixelId.set((event.target as HTMLInputElement).value.trim());
     this.emitDraft();
   }
 
@@ -5734,8 +5742,10 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
-    if (draft.redditConversionPixelId !== undefined) {
-      this.redditConversionPixelId.set(draft.redditConversionPixelId);
+    // An emitting patch, as `metaInstagramDsaForm`'s restore is: `redditConversionPixelDraft` follows
+    // the group's `valueChanges`, and the draft subscription honours `seeding`, so it cannot loop.
+    if (typeof draft.redditConversionPixelId === 'string') {
+      this.redditConversionPixelForm.patchValue({ conversionPixelId: draft.redditConversionPixelId });
     }
     if (draft.redditImageAssetId !== undefined) {
       this.redditImageAssetId.set(draft.redditImageAssetId);
@@ -5979,7 +5989,7 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
-      redditConversionPixelId: this.redditConversionPixelId(),
+      redditConversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
