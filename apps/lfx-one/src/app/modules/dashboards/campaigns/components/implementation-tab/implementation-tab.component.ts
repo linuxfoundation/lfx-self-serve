@@ -463,6 +463,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
 
   /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override
+   * (`CampaignListResult.redditConversionPixelEnabled`, #3484). Only campaign-service reads the
+   * field; the legacy creator would drop it. `null` until the parent has an answer, which withholds
+   * the control.
+   */
+  public readonly redditConversionPixelEnabled = input<boolean | null>(null);
+
+  /** @see redditConversionPixelEnabled — an explicit yes, never a `null`. */
+  protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
+
+  /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
    * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
    * sibling; the pasted image URL stays offered whatever this answers.
@@ -1004,6 +1015,8 @@ export class ImplementationTabComponent implements OnInit {
    * its button — so the template says so rather than leaving an operator to wonder which won.
    */
   protected readonly redditImageUrl = signal('');
+  /** The per-campaign conversion pixel override, trimmed; blank means "use the connection's pixel". */
+  protected readonly redditConversionPixelId = signal('');
   protected readonly redditCallToAction = signal<RedditCallToAction | ''>('');
   /**
    * An image UPLOADED for this brief — the creative-asset id campaign-service returned and the file
@@ -3321,6 +3334,11 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onRedditConversionPixelIdInput(event: Event): void {
+    this.redditConversionPixelId.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
   protected onRedditImageUrlInput(event: Event): void {
     this.redditImageUrl.set((event.target as HTMLInputElement).value.trim());
     this.emitDraft();
@@ -4495,6 +4513,10 @@ export class ImplementationTabComponent implements OnInit {
               // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
               ...this.redditImageField(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
+              // Omitted when blank — upstream reads empty as "use the connection's pixel", the same
+              // thing an absent key means — and gated on the capability, because the legacy
+              // creator never reads it and the create route refuses it there (#3484).
+              ...(this.redditConversionPixelAvailable() && this.redditConversionPixelId() ? { conversionPixelId: this.redditConversionPixelId() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('reddit-ads'),
             },
@@ -5712,6 +5734,9 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
+    if (draft.redditConversionPixelId !== undefined) {
+      this.redditConversionPixelId.set(draft.redditConversionPixelId);
+    }
     if (draft.redditImageAssetId !== undefined) {
       this.redditImageAssetId.set(draft.redditImageAssetId);
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
@@ -5954,6 +5979,7 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
+      redditConversionPixelId: this.redditConversionPixelId(),
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),

@@ -3236,6 +3236,29 @@
                 }
               </div>
             }
+
+            <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
+                 falls back to the connection's own pixel. Offered only on an explicit yes from
+                 `redditConversionPixelAvailable()`, because the legacy creator never reads the field
+                 and would drop a typed pixel without saying so. Nothing typed is cleared when it is
+                 withheld — the draft keeps it. Not validated here: upstream trims it and Reddit
+                 judges it, so a check on this side could only refuse a pixel that would work. -->
+            @if (redditConversionPixelAvailable()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="reddit-conversion-pixel">Conversion Pixel ID (optional)</label>
+                <input
+                  id="reddit-conversion-pixel"
+                  type="text"
+                  [value]="redditConversionPixelId()"
+                  (input)="onRedditConversionPixelIdInput($event)"
+                  aria-describedby="reddit-conversion-pixel-hint"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-reddit-conversion-pixel" />
+                <p id="reddit-conversion-pixel-hint" class="text-xs text-gray-500">
+                  Find it in Reddit Ads under Events Manager. Leave it blank to use the pixel on this project's Reddit connection.
+                </p>
+              </div>
+            }
           </div>
 
           <!-- The ad itself. Without one of these two routes the create still succeeds and still

@@ -3151,6 +3151,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     redditBudgetUsd: () => number;
     redditObjective: () => string;
     redditPostUrl: () => string;
+    redditConversionPixelId: () => string;
     redditImageUrl: () => string;
     redditCallToAction: () => string;
     redditNoAdWarning: () => string | null;
@@ -3556,6 +3557,101 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const config = sentConfig('redditConfig');
     expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
     expect('callToAction' in config).toBe(false);
+  });
+
+  // === Reddit: the conversion pixel override (#3484) ===
+
+  /** Mounts with the pixel capability answered, which `mount` leaves at the parent's `null`. */
+  async function mountWithPixel(
+    draft: CampaignImplementationDraft | null,
+    pixel: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditConversionPixelEnabled', pixel);
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+
+  function redditPixelInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-reddit-conversion-pixel"]') as HTMLInputElement | null;
+  }
+
+  function typeRedditPixel(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = redditPixelInput(f) as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  function submitReddit(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+    return sentConfig('redditConfig');
+  }
+
+  it('renders the conversion pixel as an optional control when the capability says yes', async () => {
+    const f = (await mountWithPixel(null, true)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+
+    const input = redditPixelInput(f);
+    expect(input).not.toBeNull();
+    expect(input?.required).toBe(false);
+  });
+
+  /**
+   * Withheld at both `null` and `false`: the legacy creator never reads the field, so a rendered
+   * control would accept a pixel and drop it without saying so.
+   */
+  it.each([[null], [false]])('renders no conversion pixel control while redditConversionPixelEnabled is %s', async (capability) => {
+    const f = (await mountWithPixel(null, capability)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+
+    expect(redditPixelInput(f)).toBeNull();
+  });
+
+  it('sends a typed conversion pixel, trimmed, as redditConfig.conversionPixelId', async () => {
+    const f = (await mountWithPixel(null, true)).fixture;
+    typeRedditPixel(f, '  t2_synthpixel  ');
+
+    expect(submitReddit(f)['conversionPixelId']).toBe('t2_synthpixel');
+  });
+
+  /** Blank means "use the connection's pixel" upstream, which is what an absent key says too. */
+  it('omits conversionPixelId entirely when the pixel is left blank', async () => {
+    const f = (await mountWithPixel(null, true)).fixture;
+    typeRedditPixel(f, '   ');
+
+    expect('conversionPixelId' in submitReddit(f)).toBe(false);
+  });
+
+  /** A pixel restored from a draft while the capability is off is kept in the draft but not sent. */
+  it('does not send a remembered pixel while the capability is off', async () => {
+    const first = await mountWithPixel(null, true);
+    typeRedditPixel(first.fixture, 't2_synthpixel');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const f = (await mountWithPixel(draft, false)).fixture;
+
+    expect(at(f).redditConversionPixelId()).toBe('t2_synthpixel');
+    expect('conversionPixelId' in submitReddit(f)).toBe(false);
+  });
+
+  it('carries the typed pixel across a tab round-trip through the draft', async () => {
+    const first = await mountWithPixel(null, true);
+    typeRedditPixel(first.fixture, 't2_synthpixel');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditConversionPixelId).toBe('t2_synthpixel');
+
+    const second = await mountWithPixel(draft, true);
+    expect(submitReddit(second.fixture)['conversionPixelId']).toBe('t2_synthpixel');
   });
 
   /**

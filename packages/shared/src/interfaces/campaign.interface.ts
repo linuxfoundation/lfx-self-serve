@@ -1065,6 +1065,11 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * The per-campaign conversion pixel override (`RedditCampaignCreateRequest.conversionPixelId`).
+   * Round-trips regardless of `redditConversionPixelEnabled`, for the reason the three above do.
+   */
+  redditConversionPixelId?: string;
+  /**
    * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
    * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
    * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
@@ -1645,8 +1650,8 @@ export interface RedditBriefCopy {
  *
  * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
  * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
- * `conversionPixelId` is still campaign-service only: the legacy creator does not read it and
- * sending it there is silently dropped, so it matters only AFTER the cutover (#3484).
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it, so the
+ * control is offered and the field accepted only while campaign-service serves the create (#3484).
  */
 export interface RedditCampaignCreateRequest {
   eventName: string;
@@ -1694,15 +1699,14 @@ export interface RedditCampaignCreateRequest {
    * Overrides the ad account's own conversion pixel for this campaign.
    *
    * Upstream prefers this campaign-level value and falls back to the connection's pixel, refusing
-   * the create when neither supplies one — for EVERY objective, not just conversions. Its own
-   * comment argues the connection is the right source, since the pixel identifies the advertiser
-   * and is one per ad account, so per-campaign entry turns an account-level constant into
-   * something an operator can get wrong once per campaign.
+   * the create when neither supplies one — for EVERY objective, not just conversions. So it is an
+   * optional override, normally left blank, and it matters when the connection carries no pixel
+   * or the campaign needs a different one.
    *
-   * Declared for the wire contract only — NO control populates it, so the implementation tab
-   * cannot resolve that refusal and a deploy whose connection carries no pixel cannot create a
-   * Reddit campaign from here at all. Offering it is a product decision nobody has taken; this
-   * field is the half that would be needed if they did.
+   * The implementation tab collects it only while `CampaignListResult.redditConversionPixelEnabled`
+   * says campaign-service serves the create, and omits the key when blank: upstream reads empty as
+   * "use the connection's pixel", the same thing an absent key means (#3484). The create route
+   * refuses the field on the legacy arm rather than dropping it.
    */
   conversionPixelId?: string;
   /**
@@ -5156,6 +5160,17 @@ export interface CampaignListResult {
    * the pasted image URL stays offered either way.
    */
   redditAssetUploadEnabled: boolean;
+  /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override, sent as
+   * `redditConfig.conversionPixelId` (#3484).
+   *
+   * Exactly the campaign-service create path: upstream prefers this value over the connection's own
+   * pixel (`internal/platform/reddit/client.go`), while the legacy creator never reads it, so a
+   * pixel typed while the cutover is dark would be accepted and silently dropped. Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which withholds
+   * the control.
+   */
+  redditConversionPixelEnabled: boolean;
   /**
    * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
    * brief and naming them by asset id in the Google creative fields.

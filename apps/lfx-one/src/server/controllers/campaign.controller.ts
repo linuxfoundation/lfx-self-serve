@@ -223,6 +223,7 @@ import {
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
   canSearchGoogleGeoTargets,
+  canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
   canUseMetaCreativeAssets,
@@ -897,6 +898,21 @@ export class CampaignController {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
+        );
+        return;
+      }
+
+      // A per-campaign Reddit pixel is refused, not dropped, when the legacy creator will serve the
+      // create — it never reads the field, so the campaign would quietly use (or fail for want of)
+      // the connection's pixel instead of the one the operator chose. The form never sends it in
+      // that state (`redditConversionPixelEnabled` hides the control) (#3484).
+      if (this.hasUnservedRedditConversionPixel(body)) {
+        next(
+          ServiceValidationError.forField(
+            'redditConfig.conversionPixelId',
+            "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel",
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
         );
         return;
       }
@@ -4824,6 +4840,22 @@ export class CampaignController {
     const config: unknown = body?.redditConfig;
     if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
     return null;
+  }
+
+  /**
+   * Whether `redditConfig.conversionPixelId` carries a pixel this deployment cannot honour.
+   *
+   * Absent, `null` and a blank string all mean "use the connection's pixel" upstream, which is
+   * exactly what the legacy creator does anyway, so only a real value is refused — refusing a blank
+   * would fail a create that loses nothing on either arm.
+   */
+  private hasUnservedRedditConversionPixel(body: CampaignCreateRequest): boolean {
+    if (canSetRedditConversionPixel()) return false;
+    const config: unknown = body?.redditConfig;
+    if (config === null || typeof config !== 'object' || !('conversionPixelId' in config)) return false;
+    const pixel: unknown = config.conversionPixelId;
+    if (pixel === undefined || pixel === null) return false;
+    return typeof pixel !== 'string' || pixel.trim() !== '';
   }
 
   /**
