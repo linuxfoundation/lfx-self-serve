@@ -41,6 +41,9 @@ export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, 
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 
+/** Comments the vote detail Overview previews before linking to the Comments tab (#4448). */
+export const VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT = 3;
+
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.
@@ -162,10 +165,10 @@ export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMEN
 
 /** Display label per voting method — shared by the vote detail page's header and facts. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
-  [PollType.GENERIC]: 'Plurality Vote',
-  [PollType.MAJORITY]: 'Majority Vote',
-  [PollType.CONDORCET_IRV]: 'Ranked Choice (Condorcet IRV)',
-  [PollType.INSTANT_RUNOFF_VOTE]: 'Instant Runoff Vote',
+  [PollType.GENERIC]: 'Plurality vote',
+  [PollType.MAJORITY]: 'Majority vote',
+  [PollType.CONDORCET_IRV]: 'Ranked choice (Condorcet IRV)',
+  [PollType.INSTANT_RUNOFF_VOTE]: 'Instant runoff vote',
   [PollType.MEEK_STV]: 'Meek STV',
 };
 

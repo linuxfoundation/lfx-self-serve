@@ -74,7 +74,7 @@ export class VoteDetailFactsComponent {
   protected readonly commentsText: Signal<string> = computed(() => {
     const prompts = this.commentPromptCount() ?? this.vote().poll_comment_prompts?.length ?? 0;
     if (prompts === 0) return 'Not enabled';
-    return `Optional · ${prompts} ${prompts === 1 ? 'prompt' : 'prompts'}`;
+    return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
   });
   protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
 

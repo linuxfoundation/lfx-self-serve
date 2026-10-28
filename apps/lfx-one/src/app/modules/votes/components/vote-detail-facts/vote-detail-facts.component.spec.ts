@@ -57,10 +57,10 @@ describe('VoteDetailFactsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-created"] dt').textContent.trim()).toBe('Created');
     expect(value('created')).not.toBe('—');
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-close"] dt').textContent.trim()).toBe('Closes');
-    expect(value('method')).toBe('Ranked Choice (Condorcet IRV)');
+    expect(value('method')).toBe('Ranked choice (Condorcet IRV)');
     expect(value('electorate')).toBe('12 invited voters');
     expect(value('privacy')).toBe('Named');
-    expect(value('comments')).toBe('Optional · 1 prompt');
+    expect(value('comments')).toBe('Optional · 1 question');
   });
 
   it('lists the facts of a closed pseudo-anonymous ballot without comments', () => {
@@ -77,7 +77,7 @@ describe('VoteDetailFactsComponent', () => {
     fixture.componentRef.setInput('commentPromptCount', count);
     render(makeVote({ poll_comment_prompts: [] }));
 
-    expect(value('comments')).toBe(`Optional · ${count} ${count === 1 ? 'prompt' : 'prompts'}`);
+    expect(value('comments')).toBe(`Optional · ${count} ${count === 1 ? 'question' : 'questions'}`);
 
     fixture.componentRef.setInput('commentPromptCount', 0);
     fixture.detectChanges();

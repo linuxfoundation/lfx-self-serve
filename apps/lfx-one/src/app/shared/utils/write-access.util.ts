@@ -96,7 +96,7 @@ export function probeCommitteeWriters(
 
 /**
  * Whether the viewer manages a vote: project writer first, then committee writer — the same order writerGuard uses.
- * Shared by the vote permalink and the vote detail page so both pick the manager view the same way, from write access
+ * Used by the vote detail page (`/votes/:id`) to pick the manager view from write access
  * and never from the lens. A failed check is "not a manager" (the voter view), never an error: the vote itself already loaded.
  */
 export function resolveVoteCanManage(
