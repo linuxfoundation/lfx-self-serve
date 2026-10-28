@@ -20,6 +20,7 @@ import {
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_ACTIVE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
@@ -347,7 +348,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: Member360Service, useValue: { download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
-        { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
+        { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER), activeRunConflict: MktgAgentRunService.prototype.activeRunConflict } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
         { provide: HttpClient, useValue: {} },
         { provide: MktgPendingDocumentService, useValue: pending },
@@ -1631,6 +1632,35 @@ describe('MktgDocumentViewComponent', () => {
       expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-questions' }) })
     );
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it('returns a validated no-answers 409 to the intake through the existing visit-only prepared token', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === ICP_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic ICP type');
+    const request = { agentId: ICP_INTAKE.agentId, intake: ICP_INTAKE, projectUid: PROJECT.uid, newRun: true, answers: { project_name: 'Synthetic ICP' } };
+    const conflict = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Another writer has a run in progress.',
+      activeRunId: 'c'.repeat(64),
+      state: 'writing',
+      agentKey: type.agentKey,
+      documentId: 'living',
+      startedBy: 'Another writer',
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.consume).mockReturnValueOnce({ subject: 'synthetic-sub', pending: { request, state: 'draft', updatedAt: new Date().toISOString() } });
+    vi.mocked(attempts.prepare).mockReturnValue('generation-synthetic-conflict');
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    store.getDocument.mockReturnValue(of({ ...detail, type, revisions: [], runs: [] }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render('/documents/icp/living?generation=synthetic-start');
+    expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ request, state: 'failed', activeRunConflict: conflict }));
+    expect(attempts.prepare).toHaveBeenCalledWith(request, true);
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining([ICP_INTAKE.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-conflict', mode: null, generation: null }) })
+    );
+    expect(query('mktg-document-view-failure-reply')).toBeNull();
   });
 
   it('consumes an accepted one-off only with its exact document scope and resumes the shared poll', async () => {

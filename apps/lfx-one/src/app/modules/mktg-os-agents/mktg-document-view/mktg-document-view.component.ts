@@ -597,6 +597,28 @@ export class MktgDocumentViewComponent {
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
                 catchError((error: unknown) => {
+                  const conflict =
+                    error instanceof HttpErrorResponse &&
+                    error.status === 409 &&
+                    pending.request.projectUid === this.projectContext.activeContextUid() &&
+                    request.subject === (this.userService.user()?.sub ?? '')
+                      ? this.runService.activeRunConflict(error, pending.request)
+                      : null;
+                  if (conflict) {
+                    const retained = this.attempts.load(pending.request.projectUid, pending.request.agentId, pending.request.documentId) ?? pending;
+                    this.attempts.save({ ...retained, state: 'failed', activeRunConflict: conflict });
+                    const token = this.attempts.prepare(pending.request, true);
+                    void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
+                      queryParams: {
+                        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+                        project: this.projectContext.activeContext()?.slug ?? null,
+                        mode: null,
+                        type: null,
+                        questions: token,
+                      },
+                    });
+                    return EMPTY;
+                  }
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);

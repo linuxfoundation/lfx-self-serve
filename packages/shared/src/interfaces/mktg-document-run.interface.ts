@@ -4,6 +4,18 @@
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
+import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+
+/** Safe conflict facts; never a Guild session id or owner capability. */
+export interface MktgActiveRunConflict {
+  code: typeof MKTG_RUN_ACTIVE;
+  message: string;
+  startedBy: string;
+  activeRunId: string;
+  state: MktgDocumentRunState;
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+}
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
 export type MktgRunFailureReason = Member360FailureReason;
@@ -20,6 +32,14 @@ export interface MktgOneOffRunContext {
 export interface MktgDocumentRunStartOptions {
   oneOff?: MktgOneOffRunContext;
   basedOnId?: string;
+}
+
+/** Untrusted discard input is validated before any tracking mutation. */
+export interface MktgActiveRunStartOptions {
+  documentId?: string;
+  discard?: unknown;
+  /** Slot owner for one-offs when the caller acts on another creator's record; defaults to the caller. */
+  creatorSubject?: string | null;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
@@ -69,8 +89,8 @@ export interface MktgPublicRunAnswersResponse {
   state: 'writing';
 }
 
-/** Server-only terminal markers for completion and superseded unfinished or failed runs. */
-export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded';
+/** Server-only terminal markers; closed runs are not reconciled or listed. */
+export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
  * Writer-entitled progress returned with Documents list/detail reads.
@@ -137,6 +157,8 @@ export interface MktgStartedRunRecord {
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
+  /** Private stored turn; public projection separately requires a living-document writer grant. */
+  pendingQuestions?: MktgRunPendingQuestions;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
   failureReason?: MktgRunFailureReason;
@@ -154,7 +176,7 @@ export interface MktgGenerationAttribution {
   creatorSubject: string | null;
 }
 
-/** Private fetched started-run record and the exact bytes used for metadata-only refreshes. */
+/** Private fetched record and original bytes; only a changed question turn requires a body refresh. */
 export interface MktgStoredStartedRun {
   key: string;
   body: string;

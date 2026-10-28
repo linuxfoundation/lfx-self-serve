@@ -87,8 +87,8 @@ export class LinkedinPostController {
     try {
       const user = this.requireUser(req);
       const body = this.body(req);
-      if (Object.keys(body).some((key) => !['answers', 'setup', 'project'].includes(key)))
-        throw ServiceValidationError.forField('body', 'Only source, setup and project inputs are accepted.');
+      if (Object.keys(body).some((key) => !['answers', 'setup', 'project', 'discard'].includes(key)))
+        throw ServiceValidationError.forField('body', 'Only answers, setup, project and discard inputs are accepted.');
       if (!body['answers'] || typeof body['answers'] !== 'object' || Array.isArray(body['answers']))
         throw ServiceValidationError.forField('answers', 'Content source is required.');
       const answers = body['answers'] as Record<string, unknown>;
@@ -102,6 +102,7 @@ export class LinkedinPostController {
       if (setup !== undefined && !isLinkedinSetup(setup)) throw ServiceValidationError.forField('setup', 'Complete the required profile fields.');
       const project = await this.writableProject(req, body['project']);
       await this.runs.resolveProject(req, project.uid);
+      await this.runs.assertSingleActiveOneOffRun(req, project.uid, LINKEDIN_POST_INTAKE.agentId, body['discard']);
       const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
       const runId = await this.runs.startForOneOff(req, LINKEDIN_POST_INTAKE.agentId, project.uid, result.sessionId, {
         answers: result.answers,

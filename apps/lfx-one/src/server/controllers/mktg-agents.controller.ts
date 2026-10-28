@@ -58,6 +58,8 @@ import {
   MktgLastIntakeStart,
   MktgReadText,
   MktgRunAnswer,
+  MktgRunAnswersRequest,
+  MktgPublicRunAnswersResponse,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -75,10 +77,13 @@ import {
   validateFoundationMessageIntakeAnswers,
   validateIcpIntakeAnswers,
 } from '@lfx-one/shared/utils';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, BOILERPLATES_INTAKE, FAQ_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import { MKTG_STARTED_RUN_ID_REGEX } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
-import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError, PreconditionFailedError } from '../errors';
 import { BoilerplatesService } from '../services/boilerplates.service';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FaqService } from '../services/faq.service';
@@ -210,6 +215,7 @@ export class MktgAgentsController {
     try {
       const project = await this.documentRuns.resolveCatalogProject(req, agent.id, rawProject);
       if (!validSessionId) {
+        if (project) await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
         if (project) {
@@ -387,6 +393,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
@@ -695,6 +702,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
@@ -986,6 +994,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
@@ -1260,6 +1269,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, rawProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId, priorVersion ?? 0);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
@@ -1500,6 +1510,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'faq_generate', startTime, { session_created: true });
@@ -1658,6 +1669,51 @@ export class MktgAgentsController {
     }
   }
 
+  /** Record the ACK through the catalog-aware domain service. */
+  /** Project-writer continuation for a kit run, deliberately separate from creator-token session writes. */
+  public async runAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_run_answers';
+    const runId = req.params['runId'];
+    const body = (req.body ?? {}) as Partial<MktgRunAnswersRequest>;
+    if (
+      typeof runId !== 'string' ||
+      !MKTG_STARTED_RUN_ID_REGEX.test(runId) ||
+      typeof body.questionsId !== 'string' ||
+      !MKTG_RUN_QUESTIONS_ID_REGEX.test(body.questionsId)
+    ) {
+      next(
+        ServiceValidationError.forField('run', 'A valid run id and questions id are required.', {
+          operation,
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const started = logger.startOperation(req, operation, { run: runId });
+    try {
+      if (!getEffectiveSub(req)) throw new AuthenticationError('Could not identify the requesting user.');
+      const run = await this.documentRuns.questionsForAnswers(req, body.project, runId, body.questionsId);
+      const intake = findMktgRunIntake(run.agentKey);
+      const agent = MKTG_AGENTS.find((entry) => entry.id === intake?.agentId && entry.status === 'active');
+      const handle = agent?.status === 'active' ? agent.guildAgentHandle : undefined;
+      const adapter = this.livingAnswers(intake?.endpoints.answers);
+      if (!handle || !adapter) throw new PreconditionFailedError('This run has no registered answers path.');
+      const checked = adapter.validate(body.answers);
+      if (!checked.valid || !Array.isArray(body.answers))
+        throw ServiceValidationError.forField('answers', checked.errors.join('; ') || 'Valid answers are required.');
+      if (await this.redrafts.forSession(req, run.sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      const answers = body.answers.map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+      await adapter.send(req, run.sessionId, answers, handle);
+      await this.documentRuns.resumeAfterQuestions(req, run.project, run.sessionId, body.questionsId);
+      logger.success(req, operation, started, { agent: run.agentKey, count: answers.length });
+      const response: MktgPublicRunAnswersResponse = { runId: run.runId, state: 'writing' };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
   private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
     const oneLine = title
@@ -1695,7 +1751,23 @@ export class MktgAgentsController {
     });
   }
 
-  /** Record the ACK through the catalog-aware domain service. */
+  /** Reuse the same domain validators and renderers as the private per-agent answers endpoints. */
+  private livingAnswers(endpoint: string | undefined) {
+    if (!endpoint) return null;
+    switch (endpoint) {
+      case BRAND_KIT_INTAKE.endpoints.answers:
+        return { validate: validateBrandKitAnswers, send: this.brandKitService.sendAnswers.bind(this.brandKitService) };
+      case FOUNDATION_MESSAGE_INTAKE.endpoints.answers:
+        return { validate: validateFoundationMessageAnswers, send: this.foundationMessageService.sendAnswers.bind(this.foundationMessageService) };
+      case BOILERPLATES_INTAKE.endpoints.answers:
+        return { validate: validateBoilerplatesAnswers, send: this.boilerplatesService.sendAnswers.bind(this.boilerplatesService) };
+      case FAQ_INTAKE.endpoints.answers:
+        return { validate: validateFaqAnswers, send: this.faqService.sendAnswers.bind(this.faqService) };
+      default:
+        return null;
+    }
+  }
+
   private async trackStart(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }

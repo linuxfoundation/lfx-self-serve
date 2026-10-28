@@ -14,7 +14,7 @@ import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-messa
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
 import type { BoilerplatesChecks, BoilerplatesContent, BoilerplatesMode, BoilerplatesReport } from './boilerplates.interface';
 import type { BrandKitRevision } from './brand-kit.interface';
-import type { MktgRunFailureReason } from './mktg-document-run.interface';
+import type { MktgActiveRunConflict, MktgRunFailureReason } from './mktg-document-run.interface';
 import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
@@ -555,6 +555,8 @@ export interface MktgRunEndpoints {
  * answers against the agent's own intake schema.
  */
 export interface MktgRunGenerateBody {
+  /** Explicitly replace this active run; a stale id is refused. */
+  discard?: string;
   /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
   /**
@@ -1260,6 +1262,8 @@ export interface MktgPendingGeneration {
   requiresReattachment?: boolean;
   attempt?: MktgRunAttempt;
   pendingQuestions?: MktgRunQuestionsPending;
+  /** Same-visit conflict re-entry only; deliberately not serialized by the attempt store. */
+  activeRunConflict?: MktgActiveRunConflict;
   answered?: { questions: MktgRunQuestion[]; answers: MktgRunAnswer[]; questionsId: string };
   /** One-offs retain only this digest across reload, never private questions or answers. */
   answeredQuestionsId?: string;
@@ -1267,7 +1271,7 @@ export interface MktgPendingGeneration {
 }
 
 /** Storage carries intake/context only, never uploaded document/logo bytes or serialized intake config. */
-export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration, 'request'> {
+export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration, 'request' | 'activeRunConflict'> {
   request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback' | 'documentId'>;
 }
 
@@ -1301,6 +1305,10 @@ export interface MktgGenerateRequest {
   intake: MktgAgentIntake;
   /** Explicit Start from a fresh intake: never continue an older session. */
   newRun?: boolean;
+  /** Visit-only consent after a validated active-run conflict; never serialized as future permission. */
+  discard?: string;
+  /** Exact submitted payload for visit-only conflict recovery; the attempt store never serializes it. */
+  retainedStartBody?: MktgRunGenerateBody;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
   /** Existing documents, for intakes with a documents section. */

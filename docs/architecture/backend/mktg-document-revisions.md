@@ -309,7 +309,14 @@ retry/answers budget origin, answered questions id, prior revision, persist retr
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
-The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
+current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
+`suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
+the existing schema and acquire the field on their next observed question turn. Question-body writes
+share the metadata refresh predicate and the same documented cross-writer limitation, not a new atomic store.
+Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
+with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
 Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
@@ -319,6 +326,16 @@ Activity is read from the domain result's existing sanitized feed, not retained 
 and is projected only when the effective reader is the stored original creator. Other project writers
 see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
 redactor to activity labels/details before returning them, including to the creator.
+
+`POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
+A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
+private session from the project-scoped record, checks questions state (412) and turn identity (409),
+then uses the registered intake's existing answer validator and domain sender before renewing writing
+and recording the answered turn. No client owner token or session id is trusted or returned; the ACK is
+only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
+creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
+question turn only after a current canonical writer grant, never for a viewer or a one-off; creator
+identity alone is not a grant. Unknown access omits the payload rather than disclosing it.
 
 The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
 object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes
@@ -349,8 +366,16 @@ failure; a plain refresh/reopen read checks Guild again, so the run remains read
 Its ready result carries the shared exact persistence receipt as well as the existing `stored`
 flag; existing clients remain compatible.
 
-States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Answerable questions pause the writing deadline until accepted answers renew
+Every Generate or new catalog chat checks stored `writing`/`questions`/`storing` records: living slots use project + type + documentId; one-off slots use creator + type within the project, never another creator's run. A 409 `MKTG_RUN_ACTIVE` returns `activeRunId`, `state`, `agentKey`, `documentId`, `message`, `startedBy` (resolved only on conflict, fallback 'Another writer', response-only); stale discard ids get the same conflict.
+Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Discarded runs are excluded from listings/progress and skipped before body/Guild reads.
+The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids.
+Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
+Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
+
+A validated Generate 409 opens a scoped confirmation: living intakes name the starter; dedicated LinkedIn and Member 360 intakes say "Your … run is in progress". "Open it" navigates to the returned document/run; "Discard and start over" resends the exact submitted body with only `discard: activeRunId` added. Catalog bodies and conflict handoffs are same-visit memory only, never persisted as future discard permission or uploaded bytes. If that body cannot be replayed safely after reload, the intake asks for review/reattachment and another explicit Create. Context or identity changes invalidate the old dialog's actions.
+
+States are `writing`, `questions`, `storing`, `failed`, `completed`, `superseded` and
+`discarded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the
@@ -370,11 +395,11 @@ it creates no generation and does not change the document's current pointer.
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
 the newest-mtime **128-record discovery window**, with concurrency four per operation for both
 navigation reconciliation and Generate's supersede scan. Both paths HEAD first
-and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
+and skip completed/superseded/discarded bodies; Generate GETs unfinished/failed candidates
 only. A per-process **256-entry LRU terminal key/mtime cache** skips repeated terminal reads;
 it is disposable, invalidated on writes/mtime changes and never an authority.
 Fresh write timestamps are not memoized within S3's current write second. Failed,
-completed and superseded runs are not automatically queried against Guild.
+completed, superseded and discarded runs are not automatically queried against Guild.
 Failures keep a UTF-8/base64 snapshot capped at 768 source bytes, within object
 metadata's size budget; one scoped detail-navigation refresh can return the full
 reply. Errors are isolated per record. Terminal-record pruning/TTL is a follow-up;

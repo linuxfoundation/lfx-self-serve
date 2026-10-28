@@ -15,8 +15,10 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENT_INTAKES,
   MKTG_LAST_INTAKE_API,
+  MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
+  MktgActiveRunConflict,
   MktgAgentIntake,
   MktgLastIntake,
   MktgLastIntakeResponse,
@@ -41,7 +43,13 @@ import {
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
-import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity, mktgRunModeFor } from '@lfx-one/shared/utils';
+import {
+  renderMktgIntakeMessage,
+  mktgDocumentLocationOfReceipt,
+  mktgRunResultIdentity,
+  mktgRunModeFor,
+  readMktgActiveRunConflict,
+} from '@lfx-one/shared/utils';
 import {
   catchError,
   concat,
@@ -190,11 +198,17 @@ export class MktgAgentRunService {
    * (project switch, a new submission, leaving the page) cancels the retry
    * with it.
    */
-  public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+  public generate(request: MktgGenerateRequest, discard?: string): Observable<MktgGenerateProgress> {
+    if (request.discard && !MKTG_STARTED_RUN_ID_REGEX.test(request.discard)) return throwError(() => new Error('Invalid active run selection.'));
+    const retryBody = discard ? this.retainedBody(request) : null;
+    if (discard && (!MKTG_STARTED_RUN_ID_REGEX.test(discard) || !retryBody))
+      return throwError(() => new Error('Review the retained intake and Create explicitly; the original start cannot be replayed safely.'));
     if (request.intake.oneOffDocument) return throwError(() => new Error('Submit this one-off through its dedicated intake first.'));
     const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+    if (!discard) request.retainedStartBody = undefined;
     let attempt$: Observable<MktgRunAttempt>;
-    if (!stored || request.intake.freshRunPerSubmission) {
+    if (discard && retryBody) attempt$ = this.postStartBody(request, retryBody, discard);
+    else if (!stored || request.intake.freshRunPerSubmission) {
       // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
@@ -240,6 +254,17 @@ export class MktgAgentRunService {
         return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
       })
     );
+  }
+
+  /** The existing attempt store, not a closure or mutable version history, owns this visit's submitted body. */
+  public canRetryActiveConflict(request: MktgGenerateRequest): boolean {
+    return !!this.retainedBody(request);
+  }
+
+  /** Validate and scope the future server conflict before any navigation or discard choice. */
+  public activeRunConflict(error: unknown, request: MktgGenerateRequest): MktgActiveRunConflict | null {
+    if (!(error instanceof HttpErrorResponse) || error.status !== 409 || !request.projectUid) return null;
+    return readMktgActiveRunConflict(error.error, request.agentId, request.documentId);
   }
 
   /**
@@ -352,6 +377,21 @@ export class MktgAgentRunService {
     }
   }
 
+  private retainedBody(request: MktgGenerateRequest): MktgRunGenerateBody | null {
+    const pending = this.attempts.load(request.projectUid, request.agentId, request.documentId);
+    const body = pending?.request.retainedStartBody;
+    if (
+      !request.projectUid ||
+      pending?.state !== 'failed' ||
+      pending.requiresReattachment ||
+      !body ||
+      body !== request.retainedStartBody ||
+      body.project !== request.projectUid
+    )
+      return null;
+    return body;
+  }
+
   /**
    * First run: one-shot form-mode generation through the agent's validated
    * generate endpoint. The BFF validates the answers against the agent's own
@@ -366,18 +406,9 @@ export class MktgAgentRunService {
       // Every intake sends its durable run scope; the BFF resolves writer access
       // and the canonical storage/lookup project before starting the agent.
       project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
     };
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
-      map((response) => ({
-        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
-        runId: response.runId,
-        priorVersion: 0,
-        // The BFF reports what its server-side README fetch produced for THIS
-        // submission; it travels with the attempt so the version it generates
-        // can say it was written without one.
-        readme: response.readme,
-      }))
-    );
+    return this.captureStartBody(request, body);
   }
 
   /**
@@ -396,17 +427,35 @@ export class MktgAgentRunService {
       // A stored run without versions has nothing to revise — plain first run.
       return this.startRun(request);
     }
-    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
+    const body: MktgRunGenerateBody = {
+      answers: request.answers,
+      priorVersion,
+      project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
+    };
     if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+    return this.captureStartBody(request, body);
+  }
+
+  private captureStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody): Observable<MktgRunAttempt> {
+    const retained = {
+      ...body,
+      answers: { ...body.answers },
+      ...(body.documents && { documents: body.documents.map((document) => ({ ...document })) }),
+      ...(body.logoFiles && { logoFiles: body.logoFiles.map((file) => ({ ...file })) }),
+    };
+    request.retainedStartBody = retained;
+    return this.postStartBody(request, retained);
+  }
+
+  private postStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody, discard?: string): Observable<MktgRunAttempt> {
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, discard ? { ...body, discard } : body).pipe(
       map((response) => ({
         session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
         runId: response.runId,
-        priorVersion,
-        // Every resubmit re-fetches the README, so this version's outcome is
-        // the fresh one — a corrected URL must not inherit the old verdict.
+        priorVersion: body.priorVersion ?? 0,
         readme: response.readme,
       }))
     );

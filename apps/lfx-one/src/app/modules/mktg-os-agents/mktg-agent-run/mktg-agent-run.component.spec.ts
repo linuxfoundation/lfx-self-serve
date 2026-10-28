@@ -17,10 +17,12 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_ACTIVE,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
   MktgAgentIntake,
+  MktgActiveRunConflict,
   MktgAnswerMemory,
   MktgDependencyDocument,
   MktgDocumentExtractResponse,
@@ -225,6 +227,8 @@ describe('MktgAgentRunComponent', () => {
             answerQuestions,
             acknowledgementVersion: signal(0),
             resume: vi.fn(() => NEVER),
+            activeRunConflict: MktgAgentRunService.prototype.activeRunConflict,
+            canRetryActiveConflict: vi.fn(() => true),
           },
         },
         { provide: MktgDocumentStoreService, useValue: { listDocuments, getDocument: vi.fn(() => NEVER) } },
@@ -958,10 +962,18 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
-    const activeConflict = () => {
+    const activeConflict = (): MktgActiveRunConflict => {
       const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
       if (!type) throw new Error('Missing synthetic asset');
-      return { activeRunId: 'b'.repeat(64), agentKey: type.agentKey, documentId: 'living' };
+      return {
+        code: MKTG_RUN_ACTIVE,
+        message: 'A run is in progress.',
+        activeRunId: 'b'.repeat(64),
+        state: 'questions',
+        agentKey: type.agentKey,
+        documentId: 'living',
+        startedBy: 'Another writer',
+      };
     };
 
     it('confirms Sources-first discard, keeps the notice on Keep it, and does not ask twice before one explicit Create', async () => {
@@ -1026,6 +1038,83 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       expect(confirmationService.confirm).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledOnce();
+    });
+
+    it.each(['open', 'discard', 'review', 'stale'] as const)('handles a validated 409 with the distinct owner dialog and %s choice', async (choice) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const conflict = activeConflict();
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict }))).mockReturnValue(of({ type: 'submitted' }));
+      vi.mocked(TestBed.inject(MktgAgentRunService).canRetryActiveConflict).mockReturnValue(choice !== 'review');
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      await fixture.whenStable();
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      expect(discardPrompt()).toMatchObject({
+        header: "Another writer's Messaging framework run is in progress",
+        rejectLabel: 'Open it',
+        acceptLabel: 'Discard and start over',
+      });
+      if (choice === 'stale') {
+        const dialog = discardPrompt();
+        userSignal.set({ sub: 'synthetic-other-subject' } as User);
+        await fixture.whenStable();
+        dialog?.accept?.();
+        expect(generate).toHaveBeenCalledOnce();
+      } else if (choice === 'open') {
+        discardPrompt()?.reject?.(ConfirmEventType.REJECT);
+        expect(generate).toHaveBeenCalledOnce();
+        expect(TestBed.inject(Router).navigate).toHaveBeenLastCalledWith(
+          expect.arrayContaining(['documents', conflict.agentKey, 'living']),
+          expect.objectContaining({ queryParams: expect.objectContaining({ run: conflict.activeRunId, project: PROJECT_1.slug }) })
+        );
+      } else {
+        discardPrompt()?.accept?.();
+        await fixture.whenStable();
+        if (choice === 'discard') expect(generate).toHaveBeenNthCalledWith(2, request, conflict.activeRunId);
+        else {
+          expect(generate).toHaveBeenCalledOnce();
+          expect(component['errorText']()).toContain('cannot be replayed safely');
+          expect(component['intakeForm'].get('website_url')?.value).toBe(request.answers['website_url']);
+          component['onSubmit']();
+          expect(generate.mock.calls[1][0]).toMatchObject({ discard: conflict.activeRunId, newRun: true });
+        }
+      }
+    });
+
+    it('does not automatically loop when the server rejects an already-discarding retry', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: activeConflict() })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      discardPrompt()?.accept?.();
+      await fixture.whenStable();
+      expect(generate).toHaveBeenCalledTimes(2);
+      expect(confirmationService.confirm).toHaveBeenCalledTimes(2);
+    });
+
+    it('consumes visit-only receiver conflict metadata, never serializes it, and uses the one-off title variant', async () => {
+      await configure('browser', agentId);
+      const conflict = activeConflict();
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const request = { agentId, intake: MKTG_AGENT_INTAKES[agentId], projectUid: PROJECT_1.uid, answers: history.answers };
+      attempts.save({ request, state: 'failed', activeRunConflict: conflict, updatedAt: new Date().toISOString() });
+      expect(JSON.stringify({ ...localStorage })).not.toContain(MKTG_RUN_ACTIVE);
+      const token = attempts.prepare(request, true);
+      queryParams.next(convertToParamMap({ questions: token }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(discardPrompt()?.rejectLabel).toBe('Open it');
+      expect(attempts.load(PROJECT_1.uid, agentId)?.activeRunConflict).toBeUndefined();
+      expect(generate).not.toHaveBeenCalled();
+      const oneOff = MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run');
+      if (!oneOff) throw new Error('Missing synthetic one-off type');
+      expect(component['activeConflictHeading']({ ...conflict, agentKey: oneOff.agentKey })).toBe(
+        `Your ${mktgSentenceCaseLabel(oneOff.itemLabel)} run is in progress`
+      );
     });
 
     it.each(['continue', 'start-over'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
