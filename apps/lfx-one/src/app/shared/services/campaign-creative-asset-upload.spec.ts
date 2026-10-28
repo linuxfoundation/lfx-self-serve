@@ -34,68 +34,89 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
   afterEach(() => http.verify());
 
   it('keeps the request running after its only subscriber leaves, and hands the answer to a resume', () => {
-    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe().unsubscribe();
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit').subscribe().unsubscribe();
     const req = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
     expect(req.cancelled).toBe(false);
 
     req.flush(ASSET);
 
     let resumed: CreativeAssetUploadResult | null = null;
-    service.resumeCreativeAssetUpload(BRIEF_ID)?.subscribe((a) => (resumed = a));
+    service.resumeCreativeAssetUpload('reddit', BRIEF_ID)?.subscribe((a) => (resumed = a));
     expect(resumed).toEqual(ASSET);
   });
 
   it('replays a refusal to a resume instead of uploading again', () => {
     service
-      .uploadCreativeAsset(png(), 'tlf', BRIEF_ID)
+      .uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit')
       .subscribe({ error: () => undefined })
       .unsubscribe();
     http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets').flush({ message: 'not an image' }, { status: 400, statusText: 'Bad Request' });
 
     let status = 0;
-    service.resumeCreativeAssetUpload(BRIEF_ID)?.subscribe({ error: (e: { status: number }) => (status = e.status) });
+    service.resumeCreativeAssetUpload('reddit', BRIEF_ID)?.subscribe({ error: (e: { status: number }) => (status = e.status) });
     expect(status).toBe(400);
     http.expectNone((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
 
   it('keeps only the latest upload, so an abandoned brief does not hold its image for the session', () => {
     const OTHER_BRIEF = '0f8fad5b-d9cb-469f-a165-70867728950e';
-    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
-    const latest = service.uploadCreativeAsset(png(), 'tlf', OTHER_BRIEF);
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit');
+    const latest = service.uploadCreativeAsset(png(), 'tlf', OTHER_BRIEF, 'reddit');
 
-    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
-    expect(service.resumeCreativeAssetUpload(OTHER_BRIEF)).toBe(latest);
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload('reddit', OTHER_BRIEF)).toBe(latest);
   });
 
   it('forgets only the upload it is told to, so a stale answer cannot drop a newer pick', () => {
-    const first = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
-    const second = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
+    const first = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit');
+    const second = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit');
 
-    service.forgetCreativeAssetUpload(first);
-    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBe(second);
-    service.forgetCreativeAssetUpload(second);
-    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
+    service.forgetCreativeAssetUpload('reddit', first);
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).toBe(second);
+    service.forgetCreativeAssetUpload('reddit', second);
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).toBeNull();
   });
 
   // A discarded upload must not run on: it would compete with the next one for campaign-service's
   // upload budget (which sheds with a 503) and store an asset nobody uses.
   it('aborts the previous upload when a new one starts', () => {
-    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit').subscribe();
     const first = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
 
-    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit').subscribe();
 
     expect(first.cancelled).toBe(true);
     http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets').flush(ASSET);
   });
 
   it('aborts and drops the upload when it is cancelled', () => {
-    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit').subscribe();
     const req = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
 
-    service.cancelCreativeAssetUpload();
+    service.cancelCreativeAssetUpload('reddit');
 
     expect(req.cancelled).toBe(true);
-    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).toBeNull();
+  });
+
+  // The Meta and Reddit controls each own an upload. One's pick must not abort, replace or hand its
+  // answer to the other's: the operator chose both images.
+  it("keeps each owner's upload apart: a Meta pick neither aborts nor takes over a Reddit one", () => {
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'reddit').subscribe();
+    const reddit = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+    const meta$ = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'meta');
+    meta$.subscribe();
+
+    expect(reddit.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('meta', BRIEF_ID)).toBe(meta$);
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).not.toBe(meta$);
+
+    service.cancelCreativeAssetUpload('meta');
+    expect(reddit.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('meta', BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload('reddit', BRIEF_ID)).not.toBeNull();
+
+    reddit.flush(ASSET);
+    http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
 });

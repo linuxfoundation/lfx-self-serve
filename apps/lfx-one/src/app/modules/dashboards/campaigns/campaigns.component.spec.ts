@@ -1944,6 +1944,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -1980,6 +1982,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2027,6 +2031,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2059,6 +2065,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: true,
           })
         );
@@ -2142,6 +2150,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2188,6 +2198,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2205,6 +2217,8 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         capability.complete();
@@ -2238,6 +2252,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2272,6 +2288,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2301,6 +2319,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2343,6 +2363,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2386,6 +2408,8 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         pending.complete();
@@ -2429,6 +2453,8 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         second.complete();
@@ -2456,6 +2482,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2485,6 +2513,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2504,6 +2534,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2532,6 +2564,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: true,
           })
         );
@@ -2569,6 +2603,8 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         await fixture.whenStable();
@@ -2603,6 +2639,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2637,6 +2675,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -2674,6 +2714,8 @@ describe('CampaignsComponent brief persistence', () => {
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
           biddingEnabled: false,
         });
         await fixture.whenStable();
@@ -2742,6 +2784,8 @@ describe('CampaignsComponent brief persistence', () => {
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
             biddingEnabled: false,
           })
         );
@@ -11107,6 +11151,8 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
       biddingEnabled,
     });
 
