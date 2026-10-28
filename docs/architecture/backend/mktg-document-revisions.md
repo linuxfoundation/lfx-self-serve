@@ -308,11 +308,13 @@ retry/answers budget origin, answered questions id, prior revision, persist retr
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
-The record's identity stays bound; the optional `pendingQuestions` body field captures a living document's
+The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
 current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
 `suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
 the existing schema and acquire the field on their next observed question turn. Question-body writes
 share the metadata refresh predicate and the same documented cross-writer limitation, not a new atomic store.
+Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
+with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
 The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
