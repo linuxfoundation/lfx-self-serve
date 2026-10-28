@@ -14,6 +14,7 @@ import {
   CAMPAIGN_MONITOR_ACT_PLATFORMS,
   CAMPAIGN_PACING_THRESHOLDS,
   CAMPAIGN_PLATFORMS,
+  campaignPlatformMonitorable,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_DATE_RANGE_OPTIONS,
   MONITOR_KEYWORD_PAGE_SIZE,
@@ -50,6 +51,7 @@ import type {
   LinkedInCampaignMetrics,
   LinkedInMonitorResponse,
   LinkedInPacingLabel,
+  GoogleAdsAccountOption,
   MetaAccountOption,
   MetaCampaignMetrics,
   MetaMonitorResponse,
@@ -196,8 +198,27 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** The Google Ads monitor is independent of the separately authorized keyword and audience reads. */
   protected readonly googleRestricted = signal(false);
-  /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
-  protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
+  private googleAccountsSub: Subscription | null = null;
+  /**
+   * Set once the discovery read is refused as shared-account-restricted. The refusal is about the
+   * caller (root-only, as the Google Ads monitor), so loads skip a read that would answer 403 again
+   * until `resetGoogleAccounts` clears it on a fresh context.
+   */
+  private googleAccountsRefused = false;
+  /**
+   * The Google Ads accounts the project's connection can reach (campaign-service account discovery).
+   * Read only with the cutover on; listed for reference, since the Google Ads monitor reads the
+   * aggregate view rather than one picked account. `null` until a read answers, and for a non-root
+   * caller, whose read is refused; an empty array is a connection that reaches no account.
+   */
+  protected readonly googleAccountOptions = signal<GoogleAdsAccountOption[] | null>(null);
+  protected readonly googleAccountsLoading = signal(false);
+  protected readonly googleAccountsError = signal<string | null>(null);
+  /**
+   * X's monitor follows `monitorable` in `CAMPAIGN_PLATFORMS`, not its `disabled` create flag. It shows
+   * only with the cutover on; metrics off upstream, or a non-root caller, gets the panel's notice.
+   */
+  protected readonly twitterOffered = campaignPlatformMonitorable('twitter-ads');
 
   // Microsoft Ads / X: one report-backed panel, showing whichever of the two is selected.
   private reportBackedSub: Subscription | null = null;
@@ -389,6 +410,46 @@ export class MonitoringTabComponent implements OnInit {
     } else if (this.selectedPlatform() === 'hubspot') {
       this.fetchHubSpotData();
     }
+  }
+
+  /**
+   * Reads the Google Ads accounts the project's connection can reach. Stamped with the slug it was
+   * made for, as the legacy account lists are, so a late answer for the previous foundation is dropped.
+   */
+  protected loadGoogleAccounts(): void {
+    const slug = this.activeFoundationSlug();
+    this.googleAccountsSub?.unsubscribe();
+    // A caller already known to be restricted (by this read, or by the Google Ads monitor) would only
+    // be refused again: no request, and nothing shown, as for the refusal itself.
+    if (this.googleAccountsRefused || this.googleRestricted()) {
+      this.googleAccountsLoading.set(false);
+      this.googleAccountsError.set(null);
+      this.googleAccountOptions.set(null);
+      return;
+    }
+    this.googleAccountsLoading.set(true);
+    this.googleAccountsError.set(null);
+    this.googleAccountsSub = this.campaignService
+      .getGoogleAdsAccounts(slug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          if (slug !== this.activeFoundationSlug() || !this.monitorViaCampaignService()) return;
+          this.googleAccountOptions.set(accounts);
+          this.googleAccountsLoading.set(false);
+        },
+        error: (err: unknown) => {
+          if (slug !== this.activeFoundationSlug() || !this.monitorViaCampaignService()) return;
+          this.googleAccountsLoading.set(false);
+          this.googleAccountOptions.set(null);
+          // A non-root caller is refused the list as the Google Ads monitor is: nothing to show, not an error.
+          if (this.isSharedAccountRestricted(err)) {
+            this.googleAccountsRefused = true;
+          } else {
+            this.googleAccountsError.set(extractErrorMessage(err, 'Failed to load Google Ads accounts'));
+          }
+        },
+      });
   }
 
   protected fetchData(): void {
@@ -1396,6 +1457,7 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInAccountOptions.set([]);
     this.redditAccountOptions.set([]);
     this.metaAccountOptions.set([]);
+    this.resetGoogleAccounts();
 
     // Also cancel any in-flight per-platform monitor fetch for the OLD foundation — clearing the
     // signal below isn't enough on its own. If the new foundation has no accounts for a platform,
@@ -1512,9 +1574,21 @@ export class MonitoringTabComponent implements OnInit {
     const meta = this.connectedAccount(platforms.meta);
     this.metaAccountOptions.set(meta ? [{ key: meta.accountId, label: meta.label }] : []);
     this.selectedMetaAccountKey.set(meta?.accountId ?? '');
+    this.loadGoogleAccounts();
 
     // Read the panel the user is on now that its account is known.
     this.fetchSelectedPanel();
+  }
+
+  /** Drop the Google Ads account list and cancel its read: the foundation or the picker source changed. */
+  private resetGoogleAccounts(): void {
+    this.googleAccountsSub?.unsubscribe();
+    // Re-checked on a fresh context: the root checks fail closed on an upstream error, so a refusal
+    // remembered from an outage must not outlive the foundation or source it was answered for.
+    this.googleAccountsRefused = false;
+    this.googleAccountsLoading.set(false);
+    this.googleAccountsError.set(null);
+    this.googleAccountOptions.set(null);
   }
 
   /** The cutover is off: the pickers are the legacy account lists, loaded exactly as before it existed. */
@@ -1534,6 +1608,8 @@ export class MonitoringTabComponent implements OnInit {
       this.metaAccountOptions.set([]);
       this.monitorConnections.set({});
     }
+    // campaign-service only: the legacy path has no Google Ads account list to offer.
+    this.resetGoogleAccounts();
     if (this.selectedPlatform() === 'microsoft' || this.selectedPlatform() === 'twitter' || this.selectedPlatform() === 'hubspot') {
       // Those panels exist only behind the cutover, and their buttons are gone with it.
       this.selectedPlatform.set('google');

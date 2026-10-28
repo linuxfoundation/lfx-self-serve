@@ -1502,6 +1502,37 @@ describe('extractableHtml', () => {
     expect(out).toContain('"startDate":"2027-03-15"');
   });
 
+  // The closing-tag STRIP used `.replace(/<\/script[^>]*>$/i, '')` on the collected body: unanchored
+  // at the front, with `[^>]*` running forward to the next `>` before `$` is tested. Every `</script`
+  // literal the block's own close scan (`rawTextBlockEnd`) does NOT recognise as a real close -- its
+  // `(?=[\s>])` lookahead rejects `</scriptx` -- is a fresh backtracking candidate for that regex.
+  // A body of many `</scriptx` tokens followed by one lone `>` and then the real `</script>` makes
+  // `rawTextBlockEnd` treat the whole thing as one element (every inner token fails its lookahead),
+  // so the strip regex sees all of them as start candidates whose `[^>]*` must each scan forward to
+  // that one inner `>` and then backtrack. Quadratic in the token count; GH-549 measured tens of
+  // seconds on ~116k tokens. The fix slices the body up to the close position `rawTextBlockEnd`
+  // already computed instead of re-finding and stripping the close tag with a regex.
+  it('does not stall stripping a json-ld body full of near-miss close tokens', () => {
+    // 100k, not 20k: at 20k tokens the OLD regex itself only took ~1.3-1.5s, well inside a 4s
+    // budget -- three reviewers independently caught that the old code would pass this test too,
+    // so it could not detect its own regression. 100k decoys (~900KB, still under the 1 MiB
+    // MAX_SCAN_CHARS cap) pushed the old regex to ~46.5s measured directly against the fix's
+    // slice-based version, which stays in the tens of milliseconds -- a budget comfortably between
+    // the two, with room for a loaded CI runner.
+    const decoys = '</scriptx'.repeat(100_000);
+    const html = `<script type="application/ld+json">{"startDate":"2027-03-15"}${decoys}>REST</script><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(html);
+    const elapsed = Date.now() - started;
+
+    expect(elapsed, `extractableHtml took ${elapsed}ms stripping a json-ld body with 100k near-miss close tokens`).toBeLessThan(4000);
+    expect(out).toContain('"startDate":"2027-03-15"');
+    // The real closing tag must still be stripped out of the preserved json-ld.
+    expect(out).not.toContain('</script>');
+    expect(out).toContain('Tokyo');
+  });
+
   // A flat `slice(0, MAX_SOURCE_CHARS)` cut whichever block 150k landed inside, taking its closing
   // tag with it -- the stripper then could not match, and 150k of CSS filled the budget as prose
   // while the text after it was lost. This is the fixed-slice failure the helper exists to fix,

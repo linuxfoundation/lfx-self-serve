@@ -178,7 +178,7 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
   });
 
-  it('refuses every upload while BOTH capabilities are off, since nothing could use the asset', async () => {
+  it('refuses every upload while EVERY capability is off, since nothing could use the asset', async () => {
     isServerFeatureEnabled.mockImplementation(() => false);
 
     const response = await upload(PNG, 'image/png');
@@ -188,16 +188,59 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
   });
 
   /**
-   * The stored library is ONE library, so either capability alone is reason enough to let an image
+   * The stored library is ONE library, so any capability alone is reason enough to let an image
    * into it. Pinned in both directions: a Google-only deployment must not be left able to read and
    * delete a library it is not allowed to add to, and the Reddit-only case must keep working
    * unchanged now that the gate has widened.
    */
   it.each([
-    ['only Reddit', ServerFeatureFlag.CampaignServiceGoogleAssets],
-    ['only Google', ServerFeatureFlag.CampaignServiceRedditAssets],
-  ])('admits an upload when %s can consume the asset', async (_label, offFlag) => {
-    isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== offFlag);
+    [
+      'only Reddit',
+      [
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+      ],
+    ],
+    [
+      'only Google',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+      ],
+    ],
+    [
+      'only Meta',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+      ],
+    ],
+    [
+      'only LinkedIn',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+      ],
+    ],
+    [
+      'only Microsoft',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+      ],
+    ],
+  ])('admits an upload when %s can consume the asset', async (_label, offFlags) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => !(offFlags as unknown[]).includes(flag));
     uploadCreativeAsset.mockResolvedValue(ASSET);
 
     const response = await upload(PNG, 'image/png');
@@ -346,9 +389,12 @@ describe('creative-asset library reads and prune', () => {
    * what it already stores whatever platform may currently consume it, or images uploaded under one
    * flag become unreachable the moment it is turned off.
    */
-  it('still answers the library while both creative-asset capabilities are off', async () => {
+  it('still answers the library while every creative-asset capability is off', async () => {
     isServerFeatureEnabled.mockImplementation(
-      (flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceRedditAssets && flag !== ServerFeatureFlag.CampaignServiceGoogleAssets
+      (flag: unknown) =>
+        flag !== ServerFeatureFlag.CampaignServiceRedditAssets &&
+        flag !== ServerFeatureFlag.CampaignServiceGoogleAssets &&
+        flag !== ServerFeatureFlag.CampaignServiceMetaAssets
     );
     listCreativeAssets.mockResolvedValue(LIBRARY);
 

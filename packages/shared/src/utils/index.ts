@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './ai.utils';
 export * from './avatar.utils';
 export * from './color.utils';
 export * from './date-time.utils';
@@ -36,6 +37,7 @@ export * from './compact-cache.utils';
 export * from './weekly-brief.utils';
 export * from './number.utils';
 export * from './object.utils';
+export * from './org-key-contact.utils';
 export * from './platform.utils';
 export * from './project.utils';
 export * from './project-health.utils';
@@ -71,6 +73,7 @@ export * from './mentorship.utils';
 export * from './persona.utils';
 export * from './metric-trend.utils';
 export * from './org-meetings-insights.utils';
+export * from './org-lens-time-range.utils';
 export * from './cla-view.utils';
 export * from './cla-identifier.utils';
 export * from './cla-manager-actions.utils';
@@ -121,6 +124,8 @@ export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
+export * from './campaign-google-assets.utils';
+export * from './campaign-google-creative.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';
@@ -141,3 +146,5 @@ export * from './mktg-family-export.utils';
 export * from './aeo-geo.utils';
 export * from './display-name.utils';
 export * from './mktg-run-failure.utils';
+export * from './org-people-stats.utils';
+export * from './org-commit-filters.utils';

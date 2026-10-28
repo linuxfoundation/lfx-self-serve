@@ -9,7 +9,9 @@ import type {
   CommitteeMailingListLink,
   CommitteeMemberPermissionInfo,
   GroupBehavioralClass,
+  GroupEditLink,
   JoinMode,
+  ParentCommitteeOption,
 } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
@@ -161,6 +163,41 @@ export function buildCommitteeCreateQueryParams(committee: Committee): Record<st
 /** Categories a persona may pick when creating a group; Maintainers get the restricted set. */
 export function getSelectableCommitteeCategories(persona: PersonaType): { label: string; value: string }[] {
   return persona === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
+}
+
+/**
+ * Type options for editing an existing group: the persona's selectable categories, plus the group's
+ * current category when it falls outside that set (e.g. a Maintainer viewing a TOC) so the select
+ * never renders blank for a value the group already holds.
+ */
+export function getEditableCommitteeCategories(persona: PersonaType, currentCategory: string | null | undefined): { label: string; value: string }[] {
+  const options = getSelectableCommitteeCategories(persona);
+  return currentCategory && !options.some((option) => option.value === currentCategory)
+    ? [{ label: currentCategory, value: currentCategory }, ...options]
+    : options;
+}
+
+/**
+ * Parent-group select options: the "No Parent" choice, then every top-level committee except
+ * `excludeUid` (a group can't be its own parent). Shared by the edit wizard's Basic Info step and
+ * the settings tab's General card so the eligibility rule can't drift between them.
+ */
+export function buildParentCommitteeOptions(committees: Committee[], excludeUid: string | null | undefined, groupLabel: string): ParentCommitteeOption[] {
+  return [
+    { label: `No Parent ${groupLabel}`, value: null },
+    ...committees
+      .filter((committee) => !committee.parent_uid && committee.uid !== excludeUid)
+      .map((committee) => ({ label: committee.name, value: committee.uid })),
+  ];
+}
+
+/** Edit-wizard link for a group — the same tier-aware route the groups table uses, with the flat `/groups/:uid/edit` fallback for unenriched payloads. */
+export function getGroupEditLink(committee: Pick<Committee, 'uid' | 'is_foundation' | 'project_slug'>): GroupEditLink {
+  const queryParams: Record<string, string> = {};
+  if (committee.project_slug) {
+    queryParams['project'] = committee.project_slug;
+  }
+  return { commands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'], queryParams };
 }
 
 // ── Per-type query helpers ──────────────────────────────────────────────────

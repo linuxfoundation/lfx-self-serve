@@ -32,7 +32,7 @@ import type {
   AudienceSignal,
   AudienceSpeakerScope,
   AudienceSuppressionCategory,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   CampaignAudience,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -103,6 +103,7 @@ interface WireSuppressionList {
   size?: number;
   category: string;
   hubspot_url: string;
+  will_create?: boolean;
 }
 
 interface WireListBrief {
@@ -151,6 +152,7 @@ interface WireComposeMasterResult {
   master: WireComposedList;
   suppression?: WireComposedList;
   source_list_ids: string[];
+  suppression_list_ids?: string[];
   recorded?: boolean;
   audience?: WireRecordedAudience;
 }
@@ -158,6 +160,7 @@ interface WireComposeMasterResult {
 interface WireAttachExistingResult {
   master: WireComposedList;
   suppression_list_ids: string[];
+  suppression?: WireComposedList;
   audience: WireRecordedAudience;
 }
 
@@ -697,15 +700,22 @@ export class AudienceBuilderProxyService {
     }));
   }
 
-  public async getSuppressionLists(req: Request, projectSlug: string, brandShort: string, eventName: string): Promise<AudienceSuppressionList[]> {
-    // Both params are optional upstream and omitted rather than sent empty: an empty
+  public async getSuppressionLists(
+    req: Request,
+    projectSlug: string,
+    brandShort: string,
+    eventName: string,
+    registrantsEvent = ''
+  ): Promise<AudienceSuppressionListsResult> {
+    // Every param is optional upstream and omitted rather than sent empty: an empty
     // `event_name` is a filter that matches nothing, where an absent one means "do not filter".
-    const wire = await this.get<{ lists?: WireSuppressionList[] }>(req, projectSlug, 'suppression-lists', {
+    const wire = await this.get<{ lists?: WireSuppressionList[]; standard_list?: WireComposedList }>(req, projectSlug, 'suppression-lists', {
       ...(brandShort === '' ? {} : { brand_short: brandShort }),
       ...(eventName === '' ? {} : { event_name: eventName }),
+      ...(registrantsEvent === '' ? {} : { registrants_event: registrantsEvent }),
     });
 
-    return required(wire.lists, 'lists').map((list) => ({
+    const lists = required(wire.lists, 'lists').map((list) => ({
       key: list.key,
       label: list.label,
       listId: list.list_id,
@@ -713,7 +723,12 @@ export class AudienceBuilderProxyService {
       size: list.size,
       category: list.category as AudienceSuppressionCategory,
       hubspotUrl: httpHref(list.hubspot_url),
+      ...(list.will_create ? { willCreate: true } : {}),
     }));
+    // Present only once the project's standing list exists; its absence tells the tab that the next
+    // attach or compose applying every standard row CREATES it. One without an id is no evidence it
+    // exists, so it is dropped rather than reported as an existing list.
+    return { lists, ...(confirmedWireList(wire.standard_list) ? { standardList: toComposedList(wire.standard_list) } : {}) };
   }
 
   public async getLastSent(req: Request, projectSlug: string, eventName: string, brandShort: string, limit: number): Promise<AudienceLastSentEmail[]> {
@@ -763,7 +778,8 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * Creates the combined suppression list and then the master list, upstream.
+   * Creates the master list upstream, excluding the selected suppressions through the project's
+   * standing suppression lists (found by name and reused, never one per compose).
    *
    * `eventUrl` on the request is dropped deliberately: upstream's compose input takes the
    * REVIEWED naming inputs (`brand_short`, `event_name`, `event_dates`) and no URL, because the
@@ -778,6 +794,7 @@ export class AudienceBuilderProxyService {
       ...(request.brandShort ? { brand_short: request.brandShort } : {}),
       ...(request.eventName ? { event_name: request.eventName } : {}),
       ...(request.eventDates?.length ? { event_dates: request.eventDates } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
       // Forwarded only when set. Sending `brief_id: ''` is NOT the same request: upstream reads a
       // present-but-empty id as an attach that then fails its own brief lookup, turning the
       // exploratory compose the builder is designed for into a 404 — after refusing to create
@@ -832,6 +849,10 @@ export class AudienceBuilderProxyService {
         master: toCreatedList(required(wire.master, 'master'), 'master'),
         suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
         sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
+        // Optional: an older upstream omits it, and the UI then falls back to what it sent.
+        ...(Array.isArray(wire.suppression_list_ids)
+          ? { suppressionListIds: wire.suppression_list_ids.filter((id) => typeof id === 'string' && id !== '') }
+          : {}),
         recorded,
         // Validated with `required` exactly as `master` is, and for the same reason: this is the
         // object the UI reads to say "attached". A rewritten `audience: {}` beside `recorded: true`
@@ -844,9 +865,9 @@ export class AudienceBuilderProxyService {
         reason: error instanceof Error ? error.message : String(error),
         master_list_id: wire?.master?.list_id,
       });
-      // The suppression is never passed: the partial's suppression arm is the ORPHAN banner ("delete
-      // it or reuse it"), and on a 2xx the suppression belongs to the master that exists. Deleting
-      // it would silently drop the master's exclusions.
+      // The suppression is never passed: on a 2xx it is the project's standing standard list, which
+      // the master that exists excludes and every other audience in the project shares, so the
+      // partial banner must not present it as this compose's leftover.
       if (wire?.recorded === true) {
         // Upstream reported the attach, so the master is not "unattached"; only the reply is
         // unreadable. No list is passed, so the client does not offer to attach it again.
@@ -973,8 +994,9 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * Records EXISTING lists as the brief's send audience. Creates nothing in HubSpot, so unlike
-   * compose it has no partial state and every failure is safe to retry.
+   * Records EXISTING lists as the brief's send audience. Its only creates are the project's standing
+   * standard suppression list and the edition's current-registrants list, both found by name and
+   * reused, so unlike compose it has no partial state and every failure is safe to retry.
    */
   public async attachExisting(req: Request, projectSlug: string, request: AudienceAttachExistingRequest): Promise<AudienceAttachExistingResult> {
     const attach = {
@@ -982,12 +1004,14 @@ export class AudienceBuilderProxyService {
       // Exactly one of the two: several include lists go to the send directly, with no master.
       ...(request.includeListIds?.length ? { include_list_ids: request.includeListIds } : { master_list_id: request.masterListId }),
       ...(request.suppressionListIds?.length ? { suppression_list_ids: request.suppressionListIds } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
       ...(request.inclusionSummary ? { inclusion_summary: request.inclusionSummary } : {}),
     };
     const wire = await this.post<WireAttachExistingResult>(req, projectSlug, 'attach-existing', { attach });
     return {
       master: toCreatedList(required(wire.master, 'master'), 'master'),
       suppressionListIds: required(wire.suppression_list_ids, 'suppression_list_ids'),
+      ...(wire.suppression ? { standardSuppression: toCreatedList(wire.suppression, 'suppression') } : {}),
       audience: toRecordedAudience(required(wire.audience, 'audience'), request.briefId),
     };
   }

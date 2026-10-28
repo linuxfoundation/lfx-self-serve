@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { AiSamplingCompatibilityRule } from '../interfaces/ai.interface';
 import { WEEKLY_BRIEF_ACTION_ITEMS_MAX } from './weekly-brief.constants';
 
 /**
@@ -175,21 +176,82 @@ You must return exactly one entry per attendee_id you were given, in any order. 
 Respond with a JSON object matching the provided schema exactly. Do not include any text outside the JSON object.`;
 
 /**
- * AI model configuration
+ * AI model configuration — the default only
  *
- * Carries the `bedrock/` provider prefix because the v2 LiteLLM instances
- * (`litellm.*.v2.cluster.linuxfound.info`) route on the prefixed name, while the retired OCI
- * instance (`litellm.tools.lfx.dev`) routed on the bare inference profile id and answered
- * `401` to the prefixed one. The two names are not interchangeable, so the host and the name
- * have to move together — see #4087, where the host moved alone and every AI call failed.
+ * The model actually sent is the `AI_MODEL` env var (the chart's `environment.AI_MODEL`), read once
+ * by `getAiModel()` in `server/helpers/ai-model.helper.ts`; this constant is what that falls back to
+ * when the var is unset or empty, and what the chart defaults the var to. Swapping models is
+ * therefore a values change in argocd, not a release. Keep this and the chart default equal —
+ * `ai-model.helper.spec.ts` pins the two together.
+ *
+ * Whichever source names it, the model must be one of the short names the LiteLLM proxy publishes
+ * in its own `model_list` (`lfx-v2-argocd`, `values/global/lfit-litellm.yaml`) — never a
+ * provider-prefixed Bedrock id. The prefixed ids appear in that file only as `litellm_params.model`,
+ * the destination each short name resolves to; sending one asks the router for a model it
+ * publishes no deployment for, which answers `429` rather than a `400` that would name the real
+ * problem.
+ *
+ * The published list also spans two sampling contracts. Anthropic's extended-thinking doc
+ * (platform.claude.com/docs/en/build-with-claude/thinking, "sampling parameters") lists Claude Opus
+ * 4.7 and 4.8 alongside every 5-series model as returning a `400` on a non-default `temperature`,
+ * `top_p` or `top_k`, on every request, thinking or not. The proxy does not shield us from that:
+ * `lfit-litellm.yaml`'s `litellm_settings` sets no `drop_params`, so the value reaches Bedrock as
+ * sent. So the send sites no longer decide: they spread `getAiSamplingParams()`, which consults
+ * `AI_SAMPLING_COMPATIBILITY` below and sends `temperature` only to a model the table says accepts
+ * it. Claude Opus 4.7 or later, any 5-series Claude model, and any name the table does not know get
+ * no sampling parameter at all.
+ *
+ * The host and the name have to move together, and neither can be checked from this repo alone:
+ * `AI_PROXY_URL` and the proxy's model list both live in argocd. See #4333, where the name was a
+ * routing destination rather than a published name, and #4087 before it, where the host moved
+ * alone. `lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var and builds its own
+ * request body with an unconditional `temperature` (`internal/platform/llm/client.go`, no
+ * `omitempty`). The two are not currently in step: argocd pins that service to `claude-sonnet-5-5`
+ * (`values/global/lfx-v2-campaign-service.yaml`), a model that rejects `temperature`. Closing that
+ * gap means moving that service to a name that is neither Claude Opus 4.7 or later nor 5-series,
+ * or dropping `temperature` there, neither of which this repo can do.
  */
-export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'claude-sonnet-4-5';
+
+/**
+ * The shape of every name the LiteLLM proxy publishes: lower-case letters, digits and hyphens only
+ * (`claude-sonnet-4-5`, `amazon-nova-pro`). Neither spelling of a Bedrock routing id matches it —
+ * the provider-prefixed one carries a `/`, the bare inference-profile one carries dots and a colon.
+ * Shared by the startup warning in `ai-model.helper.ts` and the default's shape check in
+ * `ai.constants.spec.ts`.
+ */
+export const AI_PUBLISHED_MODEL_NAME_PATTERN = /^[a-z0-9-]+$/;
+
+/**
+ * Which sampling parameters each model family accepts — first match wins, and no match means
+ * `none`.
+ *
+ * It fails safe by construction: `temperature` is an allowlist of the families known to accept it,
+ * so a model released after this table was written, a non-Claude name (`amazon-nova-pro`), or a
+ * typo all get no sampling parameter. Sending none costs only the default sampling temperature;
+ * sending one to a model that rejects it costs a `400` on every AI feature. The two `none` rows are
+ * redundant with the fallthrough and are kept so the boundary is readable here rather than implied:
+ * they are the set Anthropic's extended-thinking doc names (Opus 4.7, Opus 4.8, and the 5-series).
+ *
+ * `top_p` is never sent. The 4.x families below accept `temperature` or `top_p` but not both in one
+ * request, and every send site has only ever tuned `temperature`.
+ */
+export const AI_SAMPLING_COMPATIBILITY: readonly AiSamplingCompatibilityRule[] = [
+  { pattern: /^claude-(?:sonnet|opus|haiku)-[5-9]/, mode: 'none', family: 'Claude 5-series and later' },
+  { pattern: /^claude-opus-4-[7-9]/, mode: 'none', family: 'Claude Opus 4.7 and later' },
+  {
+    pattern: /^claude-(?:sonnet-4(?:-[56])?|opus-4(?:-[156])?|haiku-4-5)(?:-\d{8})?$/,
+    mode: 'temperature',
+    family: 'Claude Sonnet 4/4.5/4.6, Opus 4/4.1/4.5/4.6, Haiku 4.5',
+  },
+];
 
 /**
  * AI request configuration
  */
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
+  /** Sent only to a model `AI_SAMPLING_COMPATIBILITY` maps to `temperature` — see `getAiSamplingParams` */
   TEMPERATURE: 0.7,
   /**
    * Default AbortSignal.timeout bound for user-initiated (POST) AiService calls — currently only

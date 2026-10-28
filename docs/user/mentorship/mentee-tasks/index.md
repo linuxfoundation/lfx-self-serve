@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The **My Tasks** tab holds everything a program has assigned you — the prerequisites attached to an application, and the term's work once you are accepted.
 
+![My Tasks, listing prerequisite tasks with their status and upload buttons](/images/docs/mentorship/mentee-tasks.png)
+
 ## Before you begin
 
 - Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee → My Tasks**.

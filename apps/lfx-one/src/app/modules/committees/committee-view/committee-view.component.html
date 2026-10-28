@@ -215,6 +215,17 @@
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
                  Invite-only visitors see no header action (must wait for invitation). -->
             <div class="flex items-center gap-2 shrink-0">
+              @if (editLink(); as edit) {
+                <lfx-button
+                  label="Edit Group"
+                  icon="fa-light fa-pen-to-square"
+                  severity="secondary"
+                  [outlined]="true"
+                  size="small"
+                  [routerLink]="edit.commands"
+                  [queryParams]="edit.queryParams"
+                  data-testid="committee-view-edit-btn" />
+              }
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
                   <lfx-button
@@ -530,7 +541,7 @@
           <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" (documentsChanged)="onDocumentsChanged()" />
         }
         @case ('settings') {
-          <lfx-committee-settings-tab [committee]="committee()!" [canEdit]="canEdit()" (committeeUpdated)="refreshCommittee()" />
+          <lfx-committee-settings-tab [committee]="committee()!" [canEdit]="canEdit()" (committeeUpdated)="onSettingsSaved()" />
         }
       }
     </div>

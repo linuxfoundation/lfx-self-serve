@@ -577,7 +577,8 @@ export class OrgLensProjectDetailService {
   public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:${this.paramSignature([slug, range])}`);
+    // `v2`: the commits card is now "Commits" under the shared definition (lfx-self-serve#4164).
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v2:${this.paramSignature([slug, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -1946,7 +1947,7 @@ export class OrgLensProjectDetailService {
         index,
         axis
       ),
-      this.card('commits', 'Commit Activities', null, this.pctCaption(cards?.TECH_COMMITS_PCT, 'Employees made ', ' of all commit activities.'), index, axis),
+      this.card('commits', 'Commits', null, this.pctCaption(cards?.TECH_COMMITS_PCT, 'Employees made ', ' of all commits.'), index, axis),
       this.card(
         'pull-requests',
         'Pull Requests Opened',

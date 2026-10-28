@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -765,6 +766,13 @@ describe('VotesTableComponent — row More menu', () => {
     expect(navigate).toHaveBeenCalledWith(['/', 'project', 'votes', 'create'], { queryParams: { clone: 'project-vote' } });
   });
 
+  it('opens the presenter in a new tab from the Present item, only for writers of an open or ended vote (#4140)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    table['openPresenter']('vote-9');
+    expect(open).toHaveBeenCalledWith('/votes/vote-9/present', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
   it('omits Clone from the menu without hasPMOAccess', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
     await settle();
@@ -809,22 +817,22 @@ describe('VotesTableComponent — row More menu', () => {
 
     // Clone rides on project access, reminders (and Extend) on per-vote writer access — the gates
     // are independent, which is the whole point of this case. Clone is appended last (#3781), so
-    // the reminder stays at index 2 (after Extend) whether or not Clone is there.
+    // the reminder stays at index 3 (after Present and Extend) whether or not Clone is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
       hasPMOAccess
-        ? ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
-        : ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list']
+        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
+        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
     reminderItem.dispatchEvent(new Event('mouseenter'));
     await fixture.whenStable();
     expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
-    expect(items[2].tooltipOptions?.tooltipPosition).toBe('left');
+    expect(items[3].tooltipOptions?.tooltipPosition).toBe('left');
     reminderItem.dispatchEvent(new Event('mouseleave'));
 
-    items[2].command!({});
+    items[3].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
@@ -1026,7 +1034,7 @@ describe('VotesTableComponent — row More menu', () => {
     { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
-    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Send summary', 'Clone'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Present', 'Send summary', 'Clone'] },
   ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
@@ -1555,5 +1563,116 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     capturedConfirmation?.accept?.();
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "We couldn't send the summary. Please try again." }));
+  });
+});
+
+/**
+ * #4148: below the sm breakpoint the table rows render as cards. jsdom has no matchMedia, so the
+ * BreakpointObserver is mocked; the same rows keep their `votes-row-*` hooks, so the card and the
+ * table row are the same data and the same actions in a different layout.
+ */
+describe('VotesTableComponent — mobile cards (#4148)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  const MOBILE_VOTES = [
+    vote('cast'),
+    vote('done', { response_status: VoteResponseStatus.RESPONDED }),
+    vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z' }),
+  ];
+
+  async function render(matches: boolean, platform: 'browser' | 'server' = 'browser', votes: Vote[] = MOBILE_VOTES): Promise<void> {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches, breakpoints: {} }), isMatched: () => matches } },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', votes);
+    fixture.componentRef.setInput('quickFilterNowMs', NOW);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+  afterEach(() => fixture?.destroy());
+
+  const q = (selector: string): HTMLElement | null => fixture.nativeElement.querySelector(selector);
+
+  it('switches between the table header and cards at the breakpoint', async () => {
+    await render(true);
+    expect(q('[data-testid="votes-card-cast"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBe(0);
+
+    await render(false);
+    expect(q('[data-testid="votes-card-cast"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBeGreaterThan(0);
+  });
+
+  it('renders every row as a card with name, group, status, deadline and one primary action', async () => {
+    await render(true);
+    for (const row of MOBILE_VOTES) {
+      const card = q(`[data-testid="votes-card-${row.uid}"]`) as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.textContent).toContain(row.name);
+      expect(card.textContent).toContain('Alpha Group');
+      expect(card.textContent).toContain('Due');
+    }
+    expect(q('[data-testid="votes-card-cast"] [data-testid="votes-cast-cast"]')?.textContent).toContain('Vote');
+    expect(q('[data-testid="votes-card-done"] [data-testid="votes-cast-done"]')?.textContent).toContain('Review');
+    expect(q('[data-testid="votes-card-closed"] [data-testid="votes-results-closed"]')?.textContent).toContain('Results');
+  });
+
+  it('keeps the row hooks, action test ids and 44px touch targets identical to the table', async () => {
+    await render(true);
+    const mobileIds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid]') as NodeListOf<HTMLElement>)
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => /^votes-(row|cast|results|more|name)-/.test(id!));
+    expect(q('[data-testid="votes-cast-cast"] button, button[data-testid="votes-cast-cast"]')?.className).toContain('min-h-[44px]');
+    expect(q('[data-testid="votes-more-cast"] button, button[data-testid="votes-more-cast"]')?.className).toContain('min-w-[44px]');
+
+    await render(false);
+    const desktopIds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid]') as NodeListOf<HTMLElement>)
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => /^votes-(row|cast|results|more|name)-/.test(id!));
+    expect(mobileIds.sort()).toEqual(desktopIds.sort());
+  });
+
+  it('hides the "Showing x to y" page report on phones to avoid overflow', async () => {
+    await render(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Showing');
+  });
+
+  // The server renders the desktop table and the client's FIRST render must equal it, or Angular throws NG0500
+  // during hydration. The viewport is therefore not read until afterNextRender, and never on the server platform.
+  it('renders the desktop table on the server even when the viewport matches the phone query', async () => {
+    await render(true, 'server');
+
+    expect(q('[data-testid="votes-card-cast"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBeGreaterThan(0);
+  });
+
+  it('starts as the desktop table on the client (matching the server HTML), then swaps to cards after the first render', async () => {
+    await render(true, 'browser');
+    const firstRenderIsMobile = TestBed.createComponent(VotesTableComponent).componentInstance['isMobile']();
+
+    expect(firstRenderIsMobile).toBe(false);
+    expect(q('[data-testid="votes-card-cast"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBe(0);
+  });
+
+  it('gives the ended-early info button a 44px phone target on the card', async () => {
+    await render(true, 'browser', [vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z', early_end_time: '2026-08-30T12:00:00Z' })]);
+
+    const info = q('[data-testid="votes-ended-early-info-closed"]');
+    expect(info).toBeTruthy();
+    expect(info!.className).toContain('max-sm:min-w-[44px]');
+    expect(info!.className).toContain('max-sm:min-h-[44px]');
   });
 });

@@ -43,6 +43,7 @@ import type {
   NegativeKeywordCampaignPlatform,
   RedditAccountOption,
   RedditActionItem,
+  RedditKeywordNegativeTarget,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -339,6 +340,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly redditKeywordsReload = signal(0);
   /** The brief's Reddit campaign names by Reddit campaign id, for the Reddit keyword table's Campaign column. */
   protected readonly redditCampaignNames: Signal<Record<string, string>> = this.initRedditCampaignNames();
+  /**
+   * The brief's Reddit campaigns that offer negative keywords right now (the rows whose editor is
+   * available), by Reddit campaign id, for the Reddit keyword table's "Add as negative". A Reddit id
+   * held by more than one row maps to neither: the table must not choose between them.
+   */
+  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget> | null> = this.initRedditNegativeTargets();
 
   /**
    * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
@@ -2204,6 +2211,34 @@ export class OptimizationTabComponent implements OnInit {
         }
       }
       return names;
+    });
+  }
+
+  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget> | null> {
+    return computed(() => {
+      // `null` while the campaign list is (re)loading: unknown, not empty. The keyword table waits it out
+      // rather than reading an in-flight reload as every campaign leaving the negative-keyword lever.
+      // A FAILED read is not loading, and nothing will end the wait, so it offers no campaign: a waiting
+      // add then says "Not sent" and releases its campaign instead of holding it until a retry.
+      const rows = this.campaignRows();
+      if (rows === null) {
+        return this.campaignsUnavailable() ? {} : null;
+      }
+      const targets: Record<string, RedditKeywordNegativeTarget> = {};
+      const ambiguous = new Set<string>();
+      for (const row of rows) {
+        const redditId = row.campaign.platform_campaign_id;
+        if (row.negativeKeywordsPlatform !== 'reddit-ads' || !row.negativeKeywordsAvailable || typeof redditId !== 'string' || redditId === '') {
+          continue;
+        }
+        if (Object.hasOwn(targets, redditId) || ambiguous.has(redditId)) {
+          ambiguous.add(redditId);
+          delete targets[redditId];
+          continue;
+        }
+        targets[redditId] = { campaignId: row.campaign.id, campaignName: row.campaign.campaign_name };
+      }
+      return targets;
     });
   }
 
