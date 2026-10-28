@@ -5,10 +5,36 @@
   display: block;
 }
 
-::ng-deep {
-  .mobile-sidebar-drawer {
-    .p-drawer-content {
-      @apply px-2;
+// The mobile drawer: a transparent 296px track (the navbar brings its own dark floating panel) on a fixed layer — just
+// above the backdrop (998) and below PrimeNG overlays (1000+), so popovers and dialogs opened from the navbar stack
+// above it. Closed, it sits off-canvas and turns hidden only once the slide-out has finished.
+.mobile-navbar-drawer {
+  visibility: hidden;
+  transform: translate3d(-100%, 0, 0);
+  transition:
+    transform 150ms cubic-bezier(0, 0, 0.2, 1),
+    visibility 0s linear 150ms;
+
+  &.is-open {
+    visibility: visible;
+    transform: none;
+    transition: transform 150ms cubic-bezier(0, 0, 0.2, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &,
+    &.is-open {
+      transition: none;
     }
+  }
+}
+
+.mobile-navbar-backdrop {
+  animation: mobile-navbar-backdrop-in 150ms ease-out;
+}
+
+@keyframes mobile-navbar-backdrop-in {
+  from {
+    opacity: 0;
   }
 }

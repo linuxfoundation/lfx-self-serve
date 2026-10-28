@@ -6,10 +6,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
 import { CampaignNegativeKeywordsResult, CampaignServiceKeywordTargeting } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
@@ -32,7 +34,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       imports: [CampaignNegativeKeywordsFormComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: CampaignService, useValue: { addNegativeKeywords, getKeywordTargeting } },
+        { provide: CampaignService, useValue: { addNegativeKeywords, getKeywordTargeting, removeKeywordTargeting: vi.fn().mockReturnValue(new Subject()) } },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     }).compileComponents();
@@ -291,7 +293,62 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
   });
 
-  describe('on Reddit and X', () => {
+  // The brief generates these from the event page, and the editor is the only place they can be
+  // sent from — negative keywords have no create-time path upstream at all. Seeding the box is the
+  // whole delivery of that generation.
+  it('opens pre-filled with the suggested keywords from the brief', () => {
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon', 'kubecon jobs']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('free kubecon\nkubecon jobs');
+  });
+
+  // A suggestion arriving after the editor is open (the brief finishing its load) must never
+  // overwrite what the operator has typed. The seed is an offer, not a reset.
+  it('leaves typed keywords alone when the suggestion arrives later', () => {
+    typeKeywords('my own exclusion');
+
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('my own exclusion');
+  });
+
+  // Capped by THIS platform's rules, not by the generator's: the brief bounds its list to Google
+  // Ads' limits because it cannot know which campaign it will be sent to, and X takes far fewer per
+  // request. Without the re-cap the editor would open already failing its own validator.
+  it(`truncates the suggestion to X's ${MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST} keywords per request`, () => {
+    fixture.componentRef.setInput('platform', 'twitter-ads');
+    fixture.componentRef.setInput(
+      'suggestedKeywords',
+      Array.from({ length: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`)
+    );
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value.split('\n')).toHaveLength(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST);
+  });
+
+  // The restore path owns a remounted editor on a campaign that has been sent to: those keywords
+  // are ones the operator chose and the platform did not confirm, and a suggestion seeded over them
+  // would be a silent loss of their work rather than a convenience.
+  it('restores the unconfirmed keywords rather than the suggestion after a request', () => {
+    addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [{ text: 'alpha', matchType: 'Exact', outcome: 'FAILED' }] }));
+    typeKeywords('alpha');
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    remounted.detectChanges();
+
+    expect(remounted.componentInstance.form.controls.keywords.value).toBe('alpha');
+  });
+
+  describe('on Google, Reddit and X', () => {
     const targeting = (revision?: string): CampaignServiceKeywordTargeting => ({
       campaign_id: 'c-1',
       platform: 'reddit-ads',
@@ -300,7 +357,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       ...(revision !== undefined && { revision }),
     });
 
-    function setPlatform(platform: 'reddit-ads' | 'twitter-ads'): void {
+    function setPlatform(platform: 'google-ads' | 'reddit-ads' | 'twitter-ads'): void {
       fixture.componentRef.setInput('platform', platform);
       fixture.detectChanges();
     }
@@ -324,6 +381,81 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Broad' }], 'sha256:r1');
       // The write changed the fingerprint: the targeting is read again for the next request.
       expect(getKeywordTargeting).toHaveBeenCalledTimes(2);
+    });
+
+    // The Reddit keyword table holds the campaign while it reads the revision for its own add.
+    // The table's add keeps its confirmed brief while the page's brief id goes empty (a Proceed save).
+    it('holds submit under an empty brief id while an add to the campaign runs under its brief, then reads again', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      setPlatform('reddit-ads');
+      fixture.componentRef.setInput('briefId', '');
+      fixture.detectChanges();
+      const add = new Subject<CampaignNegativeKeywordsResult>();
+      addNegativeKeywords.mockReturnValue(add);
+      const service = TestBed.inject(CampaignNegativeKeywordsService);
+      service.submit({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        keywords: ['free'],
+        matchType: 'Broad',
+        revision: 'sha256:r1',
+      });
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBe(true);
+      expect(q('optimization-campaign-negatives-held-c-1')).not.toBeNull();
+      const reads = getKeywordTargeting.mock.calls.length;
+
+      add.next({ campaignId: 'c-1', appliedCount: 1, results: [{ text: 'free', matchType: 'Broad', outcome: 'APPLIED' }] });
+      add.complete();
+      fixture.detectChanges();
+
+      expect(q('optimization-campaign-negatives-held-c-1')).toBeNull();
+      expect(submitButton().disabled).toBe(false);
+      // The add changed the fingerprint: the editor read its revision again.
+      expect(getKeywordTargeting.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('holds submit while the keyword table has the campaign reserved, and says why', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      setPlatform('reddit-ads');
+      const service = TestBed.inject(CampaignNegativeKeywordsService);
+      expect(submitButton().disabled).toBe(false);
+
+      service.reserve('tlf', 'c-1');
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBe(true);
+      expect(q('optimization-campaign-negatives-held-c-1')!.textContent).toContain('keyword table');
+      typeKeywords('free');
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+
+      service.release('tlf', 'c-1');
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBe(false);
+      expect(q('optimization-campaign-negatives-held-c-1')).toBeNull();
+    });
+
+    // A campaign's Reddit targeting is one domain, written one change at a time.
+    it('holds submit while a keyword-targeting removal of the campaign is in flight', () => {
+      getKeywordTargeting.mockReturnValue(of(targeting('sha256:r1')));
+      setPlatform('reddit-ads');
+
+      TestBed.inject(CampaignKeywordTargetingService).remove({
+        projectSlug: 'tlf',
+        briefId: 'b-1',
+        campaignId: 'c-1',
+        campaignName: 'KubeCon EU',
+        platform: 'reddit-ads',
+        request: { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r1' },
+        sent: ['kubernetes'],
+      });
+      fixture.detectChanges();
+
+      expect(submitButton().disabled).toBe(true);
+      expect(q('optimization-campaign-negatives-held-c-1')!.textContent).toContain('keyword targeting');
     });
 
     it('sends nothing to Reddit until the revision has been read, and offers a retry when the read fails', () => {
@@ -436,6 +568,28 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       typeKeywords('free');
       submit();
       expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Exact' }], undefined);
+    });
+
+    // Google's own mutate is atomic and campaign-service refuses an over-long text with a 400
+    // before Google is contacted, taking the whole batch with it — so the editor refuses it first.
+    it(`offers Google its three match types, caps a keyword's text at ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH}, and never reads or sends a revision`, () => {
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      setPlatform('google-ads');
+
+      for (const type of ['Exact', 'Phrase', 'Broad']) {
+        expect(el().querySelector(`label[for="campaign-negatives-type-c-1-${type}"]`)).not.toBeNull();
+      }
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+
+      typeKeywords('a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1));
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-negatives-line-error-1')!.textContent).toContain(`${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters`);
+
+      const text = 'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+      typeKeywords(text);
+      submit();
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text, matchType: 'Exact' }], undefined);
     });
   });
 });

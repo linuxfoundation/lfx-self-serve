@@ -3,14 +3,8 @@
 
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
-/** Query param holding the header's project selection; absent means all projects. Not `project`, the app-wide context param. */
-export const HEALTH_METRICS_PROJECT_QUERY_PARAM = 'projectScope';
-
-/** Shape a project slug must have before it reaches a read; anything else falls back to all projects. */
+/** Shape a project slug must have before it reaches a read; the server rejects anything else. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
-
-/** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
-export const HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX = 320;
 
 /**
  * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.

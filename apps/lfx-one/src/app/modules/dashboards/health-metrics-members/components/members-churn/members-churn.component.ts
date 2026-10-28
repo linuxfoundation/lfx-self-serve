@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_CHURN_FOOTER,
   HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
@@ -32,6 +33,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -54,7 +56,7 @@ import type { TablePageEvent } from 'primeng/table';
  */
 @Component({
   selector: 'lfx-members-churn',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
   templateUrl: './members-churn.component.html',
 })
 export class MembersChurnComponent {
@@ -73,6 +75,7 @@ export class MembersChurnComponent {
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
   protected readonly modeOptions: FilterPillOption[] = [...HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS];
+  protected readonly footer = HEALTH_METRICS_MEMBERS_CHURN_FOOTER;
   protected readonly tierPillClass = HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS;
   protected readonly shareBarClass = HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS;
   protected readonly size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE;
@@ -264,7 +267,7 @@ export class MembersChurnComponent {
 
   /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */
   private buildChart(points: HealthMetricsMembersChurnTrendPointView[], rose: boolean): ChartData<'bar'> {
-    const selectedColor = rose ? lfxColors.red[600] : lfxColors.blue[600];
+    const selectedColor = rose ? lfxColors.red[600] : lfxColors.blue[500];
     return {
       labels: points.map((point) => point.label),
       datasets: [

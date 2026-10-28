@@ -1,11 +1,11 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The [13px]/[12px] text and [170px] column are the design's exact sizes; the rem scale
-     undershoots them at this root font size. -->
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="engagement-meeting-participation">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <lfx-filter-pills
+      variant="track"
       [options]="modeOptions"
       [selectedFilter]="mode()"
       (filterChange)="onModeChange($event)"
@@ -21,6 +21,7 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Meeting participation unavailable"
       subtitle="We could not load meeting participation for this foundation. Refresh the page to try again."
@@ -29,55 +30,72 @@
     <p-skeleton height="8rem" borderRadius="0.5rem" data-testid="engagement-meeting-participation-loading" aria-hidden="true" />
   } @else if (!totalPeriod()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-calendar-days"
       title="Meeting participation data is not available yet"
       subtitle="This foundation has no meeting participation data in the analytics model yet."
       data-testid="engagement-meeting-participation-empty" />
   } @else {
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
-      <div class="flex flex-col gap-1" data-testid="engagement-meeting-participation-hero">
-        <span class="text-3xl font-semibold tabular-nums text-gray-900">{{ heroValue() }}</span>
-        <span class="text-[13px] text-gray-500">{{ heroLabel() }}</span>
-        <span
-          class="text-[12px] tabular-nums"
-          [class.text-emerald-600]="heroDeltaDirection() === 'up'"
-          [class.text-red-600]="heroDeltaDirection() === 'down'"
-          [class.text-gray-400]="heroDeltaDirection() === 'neutral'"
-          data-testid="engagement-meeting-participation-delta">
-          {{ heroDelta() }} vs prior period
-        </span>
+    <!-- The design's hero: value with its delta inline, caption below, then label-over-value side stats. -->
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
+      <div class="flex flex-col gap-2" data-testid="engagement-meeting-participation-hero">
+        <div class="flex items-baseline gap-2">
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">{{ heroValue() }}</span>
+          <!-- Meetings held carries no delta in the design. The comparison window is screen-reader text only for now. -->
+          @if (attendanceMode()) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="heroDeltaDirection() === 'up'"
+              [class.text-red-600]="heroDeltaDirection() === 'down'"
+              [class.text-gray-400]="heroDeltaDirection() === 'neutral'"
+              data-testid="engagement-meeting-participation-delta"
+              >{{ heroDelta() }}<span class="sr-only"> vs prior period</span></span
+            >
+          }
+        </div>
+        <span class="text-[12px] text-gray-500">{{ heroLabel() }}</span>
       </div>
 
-      <dl class="flex flex-col gap-2 md:w-1/2">
-        <div class="flex items-center justify-between gap-3">
-          <dt class="text-[13px] text-gray-500">{{ secondaryLabel() }}</dt>
-          <dd class="text-sm tabular-nums text-gray-900" data-testid="engagement-meeting-participation-secondary">{{ secondaryValue() }}</dd>
+      <!-- A plain group rather than a <dl>: two of the stats are buttons, which a <dl> cannot hold as dt/dd pairs. -->
+      <div class="flex flex-wrap gap-7 pt-1" data-testid="engagement-meeting-participation-side">
+        <div class="flex flex-col gap-0.5">
+          <span class="text-[12px] text-gray-500">{{ secondaryLabel() }}</span>
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-meeting-participation-secondary">{{
+            secondaryValue()
+          }}</span>
         </div>
-        <div class="flex items-center justify-between gap-3">
-          <dt class="text-[13px] text-gray-500">Active groups</dt>
-          <dd>
-            <button
-              type="button"
-              class="text-sm tabular-nums text-blue-600 hover:underline"
-              (click)="onSectionLink('committees')"
-              data-testid="engagement-meeting-participation-active-groups">
-              {{ activeGroupsLabel() }}
-            </button>
-          </dd>
+        <!-- The whole stat is the control, as in the design. -->
+        <div>
+          <button
+            type="button"
+            class="-m-1 flex flex-col gap-0.5 rounded-md p-1 text-left transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            (click)="onSectionLink('committees')"
+            data-testid="engagement-meeting-participation-active-groups">
+            <span class="text-[12px] text-gray-500">Active groups</span>
+            <span
+              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
+              data-testid="engagement-meeting-participation-active-groups-value"
+              >{{ activeGroupsLabel() }}</span
+            >
+          </button>
         </div>
-        <div class="flex items-center justify-between gap-3">
-          <dt class="text-[13px] text-gray-500">Never attended</dt>
-          <dd>
-            <button
-              type="button"
-              class="text-sm tabular-nums text-blue-600 hover:underline"
-              (click)="onSectionLink('reps')"
-              data-testid="engagement-meeting-participation-never-attended">
-              {{ totalPeriod()?.neverAttended ?? '—' }}
-            </button>
-          </dd>
+        <div>
+          <button
+            type="button"
+            class="-m-1 flex flex-col gap-0.5 rounded-md p-1 text-left transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            (click)="onNeverAttended()"
+            data-testid="engagement-meeting-participation-never-attended">
+            <span class="text-[12px] text-gray-500">Never attended</span>
+            <span
+              class="text-[24px] font-semibold leading-[1.2] tabular-nums"
+              [class.text-red-600]="neverAttendedFlagged()"
+              [class.text-gray-900]="!neverAttendedFlagged()"
+              data-testid="engagement-meeting-participation-never-attended-value"
+              >{{ totalPeriod()?.neverAttended ?? '—' }}</span
+            >
+          </button>
         </div>
-      </dl>
+      </div>
     </div>
 
     @if (lowConfidence()) {
@@ -88,41 +106,69 @@
     }
 
     @if (rowViews().length) {
-      <lfx-table [value]="rowViews()" [paginator]="false" data-testid="engagement-meeting-participation-table">
+      <lfx-table styleClass="hm-table" [value]="rowViews()" [paginator]="false" data-testid="engagement-meeting-participation-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Meeting type</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meeting type</span></th>
+            <!-- Meetings mode keeps three columns as the design does: the count moves into the bar, so this one is blank. -->
             <th scope="col">
-              <span class="text-xs font-medium text-gray-500">{{ attendanceMode() ? 'Meetings' : 'Meetings held' }}</span>
+              @if (attendanceMode()) {
+                <span class="text-[12px] font-normal text-gray-500">Meetings</span>
+              }
             </th>
-            @if (attendanceMode()) {
-              <th scope="col" class="w-[170px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
-            }
+            <th scope="col" class="w-[170px]">
+              <span class="text-[12px] font-normal text-gray-500">{{ attendanceMode() ? 'Attendance' : 'Meetings held' }}</span>
+            </th>
           </tr>
         </ng-template>
 
         <ng-template #body let-view>
           @let row = view.row;
           @let period = view.period;
-          <tr [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
+          <!-- The name is the control screen readers and keyboards use: governance opens Members board attendance,
+               every other type scrolls to Group attendance. A click anywhere else on the row does the same.
+               Both read as plain row text: the `!` utilities beat lfx-table's blue `td a` link style. -->
+          <tr class="cursor-pointer" (click)="onRowPicked(row.governance)" [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
             <td>
               <div class="flex flex-col gap-0.5">
-                <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
                 @if (row.governance) {
-                  <!-- Plain text, not a link: the Members tab has no route until its own story lands. -->
+                  <a
+                    [routerLink]="boardRoute"
+                    fragment="board"
+                    [queryParams]="boardQueryParams"
+                    queryParamsHandling="merge"
+                    (click)="$event.stopPropagation()"
+                    class="self-start !text-[13px] !font-medium !text-gray-900 !no-underline hover:!text-gray-900 hover:!no-underline rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                    [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'"
+                    >{{ row.label }}</a
+                  >
                   <span class="text-[12px] text-gray-500">governance · detail in Members →</span>
+                } @else {
+                  <button
+                    type="button"
+                    (click)="$event.stopPropagation(); onSectionLink('committees')"
+                    class="self-start rounded-sm text-left text-[13px] font-medium text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                    [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'">
+                    {{ row.label }}
+                  </button>
                 }
               </div>
             </td>
             <td>
-              <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
+              @if (attendanceMode()) {
+                <span class="text-[13px] tabular-nums text-gray-900">{{ period?.meetingsHeld ?? '—' }}</span>
+              }
             </td>
-            <!-- Meetings mode drops this column rather than repeating the count beside itself. -->
-            @if (attendanceMode()) {
-              <td class="w-[170px]">
-                <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
-              </td>
-            }
+            <td class="w-[170px]">
+              @if (attendanceMode()) {
+                <lfx-engagement-attendance-bar
+                  [attendancePct]="period?.attendancePct ?? null"
+                  [meetingsHeld]="period?.meetingsHeld ?? 0"
+                  [rule]="view.attendanceRule" />
+              } @else {
+                <lfx-engagement-attendance-bar [meetingsHeld]="period?.meetingsHeld ?? null" [countMax]="maxTypeMeetings()" />
+              }
+            </td>
           </tr>
         </ng-template>
       </lfx-table>

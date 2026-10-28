@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_REGEX, ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
-import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
+import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGES, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { parseOrgCommitFilters } from '../helpers/org-commit-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
@@ -18,8 +19,6 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
-
-const VALID_CONTRIBUTOR_TIME_RANGES: ReadonlySet<OrgContributorTimeRange> = new Set(['30d', '90d', '12mo', 'all']);
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -43,26 +42,68 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources (deduped by email); omitted ⇒ Snowflake-only. */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources, matching people on their verified LF username and on email only for records without one (key contacts always match on email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_all';
     const live = parseLiveFlag(req);
-    const startTime = logger.startOperation(req, 'get_org_lens_people_all', {
-      org_uid: orgUid,
-      live,
-    });
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_all');
-
-      const response = live ? await this.directoryService.getLive(req, orgUid) : await this.service.getAllEmployees(orgUid);
-
-      logger.success(req, 'get_org_lens_people_all', startTime, {
+      assertOrgUid(orgUid, operation);
+      // `null` (no range) is the unranged roster, not a default range.
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
+      const filters = parseOrgCommitFilters(req, operation);
+      const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         live,
+        time_range: range ?? 'roster',
+        project_scope: filters.projectScope,
+        commit_scope: filters.commitScope,
+        metric: filters.metric,
+      });
+
+      const response = live ? await this.directoryService.getLive(req, orgUid, range, filters) : await this.service.getAllEmployees(orgUid, range, filters);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        live,
+        time_range: range ?? 'roster',
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default `365d`). Never merged into the live directory. */
+  public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_former';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
+      const filters = parseOrgCommitFilters(req, operation);
+      const startTime = logger.startOperation(req, operation, {
+        org_uid: orgUid,
+        time_range: range,
+        project_scope: filters.projectScope,
+        commit_scope: filters.commitScope,
+        metric: filters.metric,
+      });
+
+      const response = await this.service.getFormerEmployees(req, orgUid, range, filters);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        time_range: range,
+        row_count: response.rows.length,
+        foundation_count: response.foundations.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -105,6 +146,41 @@ export class OrgLensPeopleController {
   }
 
   /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/company-emails[?range=&projectScope=] — company-affiliated addresses
+   * for a person key, served apart from `/detail` so the drawer renders activity without waiting on the slower address
+   * read. `range` and `projectScope` name the live directory the drawer was opened from; a live-only person resolves
+   * against it first. They only steer a cache read, so an invalid or partial pair is ignored rather than rejected.
+   */
+  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const personKey = req.params['personKey'];
+    const operation = 'get_org_lens_people_company_emails';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertPersonKey(personKey, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
+
+      const range = getStringQueryParam(req, 'range');
+      const projectScope = parseOrgProjectScope(getStringQueryParam(req, 'projectScope'));
+      const directoryView = isOrgLensTimeRange(range) && projectScope ? { range, projectScope } : null;
+      const result = await this.service.getCompanyEmails(req, orgUid, personKey, directoryView);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        person_key: personKey,
+        company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/orgs/:orgUid/lens/people/by-username/:username/company-emails — company-affiliated
    * addresses for the governance surfaces, keyed on LF username and never on an address.
    */
@@ -118,7 +194,7 @@ export class OrgLensPeopleController {
       this.assertUsername(username, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const result = await this.service.getCompanyEmailsByUsername(orgUid, username);
+      const result = await this.service.getCompanyEmailsByUsername(req, orgUid, username);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -128,6 +204,117 @@ export class OrgLensPeopleController {
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username.
+   * A username with no single roster person is answered `null` (200), not 404: the miss is routine, and the error
+   * handler would log the username-bearing path at WARN on every such drawer open.
+   */
+  public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_detail_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        resolved: response !== null,
+        board_seats: response?.boardSeats.length ?? 0,
+        committee_seats: response?.committeeSeats.length ?? 0,
+        code_rows: response?.code.length ?? 0,
+        event_rows: response?.events.length ?? 0,
+        training_rows: response?.training.length ?? 0,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/key-contacts — the key contact roles one person holds,
+   * for the drawer's Key Contacts tab. A person key is not a key-contact key, so identity is assembled
+   * here: the roster's username for that key, which is the stronger match, plus the same company-address
+   * lookup the header uses. Both are resolved server-side — a username passed in by the client would
+   * travel in the URL, which the request logger records.
+   */
+  public async getPersonKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const personKey = req.params['personKey'];
+    const operation = 'get_org_lens_people_person_key_contacts';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertPersonKey(personKey, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
+
+      const [identity, username] = await Promise.all([
+        this.service.getCompanyEmails(req, orgUid, personKey),
+        this.service.resolveUsernameByPersonKey(req, orgUid, personKey),
+      ]);
+      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
+        username,
+        emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
+        emailsStatus: identity.companyEmailsStatus,
+      });
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        person_key: personKey,
+        status: response.status,
+        assignment_count: response.assignments.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/key-contacts — the same read for openers that
+   * carry only an LF username. The username alone cannot rule out the assignments upstream records without
+   * one, so when it matches nothing the address status decides whether that is an unidentified person or a
+   * retryable failure; it never becomes a verified "holds no roles".
+   */
+  public async getPersonKeyContactsByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_person_key_contacts_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const identity = await this.service.getCompanyEmailsByUsername(req, orgUid, username);
+      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
+        username,
+        emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
+        emailsStatus: identity.companyEmailsStatus,
+      });
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        status: response.status,
+        assignment_count: response.assignments.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
     } catch (error) {
       next(error);
     }
@@ -273,20 +460,24 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/trainees — bundled rows + details + stats + filter options for the Trainees tab (LFXV2-1876). */
+  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default `365d`). */
   public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
-    const startTime = logger.startOperation(req, 'get_org_lens_people_trainees', {
-      org_uid: orgUid,
-    });
+    const operation = 'get_org_lens_people_trainees';
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_people_trainees');
-
-      const response = await this.traineesService.getTrainees(orgUid);
-
-      logger.success(req, 'get_org_lens_people_trainees', startTime, {
+      assertOrgUid(orgUid, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
+      const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
+        time_range: range,
+      });
+
+      const response = await this.traineesService.getTrainees(orgUid, range);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        time_range: range,
         trainee_count: response.trainees.length,
         detail_count: response.details.length,
         foundation_count: response.foundationOptions.length,
@@ -327,20 +518,24 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|12mo|all — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|730d|all[&projectScope][&commitScope][&metric] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_contributors';
 
     try {
       assertOrgUid(orgUid, operation);
-      const timeRange = parseContributorTimeRange(getStringQueryParam(req, 'timeRange'), operation);
+      const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
+      const filters = parseOrgCommitFilters(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: timeRange,
+        project_scope: filters.projectScope,
+        commit_scope: filters.commitScope,
+        metric: filters.metric,
       });
 
-      const response = await this.contributorsService.getContributors(orgUid, timeRange);
+      const response = await this.contributorsService.getContributors(orgUid, timeRange, filters);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -412,13 +607,17 @@ function parseLiveFlag(req: Request): boolean {
   return raw === '' || raw === 'true' || raw === '1';
 }
 
-/** Validate `timeRange`: missing → `12mo` default; invalid → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`). */
-function parseContributorTimeRange(raw: string | undefined, operation: string): OrgContributorTimeRange {
+/**
+ * Validate a People time-range query param (`range` / `timeRange`): missing → `null` (each caller picks its default);
+ * the legacy `12mo` → `365d`; any other unknown value → 400 (mirrors `parseEntityType` / `assertHealthMetricsRange`).
+ */
+function parsePeopleTimeRange(raw: string | undefined, field: string, operation: string): OrgLensTimeRange | null {
   if (!raw) {
-    return ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE;
+    return null;
   }
-  if (!VALID_CONTRIBUTOR_TIME_RANGES.has(raw as OrgContributorTimeRange)) {
-    throw ServiceValidationError.forField('timeRange', `Invalid timeRange value. Allowed: ${[...VALID_CONTRIBUTOR_TIME_RANGES].join(', ')}`, { operation });
+  const range = normalizeLegacyOrgLensTimeRange(raw);
+  if (!isOrgLensTimeRange(range)) {
+    throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
-  return raw as OrgContributorTimeRange;
+  return range;
 }

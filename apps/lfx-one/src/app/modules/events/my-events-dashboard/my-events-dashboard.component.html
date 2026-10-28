@@ -16,14 +16,12 @@
 
   <div class="flex flex-col gap-6">
     <!-- Page Header -->
-    <div class="flex items-start justify-between mt-3">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="my-events-page-title">My Events</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="my-events-description">
-          Events you're registered for, plus upcoming events from projects you're affiliated with.
-        </p>
-      </div>
-      <div class="flex items-center gap-6">
+    <lfx-page-header
+      title="Events"
+      description="Events you're registered for, plus upcoming events from projects you're affiliated with."
+      titleTestId="my-events-page-title"
+      descriptionTestId="my-events-description">
+      <div pageHeaderActions class="flex items-center gap-6">
         <span
           class="flex items-center gap-1.5 text-sm text-gray-600 cursor-help"
           tabindex="0"
@@ -36,7 +34,7 @@
         </span>
         <lfx-discover-events-button testId="my-events-discover-button" />
       </div>
-    </div>
+    </lfx-page-header>
 
     <!-- Me lens stat cards -->
     <div class="mb-0" data-testid="events-me-stats">

@@ -5,11 +5,12 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
-  ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW,
-  ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS,
   ORG_EVENT_ATTENDEES_INITIAL_LIMIT,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgDropdownOption,
@@ -20,8 +21,8 @@ import type {
   OrgEventAttendeeSortColumn,
   OrgEventAttendeeSortDirection,
   OrgEventAttendeeStatsBaseline,
-  OrgEventAttendeeTimeWindow,
-  OrgEventAttendeeTimeWindowOption,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
@@ -33,11 +34,14 @@ import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
+import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
 import { EventAttendeesService } from '../../services/event-attendees.service';
 
-/** Event Attendees tab body — search + foundation + event + time-window filter trio, four stat cards, sortable table with chevron-toggled Events detail. */
+import { eventDateOf, filterEndedEventsInRange } from './event-attendees.util';
+
+/** Event Attendees tab body — search + foundation + event + range filters, four stat cards, sortable table with chevron-toggled Events detail. */
 @Component({
   selector: 'lfx-org-people-event-attendees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
@@ -47,9 +51,11 @@ export class EventAttendeesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(EventAttendeesService);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_EVENT_ATTENDEES_INITIAL_LIMIT;
-  protected readonly timeWindowOptions: OrgEventAttendeeTimeWindowOption[] = [...ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS];
+  protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Speakers', 'Attendees', 'Events', 'Foundations'];
 
@@ -57,7 +63,8 @@ export class EventAttendeesComponent {
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     event: new FormControl<string>('', { nonNullable: true }),
-    timeWindow: new FormControl<OrgEventAttendeeTimeWindow>(ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW, { nonNullable: true }),
+    // Follows `?range=` (shared with every People tab and Code Contributions).
+    timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
   });
 
   // WritableSignals — grouped per component-organization.md (writables → computed/toSignal).
@@ -86,6 +93,11 @@ export class EventAttendeesComponent {
   protected readonly response: Signal<OrgEventAttendeesResponse> = this.initResponse();
 
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
+
+  // Registrations the selected range counts (ended events, ended in the range); the detail filters and the event dropdown both start here.
+  private readonly rangeDetails: Signal<OrgEventAttendeeDetailRow[]> = computed(() =>
+    filterEndedEventsInRange(this.response().details, this.filterValues().timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE)
+  );
   protected readonly eventOptions: Signal<OrgDropdownOption[]> = computed(() => this.initEventOptions());
 
   // Detail set is the canonical source — every filter-aware derivation (stats, rows, expanded section) reads it.
@@ -123,6 +135,17 @@ export class EventAttendeesComponent {
       this.limit.set(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
       this.expansion.set({});
     });
+
+    syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
+
+    // A range change can drop the picked event from the dropdown; once loaded, clear the control too so the dropdown
+    // shows All Events (the detail filter already ignores an event the options no longer offer).
+    combineLatest([toObservable(this.eventOptions), toObservable(this.isLoading)])
+      .pipe(takeUntilDestroyed())
+      .subscribe(([options, loading]) => {
+        const selected = this.filterForm.controls.event.value;
+        if (!loading && selected && !options.some((option) => option.value === selected)) this.filterForm.patchValue({ event: '' });
+      });
   }
 
   protected onSort(column: OrgEventAttendeeSortColumn): void {
@@ -175,17 +198,25 @@ export class EventAttendeesComponent {
     return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
   }
 
+  /** Only events the range counts (at least one registration passing the ended-in-range rule), in the BFF's order. */
   private initEventOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Events', value: '' }, ...this.response().eventOptions.map((e) => ({ label: e.eventName, value: e.eventId }))];
+    const inRange = new Set(this.rangeDetails().map((row) => row.eventId));
+    return [
+      { label: 'All Events', value: '' },
+      ...this.response()
+        .eventOptions.filter((e) => inRange.has(e.eventId))
+        .map((e) => ({ label: e.eventName, value: e.eventId })),
+    ];
   }
 
   private initFilteredDetails(): OrgEventAttendeeDetailRow[] {
     const values = this.filterValues();
     const q = (values.search ?? '').trim().toLowerCase();
     const foundationId = values.foundation ?? '';
-    const eventId = values.event ?? '';
-    const timeWindow: OrgEventAttendeeTimeWindow = values.timeWindow ?? ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
-    const cutoff = timeWindowCutoff(timeWindow);
+    // An event the range no longer offers filters nothing, from the same snapshot as the options: the control's own clear
+    // lands a debounce later, and filtering on the dropped id until then would empty the table.
+    const picked = values.event ?? '';
+    const eventId = picked && this.eventOptions().some((option) => option.value === picked) ? picked : '';
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings (R1.1 — no email, no event-name).
     const personIndex = new Map<string, { name: string; title: string | null }>();
@@ -193,14 +224,7 @@ export class EventAttendeesComponent {
       personIndex.set(a.personKey, { name: a.name, title: a.title });
     }
 
-    return this.response().details.filter((row) => {
-      // R2.4 time predicate: 'all' collapses to IS_PAST_EVENT (excludes future-event registrations); finite buckets anchor on EVENT_END_DATE.
-      if (timeWindow === 'all') {
-        if (!row.isPastEvent) return false;
-      } else if (cutoff !== null) {
-        if (!row.eventEndDate) return false;
-        if (row.eventEndDate < cutoff) return false;
-      }
+    return this.rangeDetails().filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
       if (q) {
@@ -257,8 +281,9 @@ export class EventAttendeesComponent {
       for (const d of personDetails) {
         eventIds.add(d.eventId);
         if (d.isSpeaker) anySpeaker = true;
-        if (d.eventEndDate && (!lastAttendedTs || d.eventEndDate > lastAttendedTs)) {
-          lastAttendedTs = d.eventEndDate;
+        const eventDate = eventDateOf(d);
+        if (eventDate && (!lastAttendedTs || eventDate > lastAttendedTs)) {
+          lastAttendedTs = eventDate;
         }
       }
 
@@ -324,8 +349,7 @@ export class EventAttendeesComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasEvent = !!(values.event ?? '');
-    const timeWindow: OrgEventAttendeeTimeWindow = values.timeWindow ?? ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
-    const hasTimeFilter = timeWindow !== ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW;
+    const hasTimeFilter = (values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE) !== ORG_LENS_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasEvent || hasTimeFilter;
   }
 
@@ -393,7 +417,8 @@ export class EventAttendeesComponent {
   }
 
   private resetAllState(): void {
-    this.filterForm.reset({ search: '', foundation: '', event: '', timeWindow: ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW });
+    // The range is page-level URL state, not per-org, so an org switch keeps it.
+    this.filterForm.patchValue({ search: '', foundation: '', event: '' });
     this.sortColumn.set('events');
     this.sortDirection.set(-1);
     this.limit.set(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
@@ -401,7 +426,7 @@ export class EventAttendeesComponent {
   }
 }
 
-/** Most-recent row per Item 4 R4.3 tiebreak: EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC. */
+/** Most-recent row per Item 4 R4.3 tiebreak: event date (end, else start) DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC. */
 function pickMostRecent(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeDetailRow | null {
   if (rows.length === 0) return null;
   let best = rows[0];
@@ -415,15 +440,15 @@ function pickMostRecent(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeDeta
 }
 
 function compareMostRecent(a: OrgEventAttendeeDetailRow, b: OrgEventAttendeeDetailRow): number {
-  const ta = a.eventEndDate ?? '';
-  const tb = b.eventEndDate ?? '';
+  const ta = eventDateOf(a) ?? '';
+  const tb = eventDateOf(b) ?? '';
   if (ta !== tb) return ta > tb ? -1 : 1;
   const cmp = a.eventName.localeCompare(b.eventName);
   if (cmp !== 0) return cmp;
   return a.eventId.localeCompare(b.eventId);
 }
 
-/** Collapse per-(person, event) rows; 1:1 map + location fallback + sort EVENT_END_DATE DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC (R5.4). */
+/** Collapse per-(person, event) rows; 1:1 map + location fallback + sort event date (end, else start) DESC NULLS LAST → EVENT_NAME ASC → EVENT_ID ASC (R5.4). */
 function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttendeeExpandedRowVm[] {
   const out: OrgEventAttendeeExpandedRowVm[] = rows.map((r) => ({
     eventId: r.eventId,
@@ -432,7 +457,7 @@ function collapseExpandedRows(rows: OrgEventAttendeeDetailRow[]): OrgEventAttend
     role: r.isSpeaker ? 'Speaker' : 'Attendee',
     startTs: r.eventStartDate,
     startLabel: r.eventStartDate ? formatLongDateUtc(r.eventStartDate) : '—',
-    sortTs: r.eventEndDate,
+    sortTs: eventDateOf(r),
   }));
 
   return out.sort((a, b) => {
@@ -454,25 +479,4 @@ function resolveLocationLabel(row: OrgEventAttendeeDetailRow): string | null {
   if (city) return city;
   if (country) return country;
   return row.foundationName ?? null;
-}
-
-/** ISO date cutoff (UTC) for finite windows; null for 'all'. Lex-comparable to `eventEndDate` — no timezone drift. */
-function timeWindowCutoff(window: OrgEventAttendeeTimeWindow): string | null {
-  if (window === 'all') return null;
-  const now = new Date();
-  switch (window) {
-    case '3m':
-      now.setUTCMonth(now.getUTCMonth() - 3);
-      break;
-    case '6m':
-      now.setUTCMonth(now.getUTCMonth() - 6);
-      break;
-    case '12m':
-      now.setUTCMonth(now.getUTCMonth() - 12);
-      break;
-    case '2y':
-      now.setUTCFullYear(now.getUTCFullYear() - 2);
-      break;
-  }
-  return now.toISOString().slice(0, 10);
 }

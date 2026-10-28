@@ -22,7 +22,7 @@ Anyone who can open an organization in the Organization lens. EasyCLA is also th
 
 ## Navigation
 
-Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organization. EasyCLA is under **EasyCLA Management**.
+Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organization. EasyCLA is in the sidebar, just above **Organization Profile**.
 
 ## Related sections
 

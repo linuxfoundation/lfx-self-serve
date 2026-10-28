@@ -153,6 +153,35 @@ export interface RoleGrantsResponse {
    * state with Retry. Absent ⇒ `ok`.
    */
   claManagerLookup?: 'ok' | 'failed';
+  /**
+   * #4225 — the caller's own employment affiliation, used only to pick between `no-organization` and
+   * `affiliated-no-grant` when the caller holds nothing. Resolved server-side because the client
+   * cannot read it: the employer comes from CDP work history, and its membership from the warehouse
+   * row that carries both the LF account and the crowd.dev organization behind it. Deliberately not
+   * the `b2b_org` index, whose per-row read filter is the `auditor` grant this caller does not hold.
+   * Computed only when every grant array is empty and the caller is neither staff nor a contractor —
+   * it costs nothing for a caller who holds something. Grants nothing: it only chooses wording.
+   * Optional for rolling deploys: absent ⇒ treat as `lookup: 'failed'`, i.e. keep today's copy.
+   */
+  affiliation?: OrgLensAffiliationVerdict;
+}
+
+/**
+ * #4225 — what the BFF could establish about the caller's own employer. `lookup: 'failed'` means the
+ * question was asked and not answered (CDP or the warehouse unreachable, no asserted username, the
+ * employer carries no crowd.dev organization id to resolve it by, or that id is absent from the
+ * account-grain `ORG_LENS_ACCOUNT_CONTEXT` view — the known gap in `lens-system.md`, which is why
+ * `failed` appears even when CDP and the warehouse are healthy), which the client must treat as
+ * "unknown" and fall back to `no-organization` rather than assert something new and wrong
+ * (spec 053 FR-011, never fall through).
+ */
+export interface OrgLensAffiliationVerdict {
+  /** The caller has an *ongoing* employer on their CDP work history; a job they have left does not count. */
+  hasEmployer: boolean;
+  /** That employer's crowd.dev organization matched an LF account flagged `IS_MEMBER`. Only meaningful when `lookup === 'ok'`. */
+  employerIsMember: boolean;
+  /** Whether the determination completed. */
+  lookup: 'ok' | 'failed';
 }
 
 /** Spec 053 — completeness of the caller's organization-list lookup. */

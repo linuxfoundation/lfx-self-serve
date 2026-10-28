@@ -29,9 +29,7 @@ function churnYear(year: number, overrides: Partial<HealthMetricsMembersChurnYea
     openingCount: 120,
     duesLostUsd: 1_500_000,
     duesLostPriorUsd: 900_000,
-    revenueChurnRate: 16,
-    revenueChurnRatePrior: 11.4,
-    revenueChurnRateChangePp: 4.6,
+    revenueNotRenewedRate: 16,
     logoChurnRate: 10,
     ...overrides,
   };
@@ -43,6 +41,7 @@ function tier(year: number, name: string, rank: number, lost: number, dues: numb
 
 function departure(overrides: Partial<HealthMetricsMembersChurnDeparture> = {}): HealthMetricsMembersChurnDeparture {
   return {
+    key: 'term-1',
     accountId: 'acct-1',
     accountName: 'Acme Motors',
     membershipTier: 'Gold',
@@ -56,15 +55,15 @@ function departure(overrides: Partial<HealthMetricsMembersChurnDeparture> = {}):
 const CHURN: HealthMetricsMembersChurn = {
   years: [
     churnYear(2026),
-    churnYear(2025, { logoChurnRate: 12.5, revenueChurnRate: 11.4 }),
-    churnYear(2024, { revenueChurnRate: 8 }),
-    churnYear(2023, { revenueChurnRate: 6 }),
+    churnYear(2025, { logoChurnRate: 12.5, revenueNotRenewedRate: 11.4 }),
+    churnYear(2024, { revenueNotRenewedRate: 8 }),
+    churnYear(2023, { revenueNotRenewedRate: 6 }),
   ],
   tiers: [tier(2026, 'Gold', 1, 2, 1_000_000, 66.7, 40), tier(2026, 'Silver', 2, 10, 500_000, 33.3, 10)],
 };
 
 const DEPARTURES: HealthMetricsMembersChurnDepartures = {
-  rows: [departure(), departure({ accountId: 'acct-2', accountName: 'Vendor Corp', membershipTier: 'Silver', duesLostUsd: 50_000 })],
+  rows: [departure(), departure({ key: 'term-2', accountId: 'acct-2', accountName: 'Vendor Corp', membershipTier: 'Silver', duesLostUsd: 50_000 })],
   totalRecords: 12,
 };
 
@@ -147,6 +146,8 @@ describe('MembersChurnComponent', () => {
     expect(query('members-churn-change')?.classList).toContain('text-red-600');
     expect(text('members-churn-caption')).toBe("of last year's dues did not renew");
     expect(text('members-churn-side-dues-lost')).toBe('$1.5M');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-churn-hero')?.classList).not.toContain('border');
     expect(query('members-churn-side-dues-lost')?.classList).toContain('text-red-600');
     expect(text('members-churn-side-logo')).toBe('10% (12 of 120)');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
@@ -186,18 +187,26 @@ describe('MembersChurnComponent', () => {
   it('lists who left, claiming the churn count only when the list matches it', async () => {
     await render();
 
-    expect(text('members-churn-departure-acct-1')).toContain('Acme Motors');
-    expect(text('members-churn-departure-acct-1-dues')).toBe('$250K');
-    expect(text('members-churn-departure-acct-2-dues')).toBe('$50K');
+    expect(text('members-churn-departure-term-1')).toContain('Acme Motors');
+    expect(text('members-churn-departure-term-1-dues')).toBe('$250K');
+    expect(text('members-churn-departure-term-2-dues')).toBe('$50K');
     expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first · the same 12 as lost above');
     expect(query('members-churn-count-note')).toBeNull();
+  });
+
+  // A downgrade and a non-renewal in one year are two lost memberships, so the organization lists twice.
+  it('lists each lost membership, so an organization that lost two shows on two rows', async () => {
+    await render(CHURN, { rows: [departure(), departure({ key: 'term-3', duesLostUsd: 20_000 })], totalRecords: 12 });
+
+    expect(text('members-churn-departure-term-1-dues')).toBe('$250K');
+    expect(text('members-churn-departure-term-3-dues')).toBe('$20K');
   });
 
   it('notes the difference when the list and the churn count disagree', async () => {
     await render(CHURN, { ...DEPARTURES, totalRecords: 11 });
 
     expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first');
-    expect(text('members-churn-count-note')).toContain('11 organizations listed, while churn counts 12 lost');
+    expect(text('members-churn-count-note')).toContain('11 memberships listed, while churn counts 12 lost');
   });
 
   it('pages through who left and writes the page to the URL, keeping the churn read', async () => {
@@ -274,6 +283,15 @@ describe('MembersChurnComponent', () => {
       lfxColors.blue[200],
       lfxColors.red[600],
     ]);
+  });
+
+  it("closes on the design's footnote for why churn leads, in the shared footnote", async () => {
+    await render();
+
+    expect(text('members-churn-footer')).toBe(
+      'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.'
+    );
+    expect(query('members-churn-footer')?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
   });
 
   it('separates a failed churn read from a year without churn', async () => {

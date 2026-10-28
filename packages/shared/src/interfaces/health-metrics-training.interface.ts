@@ -41,6 +41,10 @@ export interface HealthMetricsTrainingEnrollmentTotals {
 /** One delivery type's figures for the period, as LF Education names it (e.g. `E-Learning`). */
 export interface HealthMetricsTrainingEnrollmentType {
   deliveryType: string;
+  /** PCC's listed types (`is_listed_delivery_type`); MicroCourse and Bundle count in the totals but are not listed. */
+  isListed: boolean;
+  /** Listed on the revenue view (`is_listed_revenue_delivery_type`), which adds Bundle. */
+  isListedRevenue: boolean;
   enrollments: number | null;
   revenueUsd: number | null;
 }
@@ -68,17 +72,26 @@ export interface HealthMetricsTrainingEnrollmentPeriod {
   byType: HealthMetricsTrainingEnrollmentType[];
 }
 
+/** The foundation's yearly goals; progress (0–1) is modelled for YTD only. `null` is no goal set. */
+export interface HealthMetricsTrainingEnrollmentGoals {
+  enrollments: number | null;
+  revenueUsd: number | null;
+  enrollmentsProgressYtd: number | null;
+  revenueProgressYtd: number | null;
+}
+
 /** The Enrollment & revenue section: every L2 period, plus the period-independent yearly trend. */
 export interface HealthMetricsTrainingEnrollment {
   measured: boolean;
   periods: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentPeriod>;
   trend: HealthMetricsTrainingEnrollmentYear[];
+  goals: HealthMetricsTrainingEnrollmentGoals;
 }
 
-/** What the by-type bars rank by; the trend always shows enrollments. */
+/** What the by-type list ranks by; the trend always shows enrollments. */
 export type HealthMetricsTrainingEnrollmentMetric = 'enrollments' | 'revenue';
 
-/** A toggle option for the by-type bars. */
+/** A toggle option for the by-type list. */
 export interface HealthMetricsTrainingEnrollmentMetricOption extends FilterPillOption {
   id: HealthMetricsTrainingEnrollmentMetric;
 }
@@ -92,12 +105,11 @@ export interface HealthMetricsTrainingEnrollmentStatView {
   deltaDirection: 'up' | 'down' | 'neutral';
 }
 
-/** One ranked bar under the toggle. */
+/** One ranked-list row under the toggle: name and value, no bar. */
 export interface HealthMetricsTrainingEnrollmentTypeView {
   deliveryType: string;
   label: string;
   value: string;
-  barWidthPct: number;
 }
 
 /** One column of the enrollment trend; the running year is partial. */
@@ -135,7 +147,7 @@ export interface HealthMetricsTrainingQueryParams {
   trnPage?: number | null;
 }
 
-/** One page of the courses with enrollments in a period, cut by delivery type and a name search. */
+/** One page of every course ever enrolled in, ranked by the period, cut by delivery type and a name search. */
 export interface HealthMetricsTrainingCoursesQuery {
   foundationSlug: string;
   range: HealthMetricsL2Range;
@@ -163,7 +175,7 @@ export interface HealthMetricsTrainingCourses {
   rows: HealthMetricsTrainingCourse[];
   /** Courses matching the type and search. */
   totalRecords: number;
-  /** Every course with enrollments in the period; `null` when the read was not measured. */
+  /** Every course ever enrolled in (`scope_courses_count`); `null` when the read was not measured. */
   scopeTotal: number | null;
 }
 

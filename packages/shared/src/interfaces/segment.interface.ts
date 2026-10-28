@@ -40,12 +40,61 @@ export interface AnalyticsPageProperties {
 }
 
 /**
+ * Minimal shape of a Segment event as handed to the LFX wrapper's event sanitizer.
+ * Only the fields the app sanitizer reads are typed; the vendor event carries more.
+ */
+export interface SegmentEvent {
+  /** Event kind (page, track, identify, ...) — must not be changed by the sanitizer */
+  type: string;
+  /** Vendor message id — must not be changed by the sanitizer */
+  messageId: string;
+  /** Event properties (page/track) */
+  properties?: Record<string, unknown>;
+  /** Event context, including the SDK-assembled page context */
+  context?: {
+    /** Page context (url, path, search, referrer, title) */
+    page?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * Synchronous sanitizer run by the LFX wrapper on every event before delivery.
+ * Returning null (or throwing) cancels the event.
+ */
+export type SegmentEventSanitizer = (event: SegmentEvent) => SegmentEvent | null;
+
+/**
+ * Page name and explicitly sanitized page properties sent on route navigation
+ */
+export interface SegmentPageEvent {
+  /** Page name — last segment of the sanitized pathname, or `Home` */
+  name: string;
+  /** Pathname only */
+  path: string;
+  /** Absolute URL with only allowlisted query params and no hash */
+  url: string;
+  /** Allowlisted query string (`?utm_...`) or an empty string */
+  search: string;
+  /** Document title */
+  title: string;
+  /** Referrer with only allowlisted query params and no hash, or an empty string */
+  referrer: string;
+}
+
+/**
  * LFX Segment Analytics API interface
  * @description Type definitions for LfxSegmentsAnalytics object
  */
 export interface LfxSegmentAnalytics {
-  /** Initialize the analytics instance */
+  /** Initialize the analytics instance (unprotected — the app must use `initWithEventSanitizer`) */
   init(): Promise<void>;
+  /**
+   * Initialize the analytics instance with a sanitizer that runs on every event, including the
+   * automatic initial page. Rejects (and never exposes the SDK) when protected setup fails.
+   */
+  initWithEventSanitizer(sanitizer: SegmentEventSanitizer, writeKey?: string): Promise<void>;
   /** Track a page view */
   page(pageName: string, properties?: Record<string, unknown>): void;
   /** Track a custom event */

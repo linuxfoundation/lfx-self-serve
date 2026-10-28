@@ -98,9 +98,9 @@ describe('MktgIntakeDocumentsComponent', () => {
   });
 
   it('refuses a file type it cannot read before uploading it, and never adds a file with no text', async () => {
-    component['onFilesSelected'](fileEvent(new File(['x'], 'deck.pptx')));
+    component['onFilesSelected'](fileEvent(new File(['x'], 'deck.key')));
     expect(readFile).not.toHaveBeenCalled();
-    expect(component['errorText']()).toContain('deck.pptx');
+    expect(component['errorText']()).toContain('deck.key');
 
     readFile.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'scan.pdf', read: false, words: 0, truncated: false, reason: 'No text found.' }));
     component['onFilesSelected'](fileEvent(new File(['%PDF'], 'scan.pdf')));
@@ -138,6 +138,42 @@ describe('MktgIntakeDocumentsComponent', () => {
     await fixture.whenStable();
 
     expect(host().querySelector<HTMLInputElement>('input[type="file"]')?.disabled).toBe(true);
+  });
+
+  it('tags every document with the intake’s default kind and lets the requester change it — the tag rides the document', async () => {
+    component['linkForm'].controls.url.setValue('https://press.example.org/launch');
+    component['onAddLink']();
+    await fixture.whenStable();
+
+    const [added] = component.documents();
+    expect(added.tag).toBe(config.defaultTag);
+    expect(host().querySelector(`[data-test="mktg-intake-documents-tag-${added.id}"]`)).not.toBeNull();
+
+    component['tagsForm'].controls[added.id].setValue('press');
+    await fixture.whenStable();
+    expect(component.documents()[0].tag).toBe('press');
+
+    // The control goes with the document.
+    component['onRemove'](added.id);
+    await fixture.whenStable();
+    expect(component['tagsForm'].controls[added.id]).toBeUndefined();
+  });
+
+  it('lists a file handed over by an intake field with that field’s tag, read like any upload; an unknown tag falls back to the default', async () => {
+    readFile.mockImplementation((_config: MktgIntakeDocumentsConfig, file: File) =>
+      of<MktgDocumentExtractResponse>({ title: file.name, read: true, words: 2, truncated: false, text: 'Deck text' })
+    );
+
+    component.addFiles([new File(['x'], 'board-deck.pdf')], 'deck');
+    component.addFiles([new File(['x'], 'other.pdf')], 'brand');
+    await fixture.whenStable();
+
+    expect(component.documents().map((document) => [document.title, document.tag])).toEqual([
+      ['board-deck.pdf', 'deck'],
+      ['other.pdf', config.defaultTag],
+    ]);
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(component['tagsForm'].controls[component.documents()[0].id].value).toBe('deck');
   });
 
   it('removes a document', async () => {

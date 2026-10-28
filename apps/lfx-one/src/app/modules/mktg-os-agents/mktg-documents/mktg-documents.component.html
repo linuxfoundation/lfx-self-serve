@@ -1,65 +1,121 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
-  <div class="flex flex-col gap-5 mt-3">
-    <!-- Page header -->
-    <div class="flex flex-col gap-1">
-      <a routerLink=".." queryParamsHandling="preserve" class="text-sm text-blue-600 hover:text-blue-800 w-fit" data-testid="mktg-documents-back-link">
-        <i class="fa-light fa-arrow-left mr-1" aria-hidden="true"></i>Marketing OS
-      </a>
-      <h1 class="font-display font-light text-2xl" data-testid="mktg-documents-title">Documents</h1>
-      <p class="text-sm text-gray-500">Every document the Marketing OS agents stored for {{ projectName() || 'this project' }}, with its revisions.</p>
-    </div>
+<div #documentContainer class="@container mx-auto w-full min-w-0 max-w-screen-2xl px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
+  <div class="flex flex-col gap-6">
+    <lfx-mktg-breadcrumb [page]="{ kind: 'kit-tab', tab: 'documents' }" />
+    <lfx-mktg-kit-header [projectName]="projectName()" titleTestId="mktg-documents-project-title" />
+    <lfx-mktg-kit-tabs />
+    <section class="flex flex-col gap-1" aria-labelledby="mktg-documents-heading">
+      <h2 id="mktg-documents-heading" class="text-2xl font-semibold" data-testid="mktg-documents-title">Documents</h2>
+      <p class="text-sm text-gray-500">
+        Everything the agents have written for {{ projectName() }}. Open a document to read it. Kit documents keep every revision, so you can open an older one
+        or make it current again.
+      </p>
+    </section>
 
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-documents-error" />
+    }
+    @if (refreshWarning()) {
+      <lfx-message severity="warn" size="small" [text]="refreshWarning()" data-testid="mktg-documents-refresh-warning" />
+    }
+    @if (refreshWarning() || errorText()) {
+      <lfx-button label="Refresh progress" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-documents-refresh-progress" />
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-documents-notice" />
     }
 
-    <div class="flex flex-wrap gap-6 items-start">
-      <!-- Navigation: living documents in run order, then the one-off runs -->
-      <nav aria-label="Documents by agent" class="flex flex-col gap-1.5 grow-0 shrink basis-72 min-w-60" data-testid="mktg-documents-nav">
-        <div class="px-3 py-1 font-mono text-xs uppercase tracking-wider text-gray-500">Living documents, in run order</div>
-        @for (item of livingNav(); track item.type.agentKey) {
-          <a
-            [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey }"
-            queryParamsHandling="merge"
-            class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
-            [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
-            [attr.aria-current]="item.selected ? 'page' : null"
-            [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
-            <span>{{ item.position }} · {{ item.type.label }}</span>
-            @if (item.badge) {
-              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
-            }
-          </a>
+    @if (!loading() && !listFailed() && runs().length) {
+      <section
+        class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
+        aria-label="Started runs"
+        data-testid="mktg-documents-started-runs">
+        <h2 class="text-sm font-semibold text-gray-700">Started runs</h2>
+        @for (run of runs(); track run.runId) {
+          <div class="flex flex-wrap items-center justify-between gap-3 text-sm" [attr.data-testid]="'mktg-documents-started-run-' + run.runId">
+            <div class="flex flex-col gap-1">
+              <span>{{ projectName() }} {{ run.label }}</span>
+              <span class="text-gray-500">
+                @switch (run.state) {
+                  @case ('writing') {
+                    Writing the document
+                  }
+                  @case ('questions') {
+                    @if (run.agentKey === 'member-360') {
+                      Paused — the run needs input
+                    } @else {
+                      Waiting for your answers
+                    }
+                  }
+                  @case ('storing') {
+                    Storing the revision
+                  }
+                  @case ('failed') {
+                    A previous run did not finish
+                  }
+                }
+                · Started {{ run.startedAt | date: 'd MMM, HH:mm' }}
+              </span>
+            </div>
+            <a
+              [routerLink]="[run.agentKey, run.documentId]"
+              [queryParams]="{ revision: null, generation: null, run: run.runId }"
+              queryParamsHandling="merge"
+              class="font-semibold text-blue-600"
+              [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
+              >Open document</a
+            >
+          </div>
         }
+      </section>
+    }
 
-        <div class="px-3 pt-4 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500">Runs</div>
-        @for (item of runNav(); track item.type.agentKey) {
-          <a
-            [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey }"
-            queryParamsHandling="merge"
-            class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
-            [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
-            [attr.aria-current]="item.selected ? 'page' : null"
-            [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
-            <span>{{ item.type.label }}</span>
-            @if (item.badge) {
-              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
-            }
-          </a>
+    <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
+    <div class="grid min-w-0 grid-cols-1 items-start gap-6 @[800px]:grid-cols-[18rem_minmax(0,1fr)]">
+      <!-- Navigation: living documents in run order, then the one-off runs -->
+      <nav aria-label="Documents by agent" class="flex min-w-0 flex-col gap-1.5" data-testid="mktg-documents-nav">
+        <a
+          [routerLink]="[]"
+          [queryParams]="{ type: null, project: projectSlug() }"
+          queryParamsHandling="merge"
+          [attr.aria-current]="showAll() ? 'page' : null"
+          class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
+          [ngClass]="showAll() ? 'border-blue-600 font-semibold' : 'border-gray-200'"
+          data-testid="mktg-documents-nav-all"
+          >All documents</a
+        >
+        @for (family of familyNav(); track family.name) {
+          <div class="px-3 pt-3 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-nav-family">{{ family.name }}</div>
+          @for (item of family.items; track item.type.agentKey) {
+            <a
+              [routerLink]="[]"
+              [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
+              queryParamsHandling="merge"
+              class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
+              [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
+              [attr.aria-current]="item.selected ? 'page' : null"
+              [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
+              <span>
+                @if (item.position) {
+                  {{ item.position }} ·
+                }
+                {{ item.type.label }}
+              </span>
+              @if (item.badge) {
+                <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+              }
+            </a>
+          }
         }
-        <p class="mx-3 mt-3 text-xs text-gray-500">Living documents get revisions. Runs are one-off documents: a new run is a new document.</p>
+        <p class="mx-3 mt-3 text-xs text-gray-500">
+          Kit documents keep every revision. One-off agents (reports, posts, research) create a new document on each run.
+        </p>
       </nav>
 
-      <!-- Exact pixel widths (basis-[560px], the table's min-w-[640px]) are the design of record's; see styling.md on arbitrary values. -->
-      <main class="flex flex-col gap-5 min-w-0 grow shrink basis-[560px]">
+      <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
+      <section #documentPanel aria-label="Documents and revisions" class="flex min-w-0 scroll-mt-20 flex-col gap-5">
         @if (loading()) {
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
             Loading documents…
@@ -67,43 +123,112 @@
         } @else if (listFailed()) {
           <!-- The list read failed: the error above is the only answer; no empty state may claim nothing is stored. -->
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-list-failed">
-            The documents for {{ projectName() || 'this project' }} are unavailable right now.
+            The documents for {{ projectName() }} are unavailable right now.
           </div>
+        } @else if (showAll()) {
+          <section
+            aria-label="All documents"
+            class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
+            data-testid="mktg-documents-all">
+            <h2 class="text-xl font-semibold">All documents</h2>
+            @for (family of allDocumentSections(); track family.name) {
+              <h3 class="pt-2 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-all-family">{{ family.name }}</h3>
+              <ul class="flex flex-col gap-3">
+                @for (item of family.items; track item.type.agentKey + '/' + item.document.documentId) {
+                  <li class="relative flex flex-wrap items-center justify-between gap-2 rounded-lg border-b border-gray-100 pb-3 hover:bg-gray-50">
+                    <a
+                      [routerLink]="[item.type.agentKey, item.document.documentId]"
+                      [queryParams]="{ project: projectSlug() }"
+                      class="font-semibold text-blue-700 after:absolute after:inset-0 after:content-[''] hover:underline"
+                      [attr.data-testid]="'mktg-documents-all-open-' + item.type.agentKey + '-' + item.document.documentId"
+                      >{{ item.type.label }}</a
+                    >
+                    <span class="inline-flex items-center gap-3 text-sm text-gray-500">
+                      <span>{{ item.document.updatedAt | date: 'd MMM y' }} · {{ item.document.revisionCount | i18nPlural: revisionPlural }}</span>
+                      <span class="inline-flex items-center gap-1 font-semibold text-blue-600" aria-hidden="true"
+                        >Open <i class="fa-light fa-arrow-right text-xs"></i
+                      ></span>
+                    </span>
+                  </li>
+                }
+              </ul>
+            } @empty {
+              <p class="text-sm text-gray-500" data-testid="mktg-documents-empty-all">No documents yet. Run an agent to create the first asset.</p>
+            }
+          </section>
         } @else if (selectedLiving(); as living) {
           <!-- A living document: its header and its Revisions table -->
           <section
-            class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
+            class="flex min-w-0 flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
             [attr.data-testid]="'mktg-documents-document-' + living.type.agentKey">
             @if (living.document && latestRevision(); as latest) {
-              <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-                <div class="flex flex-col gap-1">
-                  <h2 class="text-2xl font-semibold text-gray-900" data-testid="mktg-documents-document-title">{{ projectName() }} {{ living.type.label }}</h2>
-                  <div class="text-sm text-gray-500" data-testid="mktg-documents-document-subtitle">
-                    {{ living.type.agentName }} · revision {{ latest.number }} of {{ revisionRows().length }}
-                    @if (latest.status) {
-                      · {{ latest.status }}
-                    }
+              <!-- The document itself: what it is, where it stands, and one obvious way in -->
+              <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+                <div class="flex min-w-0 items-start gap-4">
+                  <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600" aria-hidden="true">
+                    <i class="fa-light fa-file-lines text-xl"></i>
+                  </span>
+                  <div class="flex min-w-0 flex-col gap-1.5">
+                    <h2 class="text-2xl font-semibold leading-tight text-gray-900" data-testid="mktg-documents-document-title">
+                      {{ projectName() }} {{ living.type.label }}
+                    </h2>
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500" data-testid="mktg-documents-document-subtitle">
+                      <span>{{ living.type.agentName }} · revision {{ latest.number }} of {{ revisionRows().length }}</span>
+                      @if (latest.status) {
+                        <span>· {{ latest.status }}</span>
+                      }
+                    </div>
+                    <p class="text-sm text-gray-500" data-testid="mktg-documents-document-current">
+                      @if (latest.createdAt) {
+                        v{{ latest.number }} written {{ latest.createdAt | date: 'd MMM y, HH:mm' }} ·
+                      }
+                      {{ latestRow()?.how }} · {{ latestRow()?.authorLabel }}
+                    </p>
                   </div>
                 </div>
-                <a
-                  [routerLink]="[living.type.agentKey, living.document.documentId]"
-                  queryParamsHandling="preserve"
-                  class="inline-flex items-center min-h-10 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-semibold text-gray-900 no-underline hover:bg-gray-50"
-                  data-testid="mktg-documents-view-latest">
-                  View
-                </a>
+                <div class="flex shrink-0 flex-wrap items-center gap-2">
+                  @if (living.type.catalogAgentId) {
+                    <a
+                      [routerLink]="['..', living.type.catalogAgentId]"
+                      [queryParams]="{ project: projectSlug() }"
+                      class="inline-flex min-h-10 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-semibold text-gray-900 no-underline hover:bg-gray-50"
+                      [attr.data-testid]="'mktg-documents-run-again-' + living.type.agentKey">
+                      <i class="fa-light fa-rotate-right" aria-hidden="true"></i>
+                      New revision
+                    </a>
+                  }
+                  <a
+                    [routerLink]="[living.type.agentKey, living.document.documentId]"
+                    queryParamsHandling="preserve"
+                    class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white no-underline hover:bg-blue-700"
+                    data-testid="mktg-documents-view-latest">
+                    <i class="fa-light fa-book-open" aria-hidden="true"></i>
+                    Open document
+                  </a>
+                </div>
               </div>
 
-              <div class="flex flex-col gap-2">
-                <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h3>
-                <div class="overflow-x-auto">
-                  <table class="w-full min-w-[640px] border-collapse text-sm" data-testid="mktg-documents-revisions">
+              <div class="flex min-w-0 flex-col gap-2 border-t border-gray-100 pt-4">
+                <div class="flex items-baseline justify-between gap-3">
+                  <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revision history</h3>
+                  <span class="text-xs text-gray-500" data-testid="mktg-documents-revision-count">{{
+                    revisionRows().length | i18nPlural: revisionPlural
+                  }}</span>
+                </div>
+                <div class="relative min-w-0 max-w-full overflow-x-auto" data-testid="mktg-documents-revisions-scroll">
+                  <!-- In the desktop two-column card, wrap content within fixed shares so actions stay visible; mobile keeps the inner 640px scroller. -->
+                  <table class="w-full min-w-[640px] border-collapse text-sm @[800px]:min-w-0 @[800px]:table-fixed" data-testid="mktg-documents-revisions">
+                    <colgroup>
+                      <col class="@[800px]:w-[10%]" />
+                      <col class="@[800px]:w-[24%]" />
+                      <col class="@[800px]:w-[40%]" />
+                      <col class="@[800px]:w-[26%]" />
+                    </colgroup>
                     <thead>
                       <tr class="text-left text-gray-500">
                         <th scope="col" class="border-b border-gray-200 px-2.5 py-2 font-semibold">Rev</th>
                         <th scope="col" class="border-b border-gray-200 px-2.5 py-2 font-semibold">When</th>
                         <th scope="col" class="border-b border-gray-200 px-2.5 py-2 font-semibold">How it was made</th>
-                        <th scope="col" class="border-b border-gray-200 px-2.5 py-2 font-semibold">Status</th>
                         <th scope="col" class="border-b border-gray-200 px-2.5 py-2"><span class="sr-only">Actions</span></th>
                       </tr>
                     </thead>
@@ -111,30 +236,43 @@
                       @for (row of revisionRows(); track row.revision.id) {
                         <tr [ngClass]="row.revision.latest ? 'bg-blue-50' : ''" [attr.data-testid]="'mktg-documents-revision-' + row.revision.number">
                           <td class="border-b border-gray-200 p-2.5 font-mono">v{{ row.revision.number }}</td>
-                          <td class="border-b border-gray-200 p-2.5 whitespace-nowrap">{{ row.revision.createdAt | date: 'd MMM y, HH:mm' }}</td>
-                          <td class="border-b border-gray-200 p-2.5">{{ row.how }}</td>
-                          <td class="border-b border-gray-200 p-2.5">{{ row.revision.status || '—' }}</td>
-                          <td class="border-b border-gray-200 p-2.5 text-right whitespace-nowrap">
+                          <td
+                            class="border-b border-gray-200 p-2.5 @[800px]:break-words"
+                            [attr.data-testid]="'mktg-documents-revision-when-' + row.revision.number">
+                            <span [textContent]="row.revision.createdAt | date: 'd MMM y, HH:mm'"></span>
+                          </td>
+                          <td
+                            class="border-b border-gray-200 p-2.5 @[800px]:break-words"
+                            [attr.data-testid]="'mktg-documents-revision-how-' + row.revision.number"
+                            [textContent]="row.how + ' · ' + row.authorLabel + (row.revision.status ? ' · ' + row.revision.status : '')"></td>
+                          <td
+                            class="border-b border-gray-200 p-2.5 text-right whitespace-nowrap @[800px]:whitespace-normal"
+                            [attr.data-testid]="'mktg-documents-revision-actions-' + row.revision.number">
                             @if (row.revision.latest) {
-                              <span class="text-gray-500">latest</span>
+                              <!-- The design specifies 12px pill type; use LFX's blue scale, not a literal brand hex. -->
+                              <span
+                                class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
+                                [attr.data-testid]="'mktg-documents-current-' + row.revision.number"
+                                >Current</span
+                              >
                             } @else {
                               <a
                                 [routerLink]="[living.type.agentKey, living.document.documentId]"
                                 [queryParams]="{ revision: row.revision.id }"
                                 queryParamsHandling="merge"
                                 class="mr-3 text-blue-600 hover:text-blue-800"
-                                [attr.aria-label]="'View revision ' + row.revision.number"
+                                [attr.aria-label]="'Open revision ' + row.revision.number"
                                 [attr.data-testid]="'mktg-documents-view-' + row.revision.number"
-                                >View</a
+                                >Open</a
                               >
                               <button
                                 type="button"
                                 class="text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
                                 [disabled]="restoringId() !== null"
-                                [attr.aria-label]="'Restore revision ' + row.revision.number"
+                                [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
                                 [attr.data-testid]="'mktg-documents-restore-' + row.revision.number"
                                 (click)="onRestore(row.revision)">
-                                {{ restoringId() === row.revision.id ? 'Restoring…' : 'Restore' }}
+                                {{ restoringId() === row.revision.id ? 'Saving…' : 'Make current' }}
                               </button>
                             }
                           </td>
@@ -143,27 +281,36 @@
                     </tbody>
                   </table>
                 </div>
-                <p class="text-xs text-gray-500">
-                  Restoring makes the chosen revision the latest; nothing is deleted. Agents that read this document always get the latest revision, restored
-                  ones included.
-                </p>
+                <p class="text-xs text-gray-500">Agents read the current revision. Make current switches to an older one; nothing is added or deleted.</p>
               </div>
             } @else if (living.document) {
               <div class="py-6 text-sm text-gray-500" role="status">{{ detailLoading() ? 'Loading revisions…' : 'The revisions could not be loaded.' }}</div>
+            } @else if (selectedRuns().length || documents()?.progressUnavailable) {
+              <div class="flex flex-col gap-2 py-4" data-testid="mktg-documents-pending-document">
+                <h2 class="text-lg font-semibold text-gray-900">{{ projectName() }} {{ living.type.label }}</h2>
+                <p class="text-sm text-gray-500">
+                  {{
+                    documents()?.progressUnavailable
+                      ? 'Run progress is unavailable. Refresh to check whether a document is being written.'
+                      : 'A recorded run is listed above. Open its document to follow progress or retry it.'
+                  }}
+                </p>
+              </div>
             } @else {
               <div class="flex flex-col gap-2 py-4" data-testid="mktg-documents-empty-living">
                 <h2 class="text-lg font-semibold text-gray-900">No {{ living.type.label }} yet</h2>
                 <p class="text-sm text-gray-500">
-                  When the {{ living.type.agentName }} runs for this project, its document is stored here with every revision.
+                  Nothing written yet. Run the {{ living.type.agentName }} and its document appears here, with every later revision.
                 </p>
                 @if (living.type.catalogAgentId) {
                   <a
                     [routerLink]="['..', living.type.catalogAgentId]"
-                    queryParamsHandling="preserve"
-                    class="w-fit text-sm font-semibold text-blue-600 hover:text-blue-800"
-                    [attr.data-testid]="'mktg-documents-run-agent-' + living.type.agentKey"
-                    >Run the {{ living.type.agentName }}</a
-                  >
+                    [queryParams]="{ project: projectSlug() }"
+                    class="inline-flex w-fit min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white no-underline hover:bg-blue-700"
+                    [attr.data-testid]="'mktg-documents-run-agent-' + living.type.agentKey">
+                    <i class="fa-light fa-play" aria-hidden="true"></i>
+                    Run the {{ living.type.agentName }}
+                  </a>
                 }
               </div>
             }
@@ -192,6 +339,14 @@
                   </div>
                 }
               </div>
+            } @else if (selectedRuns().length || documents()?.progressUnavailable) {
+              <p class="text-sm text-gray-500" role="status" data-testid="mktg-documents-pending-run">
+                {{
+                  documents()?.progressUnavailable
+                    ? 'Run progress is unavailable. Refresh to check the last known runs.'
+                    : 'A recorded run is listed above. Open its document to follow progress or retry it.'
+                }}
+              </p>
             } @else {
               <p class="text-sm text-gray-500" data-testid="mktg-documents-empty-runs">
                 No runs yet. Each run of the {{ selectedType().agentName }} is stored here as its own document and is never updated: a new run is a new
@@ -200,7 +355,7 @@
             }
           </section>
         }
-      </main>
+      </section>
     </div>
   </div>
 </div>

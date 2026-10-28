@@ -43,7 +43,6 @@ class ForecastStubComponent {
   public readonly countsChange = output<string>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Past events, whose reads its own spec covers; the test drives its outputs. */
@@ -250,7 +249,7 @@ describe('HealthMetricsEventsComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge before a read and the Members note', async () => {
+  it('lists every section in the sub-nav, with no badge before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]');
 
@@ -258,7 +257,6 @@ describe('HealthMetricsEventsComponent', () => {
       expect(fixture.nativeElement.querySelector(`[data-testid="events-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
     expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('also appears in Members');
   });
 
   it('shows the note the forecast reports on its sub-nav item', async () => {
@@ -310,18 +308,18 @@ describe('HealthMetricsEventsComponent', () => {
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-spon');
   });
 
-  it('scrolls to Past events on every pick from the forecast, not only when the URL changes', async () => {
-    await setup('past');
+  it('scrolls to the forecast on every pick from Past events, not only when the URL changes', async () => {
+    await setup('forecast');
     await sectionsReport('');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
-    const stub = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
-    stub.sectionPicked.emit('past');
-    stub.sectionPicked.emit('past');
+    const stub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
+    stub.sectionPicked.emit('forecast');
+    stub.sectionPicked.emit('forecast');
     fixture.detectChanges();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
-    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-past');
+    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-forecast');
   });
 
   it('reads the foundation at a glance once and hands the result to the section', async () => {

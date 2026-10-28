@@ -3,6 +3,7 @@
 
 import { RESUMABLE_CAMPAIGN_STATUSES } from '../constants/campaign.constants';
 import {
+  META_AD_CREATIVE_NOT_REPORTED,
   META_AD_SET_BUDGET_AMOUNT_NOT_REPORTED,
   META_AD_SET_BUDGET_NONE_REPORTED,
   META_AD_SET_BUDGET_NOT_REPORTED,
@@ -13,7 +14,14 @@ import {
   META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
   META_AD_SET_RESUME_ELSEWHERE_REASON,
 } from '../constants/campaign-optimize.constants';
-import type { CampaignServiceMetaAdSet, MetaAdSetCampaignEligibility, MetaAdSetDisplayRow, MetaAdSetStatus } from '../interfaces/campaign-optimize.interface';
+import type {
+  CampaignServiceMetaAd,
+  CampaignServiceMetaAdSet,
+  MetaAdDisplayRow,
+  MetaAdSetCampaignEligibility,
+  MetaAdSetDisplayRow,
+  MetaAdSetStatus,
+} from '../interfaces/campaign-optimize.interface';
 
 /**
  * Which ad-set directions campaign-service accepts for a campaign in `campaignStatus`, mirroring
@@ -130,6 +138,39 @@ function budgetNoteFor(adSet: CampaignServiceMetaAdSet, listed: boolean): string
   }
   const amountReported = typeof adSet.budget_amount === 'string' && adSet.budget_amount !== '';
   return amountReported ? META_AD_SET_BUDGET_NOT_REPORTED : META_AD_SET_BUDGET_NONE_REPORTED;
+}
+
+/**
+ * One Meta ad as the ad-set panel's read-only Ads section renders it. Every field is read
+ * defensively off the unvalidated wire, as for ad sets: an absent name falls back to the ad's id,
+ * the creative is its name, else its id, else says it was not reported, and an effective status is
+ * shown only when it differs from the configured one. A counter that is not a finite number is
+ * `null` (shown as not reported), never `0`.
+ */
+export function toMetaAdDisplayRow(ad: CampaignServiceMetaAd): MetaAdDisplayRow {
+  const status = nonEmpty(ad.status);
+  const effective = nonEmpty(ad.effective_status);
+  const costMicros = finite(ad.cost_micros);
+  return {
+    id: ad.id,
+    name: nonEmpty(ad.name) ?? ad.id,
+    listed: ad.listed === true,
+    status,
+    effectiveStatus: effective !== null && effective !== status ? effective : null,
+    creative: nonEmpty(ad.creative_name) ?? nonEmpty(ad.creative_id) ?? META_AD_CREATIVE_NOT_REPORTED,
+    impressions: finite(ad.impressions),
+    clicks: finite(ad.clicks),
+    ctr: finite(ad.ctr),
+    spend: costMicros === null ? null : costMicros / 1_000_000,
+  };
+}
+
+function nonEmpty(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function recordActionLabel(action: MetaAdSetDisplayRow['recordAction']): string {

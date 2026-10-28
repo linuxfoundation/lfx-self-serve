@@ -62,6 +62,8 @@
               [initials]="row.initials"
               [avatarStyleClass]="row.avatarStyleClass"
               [avatarUrl]="row.avatarUrl"
+              [href]="row.userId | mentorshipPublicUrl: 'mentees'"
+              [linkTestId]="'mentorship-mentor-applicant-link-' + row.id"
               [noteLabel]="row.noteLabel"
               [hasNote]="row.hasNote"
               [noteTestId]="'mentorship-mentor-applicant-note-' + row.id"

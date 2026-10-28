@@ -222,6 +222,38 @@ export interface CampaignServiceMetaAdSets {
   ad_set_count: number;
 }
 
+/** One Meta ad under an ad set (`meta-ad`). Every descriptive field is absent when `listed` is false. */
+export interface CampaignServiceMetaAd {
+  id: string;
+  /** false for an ad that delivered in the window but the listing did not return (deleted, archived, or past the cap). */
+  listed: boolean;
+  name?: string;
+  /** Configured status (ACTIVE, PAUSED, DELETED, ARCHIVED). */
+  status?: string;
+  /** Effective status, verbatim (e.g. ADSET_PAUSED, PENDING_REVIEW, DISAPPROVED). */
+  effective_status?: string;
+  creative_id?: string;
+  creative_name?: string;
+  impressions: number;
+  clicks: number;
+  cost_micros: number;
+  ctr: number;
+}
+
+/** `meta-ads`: the ads under ONE ad set of a Meta campaign, read live. Strictly read-only upstream. */
+export interface CampaignServiceMetaAds {
+  campaign_id: string;
+  platform_campaign_id: string;
+  ad_set_id: string;
+  window: CampaignMetricsWindow;
+  currency: string;
+  read_at: string;
+  /** true when the ad LISTING passed its page cap: `ads` holds the ads read, not every ad. Delivery is never truncated. */
+  truncated: boolean;
+  ads: CampaignServiceMetaAd[];
+  ad_count: number;
+}
+
 /**
  * `meta-ad-set-status-change`. `etag` is the campaign row's version: UNCHANGED for most changes,
  * but NEW when the call wrote or cleared the deliberate-pause record of the recorded ad set, so the
@@ -413,8 +445,8 @@ export type RedditKeywordsWindow = MicrosoftKeywordsWindow;
 
 /**
  * One (campaign, keyword) row of campaign-service's `get-reddit-ads-keywords` (`reddit-ads-keyword`).
- * READ-ONLY: Reddit's KEYWORD report carries no keyword id, match type or status, so a row addresses
- * no action; Reddit keywords are acted on through the keyword-targeting levers.
+ * Reddit's KEYWORD report carries no keyword id, match type or status, so a row cannot address the
+ * keyword itself; its TEXT can still be added as a negative through `add-negative-keywords`.
  */
 export interface CampaignServiceRedditKeywordRow {
   /** Reddit's campaign id (map it with `/reddit-ads/campaign-ref`). */
@@ -454,10 +486,100 @@ export interface RedditKeywordMetrics {
   spend: number;
 }
 
-/** A Reddit keyword row as the table draws it: the campaign column's label precomputed. */
+/**
+ * The brief campaign a Reddit keyword row's "Add as negative" writes to, keyed by Reddit's campaign
+ * id: campaign-service's own campaign UUID, which `add-negative-keywords` is addressed by.
+ */
+export interface RedditKeywordNegativeTarget {
+  campaignId: string;
+  campaignName: string;
+}
+
+/**
+ * Where one Reddit keyword row's "Add as negative" stands.
+ *
+ * - `none`: no action is offered — the keyword's campaign is not an available Reddit campaign of
+ *   this brief, the delivery is attributed to no keyword, or the text is one the lever refuses.
+ * - `available`: the button is offered.
+ * - `busy`: a negative-keyword request of the campaign is in flight, or its revision is being read.
+ * - `negative`: this session's last request for the campaign confirmed the keyword as a negative.
+ */
+export interface RedditKeywordNegativeAction {
+  state: 'none' | 'available' | 'busy' | 'negative';
+  /** True on the row whose keyword is being sent (or whose revision is being read). */
+  sending: boolean;
+  /** The button's accessible name, naming the keyword and the campaign. `''` when nothing is offered. */
+  ariaLabel: string;
+  /** This keyword's LAST write outcome on the campaign ("Added", "Not confirmed", ...), or `''`. */
+  outcomeLabel: string;
+  /** What to tell the operator beyond the label: the verify-first advice, the refusal, or `''`. */
+  outcomeDetail: string;
+  /**
+   * How the outcome reads when the operator must act on it: `warning` for not confirmed (it may have
+   * been added — verify first), `error` for not added, `none` otherwise.
+   */
+  outcomeTone: 'none' | 'warning' | 'error';
+  /**
+   * Why the latest attempt from the table was NOT sent (revision read failed or answered none, or
+   * another keyword change started first), or `''`. Shown beside the write outcome, never instead
+   * of it: the write outcome (and its verify-first advice) still describes the campaign.
+   */
+  notSentMessage: string;
+}
+
+/**
+ * A confirmed "Add as negative" that went nowhere, kept by the table under a READ-INDEPENDENT key
+ * (`redditKeywordNoteKey`: project, Reddit campaign id, keyword as sent) so it survives a re-read
+ * that re-ranks or drops rows.
+ */
+export interface RedditKeywordNotSentNote {
+  /** The keyword read current when the note was recorded: a later read clears it. */
+  read: string;
+  /**
+   * The `seq` of the keyword's last write outcome when the note was recorded (`0` for none): only an
+   * outcome with a HIGHER `seq` supersedes the note. An outcome that is merely gone (its result
+   * dismissed) does not.
+   */
+  outcomeSeq: number;
+  message: string;
+  /** The keyword as it would have been sent. */
+  keyword: string;
+  campaignName: string;
+  /** The project and Reddit campaign the add was for: a note is never shown under another project. */
+  projectSlug: string;
+  redditCampaignId: string;
+  /** campaign-service's campaign UUID the add was for: what the keyword's outcome high-water mark is keyed by. */
+  campaignId: string;
+}
+
+/** A not-sent note whose keyword is not in the report shown: listed above the table instead of on a row. */
+export interface RedditKeywordUnplacedNote {
+  key: string;
+  testIdKey: string;
+  keyword: string;
+  campaignName: string;
+  message: string;
+}
+
+/** What holds a Reddit keyword row's "Add as negative" besides the campaign's own negative-keyword request. */
+export interface RedditKeywordNegativeHolds {
+  /** The table is reading the campaign's revision (the campaign is reserved). */
+  campaignReading: boolean;
+  /** That read is for THIS row's keyword. */
+  rowReading: boolean;
+  /** A negative-keyword request of the campaign is in flight under ANOTHER brief key (the page's brief id changed under it). */
+  negativeWritePending: boolean;
+  /** A keyword-targeting removal of the campaign is in flight: its Reddit targeting is one domain. */
+  targetingRemovalPending: boolean;
+}
+
+/** A Reddit keyword row as the table draws it: the campaign column's label and the row's action precomputed. */
 export interface RedditKeywordDisplayRow extends RedditKeywordMetrics {
   /** The brief's name for the campaign, or Reddit's campaign id when the brief does not know it. */
   campaignLabel: string;
+  /** `key` as a testid-safe slug, for the row's action testids. */
+  testIdKey: string;
+  negative: RedditKeywordNegativeAction;
 }
 
 /** Totals over the rows returned (a subtotal when the read was truncated). No conversions: Reddit's read has none. */
@@ -675,10 +797,35 @@ export interface MetaAdSetDisplayRow {
   budgetNote: string;
 }
 
-/** A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at, or `null`. */
+/** One ad as the ad-set panel's Ads section renders it (`toMetaAdDisplayRow`). Read-only: no action. */
+export interface MetaAdDisplayRow {
+  id: string;
+  /** The ad's name, or its id when Meta reported none. */
+  name: string;
+  listed: boolean;
+  /** Meta's configured status, or `null` when not reported. */
+  status: string | null;
+  /** The effective status when it differs from the configured one (e.g. ADSET_PAUSED), else `null`. */
+  effectiveStatus: string | null;
+  /** The creative's name, else its id, else what is missing. */
+  creative: string;
+  /** Counters, or `null` when the wire value is not a finite number. */
+  impressions: number | null;
+  clicks: number | null;
+  /** A fraction (clicks / impressions). */
+  ctr: number | null;
+  /** Whole units of the read's currency (`cost_micros / 1e6`). */
+  spend: number | null;
+}
+
+/**
+ * A display row as the ad-set panel binds it: the ids each action's `aria-describedby` points at,
+ * or `null`, and whether the row's read-only Ads section is expanded.
+ */
 export interface MetaAdSetPanelRow extends MetaAdSetDisplayRow {
   actionDescribedBy: string | null;
   recordActionDescribedBy: string | null;
+  adsExpanded: boolean;
 }
 
 /**
@@ -766,7 +913,7 @@ export interface CampaignAdoptableBriefsResponse {
 }
 
 /** The platforms whose Monitor rows offer actions: each has a campaign-ref resolve and adoption. */
-export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads';
+export type CampaignMonitorActPlatform = 'linkedin-ads' | 'reddit-ads' | 'meta-ads' | 'microsoft-ads' | 'twitter-ads';
 
 /** The lever a Monitor row action opens. */
 export type CampaignMonitorActLever = 'pause_resume' | 'budget' | 'bid';
@@ -812,6 +959,56 @@ export interface CampaignSettingsDrawerState {
   drift: CampaignSettingsDrift | null;
   /** What to show for `error`; `''` otherwise. */
   message: string;
+}
+
+/**
+ * One campaign's live counters as its Optimize-tab row shows them, built from campaign-service's
+ * `get-campaign-metrics` read by `buildCampaignLiveCounters`.
+ */
+export interface CampaignLiveCounters {
+  /**
+   * The HubSpot email channel. Its first counter is OPENS to date (campaign-service mirrors opens
+   * into `impressions`), its window selects emails by SEND date rather than scoping the counters,
+   * and it bills nothing per send, so there is no cost to show.
+   */
+  isEmail: boolean;
+  /** Impressions over the window on an ad platform; opens to date on the email channel. */
+  impressions: number;
+  clicks: number;
+  /**
+   * Cost in whole units, to two decimals, without a symbol: USD on LinkedIn, the ad ACCOUNT's own
+   * currency (which the read does not name) everywhere else — see `costLabel`. campaign-service
+   * performs no FX. `null` on the email channel, whose upstream 0 is not a cost.
+   */
+  cost: string | null;
+  /** The cost counter's label, naming its currency as far as the read lets it be named. */
+  costLabel: string;
+  /** Click-through rate as a percentage (upstream sends a fraction), for the `adsPct` pipe. */
+  ctrPct: number;
+  /** The window the counters cover, as campaign-service reports it, in words. */
+  windowLabel: string;
+}
+
+/**
+ * A row's on-demand live counters read: not asked yet, in flight, answered, not offered for the
+ * campaign's platform (upstream's 400), or refused. `unsupported` is a standing property of the
+ * platform, not a failure, so it is kept apart from `error` and offers no retry.
+ */
+export interface CampaignLiveMetricsState {
+  status: 'idle' | 'loading' | 'ready' | 'unsupported' | 'error';
+  counters: CampaignLiveCounters | null;
+  /** What to show for `unsupported` and `error`; `''` otherwise. */
+  message: string;
+}
+
+/**
+ * A row's OWN `get-campaign-metrics` read, tagged with the generation of the brief-wide row it
+ * settled against. A newer brief-wide result (a tab Refresh) outranks a read that settled before it.
+ */
+export interface CampaignLiveMetricsOwnRead {
+  state: CampaignLiveMetricsState;
+  /** The brief-wide row generation current when the read settled; meaningless while loading. */
+  generation: number;
 }
 
 /** The adopt dialog's brief picker read. */

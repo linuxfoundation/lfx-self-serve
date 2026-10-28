@@ -157,24 +157,22 @@ export class OrgEasyclaSignHandoffComponent {
   }
 
   /**
-   * Escape, in the one state that permits leaving.
+   * Escape, in the states that permit leaving.
    */
   @HostListener('document:keydown.escape')
   protected onEscape(): void {
-    if (this.state() !== 'failed') return;
+    if (this.state() === 'preparing') return;
     this.ref.close(null);
   }
 
   /**
-   * The dialog cannot be dismissed while the request is in flight, and still cannot once it
-   * succeeds. The signature record and the DocuSign envelope are created by that one call, and
-   * the address it returns is the only copy — so every exit before the signatory follows it
-   * abandons a real agreement upstream, which this application has no way to cancel or reuse.
-   * Sealing only the in-flight window would close the smaller of the two holes: the request
-   * usually answers in under a second, while `ready` waits for a person.
+   * The dialog cannot be dismissed while the request is in flight: a back-out and an immediate
+   * restart would race two requests that each find no signature record and each create one. The
+   * request usually answers in under a second.
    *
-   * `failed` is the one dismissible state. There is no envelope to strand, and trapping someone
-   * in a dialog that reports a failure would leave them no way out at all.
+   * `ready` and `failed` are dismissible (#3756). Backing out of `ready` is safe because the CLA
+   * service reuses the unsigned signature record on the next request and voids the envelope this
+   * one opened.
    */
   private enter(state: 'preparing' | 'ready' | 'failed'): void {
     this.state.set(state);

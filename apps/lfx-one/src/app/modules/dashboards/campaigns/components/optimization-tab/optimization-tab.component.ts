@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, DOCUMENT } from '@angular/common';
+import { DecimalPipe, DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
   BriefMetrics,
+  BriefMetricsRow,
   CampaignBidChange,
   CampaignBidOutcome,
   CampaignConfirmedBid,
@@ -42,6 +43,7 @@ import type {
   NegativeKeywordCampaignPlatform,
   RedditAccountOption,
   RedditActionItem,
+  RedditKeywordNegativeTarget,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -85,6 +87,7 @@ import {
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_CAMPAIGN_PLATFORM,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   KEYWORD_TARGETING_CAMPAIGN_PLATFORMS,
   KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON,
   NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
@@ -121,6 +124,7 @@ import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
@@ -136,11 +140,13 @@ import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-ke
     CampaignBidFormComponent,
     CampaignBudgetFormComponent,
     CampaignKeywordTargetingPanelComponent,
+    CampaignLiveMetricsComponent,
     CampaignNegativeKeywordsFormComponent,
     CampaignSettingsDrawerComponent,
     EventLabelPipe,
     MetaAdSetsPanelComponent,
     MicrosoftKeywordsTableComponent,
+    NgTemplateOutlet,
     PacingClassPipe,
     PriorityClassPipe,
     QualityScoreClassPipe,
@@ -179,6 +185,20 @@ export class OptimizationTabComponent implements OnInit {
 
   /** True when an empty list may simply not be indexed yet, rather than genuinely empty. */
   public readonly campaignsPossiblyStale = input(false);
+
+  /**
+   * Negative keywords the brief generated from the event page, passed straight through to every
+   * negative-keyword editor this tab opens.
+   *
+   * A suggestion the editor opens pre-filled with, never a value this tab sends: nothing leaves
+   * until the operator presses that editor's own button. Unlike callouts and sitelinks, negative
+   * keywords have no create-time path upstream at all, so the brief's list can only ever arrive
+   * here, after the campaign exists.
+   *
+   * `null` is a brief that carries none — generated before this shipped, or a generation that
+   * produced nothing — and the editors open blank, as they did before this input.
+   */
+  public readonly suggestedNegativeKeywords = input<string[] | null>(null);
 
   /**
    * True when the campaign list READ FAILED, as opposed to never having been asked for.
@@ -275,7 +295,7 @@ export class OptimizationTabComponent implements OnInit {
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
   protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
 
-  /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
+  /** Which Google Ads, Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
   /** Which Reddit and X rows have their keyword-targeting panel open. */
   protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
@@ -320,6 +340,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly redditKeywordsReload = signal(0);
   /** The brief's Reddit campaign names by Reddit campaign id, for the Reddit keyword table's Campaign column. */
   protected readonly redditCampaignNames: Signal<Record<string, string>> = this.initRedditCampaignNames();
+  /**
+   * The brief's Reddit campaigns that offer negative keywords right now (the rows whose editor is
+   * available), by Reddit campaign id, for the Reddit keyword table's "Add as negative". A Reddit id
+   * held by more than one row maps to neither: the table must not choose between them.
+   */
+  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget> | null> = this.initRedditNegativeTargets();
 
   /**
    * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
@@ -334,6 +360,12 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly briefMetricsState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   /** Bumped by Refresh (and the findings retry) to re-read the brief's metrics. */
   private readonly briefMetricsReload = signal(0);
+  /**
+   * The brief-wide read's row per campaign id. Each campaign row's live counters render from its
+   * `ok` row here with no read of their own; the row asks campaign-service itself only on Refresh,
+   * or for a campaign this read could not measure.
+   */
+  protected readonly briefMetricsRowsById: Signal<Partial<Record<string, BriefMetricsRow>>> = this.initBriefMetricsRowsById();
 
   /**
    * Each monitor finding joined to the brief campaign row it is about, with its ONE lever decided.
@@ -573,10 +605,17 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /**
+   * The Google Ads monitor was refused because the customer is shared by every foundation
+   * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54): a notice in place of the action
+   * items and campaigns, with the project-scoped keyword sections still shown.
+   */
+  protected readonly googleRestricted = signal(false);
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
   protected readonly keywordsError = signal<string | null>(null);
+  protected readonly keywordsRestricted = signal(false);
 
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
@@ -1234,7 +1273,7 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Opens or closes one row's negative-keyword editor (Microsoft Advertising, Reddit or X). A request in flight keeps it open,
+   * Opens or closes one row's negative-keyword editor (Google Ads, Microsoft Advertising, Reddit or X). A request in flight keeps it open,
    * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
    */
   protected toggleNegativesEditor(row: CampaignRow): void {
@@ -1570,6 +1609,7 @@ export class OptimizationTabComponent implements OnInit {
     this.keywordsSub?.unsubscribe();
     this.loading.set(true);
     this.error.set(null);
+    this.googleRestricted.set(false);
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
@@ -1581,19 +1621,25 @@ export class OptimizationTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
+          this.loading.set(false);
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.googleRestricted.set(true);
+            this.monitorData.set(null);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
           this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
-          this.loading.set(false);
         },
       });
 
     this.keywordsLoading.set(true);
     this.keywordsData.set(null);
     this.keywordsError.set(null);
+    this.keywordsRestricted.set(false);
     this.keywordsSub = this.campaignService
       .getKeywords(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -1603,6 +1649,12 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err) => {
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.keywordsData.set(null);
+            this.keywordsRestricted.set(true);
+            this.keywordsLoading.set(false);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
@@ -2007,6 +2059,7 @@ export class OptimizationTabComponent implements OnInit {
     // needs clearing too — otherwise action items/campaigns from the OLD foundation render under
     // the new one until the new fetch resolves (or indefinitely if it fails).
     this.monitorData.set(null);
+    this.googleRestricted.set(false);
 
     this.fetchData();
 
@@ -2072,6 +2125,16 @@ export class OptimizationTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private initBriefMetricsRowsById(): Signal<Partial<Record<string, BriefMetricsRow>>> {
+    return computed(() => {
+      const byId: Partial<Record<string, BriefMetricsRow>> = {};
+      for (const row of this.briefMetrics()?.rows ?? []) {
+        byId[row.campaign_id] = row;
+      }
+      return byId;
+    });
   }
 
   /**
@@ -2148,6 +2211,34 @@ export class OptimizationTabComponent implements OnInit {
         }
       }
       return names;
+    });
+  }
+
+  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget> | null> {
+    return computed(() => {
+      // `null` while the campaign list is (re)loading: unknown, not empty. The keyword table waits it out
+      // rather than reading an in-flight reload as every campaign leaving the negative-keyword lever.
+      // A FAILED read is not loading, and nothing will end the wait, so it offers no campaign: a waiting
+      // add then says "Not sent" and releases its campaign instead of holding it until a retry.
+      const rows = this.campaignRows();
+      if (rows === null) {
+        return this.campaignsUnavailable() ? {} : null;
+      }
+      const targets: Record<string, RedditKeywordNegativeTarget> = {};
+      const ambiguous = new Set<string>();
+      for (const row of rows) {
+        const redditId = row.campaign.platform_campaign_id;
+        if (row.negativeKeywordsPlatform !== 'reddit-ads' || !row.negativeKeywordsAvailable || typeof redditId !== 'string' || redditId === '') {
+          continue;
+        }
+        if (Object.hasOwn(targets, redditId) || ambiguous.has(redditId)) {
+          ambiguous.add(redditId);
+          delete targets[redditId];
+          continue;
+        }
+        targets[redditId] = { campaignId: row.campaign.id, campaignName: row.campaign.campaign_name };
+      }
+      return targets;
     });
   }
 

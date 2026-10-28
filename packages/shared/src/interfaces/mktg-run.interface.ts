@@ -12,17 +12,27 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
+import type { BoilerplatesChecks, BoilerplatesContent, BoilerplatesMode, BoilerplatesReport } from './boilerplates.interface';
+import type { BrandKitRevision } from './brand-kit.interface';
+import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
+import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
+import type { MktgDocumentLocation, MktgDocumentPersistLocation } from './mktg-document-store.interface';
 
-/** How a single intake field is rendered on the run page. */
-export type MktgIntakeFieldKind = 'text' | 'textarea';
+/**
+ * How a single intake field is rendered on the run page: one line, several
+ * lines, or a repeatable list of links (`url-list`: one `https://` link per
+ * row with an "Add another link" control; the answer is the rows joined by
+ * newlines, so it validates and travels like a `source-url-list` textarea).
+ */
+export type MktgIntakeFieldKind = 'text' | 'textarea' | 'url-list';
 
 /**
  * LFX data source a field can be pre-filled from. Prefilled fields render a
  * "From LFX" chip and stay editable — the marketplace never re-asks what LFX
  * already knows.
  */
-export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
+export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'website-url' | 'project-description';
 
 /**
  * Format rule enforced on a field's value. Unlike the agents' own contracts —
@@ -37,13 +47,14 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
- * - `source-url`: a page the agent fetches itself (the Messaging Document's
- *   website, press release and brand page) — an `https://` link, or "none"
- *   (Paul: "none" is a valid answer).
- * - `source-url-list`: several such links, one per line (the Messaging
- *   Document's other links); blank lines are ignored.
+ * - `source-url`: a page the agent fetches itself (the Messaging Framework's
+ *   website, the Brand Kit's brand page) — an `https://` link, or "none".
+ * - `source-url-list`: several such links, one per line; blank lines are
+ *   ignored. No intake uses it at present.
+ * - `https-url`: one `https://` link, "none" not accepted (the Brand Kit's
+ *   website, which the agent must read).
  */
-export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list' | 'https-url';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the
@@ -128,6 +139,23 @@ export interface MktgIntakeField {
    * omitted from the submitted answers when the trimmed value is empty.
    */
   optional?: boolean;
+  /**
+   * The agent's BFF refuses a line break in this answer ("must be one line"),
+   * so the form validates it where it is fixable. Only set on fields whose
+   * BFF enforces it; the other agents accept multi-line text in their `text`
+   * fields.
+   */
+  oneLine?: boolean;
+  /**
+   * Offers a file upload beside the control (the Messaging Framework's deck
+   * and plan: "upload or URL"). A file picked here joins the intake's
+   * documents section already tagged with this kind — the requester never
+   * tags it by hand — and is read to text there like any other upload.
+   * Needs an intake with a documents section.
+   */
+  uploadTag?: string;
+  /** Most rows a `url-list` field takes; the "Add another link" control stops there. */
+  maxItems?: number;
 }
 
 /**
@@ -146,6 +174,11 @@ export interface MktgIntakeFieldGroup {
   footnote?: string;
   /** Keys of the intake fields in this group, in display order. */
   fieldKeys: string[];
+  /**
+   * The group comes after the documents section instead of before it (the
+   * FAQ's notes, last on the form). Without it a group renders before.
+   */
+  afterDocuments?: boolean;
 }
 
 /** A field group with its fields resolved, as the run page renders it. */
@@ -160,6 +193,8 @@ export interface MktgResolvedFieldGroup {
   footnote: string;
   /** The group's fields, in display order. */
   fields: MktgIntakeField[];
+  /** True when the group renders after the documents section. */
+  afterDocuments: boolean;
 }
 
 /**
@@ -176,6 +211,13 @@ export interface MktgIntakeDocument {
   url?: string;
   /** The extracted text, for `kind: 'file'`. */
   text?: string;
+  /**
+   * What the document is, for intakes whose documents section offers tags
+   * ({@link MktgIntakeDocumentsConfig.tags}): the Messaging Framework's press
+   * release, deck, document, plan or logo package. Absent for intakes without
+   * tags.
+   */
+  tag?: string;
 }
 
 /** An existing document on the form, with what reading it produced. */
@@ -204,6 +246,16 @@ export interface MktgIntakeDocumentRow {
   status: string;
   /** Tailwind colour class of the status. */
   statusClass: string;
+  /** The tag picker's control name (the entry's id), for intakes with tags; '' otherwise. */
+  tagControl: string;
+}
+
+/** One tag a document on the form can carry: the agent's kind and what the form calls it. */
+export interface MktgIntakeDocumentTag {
+  /** The agent's document kind, e.g. `press`. */
+  value: string;
+  /** What the form calls it, e.g. `Press release`. */
+  label: string;
 }
 
 /** Response of the existing-document file endpoint: what LFX One read from an uploaded file. */
@@ -269,6 +321,64 @@ export interface MktgIntakeDocumentsConfig {
   fileExtensions: string[];
   /** BFF endpoint that reads an uploaded file (raw body) to text. */
   endpoints: { file: string };
+  /**
+   * Tags the requester picks per document (what it is), for agents whose
+   * form takes a document kind. Without them a document carries no tag.
+   */
+  tags?: MktgIntakeDocumentTag[];
+  /** The tag a new document gets until the requester changes it; required when `tags` is set. */
+  defaultTag?: string;
+}
+
+/**
+ * One logo file as an agent's form takes it (the Brand Kit's `logo_files[]`):
+ * its name and exactly one of SVG text, base64 bytes (a PNG or a ZIP), or a
+ * link the agent fetches itself.
+ */
+export interface MktgIntakeLogoFile {
+  /** The file name as uploaded, with its extension; the reference the kit uses. */
+  name: string;
+  /** The SVG source text (an .svg upload). */
+  text?: string;
+  /** The file's bytes as base64 (a .png or .zip upload). */
+  base64?: string;
+  /** A link to the file instead of its content. */
+  url?: string;
+}
+
+/** A logo file on the form, with how it will travel. */
+export interface MktgIntakeLogoFileEntry {
+  /** Client-side id; the `@for` track key. */
+  id: string;
+  /** The file as the generate request submits it. */
+  file: MktgIntakeLogoFile;
+  /** `SVG`, `PNG`, `ZIP` or `LINK`. */
+  badge: string;
+  /** What the agent gets: "12 KB, as text", "340 KB, as bytes" or "the agent fetches it". */
+  status: string;
+}
+
+/**
+ * The optional logo-files section of an intake (the Brand Kit's artwork):
+ * SVG, PNG and ZIP files read in the browser and sent with the form, and
+ * links the agent fetches itself. With none, the agent asks for them in its
+ * question round.
+ */
+export interface MktgIntakeLogoFilesConfig {
+  /** Section heading. */
+  title: string;
+  /** Short note beside the heading. */
+  hint: string;
+  /** Helper paragraph under the controls. */
+  footnote: string;
+  /** Most files one run takes. */
+  maxFiles: number;
+  /** Largest file, in characters once read (SVG text, or base64 bytes). */
+  maxFileChars: number;
+  /** All files together, in characters — one request body carries them. */
+  maxPayloadChars: number;
+  /** Accepted file extensions, lowercase with the dot. */
+  fileExtensions: string[];
 }
 
 /**
@@ -276,15 +386,16 @@ export interface MktgIntakeDocumentsConfig {
  * (dec-agent-dependency-gating): agents that CONSUME another agent's output
  * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
  * the run page fetches the dependency's stored document at submit time
- * (server-persisted preferred, browser-stored run fallback) and submits it
+ * (server-approved current only, never a browser Draft) and submits it
  * under the agent's own schema key. The form shows a non-interactive
  * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
 export interface MktgIntakeAttachment {
   /**
-   * Catalog agent id whose stored output is attached. A required attachment's
-   * source must also appear in the consuming agent's `dependsOn` (that is
-   * what gates the run); an `optional` one must NOT, or it becomes a hard gate.
+   * Catalog agent id whose stored output is attached. A required attachment
+   * gates the run page's submit (fail-closed until it resolves); listing its
+   * source in the consuming agent's `dependsOn` as well locks the marketplace
+   * card too. An `optional` one must appear in neither, or it becomes a hard gate.
    */
   sourceAgentId: string;
   /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
@@ -301,9 +412,49 @@ export interface MktgIntakeAttachment {
    * different document depending on which inputs the agent actually had.
    *
    * Required attachments (the default) belong to agents that cannot run
-   * without the document — those must also list the source in `dependsOn`.
+   * without the document: the run page disables its submit and says what is
+   * needed, with a link to the source agent's page.
    */
   optional?: boolean;
+  /** Gate guidance when the stored read returns no usable selection. */
+  missingNote?: string;
+  /**
+   * What is submitted under `answerKey`: the document's Markdown (the
+   * default, what the ICP's attachments take) or the stored revision's
+   * sidecar JSON — the envelope's structured fields — serialized (the
+   * Brand Kit takes the messaging framework as JSON).
+   *
+   * All attachments resolve the server's approved current, never a browser
+   * Draft. JSON attachments additionally request the sidecar and date.
+   *
+   * A resolved revision counts as the attachment only when the consuming
+   * agent can read from its sidecar what it takes
+   * (`mktgJsonAttachmentUsable` — the client-side copy of the agent's own
+   * validator rule, e.g. a voice for the Brand Kit). A revision it cannot
+   * read is neither submitted nor named on a chip: the run page shows
+   * `incompleteNote` with the link instead, since submitting it would only
+   * earn the server's 400 and a retry could never succeed.
+   */
+  format?: 'markdown' | 'json';
+  /**
+   * The note the run page shows, with the link to the source agent's page,
+   * when the selected approved revision exists but the agent can read
+   * nothing from it (a `json` attachment whose sidecar lacks the fields the
+   * agent takes — the Brand Kit's framework with no positioning or tagline
+   * yet). Defaults to "Finish the <document> first." Only read for a
+   * required `json` attachment.
+   */
+  incompleteNote?: string;
+  /**
+   * For a `json` messaging framework attachment: the consuming agent reads
+   * the framework's whole content (`{mf, icp, mh, nums}` — the Boilerplates
+   * carry its positioning, its proof and its avoid list; the FAQ answers
+   * from it), not only its voice (the Brand Kit). A revision then counts as
+   * the attachment only when its sidecar carries that content
+   * (`mktgJsonAttachmentUsable`), the rule the consuming agent's BFF
+   * validator and the agent's own gate apply.
+   */
+  frameworkContent?: boolean;
 }
 
 /**
@@ -313,12 +464,32 @@ export interface MktgIntakeAttachment {
 export interface MktgDependencyDocument {
   /** Catalog agent id that produced the document. */
   agentId: string;
-  /** Where the document came from: BFF object-store persistence, or this browser's stored run. */
+  /** New resolutions use server-approved current only; `browser` remains for legacy type compatibility. */
   source: 'server' | 'browser';
-  /** Latest stored draft version. */
+  /** Attached approved revision's number in Documents, not a session's draft version. */
   version: number;
-  /** The stored document (Markdown). */
+  /**
+   * The stored document as a dependent agent reads it: always Markdown. A
+   * structured asset (the Messaging Framework's JSON) is rendered to
+   * Markdown when it is resolved, never handed over as JSON text.
+   */
   document: string;
+  /** ISO-8601 timestamp the revision was stored, when the server reported one. */
+  storedAt?: string;
+  /** The revision's sidecar JSON (the envelope's structured fields), when the read carried it — what a `json` attachment submits. */
+  sidecar?: Record<string, unknown>;
+}
+
+/**
+ * The link the run page offers under its "Run the <document> first" note
+ * (and on the attachment chip): the source agent's own page, where the
+ * document is made.
+ */
+export interface MktgMissingDependencyLink {
+  /** Button text, e.g. `Open the Messaging Framework page`. */
+  label: string;
+  /** Catalog agent id of the source agent — the sibling route segment. */
+  agentId: string;
 }
 
 /**
@@ -331,35 +502,18 @@ export interface MktgDependencyDocument {
 export interface MktgAttachmentChip {
   /** Source agent id the chip describes; the `@for` track key. */
   key: string;
-  /** Chip text — either "Using <project>'s <document> (vN)" or the honest absent note. */
+  /** Chip text — "Using <project>'s <document> (vN)", "Uses the approved <document> · vN · <date>" or the honest absent note. */
   label: string;
   /** Tailwind colour classes for the chip. */
   chipClass: string;
   /** Font Awesome icon class for the chip. */
   iconClass: string;
-}
-
-/**
- * The document's review-status chip on the result card — the label as it
- * appears inside the document (`Draft — pre-filled`, `Draft — from your
- * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
- * tells a reviewed document from a draft. Precomputed in the component
- * because the reviewed/draft decision drives the class, and the repo
- * prohibits the conditional a template-side derivation would need.
- */
-export interface MktgDocumentStatusChip {
-  /** The status label verbatim from the document. */
-  label: string;
-  /** Tailwind colour classes for the chip. */
-  chipClass: string;
-}
-
-/** One word-count-locked derivative surfaced as a copyable chip on the result. */
-export interface MktgIntakeDerivativeChip {
-  /** Derivative key in the agent's envelope `derivatives` record. */
-  key: string;
-  /** Human label, e.g. `25-word summary`. */
-  label: string;
+  /**
+   * Catalog agent id of the page the chip links to (the source agent's own
+   * page — the Messaging Framework page for the Brand Kit's framework chip).
+   * A chip with one renders as a link; without, as plain text.
+   */
+  linkAgentId?: string;
 }
 
 /**
@@ -375,15 +529,16 @@ export interface MktgRunEndpoints {
   /** POST — body {@link MktgRunResultBody}; responds {@link MktgRunResultResponse}. */
   result: string;
   /**
-   * POST — body {@link MktgRunAnswersBody}; responds `{ success: true }`. For
+   * POST — body {@link MktgRunAnswersBody} or the one-off agent's typed answers body;
+   * responds `{ success: true }`. For
    * agents whose result can be `questions` (they research first and ask only
    * the gaps): the answers go to the SAME session, and the run polls on.
    */
   answers?: string;
   /**
-   * GET `?project=<uid>` — the project's LATEST server-persisted document for
-   * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
-   * stored, 403 for a caller without the project's writer grant. Only agents
+   * GET `?project=<uid>` — approved current for plain and sidecar reads;
+   * true pre-revision plain fallback is the only exception. Responds
+   * `MktgArtifactStoredResponse`, 404 when none is approved, 403 without writer rights. Only agents
    * that declare {@link MktgAgentIntake.persistsDocument} can have one, and
    * every persisting agent that is CONSUMED as a dependency or attachment
    * must — it is what lets dependency resolution reach ANY agent's document
@@ -414,11 +569,12 @@ export interface MktgRunGenerateBody {
   priorVersion?: number;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
+  /** Logo files, for intakes with a logo-files section (the Brand Kit). */
+  logoFiles?: MktgIntakeLogoFile[];
   /**
-   * LFX project uid the run belongs to, for intakes that declare
-   * {@link MktgAgentIntake.submitsProject}: the agent receives it with the
-   * form for its own LFX lookups. Never the storage partition — the result
-   * endpoint resolves that server-side from {@link MktgRunResultBody.project}.
+   * LFX project uid sent for every intake. The BFF resolves the writer grant
+   * and canonical uid for the durable run scope; agents with LFX lookups use
+   * that same resolved project.
    */
   project?: string;
 }
@@ -442,8 +598,34 @@ export interface MktgRunResultBody {
   project?: string;
 }
 
+/** In-progress values and position for opt-in question-stepper recovery. */
+export interface MktgRunQuestionDraft {
+  index: number;
+  answers: Record<string, string>;
+}
+
+/** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
+export interface MktgPendingDocumentRun {
+  /** Browser-local, in-progress questions; never part of an agent request. */
+  questionDraft?: MktgRunQuestionDraft;
+  /** Optional LFX-side answers needed to resume the pending document. */
+  answers?: Record<string, string>;
+  /** A research/questions run stays on its form; a writing run resumes on its document. */
+  phase?: 'research' | 'writing';
+  agentId: string;
+  projectUid: string;
+  documentId: string;
+  sessionId: string;
+  ownerToken: string;
+  savedAt: string;
+}
+
 /** Response of an agent's `generate` endpoint — the session to poll. */
 export interface MktgRunSessionResponse {
+  /** Stable destination for a one-off run's Document view, returned before storage. */
+  documentId?: string;
+  /** Public opaque run selector, not a Guild session id or capability. */
+  runId?: string;
   /** Guild session id running the one-shot form-mode generation. */
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
@@ -466,9 +648,9 @@ export type MktgRunAnswerOrigin = (typeof FOUNDATION_MESSAGE_ANSWER_ORIGINS)[num
  * as the run's second step; the requester accepts or edits every one.
  */
 export interface MktgRunQuestion {
-  /** The field the answer fills; the answer travels back under it. */
+  /** The agent's stable id for the question (`ranked-goals`); the answer travels back under it. */
   key: string;
-  /** Short label. */
+  /** Short label, derived from the id (`Ranked goals`). */
   label: string;
   /** The question itself. */
   question: string;
@@ -495,6 +677,10 @@ export interface MktgRunAnswer {
  * the body like every session write: only the session's creator may answer.
  */
 export interface MktgRunAnswersBody {
+  /** Writer-resolved run scope for durable continuation; optional for legacy owner-only calls. */
+  project?: string;
+  /** Questions block being answered; accepted answers renew the recorded run budget. */
+  questionsId?: string;
   /** Guild session id the questions came from. */
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
@@ -535,20 +721,6 @@ export interface MktgRunQuestionRow {
   controlId: string;
 }
 
-/** One asked-and-answered pair as the result shows it. */
-export interface MktgRunAnsweredQuestionRow {
-  /** The question's key; the `@for` track key. */
-  key: string;
-  /** Short label. */
-  label: string;
-  /** The question itself. */
-  question: string;
-  /** The answer that went back. */
-  answer: string;
-  /** Where the answer came from, in words ("Suggested by the agent", "Edited", "Your answer"). */
-  originLabel: string;
-}
-
 /** Where one question stands in the questions stepper's header. */
 export type MktgRunQuestionChipState = 'current' | 'answered' | 'open';
 
@@ -566,9 +738,10 @@ export interface MktgRunQuestionChip {
 
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
- * result by agents whose contract persists the validated document (the Brand
- * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
- * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
+ * result by every agent whose contract persists the validated document (the
+ * Brand Kit, the Messaging Framework and the ICP). The run shell keeps its
+ * `content_sha256` on the version (an export names the stored revision by
+ * it), and a ready result WITHOUT a receipt means the object-store write
  * did not happen — transient by default, and because the keys are
  * content-addressed the next poll re-runs the same write idempotently.
  * Field names are snake_case (unlike the camelCase enclosing response) on
@@ -576,6 +749,8 @@ export interface MktgRunQuestionChip {
  * needs no normalization layer — do not camelCase them.
  */
 export interface MktgRunPersistReceipt {
+  /** Exact revision recorded by this result; absent on legacy artifact-only receipts. */
+  document_location?: MktgDocumentPersistLocation;
   /** Content-addressed object key the document was written to, e.g. `brand-kit/{project}/{content_sha256}.md`. */
   s3_key: string;
   /** Validated + recomputed document SHA-256. */
@@ -597,27 +772,71 @@ export interface MktgRunPersistReceipt {
   version: number;
 }
 
+/** Minimal server-side seam for catalog consumers with different output protocols. */
+export interface MktgRunOutcomeSource {
+  status: string;
+}
+export interface MktgFailedRunOutcome {
+  status: 'failed';
+  failure: MktgRunFailure;
+}
+
+/** Internal settled-error reader shared with Slides export; raw text stays server-side. */
+export interface MktgSettledSessionError {
+  eventType: string;
+  text: string;
+  /** Parsed event time; NaN when the provider omitted a readable timestamp. */
+  at: number;
+}
+
+/** Requester-safe terminal failure; never contains raw Guild payloads or credentials. */
+export interface MktgRunFailure {
+  reason: string;
+  /** Guild's non-tool error event type, or `session_failed` when none is safely nameable. */
+  eventType: string;
+}
+
 /**
- * Response of an agent's `result` endpoint: `pending` until the session emits
- * a schema-valid, integrity-checked envelope, then `ready` with the validated
- * document — or `questions` while the session holds a questions block the
- * agent wrote and no envelope yet: the latest block, reported on every poll
- * until a newer one or the envelope appears (`questionsId` tells an
- * already-answered block from a new one).
+ * Response of an agent's `result` endpoint for the latest queued turn only:
+ * `pending` until its schema-valid, integrity-checked envelope, then `ready`
+ * with the validated document — or `questions` for its latest unanswered
+ * block (`questionsId` distinguishes an already-answered block from a new one).
+ * A later real reply after runtime end ends that pause as `failed`.
+ * `refused` preserves a current-turn refusal instead of running (for example,
+ * the Brand Kit without a messaging framework); its reply is the outcome.
+ * `failed` also means an idle runtime ended without a valid envelope or an
+ * outstanding questions pause. Its `failureText` is
+ * the final plain-text reply (possibly empty), not a rendered document.
+ * `refused` preserves an agent's explicit refusal contract in `reply`;
+ * both end generation, but only `ready` can carry a persisted asset.
  */
 export interface MktgRunResultResponse {
   /** Generation state. */
-  status: 'pending' | 'ready' | 'questions';
+  status: 'pending' | 'ready' | 'questions' | 'refused' | 'failed';
+  /** Final agent reply when its runtime ended without a valid asset; plain text only. */
+  failureText?: string;
+  /** Client poll fallback, not a definitive server generation state. */
+  transient?: boolean;
+  /** Set when the session's own error events (runtime_error, llm_failed, …) ended the run before any output — this item's detection; `failureText` is main's idle-runtime-end reply. */
+  failure?: MktgRunFailure;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
+  /** The agent's refusal reply, as the requester reads it. Present when `refused`. */
+  reply?: string;
   /**
    * Stable id of the questions block (a content hash), present when
    * `questions`. The run shell answers a block once: a later poll that
    * reports the same id is the block it already answered, not a new one.
    */
   questionsId?: string;
-  /** The validated document (Markdown). Present when ready. */
+  /** The validated document (Markdown). Present when ready, for agents that write a document. */
   documentMarkdown?: string;
+  /**
+   * The validated asset, for agents that write structured JSON instead of a
+   * document (the Messaging Framework, the Boilerplates, the FAQ). Present when ready; a ready result
+   * carries exactly one of `documentMarkdown` and `asset`.
+   */
+  asset?: MktgRunAsset;
   /** Draft version from the validated envelope. Present when ready. */
   version?: number;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
@@ -637,7 +856,62 @@ export interface MktgRunResultResponse {
    * it happens.
    */
   activity?: MktgRunActivity[];
+  /**
+   * The Brand Kit of a ready result: the tokens, the six chapters and the
+   * report the kit view renders. The Brand Kit agent's revision is a JSON
+   * kit, not a Markdown document — `documentMarkdown` still carries the
+   * kit's Markdown rendering for the store and the sibling agents, but the
+   * page shows this.
+   */
+  brandKit?: BrandKitRevision;
 }
+
+/**
+ * Structured asset kinds selected by registered intakes on the document route.
+ * The run route owns intake, research and questions, not these result views.
+ * Brand Kit revisions use their own validated renderer on the document route.
+ */
+export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates' | 'faq';
+
+/**
+ * The Messaging Framework as a validated structured output: the bundle with
+ * the report and checks the framework view shows beside it.
+ */
+export interface MktgFrameworkAsset {
+  kind: 'messaging-framework';
+  content: FoundationMessageContent;
+  report: FoundationMessageReport;
+  checks: FoundationMessageChecks;
+  mode: FoundationMessageMode;
+}
+
+/**
+ * The Boilerplates as a validated structured output: the four lengths with
+ * the report and the word counts the Boilerplates view shows beside them.
+ */
+export interface MktgBoilerplatesAsset {
+  kind: 'boilerplates';
+  content: BoilerplatesContent;
+  report: BoilerplatesReport;
+  checks: BoilerplatesChecks;
+  mode: BoilerplatesMode;
+}
+
+/** The FAQ with its report and checks — the unanswered questions among them — as the FAQ view shows it. */
+export interface MktgFaqAsset {
+  kind: 'faq';
+  content: FaqContent;
+  report: FaqReport;
+  checks: FaqChecks;
+  mode: FaqMode;
+}
+
+/**
+ * A validated structured output — what an agent that writes JSON returns
+ * instead of a document, told apart by its `kind`. Stored with the run's
+ * version and, by the BFF, as the revision's content.
+ */
+export type MktgRunAsset = MktgFrameworkAsset | MktgBoilerplatesAsset | MktgFaqAsset;
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
 export type MktgRunActivityKind = (typeof MKTG_RUN_ACTIVITY_KINDS)[number];
@@ -698,11 +972,18 @@ export interface MktgRunActivityPhaseDefinition {
 }
 
 /**
- * A registered batch intake form for one agent. The run-page shell is driven
- * entirely by this definition, so a second agent's form slots in by adding a
- * new entry to the shared registry.
+ * Registered intake contract and run configuration for one agent. Living
+ * intakes render `fields` through the generic run-page shell. A
+ * `oneOffDocument` intake is rendered by a dedicated component instead;
+ * its `fields` describe the contract/validation metadata, not its UI controls.
  */
 export interface MktgAgentIntake {
+  /**
+   * Delegates form rendering to a dedicated run component; `fields` remain
+   * contract/validation metadata only. Each submission hands off to an
+   * immutable one-off Document view, without revisions or feedback.
+   */
+  oneOffDocument?: boolean;
   /** Catalog agent id this intake belongs to. */
   agentId: string;
   /** Verb opening the form title, e.g. `Develop` → "Develop the Foo Brand Kit". */
@@ -725,15 +1006,14 @@ export interface MktgAgentIntake {
   /**
    * Sibling-agent documents auto-attached to the submitted answers at submit
    * time (dec-agent-dependency-gating), for agents that consume another
-   * agent's stored output. A REQUIRED attachment's `sourceAgentId` must also
-   * appear in the catalog agent's `dependsOn`, which gates the marketplace
-   * card until the stored output exists; an `optional` attachment must not,
-   * because the agent runs either way (the ICP consumes the Brand Kit and the
-   * Message Foundation only when the project has them).
+   * agent's stored output. A REQUIRED attachment gates the run page's submit
+   * until it resolves (the Brand Kit needs the project's messaging
+   * framework); listing its `sourceAgentId` in the catalog agent's `dependsOn`
+   * as well locks the marketplace card too. An `optional` attachment appears
+   * in neither, because the agent runs either way (the ICP consumes the
+   * Brand Kit and the Message Foundation only when the project has them).
    */
   attachments?: MktgIntakeAttachment[];
-  /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
-  derivativeChips?: MktgIntakeDerivativeChip[];
   /**
    * The agent's result endpoint persists the validated document server-side
    * and reports a {@link MktgRunPersistReceipt} on `ready`
@@ -744,11 +1024,6 @@ export interface MktgAgentIntake {
    * browser and user — reads.
    */
   persistsDocument?: boolean;
-  /**
-   * The generate body carries the run's LFX project uid
-   * ({@link MktgRunGenerateBody.project}) for the agent's own LFX lookups.
-   */
-  submitsProject?: boolean;
   /**
    * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
    * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
@@ -761,44 +1036,76 @@ export interface MktgAgentIntake {
   /**
    * Every submission, the first and every edit-inputs resubmit, is a FRESH
    * generate with no prior version and no feedback: the agent's generate form
-   * carries neither (the Messaging Document is revised by comment-and-revise
-   * in Documents instead). The run page offers no "Request changes" box, and
-   * the run shell numbers its own versions, since each envelope says version 1.
+   * carries neither (for the Messaging Framework, a redraft from comments and
+   * a check of a hand-edited version are later work). Intake submission carries
+   * no inline feedback; browser history numbers versions independently because
+   * each fresh envelope starts at version 1.
    */
   freshRunPerSubmission?: boolean;
   /** Titled field groups, in display order; without them the fields render as one list. */
   fieldGroups?: MktgIntakeFieldGroup[];
   /** The optional existing-documents section, shown after the fields. */
   documents?: MktgIntakeDocumentsConfig;
+  /** The optional logo-files section, shown after the fields (the Brand Kit's artwork). */
+  logoFiles?: MktgIntakeLogoFilesConfig;
+  /**
+   * Removes the run page's centred-container gutters for a wide intake, feed
+   * and questions layout. The document route owns the rendered asset layout.
+   */
+  fullWidth?: boolean;
   /**
    * The result endpoint reports the agent's live activity
-   * ({@link MktgRunResultResponse.activity}): the run page shows it as a
-   * timeline while the agent works.
+   * ({@link MktgRunResultResponse.activity}): the run page shows the research
+   * timeline and transfers the owned attempt when writing begins.
    */
   liveActivity?: boolean;
+  /**
+   * Selects the structured renderer on the document route, never a Markdown
+   * fallback. Intake, research and questions stay on the run route; writing
+   * progress and the eventual stored revision belong to the document route.
+   */
+  assetView?: MktgAssetViewKind;
+  /**
+   * What the asterisk beside the submit button means, when the run page's
+   * default ("answers are open-ended, in your own words") does not fit the
+   * form — a sources form says that everything else is optional.
+   */
+  requiredNote?: string;
 }
 
 /** One generated document version for an agent run. */
 export interface MktgRunVersion {
+  /** Bounded content digest plus separate session/version keys; JSON assets may share empty Markdown. */
+  source?: { sessionId: string; version: number; identity: string; payloadDigest?: string };
+  documentLocation?: MktgDocumentLocation;
   /** 1-based version number; regeneration produces v+1. */
   version: number;
-  /** The generated document (Markdown) returned by the agent. */
+  /** The generated document (Markdown) returned by the agent; '' for an agent that writes an asset instead. */
   document: string;
+  /** The validated asset, for agents whose intake declares an `assetView`. */
+  asset?: MktgRunAsset;
   /** The feedback that produced this version, when it was a regeneration. */
   feedback?: string;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
   derivatives?: Record<string, string>;
   /**
-   * Outcome of the server-side README fetch that fed THIS version, for agents
-   * whose BFF fetches one. Stored per version because every regeneration
-   * re-fetches: a version generated without a README says so on the result,
-   * and a later version generated with one does not inherit the note.
+   * Outcome of the server-side README fetch that fed this version, retained
+   * per version in transport/cache bookkeeping. The retired Markdown result
+   * surface's README outcome note is not shown or relocated to About.
    */
   readme?: MktgReadmeOutcome;
   /** The questions the agent asked before writing this version, when it asked any. */
   questions?: MktgRunQuestion[];
   /** The answers that went back, one per question. */
   answers?: MktgRunAnswer[];
+  /** The Brand Kit this version is, for the Brand Kit agent: what the kit view renders (the document is its Markdown rendering). */
+  brandKit?: BrandKitRevision;
+  /**
+   * SHA-256 of the content the server stored for this version (its
+   * persistence receipt); absent without a receipt. Content equality does
+   * not identify a revision or imply approval.
+   */
+  contentSha256?: string;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -830,6 +1137,10 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
  * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
+  /** Exact public run selector, retained with private creator history. */
+  runId?: string;
+  /** A failed attempt invalidates session reuse, never the successful version history. */
+  sessionFailed?: boolean;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */
@@ -846,6 +1157,12 @@ export interface MktgStoredAgentRun {
   savedAt: string;
 }
 
+/** Saved history and the exact version selected by append/deduplication, including an older replay. */
+export interface MktgRunAppendResult {
+  run: MktgStoredAgentRun;
+  version: number;
+}
+
 /**
  * Outcome of a generate submission — the Guild session the result poll must
  * query, paired with the version that poll must beat. Deriving them together
@@ -854,6 +1171,8 @@ export interface MktgStoredAgentRun {
  * version the session will not produce.
  */
 export interface MktgRunAttempt {
+  /** Exact public run selected by this accepted submission. */
+  runId?: string;
   /** The Guild session whose result endpoint the document poll queries. */
   session: MktgSessionInfo;
   /** Version the polled envelope must exceed; 0 on a fresh session. */
@@ -867,8 +1186,8 @@ export interface MktgRunAttempt {
   readme?: MktgReadmeOutcome;
 }
 
-/** Run-page phase: intake form → staged running → (the agent's questions →) document result. */
-export type MktgRunPhase = 'form' | 'running' | 'questions' | 'result';
+/** Run-page phase: intake → running/live research feed → (questions) → hand-off to the asset page. */
+export type MktgRunPhase = 'form' | 'running' | 'questions';
 
 /**
  * A questions turn waiting for the requester's answers: the session it came
@@ -895,19 +1214,65 @@ export interface MktgRunQuestionsPending {
  * the run continues through the service's `answerQuestions` on the same
  * session.
  *
+ * `refused` ends the stream too: the agent did not run and replied why (the
+ * Brand Kit's refusal without a messaging framework). The session is over;
+ * nothing is stored, and the reply is shown as the run's outcome.
+ *
  * `persisted` is emitted only by the bounded background persistence retry,
  * when a late server-side write finally lands. It matters because the SERVER
  * copy is what dependency gating reads for every browser and user: a document
  * announced on `document` alone can leave consumers holding the previous
  * server version until a page reload, and this is the event that says the
- * shared copy has caught up.
+ * shared copy has caught up. It carries the stored run with the receipt's
+ * hash on the version it persisted, which is what names that version's
+ * stored revision (an export reads it), or null when this browser no longer
+ * holds the run: the shared copy has still caught up.
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
+  | { type: 'restored'; pending: MktgPendingGeneration; message: string }
+  | { type: 'failed'; failureText?: string; failure?: MktgRunFailure }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
-  | { type: 'document'; run: MktgStoredAgentRun }
-  | { type: 'persisted' };
+  | { type: 'refused'; reply: string }
+  /** The selected outcome, not necessarily the newest cached version; null location keeps its accepted attempt recoverable. */
+  | { type: 'document'; run: MktgStoredAgentRun; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt }
+  | { type: 'persisted'; run: MktgStoredAgentRun | null; documentLocation: MktgDocumentLocation | null; attempt: MktgRunAttempt | null };
+
+/** Subject/project/agent-bound client attempt, retained BEFORE the first POST and through accepted answers. */
+export interface MktgPendingGeneration {
+  request: MktgGenerateRequest;
+  state: 'draft' | 'writing' | 'questions' | 'failed';
+  /** Uploaded bytes are memory-only; a restored intake needs its files reattached. */
+  requiresReattachment?: boolean;
+  attempt?: MktgRunAttempt;
+  pendingQuestions?: MktgRunQuestionsPending;
+  answered?: { questions: MktgRunQuestion[]; answers: MktgRunAnswer[]; questionsId: string };
+  updatedAt: string;
+}
+
+/** Storage carries intake/context only, never uploaded document/logo bytes or serialized intake config. */
+export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration, 'request'> {
+  request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback'>;
+}
+
+/** A pending navigation can be retried without repeating generation or answers. */
+export interface MktgRunNavigation {
+  projectUid: string;
+  subject: string;
+  agentKey: string;
+  /** Canonical receipt document; prepared living intakes use the shared default until persisted. */
+  documentId?: string;
+  generation?: string;
+  revisionId?: string;
+  runId?: string;
+}
+
+/** In-memory navigation handoff; this is not a session capability and is never serialized into a URL. */
+export interface MktgPreparedGeneration {
+  subject: string;
+  pending: MktgPendingGeneration;
+}
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
@@ -917,13 +1282,18 @@ export interface MktgGenerateRequest {
   projectUid: string;
   /** Registered intake definition for the agent. */
   intake: MktgAgentIntake;
+  /** Explicit Start from a fresh intake: never continue an older session. */
+  newRun?: boolean;
   /** Full set of intake answers — regeneration resubmits the whole form. */
   answers: Record<string, string>;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
+  /** Logo files, for intakes with a logo-files section. */
+  logoFiles?: MktgIntakeLogoFile[];
   /**
-   * Feedback on the prior draft; present only for "Request changes"
-   * regenerations. The prior draft's version is NOT part of the request — the
+   * Optional legacy/programmatic follow-up feedback; the current intake UI
+   * has no Request changes form and does not send it. The prior draft's
+   * version is NOT part of the request — the
    * run service derives it from the stored run so the follow-up message's
    * version directive and the result poll gate can never disagree.
    */

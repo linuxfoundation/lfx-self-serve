@@ -253,6 +253,8 @@ export interface MentorshipMenteeTaskStatusOptionsState {
  */
 export interface MentorshipMenteeApplicationView {
   id: string;
+  /** Links the program name to its public page; empty when upstream sent none. */
+  programId: string;
   programName: string;
   /** Absent when the program has no LF project; the card then shows only the term. */
   projectName?: string;
@@ -274,11 +276,6 @@ export interface MentorshipMenteeApplicationView {
   progressPercent: number;
   /** ISO 8601 instant: the latest change to the application or any of its tasks. */
   lastUpdatedOn: string;
-  /**
-   * ISO 8601 date the term's application window closes, or `null` for an accepted or graduated
-   * application (already decided) or when the term has none.
-   */
-  decisionExpectedDate: string | null;
   tasks: MentorshipMenteeTaskView[];
 }
 
@@ -431,6 +428,15 @@ export interface MentorshipMenteeApplyBlockedState {
   subtitle: string;
 }
 
+/**
+ * A blocked state chosen by the reason upstream gave for refusing an application. `match` is a
+ * lowercase fragment of the mentorship service's error message, which names the rule that failed.
+ */
+export interface MentorshipMenteeApplyUpstreamErrorState {
+  match: string;
+  state: MentorshipMenteeApplyBlockedState;
+}
+
 // ---------------------------------------------------------------------------
 // Mentee overview — derived from the mentee's applications
 // ---------------------------------------------------------------------------
@@ -462,7 +468,6 @@ export interface MentorshipMenteeTermRef {
  * - `programName` / `programLogoUrl` ← the embedded `program`
  * - `projectName` ← the embedded `program.project_name`; absent when the program has no LF project
  * - `term` ← the embedded `term`
- * - `decisionExpectedDate` ← `term.application_end_date` as an instant; a bare date is taken as the end of its UTC day
  * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
  *   only for pending, accepted and graduated applications; absent otherwise, never an empty stand-in
  */
@@ -476,7 +481,6 @@ export interface MentorshipMenteeApplication {
   upstreamStatus: MentorshipUpstreamApplicationStatus;
   createdOn: string;
   updatedOn: string;
-  decisionExpectedDate?: string;
   tasks?: MentorshipMenteeApplicationTask[];
 }
 
@@ -496,6 +500,8 @@ export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'on-hol
 /** One row in the Past Applications table. */
 export interface MentorshipMenteePastApplication {
   id: string;
+  /** Links the program name to its public page; empty when upstream sent none. */
+  programId: string;
   programName: string;
   projectName?: string;
   termName: string;

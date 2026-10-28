@@ -318,7 +318,7 @@ In changed `.html` files, look for raw form elements that must use LFX wrappers:
 | `<textarea`                       | `lfx-textarea`                                    |
 | `<div` with `animate-pulse` class | `<p-skeleton>` from PrimeNG                       |
 
-Exceptions: elements inside comments, or `<input type="hidden">`. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
+Exceptions: elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
 
 ### 14.2 Dead code (CRITICAL for unused providers/imports/unbound outputs; DISCUSS for unused methods)
 
@@ -445,6 +445,18 @@ In changed `.html` templates:
 - Content visible during role loading — `@if (!isVisitor())` evaluates to `true` while `myRoleLoading()` is still `true` (because `isVisitor()` defaults to `false`). Fix: add `!myRoleLoading()` to the guard.
 - Visitor blur bypass — blur overlays that don't prevent keyboard / screen-reader access (see also 14.10).
 - Permission changes not documented — if the diff adds/removes/changes `canEdit()`, `isVisitor()`, `hasPMOAccess()` checks, flag for PR description.
+
+---
+
+### 14.16 Page header (SHOULD FIX)
+
+In changed `.html` templates of a main lens page (a page reached from the Me, Foundation, Project or Org sidebar):
+
+- The page opens with `<lfx-page-header>` (`shared/components/page-header/`). A hand-built page `h1`, or a hand-built title and description pair, is a violation.
+- The header is not restyled: no font, size or colour classes on its title, and no top margin above it (`mt-*` on the header or on the page's first element, or a `p-6`/`py-6` page wrapper). Space below the header is `mb-6` (or a parent `gap-6`). A sticky header that cancels the layout's `py-6` with `-mt-6` and restores it with `pt-6` (social listening) is fine.
+- Right-side buttons or filters go in `[pageHeaderActions]`, inline tags in `[pageHeaderTitleSuffix]`, and description copy with markup in `[pageHeaderDescription]`. Content in those slots does not belong in a sibling wrapper beside the header.
+
+Pages opened from a list or an action (detail, create and manage pages), placeholder pages, and pages whose title sits inside a card (org profile) or a breadcrumb (campaigns) keep their own heading. Health Metrics is the one sidebar page that builds its own sticky header, to its design's title type. See [component-architecture § Page header](../architecture/frontend/component-architecture.md#page-header-lfx-page-header).
 
 ---
 

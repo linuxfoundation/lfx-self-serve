@@ -55,7 +55,9 @@ export class RescheduleOccurrenceDialogComponent {
   // The occurrence endpoint takes no timezone, so the new time is always read in the series' own zone.
   public readonly timezone: string = this.meeting.timezone || getUserTimezone();
   public readonly minDuration = MIN_CUSTOM_DURATION;
-  public readonly maxDuration = MAX_CUSTOM_DURATION;
+  // The opener sets the cap: `MAX_MEETING_DURATION` where meeting v2 is on, so a 10-hour meeting the v2
+  // composer saved can still be edited here; the pre-v2 `MAX_CUSTOM_DURATION` everywhere else.
+  public readonly maxDuration: number = this.config.data.maxDuration ?? MAX_CUSTOM_DURATION;
   public readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
   // YouTube uploads title the video from the meeting, so the series' shorter cap applies here too.
   public readonly titleMaxLength: number | null = this.meeting.youtube_upload_enabled ? YOUTUBE_MAX_MEETING_TITLE_LENGTH : null;
@@ -137,7 +139,7 @@ export class RescheduleOccurrenceDialogComponent {
         duration: new FormControl<number | null>(this.occurrence.duration, [
           Validators.required,
           Validators.min(MIN_CUSTOM_DURATION),
-          Validators.max(MAX_CUSTOM_DURATION),
+          Validators.max(this.maxDuration),
           Validators.pattern(/^\d+$/),
         ]),
         title: new FormControl(this.initialTitle, [

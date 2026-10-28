@@ -1208,7 +1208,7 @@
           that reaches here with nothing to copy. A Microsoft-ONLY paid brief skips the ad-copy
           stage too — Microsoft contributes no copy keys, so `campaign-proxy` emits an empty
           `copy_structured` and never streams a copy token (see `someContributesCopy` there).
-          That brief is NOT email, so `!isEmailLike()` admits it and the button wrote an empty
+          That brief is NOT email, so `!isEmail()` admits it and the button wrote an empty
           clipboard with no feedback. Guarding on the buffer the button actually copies covers
           that case and any future copy-less platform, rather than naming Microsoft here and
           needing the same fix again for the next one.

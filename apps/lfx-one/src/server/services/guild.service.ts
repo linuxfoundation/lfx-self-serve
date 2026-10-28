@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
+import { GuildSessionEvent, MktgChatMessage, MktgRunOutcomeSource, MktgFailedRunOutcome } from '@lfx-one/shared/interfaces';
+import { mktgRunFailureFromPayloads } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -47,6 +49,10 @@ const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
  * Marketing OS workspace, so only the key is required.
  */
 export class GuildService {
+  // Share the controller's event read with the outcome adapter, only for this
+  // request. Never cache sessions across users or polls.
+  private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
@@ -92,8 +98,13 @@ export class GuildService {
    * ride a typed payload, so `agent_id` is the ONLY routing and dropping it
    * would silently create an unrouted session. For the same reason a
    * structured input without a handle is rejected outright.
+   *
+   * Text routing puts `@handle` on its own line by default so exact intake
+   * header lines remain intact. `mentionOnOwnLine: false` explicitly opts
+   * out for a caller needing the legacy same-line format; mention routing
+   * reads either format the same.
    */
-  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
+  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string; mentionOnOwnLine?: boolean }): Promise<string> {
     this.assertConfigured('guild_create_session');
 
     if (params.agentInput === undefined && params.message === undefined) {
@@ -112,7 +123,10 @@ export class GuildService {
       });
     }
 
-    const agentInput: object = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
+    const agentInput: object = params.agentInput ?? {
+      type: 'text',
+      text: this.applyRouting(params.message ?? '', params.handle, params.mentionOnOwnLine === false ? ' ' : '\n'),
+    };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
     const body: Record<string, unknown> = {
@@ -201,10 +215,11 @@ export class GuildService {
    * for the contract envelope; this method makes no shape assumptions beyond
    * `{ items: [...] }` with an optional `type` per item.
    *
-   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
-   * intake answers are echoed verbatim into the trigger message, so a caller
-   * could otherwise plant a schema-valid envelope in an answer and have it
-   * selected as the agent's output. The authoritative envelope only ever rides
+   * User-originated CONTENT (`user_message`, `trigger_message`) is excluded:
+   * intake answers could plant an envelope, so only a content-free queued-turn
+   * marker survives. A full page also carries an incomplete-page marker so
+   * completion consumers cannot fail a turn whose later work is outside the cap.
+   * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
@@ -219,7 +234,10 @@ export class GuildService {
 
     const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
     const rawItems = data.items || [];
-    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+    // Retain only the timing of queued turns, never their caller-controlled content.
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.
@@ -237,7 +255,38 @@ export class GuildService {
       });
     }
 
-    return sorted.map((item) => JSON.stringify(item));
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    GuildService.resultPayloads.set(req, { sessionId, payloads });
+    return payloads;
+  }
+
+  /** Local readiness only, before committing a comments reservation; no external request. */
+  public preflight(operation: string): void {
+    this.assertConfigured(operation);
+  }
+
+  /** One best-effort outcome step, after authorization and before result logging/persistence. */
+  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(req: Request, sessionId: string, result: T): Promise<T | MktgFailedRunOutcome> {
+    if (result.status === 'ready' || result.status === 'refused' || result.status === 'failed') return result;
+    if (result.status !== 'pending' && result.status !== 'questions') return result;
+    const endpoint = (req.originalUrl ?? req.path ?? '').split('?')[0];
+    if (!Object.values(MKTG_AGENT_INTAKES).some((intake) => intake.endpoints.result === endpoint || intake.endpoints.result === `/api/mktg-agents${endpoint}`))
+      return result;
+    try {
+      const id = sessionId.trim();
+      const recorded = GuildService.resultPayloads.get(req);
+      const payloads = recorded?.sessionId === id ? recorded.payloads : await this.getRawEventPayloads(req, id);
+      const failure = mktgRunFailureFromPayloads(payloads);
+      // No metadata probe: the session status vocabulary is not independently verified.
+      // An aged error with only teardown is evidence; recovering runs incur no extra read.
+      return failure ? { ...result, status: 'failed', failure } : result;
+    } catch (error) {
+      logger.warning(req, 'mktg_run_failure_lookup', 'Could not check the Guild outcome; keeping the current result', { err: error });
+      return result;
+    }
   }
 
   /**
@@ -305,14 +354,16 @@ export class GuildService {
    * Prepend the `@handle` routing prefix when targeting a specific agent.
    * Any client-supplied leading `@mention` is stripped first so routing is
    * driven only by the catalog handle, never by text the user typed.
+   * `separator` defaults to a line break, keeping the first message line
+   * intact for both initial intake and answers follow-up turns.
    */
-  private applyRouting(message: string, handle?: string): string {
+  private applyRouting(message: string, handle?: string, separator = '\n'): string {
     const cleaned = message.replace(MENTION_PREFIX_RE, '').trim();
     if (!handle) {
       return cleaned;
     }
-    // Avoid a trailing space when the message was a mention only (cleaned empty).
-    return cleaned ? `@${handle} ${cleaned}` : `@${handle}`;
+    // Avoid a trailing separator when the message was a mention only (cleaned empty).
+    return cleaned ? `@${handle}${separator}${cleaned}` : `@${handle}`;
   }
 
   /**
@@ -394,6 +445,11 @@ function toEpoch(value: string): number {
  * Guild wraps the original trigger input in JSON (sometimes inside a ```json
  * markdown block, sometimes double-serialized). Ported from guild_embed's
  * history route. Falls back to the raw string when nothing parses.
+ *
+ * The content is user-authored and unbounded, so the ```json block is located
+ * with `indexOf` (linear in the subject length) rather than a regex, whose
+ * backtracking was cubic on an unclosed fence (CWE-1333,
+ * linuxfoundation/lfx-self-serve-ops#53).
  */
 function extractTriggerMessageText(data: string): string {
   if (!data) {
@@ -423,12 +479,22 @@ function extractTriggerMessageText(data: string): string {
     return null;
   };
 
-  // 1. JSON inside a markdown code block.
-  const jsonMatch = data.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    const fromBlock = parseInput(jsonMatch[1].trim());
-    if (fromBlock !== null) {
-      return fromBlock;
+  // 1. JSON inside a markdown code block: the first ```json fence and the next
+  // ``` after it, the same block the former lazy regex captured.
+  const fenceOpen = '```json';
+  const fenceClose = '```';
+  const open = data.indexOf(fenceOpen);
+  if (open >= 0) {
+    const blockStart = open + fenceOpen.length;
+    const close = data.indexOf(fenceClose, blockStart);
+    if (close >= 0) {
+      const block = data.slice(blockStart, close).trim();
+      if (block) {
+        const fromBlock = parseInput(block);
+        if (fromBlock !== null) {
+          return fromBlock;
+        }
+      }
     }
   }
 

@@ -5,8 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -43,7 +42,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-organizations',
-  imports: [AvatarComponent, EmptyStateComponent, FilterPillsComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, RouterLink, TableComponent],
   templateUrl: './events-organizations.component.html',
 })
 export class EventsOrganizationsComponent {
@@ -115,6 +114,10 @@ export class EventsOrganizationsComponent {
 
   protected onSegmentChange(id: string): void {
     this.segment.set(this.toSegment(id));
+  }
+
+  protected openOrganization(view: HealthMetricsEventsOrganizationRowView): void {
+    void this.router.navigate(view.link.commands, { fragment: view.link.fragment, queryParams: view.link.queryParams, queryParamsHandling: 'merge' });
   }
 
   protected onTablePage(event: { first?: number; rows?: number }): void {

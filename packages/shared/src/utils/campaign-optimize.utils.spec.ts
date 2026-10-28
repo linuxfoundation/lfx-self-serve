@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 import { CAMPAIGN_SETTINGS_UNKNOWN_NOTES } from '../constants/campaign-optimize.constants';
 import type { CampaignServiceSettingsField, CampaignServiceSettingsReadback } from '../interfaces/campaign-optimize.interface';
-import { buildCampaignSettingsDrift, campaignBudgetPacingFromSettings, readCampaignRefResolution, withAdoptedMarker } from './campaign-optimize.utils';
+import {
+  buildCampaignLiveCounters,
+  buildCampaignSettingsDrift,
+  campaignBudgetPacingFromSettings,
+  readCampaignRefResolution,
+  withAdoptedMarker,
+} from './campaign-optimize.utils';
 
 function readback(fields: CampaignServiceSettingsField[], platform = 'linkedin-ads'): CampaignServiceSettingsReadback {
   return {
@@ -183,5 +189,58 @@ describe('withAdoptedMarker', () => {
     const result = withAdoptedMarker({ id: 'c-1', adopted: value as unknown as boolean });
     expect('adopted' in result).toBe(false);
     expect(result).toEqual({ id: 'c-1' });
+  });
+});
+
+describe('buildCampaignLiveCounters', () => {
+  it('shows micro-unit cost in whole units without a currency symbol, and CTR as a percentage', () => {
+    const counters = buildCampaignLiveCounters({
+      campaign_id: 'c-1',
+      platform_campaign_id: '123',
+      window: 'last_30_days',
+      impressions: 18400,
+      clicks: 212,
+      cost_micros: 1284567890,
+      ctr: 0.01152,
+    });
+
+    expect(counters).toEqual(expect.objectContaining({ impressions: 18400, clicks: 212, cost: '1,284.57', windowLabel: 'the last 30 days' }));
+    expect(counters.ctrPct).toBeCloseTo(1.152, 10);
+  });
+
+  it('keeps a zero cost as a measured zero and names the narrower window X Ads serves', () => {
+    const counters = buildCampaignLiveCounters({
+      campaign_id: 'c-1',
+      platform_campaign_id: '123',
+      window: 'last_7_days',
+      impressions: 0,
+      clicks: 0,
+      cost_micros: 0,
+      ctr: 0,
+    });
+
+    expect(counters.cost).toBe('0.00');
+    expect(counters.ctrPct).toBe(0);
+    expect(counters.windowLabel).toBe('the last 7 days');
+  });
+
+  it('flags the email channel and shows no cost for it', () => {
+    const base = {
+      campaign_id: 'c-1',
+      platform_campaign_id: '123',
+      window: 'last_30_days' as const,
+      impressions: 1840,
+      clicks: 212,
+      cost_micros: 0,
+      ctr: 0.1152,
+    };
+
+    expect(buildCampaignLiveCounters(base, 'hubspot')).toEqual(expect.objectContaining({ isEmail: true, impressions: 1840, cost: null }));
+    expect(buildCampaignLiveCounters({ ...base, email: { sent: 9400, delivered: 9268, opens: 1840, clicks: 212, bounces: 95, unsubscribes: 17 } })).toEqual(
+      expect.objectContaining({ isEmail: true, cost: null })
+    );
+    expect(buildCampaignLiveCounters(base, 'meta-ads')).toEqual(expect.objectContaining({ isEmail: false, cost: '0.00' }));
+    expect(buildCampaignLiveCounters(base, 'linkedin-ads').costLabel).toBe('Cost (USD)');
+    expect(buildCampaignLiveCounters(base, 'twitter-ads').costLabel).toBe('Cost (ad account currency)');
   });
 });

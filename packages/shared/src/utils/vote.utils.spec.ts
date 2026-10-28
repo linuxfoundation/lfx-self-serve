@@ -11,19 +11,30 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { PollStatus, VoteResponseStatus } from '../enums';
-import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums';
+import type { PollCommentResponse, PollCommentResult, PollQuestionResult, Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
+  buildRankedQuestionViews,
   buildUpdateVoteRequest,
+  buildVoteResultsQuestions,
   compareVotesByRecency,
   computeVoteParticipationStats,
+  computeVoteRowParticipation,
+  isRankedPollType,
   isVoteClosingSoon,
+  mapFiltersToEligibility,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
+  mergeCommentResults,
   votePermalinkPath,
+  truncateVoteTitle,
+  votePresenterPath,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -259,6 +270,107 @@ describe('mapVoteToFormValue', () => {
   });
 });
 
+describe('mapVoteToCloneFormValue', () => {
+  /** Minimal Vote fixture — the mapper only reads the fields set here. */
+  function vote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.DISABLED,
+      project_uid: 'project-uid',
+      ...overrides,
+    };
+  }
+
+  const NOW = Date.parse('2025-05-01T00:00:00Z');
+
+  it('prefixes the title with "Copy of "', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('does not double-prefix when cloning an already-cloned vote', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Copy of Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('clamps the prefixed title to the 200-character form limit', () => {
+    const longName = 'B'.repeat(199);
+    const form = mapVoteToCloneFormValue(vote({ name: longName }), NOW);
+    expect(form.title.length).toBe(200);
+    expect(form.title.startsWith('Copy of ')).toBe(true);
+  });
+
+  it('keeps the source deadline when it is still in the future', () => {
+    const source = mapVoteToFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }));
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }), NOW);
+
+    expect(cloned.close_date?.getTime()).toBe(source.close_date?.getTime());
+    expect(cloned.close_time).toBe(source.close_time);
+  });
+
+  it('resets the deadline to 7 days out in the organizer timezone when the source deadline has already passed', () => {
+    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — host pinned to UTC so the carrier's
+    // calendar fields land on that day regardless of the source's own stored zone (here, Tokyo).
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'Asia/Tokyo' }), NOW);
+
+      expect(cloned.timezone).toBe(getUserTimezone());
+      expect(cloned.close_date?.getFullYear()).toBe(2025);
+      expect(cloned.close_date?.getMonth()).toBe(4);
+      expect(cloned.close_date?.getDate()).toBe(8);
+      expect(cloned.close_time).toBe('11:59 PM');
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it("resets into the organizer's own timezone, not the legacy-vote fallback, when the source stored no zone", () => {
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: undefined }), NOW);
+    expect(cloned.timezone).toBe(getUserTimezone());
+  });
+
+  it('preserves committee, eligibility and questions from the source vote', () => {
+    const source = vote({
+      committee_uid: 'committee-uid',
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Who should join?',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'c1', choice_text: 'Alice' },
+            { choice_id: 'c2', choice_text: 'Bob' },
+          ],
+        },
+      ],
+    });
+    const cloned = mapVoteToCloneFormValue(source, NOW);
+
+    expect(cloned.committee?.uid).toBe('committee-uid');
+    expect(cloned.eligible_participants).toBe('voting_rep,alternate_voting_rep');
+    expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
+  });
+});
+
+describe('mapFiltersToEligibility', () => {
+  // Pins the real widening rule: it keys on presence of Observer/Emeritus, not on absence of
+  // Alternate/Emeritus — a set missing Alternate/Emeritus but containing neither Observer nor
+  // Emeritus is NOT widened to 'all'.
+  it("widens to 'all' when the filter set contains Observer or Emeritus", () => {
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.EMERITUS])).toBe('all');
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP])).toBe('voting_rep');
+  });
+});
+
 describe('computeVoteParticipationStats', () => {
   /** Minimal VoteResultsResponse fixture — the stats computation only reads the num_* fields. */
   function results(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
@@ -291,6 +403,452 @@ describe('computeVoteParticipationStats', () => {
 
   it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
     expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
+  });
+
+  it.each([
+    [0, 200, 0],
+    [1, 200, 1],
+    [8, 12, 67],
+    [198, 200, 99],
+    [199, 200, 99],
+    [200, 200, 100],
+    [240, 200, 100],
+  ])('matches table participation for %i of %i responses at %i percent', (responses, invited, expectedPercent) => {
+    const stats = computeVoteParticipationStats(results({ num_votes_cast: responses, num_recipients: invited }));
+
+    expect(stats.participationRate).toBe(expectedPercent);
+    expect(stats.totalResponses).toBe(responses);
+    expect(stats.eligibleVoters).toBe(invited);
+
+    for (const status of [PollStatus.ACTIVE, PollStatus.ENDED]) {
+      const vote: Vote = {
+        uid: 'vote-uid',
+        name: 'Board election',
+        end_time: '2025-06-01T00:00:00Z',
+        status,
+        project_uid: 'project-uid',
+        num_response_received: responses,
+        total_voting_request_invitations: invited,
+      };
+
+      expect(computeVoteRowParticipation(vote).percent).toBe(stats.participationRate);
+    }
+  });
+
+  it('keeps a zero-person electorate at zero in the results drawer', () => {
+    expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
+  });
+});
+
+/** Minimal results fixture for the results view-model builders. */
+function resultsWith(pollResults: PollQuestionResult[], overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+  return {
+    poll_results: pollResults,
+    comment_results: [],
+    num_recipients: 10,
+    num_votes_cast: 5,
+    num_abstained: 0,
+    poll_end_time: '2025-06-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** Generic question from [choiceId, voteCount, apiPercentage] tuples; `choices` omits ids listed in `untitled`. */
+function genericQuestion(counts: [string, number, number][], untitled: string[] = []): PollQuestionResult {
+  return {
+    question: {
+      question_id: 'q1',
+      prompt: 'Approve the charter?',
+      type: 'single_choice',
+      choices: counts.filter(([id]) => !untitled.includes(id)).map(([id]) => ({ choice_id: id, choice_text: `Option ${id}` })),
+    },
+    generic_choice_votes: counts.map(([choiceId, voteCount, percentage]) => ({ choice_id: choiceId, vote_count: voteCount, percentage })),
+    ranked_choice_votes: [],
+  };
+}
+
+describe('buildVoteResultsQuestions', () => {
+  it('returns no questions when results are missing or empty', () => {
+    expect(buildVoteResultsQuestions(null, false)).toEqual([]);
+    expect(buildVoteResultsQuestions(resultsWith([]), true)).toEqual([]);
+  });
+
+  it('maps question metadata and sums choice votes into totalVotes', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      false
+    );
+    expect(question.questionId).toBe('q1');
+    expect(question.question).toBe('Approve the charter?');
+    expect(question.totalVotes).toBe(4);
+    expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage])).toEqual([
+      ['c1', 'Option c1', 3, 60],
+      ['c2', 'Option c2', 1, 20],
+    ]);
+  });
+
+  it('falls back to num_votes_cast for a missing upstream percentage', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith(
+        [
+          genericQuestion([
+            ['c1', 2, 0],
+            ['c2', 1, 0],
+          ]),
+        ],
+        { num_votes_cast: 8 }
+      ),
+      false
+    );
+    expect(question.options.map((o) => o.percentage)).toEqual([25, 13]);
+  });
+
+  it('keeps a zero percentage when no votes were cast', () => {
+    const [question] = buildVoteResultsQuestions(resultsWith([genericQuestion([['c1', 0, 0]])], { num_votes_cast: 0 }), false);
+    expect(question.options[0].percentage).toBe(0);
+  });
+
+  it('falls back to the choice id when the choice text is missing', () => {
+    const [question] = buildVoteResultsQuestions(resultsWith([genericQuestion([['c9', 1, 100]], ['c9'])]), false);
+    expect(question.options[0].text).toBe('c9');
+  });
+
+  it('marks the leading option while live, without winner or tie markers', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      false
+    );
+    expect(question.options.map((o) => [o.isLeading, o.isWinner, o.isTied])).toEqual([
+      [true, false, false],
+      [false, false, false],
+    ]);
+  });
+
+  it('marks a single winner only when closed', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      true
+    );
+    expect(question.options.map((o) => [o.isWinner, o.isTied])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+  });
+
+  it('marks ties only when closed', () => {
+    const tied = resultsWith([
+      genericQuestion([
+        ['c1', 2, 40],
+        ['c2', 2, 40],
+        ['c3', 1, 20],
+      ]),
+    ]);
+    expect(buildVoteResultsQuestions(tied, true)[0].options.map((o) => [o.isWinner, o.isTied])).toEqual([
+      [false, true],
+      [false, true],
+      [false, false],
+    ]);
+    expect(buildVoteResultsQuestions(tied, false)[0].options.every((o) => !o.isTied && !o.isWinner)).toBe(true);
+  });
+
+  it('never marks a winner, tie or leader when every option has zero votes', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 0, 0],
+          ['c2', 0, 0],
+        ]),
+      ]),
+      true
+    );
+    expect(question.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+  });
+});
+
+describe('buildRankedQuestionViews', () => {
+  function rankedQuestion(overrides: Partial<PollQuestionResult> = {}): PollQuestionResult {
+    return {
+      question: {
+        question_id: 'q1',
+        prompt: 'Rank the candidates',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Candidate One' },
+          { choice_id: 'c2', choice_text: 'Candidate Two' },
+        ],
+      },
+      generic_choice_votes: [],
+      ranked_choice_votes: [
+        {
+          choice_id: 'c1',
+          rank_counts: [
+            { rank: 1, count: 3 },
+            { rank: 2, count: 1 },
+          ],
+          condorcet_matrix: [],
+        },
+        { choice_id: 'c2', rank_counts: [], condorcet_matrix: [] },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('returns no questions when results are missing or empty', () => {
+    expect(buildRankedQuestionViews(null)).toEqual([]);
+    expect(buildRankedQuestionViews(resultsWith([]))).toEqual([]);
+  });
+
+  it('derives rank-count percentages against each choice total', () => {
+    const [view] = buildRankedQuestionViews(resultsWith([rankedQuestion()]));
+    expect(view.questionId).toBe('q1');
+    expect(view.prompt).toBe('Rank the candidates');
+    expect(view.choiceDistributions).toEqual([
+      {
+        choiceId: 'c1',
+        choiceText: 'Candidate One',
+        totalRanked: 4,
+        rankCounts: [
+          { rank: 1, count: 3, percentage: 75 },
+          { rank: 2, count: 1, percentage: 25 },
+        ],
+      },
+      { choiceId: 'c2', choiceText: 'Candidate Two', totalRanked: 0, rankCounts: [] },
+    ]);
+  });
+
+  it('prefers winner-info choice text and falls back to the choice id', () => {
+    const [view] = buildRankedQuestionViews(
+      resultsWith([
+        rankedQuestion({
+          ranked_choice_winner_info: { poll_choices: [{ choice_id: 'c1', choice_text: 'Winner-info One' }], condorcet_irv_used_for_eliminations: false },
+        }),
+      ])
+    );
+    expect(view.choiceDistributions.map((d) => d.choiceText)).toEqual(['Winner-info One', 'c2']);
+  });
+
+  it('treats missing ranked votes as no distributions', () => {
+    const question = rankedQuestion();
+    delete question.ranked_choice_votes;
+    const [view] = buildRankedQuestionViews(resultsWith([question]));
+    expect(view.choiceDistributions).toEqual([]);
+  });
+
+  it('flags a round summary for IRV and Meek STV only', () => {
+    const views = buildRankedQuestionViews(
+      resultsWith([rankedQuestion({ irv_round_summary: { rounds: [] } }), rankedQuestion({ meek_stv_round_summary: { rounds: [] } }), rankedQuestion()])
+    );
+    expect(views.map((v) => v.hasRoundSummary)).toEqual([true, true, false]);
+  });
+});
+
+describe('mergeCommentResults', () => {
+  function response(voteId: string, createdAt: string): PollCommentResponse {
+    return { vote_id: voteId, comment_text: `Comment ${voteId}`, vote_creation_time: createdAt, abstained: false };
+  }
+
+  const older = response('r-old', '2025-06-01T00:00:00Z');
+  const newer = response('r-new', '2025-06-02T00:00:00Z');
+  const commentResults: PollCommentResult[] = [
+    { prompt: { prompt_id: 'p1', prompt: 'Results prompt one' }, responses: [older, newer], total_responses: 3 },
+    { prompt: { prompt_id: 'p2', prompt: 'Results prompt two' }, responses: [] },
+  ];
+
+  it('uses the detail prompts, left-joining responses newest-first', () => {
+    const merged = mergeCommentResults(commentResults, [
+      { prompt_id: 'p1', prompt: 'Detail prompt one' },
+      { prompt_id: 'p3', prompt: 'Detail prompt three' },
+    ]);
+    expect(merged).toEqual([
+      { prompt: { prompt_id: 'p1', prompt: 'Detail prompt one' }, responses: [newer, older], total_responses: 3 },
+      { prompt: { prompt_id: 'p3', prompt: 'Detail prompt three' }, responses: [], total_responses: undefined },
+    ]);
+  });
+
+  it('falls back to results prompts that have responses when the detail has no prompts', () => {
+    for (const detailPrompts of [undefined, []]) {
+      expect(mergeCommentResults(commentResults, detailPrompts)).toEqual([
+        { prompt: { prompt_id: 'p1', prompt: 'Results prompt one' }, responses: [newer, older], total_responses: 3 },
+      ]);
+    }
+  });
+
+  it('does not mutate the API payload', () => {
+    mergeCommentResults(commentResults, undefined);
+    expect(commentResults[0].responses).toEqual([older, newer]);
+  });
+});
+
+describe('computeVoteRowParticipation', () => {
+  /** Minimal Vote fixture — the participation summary only reads status and the two indexed counts. */
+  function rowVote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid',
+      num_response_received: 8,
+      total_voting_request_invitations: 12,
+      ...overrides,
+    };
+  }
+
+  it('summarises an active vote as responses of invited with a rounded percent', () => {
+    expect(computeVoteRowParticipation(rowVote())).toEqual({
+      state: VoteRowParticipationState.PROGRESS,
+      responses: 8,
+      invited: 12,
+      percent: 67,
+      label: '8 of 12 responded · 67%',
+      secondaryLabel: null,
+      ariaLabel: 'Participation: 8 of 12 responded, 67%',
+    });
+  });
+
+  it('applies the same math to an ended vote, whatever the raw status casing', () => {
+    const participation = computeVoteRowParticipation(rowVote({ status: 'ENDED' as PollStatus }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.PROGRESS);
+    expect(participation.label).toBe('8 of 12 responded · 67%');
+    expect(participation.ariaLabel).toBeNull();
+  });
+
+  it('shows a draft as not open, even when the payload carries counts', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: PollStatus.DISABLED }))).toMatchObject({
+      state: VoteRowParticipationState.NOT_OPEN,
+      responses: null,
+      invited: null,
+      percent: null,
+      label: 'Not open yet',
+      ariaLabel: null,
+    });
+  });
+
+  it('reports missing responses as unavailable rather than zero', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.UNAVAILABLE,
+      responses: null,
+      percent: null,
+      label: 'Unavailable',
+      ariaLabel: null,
+    });
+  });
+
+  it('never coerces a string count from upstream', () => {
+    // @ts-expect-error: malformed upstream data intentionally violates the numeric count contract.
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: '8' }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.UNAVAILABLE);
+    expect(participation.ariaLabel).toBeNull();
+  });
+
+  it('shows the response count alone when the invited total is missing', () => {
+    expect(computeVoteRowParticipation(rowVote({ total_voting_request_invitations: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.COUNT_ONLY,
+      responses: 8,
+      invited: null,
+      percent: null,
+      label: '8 responded',
+      secondaryLabel: 'Total unavailable',
+      ariaLabel: null,
+    });
+  });
+
+  it('never produces a percent for a zero-person electorate', () => {
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 0 }));
+
+    expect(participation).toMatchObject({ state: VoteRowParticipationState.NO_ELECTORATE, percent: null, label: 'No one invited', ariaLabel: null });
+    expect(participation.label).not.toMatch(/%/);
+  });
+
+  // GH-4078: a just-opened vote's index row can still report a zero/missing electorate.
+  it.each([0, undefined])('shows a just-opened vote with a %s electorate as counting, never "No one invited"', (invited) => {
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: undefined, total_voting_request_invitations: invited }), true);
+
+    expect(participation).toMatchObject({
+      state: VoteRowParticipationState.COUNTING,
+      responses: null,
+      invited: null,
+      percent: null,
+      label: 'Counting invitations…',
+      ariaLabel: null,
+    });
+  });
+
+  it('shows the real participation of a just-opened vote once its electorate is reported', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 4 }), true)).toMatchObject({
+      state: VoteRowParticipationState.PROGRESS,
+      label: '0 of 4 responded · 0%',
+    });
+  });
+
+  it('keeps a just-created draft as not open while it awaits its count', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: PollStatus.DISABLED, total_voting_request_invitations: 0 }), true).state).toBe(
+      VoteRowParticipationState.NOT_OPEN
+    );
+  });
+
+  it('treats zero responses with a known electorate as a confirmed 0%', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 0 }))).toMatchObject({
+      state: VoteRowParticipationState.PROGRESS,
+      percent: 0,
+      label: '0 of 12 responded · 0%',
+    });
+  });
+
+  it('provides a progress-bar summary for an active vote with raw uppercase status', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: 'ACTIVE' as PollStatus })).ariaLabel).toBe('Participation: 8 of 12 responded, 67%');
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('caps incomplete participation at 99%% for a %s vote', (status) => {
+    expect(computeVoteRowParticipation(rowVote({ status, num_response_received: 199, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 99,
+      label: '199 of 200 responded · 99%',
+      ariaLabel: status === PollStatus.ACTIVE ? 'Participation: 199 of 200 responded, 99%' : null,
+    });
+  });
+
+  it('shows 100% when every invited voter has responded', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 200, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 100,
+      label: '200 of 200 responded · 100%',
+      ariaLabel: 'Participation: 200 of 200 responded, 100%',
+    });
+  });
+
+  it('clamps the percent to 100 under index lag but keeps the raw counts in the label', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 13 }))).toMatchObject({ percent: 100, label: '13 of 12 responded · 100%' });
+  });
+
+  it('never words participation as quorum, approval, or an outcome', () => {
+    const rows = [
+      rowVote(),
+      rowVote({ status: PollStatus.DISABLED }),
+      rowVote({ num_response_received: undefined }),
+      rowVote({ total_voting_request_invitations: undefined }),
+      rowVote({ total_voting_request_invitations: 0 }),
+    ];
+
+    for (const participation of rows.map((vote) => computeVoteRowParticipation(vote))) {
+      const text = [participation.label, participation.secondaryLabel, participation.ariaLabel].join(' ');
+      expect(text).not.toMatch(/quorum|approv|pass|win/i);
+    }
   });
 });
 
@@ -385,5 +943,45 @@ describe('votePermalinkPath', () => {
 
   it('encodes reserved characters so the uid stays one path segment', () => {
     expect(votePermalinkPath('a/b?c#d')).toBe('/votes/a%2Fb%3Fc%23d');
+  });
+});
+
+describe('isRankedPollType', () => {
+  it.each([
+    ['generic', PollType.GENERIC, false],
+    ['majority', PollType.MAJORITY, false],
+    ['undefined', undefined, false],
+    ['null', null, false],
+    ['meek_stv', PollType.MEEK_STV, true],
+    ['instant_runoff_vote', PollType.INSTANT_RUNOFF_VOTE, true],
+    ['condorcet_irv', PollType.CONDORCET_IRV, true],
+    ['an unrecognized string', 'something_new', false],
+  ] as const)('%s -> %s', (_label, input, expected) => {
+    expect(isRankedPollType(input)).toBe(expected);
+  });
+});
+
+describe('truncateVoteTitle', () => {
+  it('returns titles within the cap untouched', () => {
+    expect(truncateVoteTitle('Approve the 2027 budget')).toBe('Approve the 2027 budget');
+  });
+
+  it('cuts at a word boundary and adds an ellipsis', () => {
+    const title = `${'alpha '.repeat(20)}omega`;
+    const out = truncateVoteTitle(title);
+    expect(out.length).toBeLessThanOrEqual(80);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.slice(0, -1).trimEnd().endsWith('alpha')).toBe(true);
+  });
+
+  it('hard-cuts a single word longer than the cap', () => {
+    const out = truncateVoteTitle('x'.repeat(200));
+    expect(out).toBe(`${'x'.repeat(79)}…`);
+  });
+});
+
+describe('votePresenterPath', () => {
+  it('appends /present to the encoded permalink path', () => {
+    expect(votePresenterPath('abc/123')).toBe('/votes/abc%2F123/present');
   });
 });

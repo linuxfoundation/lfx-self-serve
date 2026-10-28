@@ -211,10 +211,65 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
   });
 
   it('sends a body-less DELETE to the self registrant route, with no registrant id from the client', () => {
-    service.removeMyMeetingRegistration(MEETING_UID).subscribe();
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card').subscribe();
 
     expect(del).toHaveBeenCalledTimes(1);
-    expect(del).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/registrants/self`);
+    expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+
+  it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
+    service.removeMyMeetingRegistration(MEETING_UID, source).subscribe();
+
+    expect(del.mock.calls[0][1].headers.get('x-lfx-removal-source')).toBe(source);
+  });
+});
+
+describe('MeetingService.resendMyMeetingInvitation', () => {
+  let service: MeetingService;
+  let post: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    post = vi.fn(() => of({ message: 'Invitation resent successfully' }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('posts to the self resend route, with no registrant id from the client', () => {
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self/resend`);
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('sends the occurrence being viewed so the server picks the registration that fits it', () => {
+    service.resendMyMeetingInvitation(MEETING_UID, '1700000000').subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({ occurrence_id: '1700000000' });
+  });
+
+  it.each([[undefined], [null], ['']])('sends an empty body when the occurrence is %j', (occurrenceId) => {
+    service.resendMyMeetingInvitation(MEETING_UID, occurrenceId).subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('encodes the meeting id into the path', () => {
+    service.resendMyMeetingInvitation('a/b?c').subscribe();
+
+    expect(post.mock.calls[0][0]).toBe('/api/meetings/a%2Fb%3Fc/registrants/self/resend');
+  });
+
+  it('rethrows an upstream failure to the caller', () => {
+    const failure = new Error('nope');
+    post.mockReturnValueOnce(throwError(() => failure));
+    const error = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe({ error });
+
+    expect(error).toHaveBeenCalledWith(failure);
   });
 });
 
@@ -234,6 +289,133 @@ describe('MeetingService removed-registration state', () => {
 
     service.clearRemovedRegistration('mtg-1');
     expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+});
+
+describe('MeetingService attachment scope overrides', () => {
+  const OCCURRENCE_ID = '1893456000';
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
+
+  const attachment = (uid: string, occurrenceId?: string) => ({
+    uid,
+    meeting_id: 'mtg-1',
+    type: 'link' as const,
+    name: uid,
+    created_at: '2030-01-01T00:00:00Z',
+    occurrence_id: occurrenceId,
+  });
+
+  beforeEach(() => {
+    get = vi.fn();
+    del = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('records a saved scope, using an empty value for "all occurrences"', () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+    expect(service.attachmentScopeOverrides().get('b')).toBe('');
+  });
+
+  it('keeps an override after a read that still returns the old scope', async () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
+    get.mockReturnValue(of([attachment('a')]));
+
+    await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+  });
+
+  // Each card keeps its own fetched list and only the one that saved refetches, so a read agreeing with the saved scope must
+  // not drop the override: the other cards would fall back to their stale snapshot.
+  it('keeps an override after a read that already shows the saved scope', async () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
+    get.mockReturnValue(of([attachment('a', OCCURRENCE_ID), attachment('b')]));
+
+    await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+    expect(service.attachmentScopeOverrides().get('b')).toBe('');
+  });
+
+  it('replaces an override when the same attachment is changed again', () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
+    service.recordAttachmentScopeChanges([{ uid: 'a' }]);
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe('');
+  });
+
+  describe('recording attachments added and removed', () => {
+    it('keeps what was added and removed per meeting', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('b')], deletedUids: ['y'] });
+      service.recordAttachmentChanges('mtg-2', { added: [attachment('c')] });
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a', 'b']);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['x', 'y']);
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-2')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['c']);
+    });
+
+    it('forgets an addition that is deleted afterwards', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      service.recordAttachmentChanges('mtg-1', { deletedUids: ['a'] });
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+    });
+
+    it('records a successful delete from any caller, so an earlier addition is not listed again', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      del.mockReturnValue(of(undefined));
+
+      await firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'));
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['a']);
+    });
+
+    it('does not record a delete that failed', async () => {
+      del.mockReturnValue(throwError(() => new Error('rejected')));
+
+      await expect(firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'))).rejects.toThrow('rejected');
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    it('records nothing for an empty change', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [], deletedUids: [] });
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    // Each card keeps its own fetched list, so a read agreeing with the change must not drop it for the other cards.
+    it('keeps a change after a read that already shows it', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      get.mockReturnValue(of([attachment('a')]));
+
+      await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a']);
+    });
   });
 });
 

@@ -1,72 +1,25 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- 44px targets are exact [44px]: the 14px html root makes Tailwind's min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets). -->
 <p-drawer
   [(visible)]="visible"
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
-  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full max-sm:h-dvh vote-results-drawer"
   data-testid="vote-results-drawer">
   @if (vote(); as voteData) {
-    <!-- Shared comment-results list — rendered in voter + creator + admin + ED views via ngTemplateOutlet. Responses paginate per prompt. -->
-    <ng-template #commentResultsList>
-      @for (commentResult of paginatedCommentResults(); track commentResult.prompt.prompt_id) {
-        <div class="flex flex-col gap-2">
-          <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
-          @for (response of commentResult.responses; track response.vote_id) {
-            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
-              <lfx-expandable-text [maxHeight]="150" class="comment-text">
-                <div class="flex flex-col gap-3 whitespace-normal text-sm text-slate-700">
-                  @for (paragraph of response.paragraphs; track $index) {
-                    <p class="whitespace-pre-line" [innerHTML]="paragraph | linkify"></p>
-                  }
-                </div>
-              </lfx-expandable-text>
-              <div class="flex items-center gap-2 text-xs text-slate-500">
-                <span>{{ response.user_name || 'Anonymous' }}</span>
-                <span>•</span>
-                <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
-                @if (response.abstained) {
-                  <span class="text-slate-400">(Abstained)</span>
-                }
-              </div>
-            </div>
-          } @empty {
-            <p class="text-sm text-slate-500 italic" [attr.data-testid]="'vote-results-comments-empty-' + commentResult.prompt.prompt_id">No responses yet.</p>
-          }
-          @if (commentResult.totalResponses > commentResult.rows) {
-            <p-paginator
-              [first]="commentResult.first"
-              [rows]="commentResult.rows"
-              [totalRecords]="commentResult.totalResponses"
-              [rowsPerPageOptions]="commentRowsPerPageOptions"
-              [showCurrentPageReport]="true"
-              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-              (onPageChange)="onCommentPageChange(commentResult.prompt.prompt_id, $event)"
-              [attr.data-testid]="'vote-results-comments-paginator-' + commentResult.prompt.prompt_id">
-            </p-paginator>
-          }
-          <!-- The BFF caps each prompt's list at VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT; disclose truncation honestly. -->
-          @if (commentResult.total_responses && commentResult.total_responses > commentResult.totalResponses) {
-            <p class="text-xs text-slate-500" [attr.data-testid]="'vote-results-comments-truncated-' + commentResult.prompt.prompt_id">
-              Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
-            </p>
-          }
-        </div>
-      }
-    </ng-template>
-
     <ng-template #header>
       <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
-        <div class="flex items-center justify-between gap-2">
-          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-results-drawer-title">
+        <div class="flex items-start justify-between gap-2">
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 break-words" data-testid="vote-results-drawer-title">
             {{ voteData.name }}
           </h1>
           <button
             type="button"
             (click)="onClose()"
-            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+            class="flex items-center justify-center min-w-[44px] min-h-[44px] text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
             aria-label="Close panel"
             data-testid="vote-results-drawer-close">
             <i class="fa-light fa-xmark text-xl pointer-events-none"></i>
@@ -108,7 +61,7 @@
                 @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                    class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
                     [pTooltip]="earlyCloseTooltip"
                     tooltipEvent="both"
                     tooltipPosition="top"
@@ -150,18 +103,44 @@
             <!-- Vote-type pill intentionally omitted in voter scope — voters cast in the cast drawer where the ballot UX is self-evident; the method label is creator-side metadata. -->
           </div>
         } @else {
-          <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
-              {{ voteData.committee_name || 'Unknown' }}
-            </span>
-            <span class="text-slate-400">•</span>
-            <lfx-tag
-              [value]="voteData.status | pollStatusLabel"
-              [severity]="voteData.status | pollStatusSeverity"
-              data-testid="vote-results-drawer-status"></lfx-tag>
-            <span class="text-slate-400">•</span>
-            @if (isVoteClosed()) {
-              <span class="inline-flex items-center gap-1">
+          <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3" data-testid="vote-results-drawer-meta-row">
+            <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+              <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
+                {{ voteData.committee_name || 'Unknown' }}
+              </span>
+              <span class="text-slate-400">•</span>
+              <lfx-tag
+                [value]="voteData.status | pollStatusLabel"
+                [severity]="voteData.status | pollStatusSeverity"
+                data-testid="vote-results-drawer-status"></lfx-tag>
+              <span class="text-slate-400">•</span>
+              @if (isVoteClosed()) {
+                <span class="inline-flex items-center gap-1">
+                  <span
+                    [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
+                    tooltipPosition="top"
+                    tooltipEvent="both"
+                    tabindex="0"
+                    role="note"
+                    [attr.aria-label]="
+                      'Closed ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
+                    ">
+                    Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
+                  </span>
+                  @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center justify-center max-sm:min-w-[44px] max-sm:min-h-[44px] max-sm:-my-3 p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
+                      [pTooltip]="earlyCloseTooltip"
+                      tooltipEvent="both"
+                      tooltipPosition="top"
+                      [attr.aria-label]="earlyCloseTooltip"
+                      data-testid="vote-results-drawer-ended-early-info">
+                      <i class="fa-light fa-circle-info text-sm pointer-events-none"></i>
+                    </button>
+                  }
+                </span>
+              } @else {
                 <span
                   [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
                   tooltipPosition="top"
@@ -169,38 +148,41 @@
                   tabindex="0"
                   role="note"
                   [attr.aria-label]="
-                    'Closed ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
+                    'Due ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
                   ">
-                  Closed {{ voteData.end_time | voteDeadline: viewerTimezone }}
+                  Due {{ voteData.end_time | voteDeadline: viewerTimezone }}
                 </span>
-                @if (voteEndedEarlyTooltip(); as earlyCloseTooltip) {
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center p-0 border-0 bg-transparent text-slate-400 hover:text-slate-600 cursor-help"
-                    [pTooltip]="earlyCloseTooltip"
-                    tooltipEvent="both"
-                    tooltipPosition="top"
-                    [attr.aria-label]="earlyCloseTooltip"
-                    data-testid="vote-results-drawer-ended-early-info">
-                    <i class="fa-light fa-circle-info text-sm pointer-events-none"></i>
-                  </button>
-                }
-              </span>
-            } @else {
-              <span
-                [pTooltip]="voteData.end_time | longTimezone: viewerTimezone"
-                tooltipPosition="top"
-                tooltipEvent="both"
-                tabindex="0"
-                role="note"
-                [attr.aria-label]="
-                  'Due ' + (voteData.end_time | voteDeadline: viewerTimezone) + ' (' + (voteData.end_time | longTimezone: viewerTimezone) + ')'
-                ">
-                Due {{ voteData.end_time | voteDeadline: viewerTimezone }}
-              </span>
+              }
+              <span class="text-slate-400">•</span>
+              <span>{{ votingMethodText() }}</span>
+            </div>
+            @if (canPresent()) {
+              <!-- Right-aligned on the meta line, wrapping under it on a phone. votePresenterGuard (vote#writer) is the real gate. -->
+              <div class="flex items-center gap-2 sm:ml-auto" data-testid="vote-results-drawer-presenter-actions">
+                <lfx-button
+                  label="Present"
+                  icon="fa-light fa-presentation-screen"
+                  size="small"
+                  severity="primary"
+                  styleClass="max-sm:min-h-[44px]"
+                  (onClick)="present()"
+                  data-testid="vote-results-drawer-present" />
+                <lfx-button
+                  label="Copy slide"
+                  icon="fa-light fa-image"
+                  size="small"
+                  severity="secondary"
+                  styleClass="max-sm:min-h-[44px]"
+                  [loading]="slideBusy()"
+                  (onClick)="copySlide()"
+                  data-testid="vote-results-drawer-copy-slide" />
+              </div>
+              @if (isBrowserRender) {
+                <div class="fixed -left-[10000px] top-0 pointer-events-none" aria-hidden="true">
+                  <div #slide><lfx-vote-slide [title]="voteData.name" [link]="slideLink()" /></div>
+                </div>
+              }
             }
-            <span class="text-slate-400">•</span>
-            <span>{{ votingMethodText() }}</span>
           </div>
         }
       </div>
@@ -209,9 +191,18 @@
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
       <!-- LFXV2-1587 inline cast CTA — creator scope only; voter scope uses the dedicated State A panel below. -->
       @if (audience() === 'creator' && !isLoading() && canCastVoteFromDrawer() && allowCastFromDrawer()) {
-        <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-center justify-between gap-3" data-testid="vote-results-drawer-cast-cta">
+        <div
+          class="rounded-lg border border-blue-200 bg-blue-50 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          data-testid="vote-results-drawer-cast-cta">
           <p class="text-sm text-blue-900">You haven't cast your vote yet.</p>
-          <lfx-button size="small" severity="primary" label="Cast Vote" (onClick)="onCastVote()" data-testid="vote-results-drawer-cast-button" />
+          <lfx-button
+            size="small"
+            severity="primary"
+            label="Cast Vote"
+            [fluid]="true"
+            styleClass="w-full sm:w-auto min-h-[44px]"
+            (onClick)="onCastVote()"
+            data-testid="vote-results-drawer-cast-button" />
         </div>
       }
 
@@ -308,86 +299,12 @@
                     }
                     {{ question.question }}
                   </h4>
-                  <div class="flex flex-col gap-3">
-                    @for (option of question.options; track option.choiceId) {
-                      <div
-                        class="rounded-lg border p-4 transition-all"
-                        [class.border-green-300]="option.isWinner"
-                        [class.bg-green-50]="option.isWinner"
-                        [class.border-amber-300]="option.isTied"
-                        [class.bg-amber-50]="option.isTied"
-                        [class.border-slate-200]="!option.isWinner && !option.isTied"
-                        [class.bg-slate-50]="!option.isWinner && !option.isTied"
-                        [attr.data-testid]="'vote-results-voter-option-' + option.choiceId">
-                        <div class="flex items-center justify-between mb-2">
-                          <div class="flex items-center gap-2">
-                            <span
-                              class="text-sm font-medium"
-                              [class.text-green-900]="option.isWinner"
-                              [class.text-amber-900]="option.isTied"
-                              [class.text-slate-900]="!option.isWinner && !option.isTied">
-                              {{ option.text }}
-                            </span>
-                            @if (option.isWinner) {
-                              <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-                                <i class="fa-solid fa-check text-[10px]"></i>
-                                Winner
-                              </span>
-                            }
-                            @if (option.isTied) {
-                              <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                                <i class="fa-solid fa-equals text-[10px]"></i>
-                                Tied
-                              </span>
-                            }
-                          </div>
-                          <div class="flex items-center gap-2">
-                            <span
-                              class="text-sm font-semibold"
-                              [class.text-green-700]="option.isWinner"
-                              [class.text-amber-700]="option.isTied"
-                              [class.text-slate-700]="!option.isWinner && !option.isTied">
-                              {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-                            </span>
-                            <span
-                              class="text-sm"
-                              [class.text-green-600]="option.isWinner"
-                              [class.text-amber-600]="option.isTied"
-                              [class.text-slate-600]="!option.isWinner && !option.isTied">
-                              ({{ option.percentage }}%)
-                            </span>
-                          </div>
-                        </div>
-                        <!-- Faint slate-100 track so 0% rows still read as a track, not empty space. -->
-                        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            class="h-full transition-all"
-                            [class.bg-green-500]="option.isWinner"
-                            [class.bg-amber-500]="option.isTied"
-                            [class.bg-slate-400]="!option.isWinner && !option.isTied"
-                            [style.width.%]="option.percentage"></div>
-                        </div>
-                      </div>
-                    }
-                  </div>
+                  <lfx-vote-option-results [options]="question.options" variant="voter-final" testIdPrefix="vote-results-voter-option-" />
                 </div>
               }
               @if (showAbstain() && !voteResultsError()) {
                 <!-- Vote-level abstention row — muted and never winner-styled; choice percentages above use all responses cast (including abstentions) as their denominator. -->
-                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium italic text-slate-500">Abstain</span>
-                    <div class="flex items-center gap-2">
-                      <span class="text-sm font-semibold text-slate-600">
-                        {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
-                      </span>
-                      <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
-                    </div>
-                  </div>
-                  <div class="w-full bg-white rounded-full h-2 overflow-hidden">
-                    <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
-                  </div>
-                </div>
+                <lfx-vote-abstain-result [stats]="participationStats()" variant="final" testId="vote-results-voter-option-abstain" />
               }
               @if (voteResultsError()) {
                 <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
@@ -400,50 +317,11 @@
             <div class="flex flex-col gap-6" data-testid="vote-results-voter-final-ranked">
               <h2 class="text-lg font-semibold text-slate-900">Final Results</h2>
               @for (q of rankedQuestions(); track q.questionId) {
-                <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4">
-                  <h4 class="text-sm font-semibold text-slate-900">{{ q.prompt }}</h4>
-                  <div class="flex flex-col gap-3">
-                    @for (row of q.choiceDistributions; track row.choiceId) {
-                      <div class="flex flex-col gap-2">
-                        <div class="flex items-center justify-between gap-2">
-                          <span class="text-sm font-medium text-slate-800">{{ row.choiceText }}</span>
-                          <span class="text-xs text-slate-500">{{ row.totalRanked }} {{ row.totalRanked === 1 ? 'voter' : 'voters' }}</span>
-                        </div>
-                        @if (row.rankCounts.length > 0) {
-                          <div class="flex flex-col gap-1">
-                            @for (rc of row.rankCounts; track rc.rank) {
-                              <div class="flex items-center gap-2 text-xs">
-                                <span class="w-14 text-slate-600 flex-shrink-0">Rank {{ rc.rank }}</span>
-                                <div class="flex-1 bg-slate-100 rounded h-2 overflow-hidden">
-                                  <div class="bg-blue-500 h-full rounded" [style.width.%]="rc.percentage"></div>
-                                </div>
-                                <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
-                                <span class="w-12 text-right text-slate-600 flex-shrink-0">{{ rc.percentage }}%</span>
-                              </div>
-                            }
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                </div>
+                <lfx-vote-ranked-question-results [question]="q" variant="voter" />
               }
               @if (showAbstain() && !voteResultsError()) {
                 <!-- Vote-level abstention row — muted and never winner-styled; ranked tallies above exclude abstentions. -->
-                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-voter-option-abstain">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium italic text-slate-500">Abstain</span>
-                    <div class="flex items-center gap-2">
-                      <span class="text-sm font-semibold text-slate-600">
-                        {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
-                      </span>
-                      <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
-                    </div>
-                  </div>
-                  <div class="w-full bg-white rounded-full h-2 overflow-hidden">
-                    <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
-                  </div>
-                </div>
+                <lfx-vote-abstain-result [stats]="participationStats()" variant="final" testId="vote-results-voter-option-abstain" />
               }
               @if (voteResultsError()) {
                 <p class="text-sm text-rose-700" data-testid="vote-results-voter-error">Couldn't load final results. Try reopening this vote.</p>
@@ -455,7 +333,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-voter-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              <ng-container [ngTemplateOutlet]="commentResultsList" />
+              <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
             </div>
           }
         } @else {
@@ -471,7 +349,7 @@
           }
           <div class="rounded-lg border border-slate-200 bg-slate-50 p-5 flex flex-col gap-2" data-testid="vote-results-voter-empty">
             <p class="text-sm text-slate-700">You haven't responded to this vote yet.</p>
-            <p class="text-xs text-slate-500">Use the Vote button on the My Votes list to cast your ballot. Live results are hidden until the vote closes.</p>
+            <p class="text-xs text-slate-500">Use the Vote button on the Votes list to cast your ballot. Live results are hidden until the vote closes.</p>
           </div>
         }
       } @else if (isLoading()) {
@@ -523,79 +401,14 @@
             </div>
           </div>
 
-          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-ranked-participation">
-            <div class="flex items-center justify-between text-sm text-slate-600">
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Total Participants</p>
-                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
-              </div>
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Total Responses</p>
-                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
-              </div>
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Response Rate</p>
-                <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
-              </div>
-              @if (showAbstain() && !voteResultsError()) {
-                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
-                <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
-                  <p class="text-xs text-slate-500">Abstained</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
-                </div>
-              }
-            </div>
-            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-              <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
-            </div>
-          </div>
+          <lfx-vote-participation-card
+            [stats]="participationStats()"
+            [showAbstained]="showAbstain() && !voteResultsError()"
+            testId="vote-results-ranked-participation" />
 
           @if (rankedQuestions().length > 0) {
             @for (q of rankedQuestions(); track q.questionId) {
-              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4" [attr.data-testid]="'vote-results-ranked-question-' + q.questionId">
-                <h4 class="text-sm font-semibold text-slate-900">{{ q.prompt }}</h4>
-
-                <div class="flex flex-col gap-3">
-                  @for (row of q.choiceDistributions; track row.choiceId) {
-                    <div class="flex flex-col gap-2" [attr.data-testid]="'vote-results-ranked-choice-' + row.choiceId">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-sm font-medium text-slate-800">{{ row.choiceText }}</span>
-                        <span class="text-xs text-slate-500">{{ row.totalRanked }} {{ row.totalRanked === 1 ? 'voter' : 'voters' }}</span>
-                      </div>
-
-                      @if (row.rankCounts.length > 0) {
-                        <div class="flex flex-col gap-1">
-                          @for (rc of row.rankCounts; track rc.rank) {
-                            <div class="flex items-center gap-2 text-xs">
-                              <span class="w-14 text-slate-600 flex-shrink-0">Rank {{ rc.rank }}</span>
-                              <div class="flex-1 bg-slate-100 rounded h-2 overflow-hidden">
-                                <div class="bg-blue-500 h-full rounded" [style.width.%]="rc.percentage"></div>
-                              </div>
-                              <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
-                              <span class="w-12 text-right text-slate-600 flex-shrink-0">{{ rc.percentage }}%</span>
-                            </div>
-                          }
-                        </div>
-                      } @else {
-                        <p class="text-xs text-slate-500 italic">No rankings recorded yet.</p>
-                      }
-                    </div>
-                  } @empty {
-                    <p class="text-sm text-gray-500 italic" [attr.data-testid]="'vote-results-ranked-question-empty-' + q.questionId">
-                      No ranked results recorded yet for this question.
-                    </p>
-                  }
-                </div>
-
-                @if (q.hasRoundSummary) {
-                  <div
-                    class="rounded-md border border-slate-200 bg-slate-50 p-3 flex items-center gap-2"
-                    [attr.data-testid]="'vote-results-ranked-rounds-' + q.questionId">
-                    <i class="fa-light fa-arrows-rotate text-slate-500" aria-hidden="true"></i>
-                    <p class="text-xs text-slate-600">Round-by-round details available from the voting service. Detailed round visualization is coming soon.</p>
-                  </div>
-                }
-              </div>
+              <lfx-vote-ranked-question-results [question]="q" variant="creator" />
             }
           } @else {
             <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="vote-results-ranked-empty">
@@ -606,7 +419,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              <ng-container [ngTemplateOutlet]="commentResultsList" />
+              <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
             </div>
           }
         </div>
@@ -629,76 +442,19 @@
                   <h3 class="text-base font-semibold text-slate-900">Q{{ idx + 1 }}. {{ question.question }}</h3>
                 }
 
-                <div class="flex flex-col gap-3">
-                  @for (option of question.options; track option.choiceId) {
-                    <div class="flex flex-col gap-1.5" [attr.data-testid]="'vote-results-option-' + option.choiceId">
-                      <div class="flex items-center justify-between text-sm">
-                        <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
-                          {{ option.text }}
-                        </span>
-                        <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
-                          {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }} · {{ option.percentage }}%
-                        </span>
-                      </div>
-                      <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div
-                          class="h-full rounded-full transition-all"
-                          [class.bg-blue-500]="option.isLeading"
-                          [class.bg-slate-300]="!option.isLeading"
-                          [style.width.%]="option.percentage"></div>
-                      </div>
-                    </div>
-                  }
-                </div>
+                <lfx-vote-option-results [options]="question.options" variant="live" testIdPrefix="vote-results-option-" />
               </div>
             }
 
             @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
                    abstainedRate is the share of all responses cast; choice percentages above use the same denominator. -->
-              <div class="flex flex-col gap-1.5" data-testid="vote-results-option-abstain">
-                <div class="flex items-center justify-between text-sm">
-                  <span class="font-normal italic text-slate-500">Abstain</span>
-                  <span class="font-normal text-slate-500">
-                    {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }} ·
-                    {{ participationStats().abstainedRate }}%
-                  </span>
-                </div>
-                <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div class="h-full rounded-full bg-slate-300 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
-                </div>
-              </div>
+              <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-results-option-abstain" />
             }
           </div>
 
           <div class="pt-4 border-t border-slate-200 flex flex-col gap-4">
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
-              <div class="flex items-center justify-between text-sm text-slate-600">
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Participants</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
-                </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Total Responses</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
-                </div>
-                <div class="text-center flex-1">
-                  <p class="text-xs text-slate-500">Response Rate</p>
-                  <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
-                </div>
-                @if (showAbstain() && !voteResultsError()) {
-                  <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
-                  <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
-                    <p class="text-xs text-slate-500">Abstained</p>
-                    <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
-                  </div>
-                }
-              </div>
-
-              <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
-              </div>
-            </div>
+            <lfx-vote-participation-card [stats]="participationStats()" [showAbstained]="showAbstain() && !voteResultsError()" />
 
             <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p class="text-sm text-blue-800">
@@ -710,7 +466,7 @@
           @if (commentResults().length > 0) {
             <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
               <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-              <ng-container [ngTemplateOutlet]="commentResultsList" />
+              <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
             </div>
           }
         </div>
@@ -727,33 +483,7 @@
         <div class="flex flex-col gap-6">
           <h2 class="text-xl font-semibold text-slate-900">Final Results</h2>
 
-          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
-            <div class="flex items-center justify-between text-sm text-slate-600">
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Total Participants</p>
-                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
-              </div>
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Total Responses</p>
-                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
-              </div>
-              <div class="text-center flex-1">
-                <p class="text-xs text-slate-500">Response Rate</p>
-                <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
-              </div>
-              @if (showAbstain() && !voteResultsError()) {
-                <!-- Abstentions count as cast responses upstream but are excluded from choice tallies; shown when the vote allows abstain or results report abstentions. -->
-                <div class="text-center flex-1" data-testid="vote-results-abstained-stat">
-                  <p class="text-xs text-slate-500">Abstained</p>
-                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().abstainedVoters }}</p>
-                </div>
-              }
-            </div>
-
-            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-              <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
-            </div>
-          </div>
+          <lfx-vote-participation-card [stats]="participationStats()" [showAbstained]="showAbstain() && !voteResultsError()" />
 
           <div class="flex flex-col gap-4 mt-2" data-testid="vote-results-questions">
             <h3 class="text-lg font-semibold text-slate-900">Vote</h3>
@@ -766,88 +496,14 @@
                   {{ question.question }}
                 </h4>
 
-                <div class="flex flex-col gap-3">
-                  @for (option of question.options; track option.choiceId) {
-                    <div
-                      class="rounded-lg border p-4 transition-all"
-                      [class.border-green-300]="option.isWinner"
-                      [class.bg-green-50]="option.isWinner"
-                      [class.border-amber-300]="option.isTied"
-                      [class.bg-amber-50]="option.isTied"
-                      [class.border-slate-200]="!option.isWinner && !option.isTied"
-                      [class.bg-slate-50]="!option.isWinner && !option.isTied"
-                      [attr.data-testid]="'vote-results-option-' + option.choiceId">
-                      <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2">
-                          <span
-                            class="text-sm font-medium"
-                            [class.text-green-900]="option.isWinner"
-                            [class.text-amber-900]="option.isTied"
-                            [class.text-slate-900]="!option.isWinner && !option.isTied">
-                            {{ option.text }}
-                          </span>
-                          @if (option.isWinner) {
-                            <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-                              <i class="fa-solid fa-check text-[10px]"></i>
-                              Winner
-                            </span>
-                          }
-                          @if (option.isTied) {
-                            <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                              <i class="fa-solid fa-equals text-[10px]"></i>
-                              Tied
-                            </span>
-                          }
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <span
-                            class="text-sm font-semibold"
-                            [class.text-green-700]="option.isWinner"
-                            [class.text-amber-700]="option.isTied"
-                            [class.text-slate-700]="!option.isWinner && !option.isTied">
-                            {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-                          </span>
-                          <span
-                            class="text-sm"
-                            [class.text-green-600]="option.isWinner"
-                            [class.text-amber-600]="option.isTied"
-                            [class.text-slate-600]="!option.isWinner && !option.isTied">
-                            ({{ option.percentage }}%)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div class="w-full bg-white rounded-full h-2 overflow-hidden">
-                        <div
-                          class="h-full transition-all"
-                          [class.bg-green-500]="option.isWinner"
-                          [class.bg-amber-500]="option.isTied"
-                          [class.bg-slate-400]="!option.isWinner && !option.isTied"
-                          [style.width.%]="option.percentage"></div>
-                      </div>
-                    </div>
-                  }
-                </div>
+                <lfx-vote-option-results [options]="question.options" variant="final" testIdPrefix="vote-results-option-" />
               </div>
             }
 
             @if (showAbstain() && !voteResultsError()) {
               <!-- Vote-level abstention row (not per-question) — muted and never winner-styled.
                    abstainedRate is the share of all responses cast; choice percentages above use the same denominator. -->
-              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="vote-results-option-abstain">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm font-medium italic text-slate-500">Abstain</span>
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-slate-600">
-                      {{ participationStats().abstainedVoters }} {{ participationStats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
-                    </span>
-                    <span class="text-sm text-slate-500">({{ participationStats().abstainedRate }}%)</span>
-                  </div>
-                </div>
-                <div class="w-full bg-white rounded-full h-2 overflow-hidden">
-                  <div class="h-full bg-slate-400 transition-all" [style.width.%]="participationStats().abstainedRate"></div>
-                </div>
-              </div>
+              <lfx-vote-abstain-result [stats]="participationStats()" variant="final" testId="vote-results-option-abstain" />
             }
           </div>
         </div>
@@ -855,7 +511,7 @@
         @if (commentResults().length > 0) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
             <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
-            <ng-container [ngTemplateOutlet]="commentResultsList" />
+            <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
           </div>
         }
       }

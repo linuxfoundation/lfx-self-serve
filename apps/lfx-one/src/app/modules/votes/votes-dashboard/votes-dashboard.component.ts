@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { MY_VOTES_STATS_WINDOW_DAYS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_INVITATION_COUNT_REFRESH_MS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -19,9 +19,17 @@ import {
   VoteFilterState,
   VoteListResponse,
   VotePermalinkTarget,
+  VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
-import { findCursorWalkStartIndex, getUserTimezone, matchesMyVotesQuickFilter, recordPageToken, resolveCursorWalkOutcome } from '@lfx-one/shared/utils';
+import {
+  countVotesByStatus,
+  findCursorWalkStartIndex,
+  getUserTimezone,
+  matchesMyVotesQuickFilter,
+  recordPageToken,
+  resolveCursorWalkOutcome,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -29,11 +37,29 @@ import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  EMPTY,
+  expand,
+  filter,
+  finalize,
+  last,
+  map,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-votes-dashboard',
@@ -47,6 +73,7 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
     EmptyStateComponent,
     SkeletonModule,
     StatCardGridComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
@@ -79,6 +106,10 @@ export class VotesDashboardComponent {
   // fetch$ triggers votes list re-fetch (pagination, manual refresh)
   private readonly fetch$ = new BehaviorSubject<void>(undefined);
   private readonly managementSummaryRefresh$ = new BehaviorSubject<void>(undefined);
+  // True only while the invitation-count poll fires fetch$/refresh$ (GH-4078). Both subjects emit
+  // synchronously, so each pipeline reads it in the same call and runs a silent refresh: no loading
+  // state, and a failed request keeps the last rows/counts instead of clearing them.
+  private backgroundRefresh = false;
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -86,6 +117,10 @@ export class VotesDashboardComponent {
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly selectedVoteId = signal<string | null>(null);
+  // Confirmed deadline from votes-table's voteExtended output, held until votes()/myVotes() reflects a
+  // deadline at least as new — a stale search-index refresh otherwise leaves the open results drawer
+  // showing the pre-extension deadline indefinitely (per @greptile-apps, GH-3823 review).
+  private readonly extendedVoteOverride = signal<Vote | null>(null);
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
@@ -94,12 +129,16 @@ export class VotesDashboardComponent {
   protected readonly foundationFilter = signal<string | null>(null);
   protected readonly projectFilter = signal<string | null>(null);
   protected readonly myVotesQuickFilter = signal<MyVotesQuickFilter | null>(null);
-  protected readonly myVotesStatusTab = signal<string>('all');
+  // Voting pages open on Active; the shared table's own default (All) stays for committee reuse.
+  protected readonly myVotesStatusTab = signal<string>(PollStatus.ACTIVE);
   protected readonly myVotesNowMs = signal(Date.now());
   protected readonly myVotesError = signal(false);
+  protected readonly myVotesComplete = signal(false);
   protected readonly managementClosingOnly = signal(false);
   protected readonly managementSummaryLoading = signal(true);
   protected readonly managementSummaryError = signal(false);
+  protected readonly managementStatusCountsLoading = signal(true);
+  protected readonly managementStatusCountsError = signal(false);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -108,8 +147,9 @@ export class VotesDashboardComponent {
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // === Filter State ===
+  // Starts on Active so the first management list/count requests match the selected tab.
   protected readonly filters = signal<VoteFilterState>(
-    { search: '', status: null, group: null },
+    { search: '', status: PollStatus.ACTIVE, group: null },
     { equal: (a, b) => a.search === b.search && a.status === b.status && a.group === b.group }
   );
 
@@ -130,6 +170,8 @@ export class VotesDashboardComponent {
   protected readonly managementSummaryScope = this.initManagementSummaryScope();
   protected readonly managementSummary = this.initManagementSummary();
   protected readonly managementVoteStatCards = this.initManagementVoteStatCards();
+  protected readonly managementStatusCountsScope = this.initManagementStatusCountsScope();
+  protected readonly managementStatusCounts: Signal<VoteStatusCounts | null> = this.initManagementStatusCounts();
   private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
   protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
@@ -140,11 +182,20 @@ export class VotesDashboardComponent {
   protected readonly filteredMyVotes: Signal<Vote[]> = this.initFilteredMyVotes();
   protected readonly myVotesSummaryScope: Signal<Vote[]> = this.initMyVotesSummaryScope();
   protected readonly myVoteStatCards: Signal<StatCardItem[]> = this.initMyVoteStatCards();
+  protected readonly myVotesStatusCounts: Signal<VoteStatusCounts | null> = this.initMyVotesStatusCounts();
+  /** Status-tab counts for the active lens; null while loading or after a failure, so tabs never show a false zero. */
+  protected readonly tabStatusCounts: Signal<VoteStatusCounts | null> = this.initTabStatusCounts();
   // True when any server-side filter is active; drives dashboard empty-state vs. table empty-state routing.
   // Trims `search` so whitespace-only input doesn't count as an active filter.
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => {
     const f = this.filters();
     return !!(f.search?.trim() || f.status || f.group || this.managementClosingOnly());
+  });
+  // Summary shortcut forwarded to the table: the personal shortcut in Me, Closing Soon in management closing-only mode.
+  // Lazy tables never filter rows client-side, so in management this only tells the empty state a shortcut is applied.
+  protected readonly tableQuickFilter: Signal<MyVotesQuickFilter | null> = computed(() => {
+    if (this.isMeLens()) return this.myVotesQuickFilter();
+    return this.managementClosingOnly() ? 'closing-soon' : null;
   });
   /** Results-drawer audience: the permalink's choice for the linked vote (a writer sees `creator` in the Me lens), otherwise by lens. */
   protected readonly resultsAudience: Signal<'voter' | 'creator'> = this.initResultsAudience();
@@ -157,10 +208,13 @@ export class VotesDashboardComponent {
       )
       .subscribe(() => {
         this.myVotesQuickFilter.set(null);
-        this.myVotesStatusTab.set('all');
+        // Keep the selected tab and the server filter in step so the list never shows Active while requesting All.
+        this.myVotesStatusTab.set(PollStatus.ACTIVE);
+        this.filters.update((state) => ({ ...state, status: PollStatus.ACTIVE }));
       });
 
     this.initPermalinkDrawer();
+    this.initInvitationCountRefresh();
   }
 
   protected onManagementVoteStatClick(action: string): void {
@@ -252,6 +306,23 @@ export class VotesDashboardComponent {
     this.refresh$.next();
   }
 
+  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
+   *  Also reconciles the closing-soon count and filtered list (per @greptile-apps / @copilot-pull-request-reviewer,
+   *  GH-3823 review): the table no longer emits `refresh` on extend (that reset pagination, per @cursor), so this
+   *  handler re-triggers the summary count and current-page fetch itself — fetch$/refresh$ refetch the page/list
+   *  in place without touching pageTokens or currentFirst, unlike refreshVotes(). extendedVoteOverride above keeps
+   *  the open drawer and this row's rendered deadline correct in the meantime while the search index catches up. */
+  protected onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverride.set(vote);
+    if (this.isMeLens()) {
+      this.refresh$.next();
+    } else {
+      this.fetch$.next();
+      this.managementSummaryRefresh$.next();
+    }
+  }
+
   protected onPageChange(event: { first: number; rows: number }): void {
     if (event.rows !== this.rowsPerPage()) {
       this.pageTokens = [];
@@ -313,19 +384,78 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([toObservable(this.managementSummaryScope), this.refresh$, this.managementSummaryRefresh$]).pipe(
         switchMap(([scope]) => {
-          this.managementSummaryLoading.set(!!scope);
-          this.managementSummaryError.set(false);
+          const silent = this.backgroundRefresh;
+          if (!silent) {
+            this.managementSummaryLoading.set(!!scope);
+            this.managementSummaryError.set(false);
+          }
           if (!scope) return of(null);
-          return this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
+          const summary$ = this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
+            // A silent poll skips the reset above, so a success clears an earlier failure itself (GH-4078).
+            tap(() => {
+              if (this.managementSummaryScope() === scope) this.managementSummaryError.set(false);
+            }),
             catchError(() => {
+              if (silent) return EMPTY;
               if (this.managementSummaryScope() === scope) this.managementSummaryError.set(true);
               return of(null);
             }),
             finalize(() => {
               if (this.managementSummaryScope() === scope) this.managementSummaryLoading.set(false);
-            }),
-            startWith(null)
+            })
           );
+          return silent ? summary$ : summary$.pipe(startWith(null));
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /** Status-tab counts follow scope, search and Group only — never the status tab, closing-only toggle or pagination. */
+  private initManagementStatusCountsScope() {
+    return computed(
+      () => {
+        const lens = this.lensService.activeLens();
+        const uid = this.project()?.uid;
+        if ((lens !== 'project' && lens !== 'foundation') || !uid) return null;
+        const { search, group } = this.filters();
+        return { uid, lens, search: search.trim(), group };
+      },
+      { equal: (a, b) => a?.uid === b?.uid && a?.lens === b?.lens && a?.search === b?.search && a?.group === b?.group }
+    );
+  }
+
+  /**
+   * Server status-tab counts for the management lens (#3687). Writes are guarded by scope identity
+   * so a superseded response can't flag the current scope. The All tab's optimistic
+   * `mergeRecentlyOpenedVotes` overlay can show a just-opened vote as Active while these counts
+   * still read it as Draft; they converge on the next refresh once the index catches up (GH-2730).
+   */
+  private initManagementStatusCounts(): Signal<VoteStatusCounts | null> {
+    return toSignal(
+      combineLatest([toObservable(this.managementStatusCountsScope), this.refresh$]).pipe(
+        switchMap(([scope]) => {
+          const silent = this.backgroundRefresh;
+          if (!silent) {
+            this.managementStatusCountsLoading.set(!!scope);
+            this.managementStatusCountsError.set(false);
+          }
+          if (!scope) return of(null);
+          const counts$ = this.voteService.getVoteStatusCountsByProject(scope.uid, scope.search || undefined, scope.group || undefined).pipe(
+            // A silent poll skips the reset above, so a success clears an earlier failure itself (GH-4078).
+            tap(() => {
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(false);
+            }),
+            catchError(() => {
+              if (silent) return EMPTY;
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(true);
+              return of(null);
+            }),
+            finalize(() => {
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsLoading.set(false);
+            })
+          );
+          return silent ? counts$ : counts$.pipe(startWith(null));
         })
       ),
       { initialValue: null }
@@ -401,7 +531,7 @@ export class VotesDashboardComponent {
   }
 
   private initSearchQuery(): Signal<string> {
-    return computed(() => this.filters().search);
+    return computed(() => this.filters().search.trim());
   }
 
   private initGroupOptions(): Signal<{ label: string; value: string | null }[]> {
@@ -453,7 +583,8 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([scope$, this.refresh$]).pipe(
         switchMap(([{ project, lens, closingOnly }]) => {
-          this.totalCountReady.set(false);
+          const silent = this.backgroundRefresh;
+          if (!silent) this.totalCountReady.set(false);
           if (lens === 'me' || closingOnly) {
             return of(0);
           }
@@ -463,18 +594,48 @@ export class VotesDashboardComponent {
           const searchName = this.searchQuery();
           const queryFilters = this.buildFilters();
           return this.voteService.getVotesCountByProject(project.uid, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
+            // A failed foreground count still settles the footer on zero; a failed silent poll keeps the last total (GH-4078).
+            catchError(() => (silent ? EMPTY : of(0))),
             tap((count) => {
               if (!this.managementClosingOnly() && this.project()?.uid === project.uid) {
                 this.totalRecords.set(count);
                 this.totalCountReady.set(true);
               }
-            }),
-            catchError(() => of(0))
+            })
           );
         })
       ),
       { initialValue: 0 }
     );
+  }
+
+  /**
+   * Re-fetches the current page in place while a just-opened vote still shows "Counting invitations…"
+   * (GH-4078), so its real participation count — and the tab counts / footer total — appear once the
+   * search index catches up, without a manual reload. Self-terminating: each fetch re-evaluates, and
+   * the carrier window (RECENTLY_OPENED_VOTE_TTL_MS) ends the polling even if the index never converges.
+   * Runs as a silent refresh (see `backgroundRefresh`) so the table, tabs and stat cards don't flash
+   * their loading states, and a failed poll keeps the rows and retries inside the window. A tick that
+   * lands while a foreground fetch (scope, filter or page change) is loading is skipped, so the poll
+   * never cancels it and never falls back to the previous scope's rows; the poll re-arms once that
+   * fetch's rows arrive.
+   */
+  private initInvitationCountRefresh(): void {
+    toObservable(this.votes)
+      .pipe(
+        switchMap((votes) => (!this.isMeLens() && this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        filter(() => !this.loading()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.backgroundRefresh = true;
+        try {
+          this.fetch$.next();
+          this.refresh$.next();
+        } finally {
+          this.backgroundRefresh = false;
+        }
+      });
   }
 
   private initVotes(): Signal<Vote[]> {
@@ -489,7 +650,9 @@ export class VotesDashboardComponent {
 
     return toSignal(
       combineLatest([scope$, this.fetch$]).pipe(
-        tap(() => this.loading.set(true)),
+        tap(() => {
+          if (!this.backgroundRefresh) this.loading.set(true);
+        }),
         tap(([{ project, lens }]) => {
           const scope = `${lens}:${project?.uid ?? ''}`;
           if (scope !== previousScope) {
@@ -500,6 +663,7 @@ export class VotesDashboardComponent {
           }
         }),
         switchMap(([{ project, filters: filterState, lens }]) => {
+          const silent = this.backgroundRefresh;
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);
@@ -520,11 +684,41 @@ export class VotesDashboardComponent {
             // index rows. Skipped under a server-side `status:` filter — the filtered response can't
             // contain the just-opened row (Active tab: absent until convergence) and mustn't re-badge
             // it (Draft tab: an Active-badged row would violate the filter while `totalRecords` still
-            // counts it as draft); the default All tab (`status: null`) keeps the merge.
+            // counts it as draft); only the All tab (`status: null`) keeps the re-badge overlay.
+            //
+            // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote missing from the
+            // page entirely. Unlike the re-badge overlay above, this must run under every tab — a
+            // created vote has a real status already, so passing `statusFilter` lets it insert into
+            // whichever tab its own status actually matches (and nowhere else), scoped to this
+            // project and limited to the first page so it isn't duplicated across paginated pages.
+            // `closingOnly`/`nowMs` additionally gate insertion under the Closing Soon quick filter —
+            // the lazy table doesn't locally re-filter returned rows, so a newly created vote outside
+            // the rolling seven-day window must never be inserted while that filter is active.
+            // `searchName`/`group` likewise gate insertion under the free-text search box and the
+            // Group dropdown — same reasoning, the lazy table never locally re-filters inserted rows.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay above (Copilot/dealako, GH-4007
+            // round 4): the created-carrier's eviction check reads `vote.status`, and if the opened
+            // overlay ran first it would see an already-rebadged Active row and evict the carrier
+            // while the index is still actually lagging — losing the new vote again on the next tab
+            // that skips the overlay (e.g. the server-filtered Active tab).
+            map((votes) =>
+              this.voteService.mergeRecentlyCreatedVotes(votes, {
+                projectUid: project.uid,
+                statusFilter: filterState.status,
+                closingOnly: this.managementClosingOnly(),
+                nowMs: Date.now(),
+                searchName: searchName || undefined,
+                group: filterState.group || undefined,
+                isFirstPage: pageIndex === 0,
+              })
+            ),
             map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.loading.set(false);
-              return of([]);
+              // A failed background poll keeps the current rows; the new array re-arms the poll so it
+              // retries while the carrier window is still live (GH-4078).
+              return of(silent ? [...this.votes()] : []);
             })
           );
         })
@@ -591,7 +785,12 @@ export class VotesDashboardComponent {
       const id = this.selectedVoteId();
       if (!id) return null;
       const source = this.isMeLens() ? this.myVotes() : this.votes();
-      return source.find((v) => v.uid === id) || null;
+      const row = source.find((v) => v.uid === id) || null;
+      const override = this.extendedVoteOverride();
+      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
+        return { ...(row ?? override), ...override };
+      }
+      return row;
     });
   }
 
@@ -601,17 +800,22 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([lens$, this.refresh$]).pipe(
         switchMap(([lens]) => {
+          this.myVotesComplete.set(false);
+          // A cleared personal feed stays pending so returning to Me cannot show an incomplete result before its request starts.
+          this.myVotesLoading.set(true);
           if (lens !== 'me') {
-            this.myVotesLoading.set(false);
             return of([] as Vote[]);
           }
-          this.myVotesLoading.set(true);
           this.myVotesError.set(false);
           return this.voteService.getMyVotes().pipe(
+            tap((response) => this.myVotesComplete.set(response.complete === true)),
             // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
-            // known-active status over stale index rows. Unconditional here — the Me lens has no
-            // server-side status filter (its filtering is client-side over these rows).
-            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            // known-active status over stale index rows. getMyVotes() is invitation-scoped
+            // (built from the caller's own invitation/response records), not creator-scoped, so
+            // mergeRecentlyCreatedVotes (GH-4007) does not apply here — inserting a just-created
+            // vote would show the creator a ballot they were never invited to, and the raw Vote
+            // snapshot lacks the response_status the Me lens's action/drawer logic depends on.
+            map((response) => this.voteService.mergeRecentlyOpenedVotes(response.votes)),
             tap(() => this.myVotesNowMs.set(Date.now())),
             catchError(() => {
               this.myVotesError.set(true);
@@ -660,6 +864,25 @@ export class VotesDashboardComponent {
       const group = this.filters().group;
       const votes = this.filteredMyVotes();
       return group ? votes.filter((vote) => vote.committee_name === group) : votes;
+    });
+  }
+
+  /** Personal status-tab counts over the same scope as the list; quick filters and the status tab never narrow them. */
+  private initMyVotesStatusCounts(): Signal<VoteStatusCounts | null> {
+    return computed(() => {
+      if (this.myVotesLoading() || this.myVotesError() || !this.myVotesComplete()) return null;
+      // Mirrors the table's client-side name search (votes-table `initDisplayedVotes`) so each count equals its tab's rows.
+      const term = this.filters().search.toLowerCase();
+      const votes = this.myVotesSummaryScope();
+      return countVotesByStatus(term ? votes.filter((vote) => vote.name.toLowerCase().includes(term)) : votes);
+    });
+  }
+
+  private initTabStatusCounts(): Signal<VoteStatusCounts | null> {
+    return computed(() => {
+      if (this.isMeLens()) return this.myVotesStatusCounts();
+      if (this.managementStatusCountsLoading() || this.managementStatusCountsError()) return null;
+      return this.managementStatusCounts();
     });
   }
 

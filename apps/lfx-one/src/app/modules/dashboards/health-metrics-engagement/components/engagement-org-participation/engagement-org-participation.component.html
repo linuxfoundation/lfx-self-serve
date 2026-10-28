@@ -3,7 +3,7 @@
 
 <div class="flex flex-col gap-4" data-testid="engagement-org-participation">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
       <div class="w-full sm:w-64">
         <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
         <label class="sr-only" for="engagement-org-participation-search">Search organization</label>
@@ -14,10 +14,11 @@
           placeholder="Search organization..."
           icon="fa-light fa-search"
           size="small"
-          styleClass="w-full"
+          styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
           dataTest="engagement-org-participation-search-input" />
       </div>
       <lfx-filter-pills
+        variant="track"
         [options]="filterOptions"
         [selectedFilter]="filter()"
         (filterChange)="onFilterChange($event)"
@@ -35,24 +36,29 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Organization participation unavailable"
       subtitle="We could not load organization participation for this foundation. Refresh the page to try again."
       data-testid="engagement-org-participation-error" />
   } @else if (!loading() && scopeEmpty()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-building"
       title="No organizations recorded for this scope"
-      subtitle="The analytics model has no organization participation records for this foundation or project."
+      subtitle="The analytics model has no organization participation records for this foundation."
       data-testid="engagement-org-participation-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-building"
       title="No organizations match this filter"
       subtitle="No organization in this scope matches the current search and activity filter."
       data-testid="engagement-org-participation-empty" />
   } @else {
     <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [paginator]="totalRecords() > size()"
@@ -66,12 +72,12 @@
       data-testid="engagement-org-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Avg reps</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
-          <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Avg reps</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
+          <th scope="col" class="w-[150px]"><span class="text-[12px] font-normal text-gray-500">Attendance</span></th>
         </tr>
       </ng-template>
 
@@ -80,20 +86,30 @@
         @let period = view.period;
         <tr [attr.data-testid]="'engagement-org-participation-row-' + row.accountId">
           <td>
-            <span class="text-sm font-medium text-gray-900">{{ row.accountName }}</span>
+            <span class="text-[13px] font-medium text-gray-900">{{ row.accountName }}</span>
           </td>
           <td>
-            <span class="text-sm text-gray-800">{{ row.membershipTier }}</span>
+            <!-- The design's `.pill`: 12px with 2px 8px padding, exact px for the 14px root. -->
+            @if (row.membershipTier) {
+              <span
+                class="rounded-full px-[8px] lg:whitespace-nowrap py-[2px] text-[12px] leading-[16px]"
+                [class]="view.tierPillClass"
+                [attr.data-testid]="'engagement-org-participation-row-' + row.accountId + '-tier'"
+                >{{ row.membershipTier }}</span
+              >
+            } @else {
+              <span class="text-[13px] text-gray-400">—</span>
+            }
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ view.attendedLabel }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ view.attendedLabel }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ view.avgRepsLabel }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ view.avgRepsLabel }}</span>
           </td>
           <td>
             <!-- Lapsed is the view's own flag, so the stale styling never disagrees with the segment. -->
-            <span class="text-sm" [class]="row.lapsed ? 'text-amber-700' : 'text-gray-800'">
+            <span class="text-[13px]" [class]="row.lapsed ? 'text-amber-700' : 'text-gray-900'">
               {{ view.lastEngagedLabel }}
               @if (row.lapsed) {
                 <span class="sr-only">— lapsed</span>

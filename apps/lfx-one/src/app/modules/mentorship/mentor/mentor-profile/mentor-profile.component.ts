@@ -3,14 +3,14 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileResponse, MentorshipMentorProfileUpdateResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentoringHistoryEntry, MentorshipMentorProfileResponse, MentorshipMentorProfileUpdateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
-import { catchError, map, of, switchMap, tap } from 'rxjs';
+import { catchError, EMPTY, map, of, Subject, switchMap, tap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { MentorProfileEditDrawerComponent } from './components/mentor-profile-edit-drawer/mentor-profile-edit-drawer.component';
@@ -34,6 +34,10 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  * Saving the edit drawer shows the saved profile in place (`savedProfile`) instead of re-reading it, so the page
  * never flashes its loading state. The edit cannot change the history, which keeps the loaded rows. A Retry drops
  * that override so the freshly loaded data wins.
+ *
+ * Accepting an invitation in the drawer can add a membership to the history, so the page re-reads the profile
+ * quietly and takes only its history (`refreshedHistory`): no loading state, and the profile shown, and any
+ * unsaved drawer edits, stay as they are. A failed re-read keeps the rows already shown. A Retry drops it too.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile',
@@ -58,10 +62,29 @@ export class MentorProfileComponent {
 
   private readonly reloadProfile = signal(0);
   private readonly savedProfile = signal<MentorshipMentorProfileUpdateResponse | null>(null);
+  private readonly refreshedHistory = signal<MentorshipMentoringHistoryEntry[] | null>(null);
+  private readonly historyRefresh$ = new Subject<void>();
   private readonly profileState: Signal<MentorshipMentorProfileResponse> = this.initProfile();
 
   protected readonly profile = computed(() => this.savedProfile()?.profile ?? this.profileState().profile);
-  protected readonly history = computed(() => this.profileState().history);
+  protected readonly history = computed(() => this.refreshedHistory() ?? this.profileState().history);
+
+  public constructor() {
+    this.historyRefresh$
+      .pipe(
+        switchMap(() =>
+          this.mentorService.getMentorProfile().pipe(
+            map((response) => response.history),
+            catchError((error: HttpErrorResponse) => {
+              console.error('[MentorProfileComponent] history refresh failed', error);
+              return EMPTY;
+            })
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe((history) => this.refreshedHistory.set(history));
+  }
 
   protected onEditProfile(): void {
     this.drawerService.open(this.profile());
@@ -69,6 +92,10 @@ export class MentorProfileComponent {
 
   protected onProfileSaved(response: MentorshipMentorProfileUpdateResponse): void {
     this.savedProfile.set(response);
+  }
+
+  protected onInvitationAccepted(): void {
+    this.historyRefresh$.next();
   }
 
   protected retry(): void {
@@ -80,6 +107,7 @@ export class MentorProfileComponent {
       toObservable(this.reloadProfile).pipe(
         tap(() => {
           this.savedProfile.set(null);
+          this.refreshedHistory.set(null);
           this.hasLoaded.set(false);
           this.loadError.set(null);
         }),

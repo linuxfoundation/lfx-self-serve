@@ -43,6 +43,7 @@ import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -248,7 +249,7 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        title: 'My Dashboard',
+        title: 'Dashboard',
         data: { lens: 'me' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
@@ -346,7 +347,7 @@ export const routes: Routes = [
       // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
       // so its redirect wins over `projectQueryParamGuard` (#2754). The guards must also re-run when
       // only `?project=` changes — the project selector re-enters the lens that way while already on
-      // this route (`SidebarComponent.contextSwitchTarget`), and the default `paramsChange`
+      // this route (`NavMenuBase.contextSwitchTarget`), and the default `paramsChange`
       // policy would let that navigation complete without re-deciding the landing page.
       // `formationOverviewReleaseGuard` (CanDeactivate) clears the fail-open record the redirect
       // guard leaves for the sidebar whenever navigation leaves this route.
@@ -370,6 +371,19 @@ export const routes: Routes = [
         canMatch: [formationProjectEnabledGuard],
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
+      },
+      // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
+      // project `viewer` on every read.
+      {
+        path: 'project/participating-orgs',
+        title: 'Participating Organizations',
+        data: { lens: 'project' },
+        // As on project/overview: a `?project=` change on this same route must re-run
+        // projectQueryParamGuard, which seeds the project context the page reads its slug from.
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [projectQueryParamGuard],
+        loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
       // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
       // outside the `org/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
@@ -657,26 +671,26 @@ export const routes: Routes = [
       },
       {
         path: 'meetings',
-        title: 'My Meetings',
+        title: 'Meetings',
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'meetups',
-        title: 'My Meetups',
+        title: 'Meetups',
         canActivate: [meetupsLensGuard],
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {
         path: 'groups',
-        title: `My ${COMMITTEE_LABEL.plural}`,
+        title: COMMITTEE_LABEL.plural,
         canMatch: [authenticatedMatchGuard],
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
-        title: `My ${MAILING_LIST_LABEL.plural}`,
+        title: MAILING_LIST_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
@@ -698,13 +712,13 @@ export const routes: Routes = [
       },
       {
         path: 'votes',
-        title: `My ${VOTE_LABEL.plural}`,
+        title: VOTE_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
-        title: `My ${SURVEY_LABEL.plural}`,
+        title: SURVEY_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
@@ -712,7 +726,7 @@ export const routes: Routes = [
         // Personal reader: route data restores Me on deep links from any lens.
         path: 'newsletters/my',
         pathMatch: 'full',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () =>
@@ -723,7 +737,7 @@ export const routes: Routes = [
         // (`?invite=<group uid>`). Must stay ahead of the `newsletters/:projectSlug/:id`
         // permalink, which would otherwise read `my` as a project slug.
         path: 'newsletters/my/:foundationSlug',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
@@ -789,7 +803,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        title: 'My Events',
+        title: 'Events',
         canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
@@ -813,9 +827,9 @@ export const routes: Routes = [
         // lensRedirectGuard rewriting it to /foundation/formations (the auditor-only queue) or the
         // non-existent /project/formations. No projectQueryParamGuard either: the page carries no
         // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
-        // to My Dashboard).
+        // to Dashboard).
         path: 'formations',
-        title: 'My Formations',
+        title: 'Formations',
         data: { lens: 'me' },
         canMatch: [formationMeEnabledGuard],
         loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),
@@ -869,6 +883,15 @@ export const routes: Routes = [
     title: 'LFX Documentation',
     loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
     loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
+  },
+  // Chrome-less presenter (#4140): top-level sibling of the MainLayout root so it renders full-viewport with no navbar/sidebar.
+  // A child of votes.routes.ts would inherit the shell. Gated on vote#writer; must precede the in-shell `**` catch-all.
+  {
+    path: 'votes/:id/present',
+    title: 'Present Vote',
+    canActivate: [authGuard, votePresenterGuard],
+    data: { preload: false },
+    loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
   {
     path: 'meetings/not-found',

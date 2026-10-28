@@ -169,21 +169,38 @@
       }
     </div>
 
-    <!-- Copy link button -->
-    @defer (on idle) {
-      <button
-        type="button"
-        [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
-        class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
-        pTooltip="Copy meeting link"
-        tooltipPosition="top"
-        aria-label="Copy meeting link"
-        data-testid="dashboard-meeting-card-copy-button">
-        <i class="fa-light fa-clone text-xs"></i>
-      </button>
-    } @placeholder {
-      <div class="shrink-0 w-7 h-7 mt-1" aria-hidden="true"></div>
-    }
+    <!-- Icon actions: resend my invite (registered viewers only), copy link -->
+    <div class="shrink-0 flex flex-col gap-1 mt-1">
+      @if (canResendInvite()) {
+        <button
+          type="button"
+          class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          pTooltip="Resend my invitation"
+          tooltipPosition="top"
+          aria-label="Resend my invitation"
+          [disabled]="resendingInvite()"
+          (click)="resendInvite()"
+          data-testid="dashboard-meeting-card-resend-button">
+          <i class="fa-light fa-paper-plane text-xs" aria-hidden="true"></i>
+        </button>
+      }
+
+      <!-- Copy link button -->
+      @defer (on idle) {
+        <button
+          type="button"
+          [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
+          class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500"
+          pTooltip="Copy meeting link"
+          tooltipPosition="top"
+          aria-label="Copy meeting link"
+          data-testid="dashboard-meeting-card-copy-button">
+          <i class="fa-light fa-clone text-xs"></i>
+        </button>
+      } @placeholder {
+        <div class="shrink-0 w-7 h-7" aria-hidden="true"></div>
+      }
+    </div>
   </div>
 
   <!-- Card footer buttons -->

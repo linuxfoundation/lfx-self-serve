@@ -1,19 +1,45 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4" data-testid="org-easycla-manager-question-dialog">
-  <p class="text-sm text-gray-600 m-0">{{ copy.message }}</p>
-  <p class="text-sm text-gray-500 m-0">{{ copy.note }}</p>
-
-  <div class="grid grid-cols-2 gap-3 pt-2">
-    <lfx-button
-      [label]="copy.noLabel"
-      type="button"
-      severity="secondary"
-      [outlined]="true"
-      [fluid]="true"
-      (onClick)="answer('no')"
-      data-testid="org-easycla-manager-question-no" />
-    <lfx-button [label]="copy.yesLabel" type="button" [fluid]="true" (onClick)="answer('yes')" data-testid="org-easycla-manager-question-yes" />
+<!--
+  A polite live region around the whole switch, as on the signing hand-off: Yes replaces the
+  question with the configuring state on its own, and the dialog closes when the assignment
+  answers. Without this, a screen-reader user hears the question and then nothing until it closes.
+-->
+<div class="flex flex-col gap-4" role="status" aria-live="polite" data-testid="org-easycla-manager-question-dialog">
+  <div class="flex items-start justify-between gap-4">
+    <h2 [id]="headingId" class="text-lg font-semibold text-gray-900" data-testid="org-easycla-manager-question-heading">{{ heading() }}</h2>
+    @if (state() === 'asking') {
+      <button type="button" class="text-gray-400 hover:text-gray-600" aria-label="Close" (click)="onCancel()" data-testid="org-easycla-manager-question-close">
+        <i class="fa-light fa-xmark text-lg" aria-hidden="true"></i>
+      </button>
+    }
   </div>
+
+  @switch (state()) {
+    @case ('asking') {
+      <p class="text-sm text-gray-600 m-0">{{ copy.message }}</p>
+      <p class="text-sm text-gray-500 m-0">{{ copy.note }}</p>
+
+      <div class="grid grid-cols-2 gap-3 pt-2">
+        <lfx-button
+          [label]="copy.noLabel"
+          type="button"
+          severity="secondary"
+          [outlined]="true"
+          [fluid]="true"
+          (onClick)="onNo()"
+          data-testid="org-easycla-manager-question-no" />
+        <lfx-button [label]="copy.yesLabel" type="button" [fluid]="true" (onClick)="onYes()" data-testid="org-easycla-manager-question-yes" />
+      </div>
+    }
+
+    @case ('configuring') {
+      <div class="flex flex-col items-center gap-3 py-6 text-center" data-testid="org-easycla-manager-question-configuring">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-slate-400" aria-hidden="true"></i>
+        <p class="text-sm text-slate-600">{{ configuringCopy.body }}</p>
+        <p class="text-sm font-medium text-slate-900">{{ configuringCopy.consequence }}</p>
+      </div>
+    }
+  }
 </div>

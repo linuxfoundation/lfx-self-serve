@@ -68,10 +68,10 @@ Manifest slugs are emitted **canonical** (lowercase kebab, no leading/trailing s
 
 `DocsLayoutComponent` is **auth-aware** (FR-014). It reads `UserService.authenticated()` and renders one of two left rails:
 
-- **Authenticated** → existing `LensSwitcherComponent` (full app chrome including the new docs icon at LFXV2-2001).
+- **Authenticated** → `NavbarComponent` (`lfx-navbar`, the full app navigation including the Documentation footer action — in the account menu instead while the navbar is collapsed to its rail). The content gutter follows the navbar's docked width through `NavbarCollapseService.gutterClass()`, and on a non-touch device the navbar (not the mobile top bar) shows at every width.
 - **Anonymous** → `DocsSidebarNavComponent` (LF logo, docs icon, "What's New" + sign-in CTAs that carry `returnTo=<current-url>`).
 
-The main content area is identical in both states — only the rail swaps. This means a logged-in user reading docs gets the full lens switcher; an anonymous visitor gets a focused docs shell that converts via the sign-in button.
+The main content area is identical in both states — only the rail swaps. This means a logged-in user reading docs gets the full app navbar; an anonymous visitor gets a focused docs shell that converts via the sign-in button.
 
 ## Search
 

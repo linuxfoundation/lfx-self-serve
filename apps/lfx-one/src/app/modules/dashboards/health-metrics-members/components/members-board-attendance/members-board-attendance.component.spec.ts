@@ -120,12 +120,15 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(getMembersBoardAttendance).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 });
     expect(text('members-board-meetings')).toBe('12 meetings in range');
     expect(text('members-board-latest')).toBe('82%');
-    expect(query('members-board-latest')?.classList).toContain('text-amber-600');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-board-hero')?.classList).not.toContain('border');
+    expect(query('members-board-latest')?.classList).toContain('text-red-600');
     expect(text('members-board-caption')).toBe('Last board meeting · below the ~100% this should be');
     expect(text('members-board-other')).toBe('65%');
     expect(text('members-board-attended')).toBe('9 / 11');
     expect(text('members-board-never')).toBe('0');
-    expect(text('members-board-count')).toBe('12 meetings');
+    // The meetings-in-range line above the hero is the only count; none repeats over the table.
+    expect(query('members-board-count')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(notes).toEqual(['', '82% attended']);
   });
@@ -155,9 +158,9 @@ describe('MembersBoardAttendanceComponent', () => {
 
   it("highlights the view's latest meeting, not the last bar, when meetings share a date", async () => {
     const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
-    await render(response({ trend: sameDay, cohorts: { board: cohort({ isBelowExpectedLevel: false }), voting_members: null } }));
+    await render(response({ trend: sameDay, cohorts: { board: cohort({ latestAttendancePct: 0.95, isBelowExpectedLevel: false }), voting_members: null } }));
 
-    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[600], lfxColors.blue[200]]);
+    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[500], lfxColors.blue[200]]);
   });
 
   it('flags never-attended seats and links to the representatives who never attended', async () => {

@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -15,10 +17,19 @@ export interface PeopleTabConfig {
   readonly noun: string;
 }
 
+/** The live People directory a page is showing: its range and project scope (the commit scope and metric do not change who is listed). */
+export interface OrgPeopleDirectoryView {
+  range: OrgLensTimeRange;
+  projectScope: OrgProjectScope;
+}
+
 // All Employees tab ----------------------------------------------------------
 
 /** Filter the All Employees table by activity dimension. */
 export type OrgAllEmployeeActivityFilter = 'all' | 'governance' | 'code' | 'events' | 'training';
+
+/** Which employees the All Employees table shows (lfx-self-serve#4311). `former` reads the former-employees roster; `all` shows both. */
+export type OrgAllEmployeeEmploymentFilter = 'current' | 'former' | 'all';
 
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
@@ -45,6 +56,12 @@ export type OrgPersonSource = 'snowflake' | 'board' | 'committee' | 'keyContact'
 export interface OrgAllEmployeeActivityOption {
   label: string;
   value: OrgAllEmployeeActivityFilter;
+}
+
+/** Dropdown option for the employment filter (typed value). */
+export interface OrgAllEmployeeEmploymentOption {
+  label: string;
+  value: OrgAllEmployeeEmploymentFilter;
 }
 
 /** One row in the All Employees table. */
@@ -80,10 +97,22 @@ export interface OrgAllEmployeeRow {
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
+  /** The count the request's commit filters pick: authored commits, commits merged to the main branch, or code-contribution activities. */
   commitsCount: number;
+  /**
+   * Code-contribution activities (commits, pull requests, reviews, comments), whatever the commit filters pick. The
+   * "Employees Active in Open Source" tile counts a person with any, so the tile does not move with the code-count option.
+   */
+  codeActivitiesCount: number;
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];
+  /**
+   * `true` on rows from the former-employees roster: every employment record at this account has ended. On a
+   * ranged live directory row, a former employee listed only through their Org Lens access: not current, kept so
+   * the former row can take their access badge. Absent on current rows.
+   */
+  isFormer?: boolean;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
@@ -130,13 +159,14 @@ export interface OrgAllEmployeeCommitteeMembership {
   isBoard: boolean;
 }
 
-/** One project the employee contributed code to. */
+/** One project the employee contributed code to (trailing 12 months). */
 export interface OrgAllEmployeeCodeContribution {
   projectId: string;
   projectName: string;
   foundationId: string;
   foundationName: string;
-  totalCommits: number;
+  /** Distinct commits the person authored in this project. A commit mirrored in several projects counts in each, so the rows can sum to more than {@link OrgAllEmployeeDetail.totalCommits}. */
+  commits: number;
   lastActivityDate: string | null;
   isMaintainer: boolean;
 }
@@ -161,48 +191,52 @@ export interface OrgAllEmployeeTraining {
   coursesCount: number;
 }
 
-/** Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). */
+/**
+ * Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). Company
+ * addresses are not part of it: they are served by the separate company-emails routes.
+ */
 export interface OrgAllEmployeeDetail {
   personKey: string;
   boardSeats: OrgAllEmployeeCommitteeMembership[];
   committeeSeats: OrgAllEmployeeCommitteeMembership[];
   code: OrgAllEmployeeCodeContribution[];
+  /** Distinct commits the person authored across all projects (trailing 12 months), each counted once. */
+  totalCommits: number;
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
-  /**
-   * Addresses on the org's domains, primary-first. Uncapped. Empty means "none on record" only when
-   * `companyEmailsStatus === 'resolved'`; failed and unavailable lookups also return empty arrays.
-   */
-  companyEmails: string[];
-  /**
-   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: no usable
-   * identity. `failed`: lookup errored; never fails the whole detail response.
-   */
-  companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 
 /**
- * Response for the username-keyed company-emails lookup. Keyed on an identity, never on an address:
- * an address key would let a caller enumerate a person's other addresses from an arbitrary input.
+ * Response for the company-emails lookups, keyed on a person key or an LF username and never on an
+ * address: an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
 export interface OrgPersonCompanyEmailsResponse {
+  /** Addresses on the org's domains, primary-first. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
-   * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
-   * (no username, no qualifying address, or ambiguous match). A missing status must be
-   * treated as `failed`, never as `unavailable` or an empty set.
+   * The address flagged primary in the warehouse, when there is one — always also present in
+   * `companyEmails`, and always its first entry. `null` when the person has no primary on record;
+   * absent on cache entries written before this field existed, so read it as optional.
+   */
+  primaryEmail?: string | null;
+  /**
+   * `resolved`: the lookup succeeded; an empty list means none on record. A username that resolves to one
+   * roster person is looked up by that person's key, so it follows this rule too; only the fallback for
+   * other usernames is `resolved` solely with at least one address. `unavailable`: no usable identity, or a
+   * fallback username with no qualifying address or an ambiguous match. `failed`: the lookup errored. A
+   * missing status must be treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
- * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
- * stays truthful instead of implying verified-empty activity.
+ * Internal detail-fetch result for `PersonDetailDrawerService`. `detail` stays `null` when the opener has no
+ * `personKey` and its username resolves to no single roster person (or it has neither), so the drawer's
+ * "Detailed activity isn't available" state stays truthful instead of implying verified-empty activity.
  */
-export interface OrgDrawerFetchResult {
+export interface OrgDrawerDetailResult {
   detail: OrgAllEmployeeDetail | null;
-  companyEmails: string[];
+  error: boolean;
 }

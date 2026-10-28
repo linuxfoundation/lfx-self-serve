@@ -25,6 +25,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignSitelink,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   LinkedInBriefCopy,
@@ -114,6 +115,26 @@ export class PlanningTabComponent implements OnInit {
   public readonly emailStage = input<CampaignSendStage | ''>('');
 
   /**
+   * Bumped by the parent whenever it has CHANGED the stored row this planner last looked up.
+   *
+   * The lookup below caches its answer in `savedBrief` and friends, and nothing ever invalidated
+   * that cache from outside: this component is visibility-toggled rather than destroyed, so its
+   * answer outlives every write the parent makes to the same row. Two dead ends came out of that.
+   * A save whose approve step did not land told the user to "go back to Planning and restore the
+   * saved brief" — but the lookup had legitimately found nothing before that save, `onUrlInput`
+   * emits nothing for an unchanged URL, and no Restore button ever appeared. And a restore that
+   * APPROVED the row left this cache holding the pre-approval validator and `approved: false`,
+   * so a second Restore replayed a stale pair at the parent.
+   *
+   * An INPUT rather than a `viewChild` call on the parent, because two instances of this
+   * component are mounted at once (paid and email are visibility-toggled, see
+   * `campaigns.component.html`) and the parent has to address exactly one of them. The value is
+   * opaque — only CHANGE matters, which is why it joins the lookup key below rather than being
+   * read anywhere.
+   */
+  public readonly savedBriefRefreshToken = input(0);
+
+  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -164,7 +185,28 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{ brief: CampaignBriefOutput; briefId: string; etag: string | null; approved: boolean }>();
+  public readonly restoreSavedBriefRequested = output<{
+    brief: CampaignBriefOutput;
+    briefId: string;
+    etag: string | null;
+    approved: boolean;
+    /**
+     * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
+     *
+     * The parent keeps its own record of the row and has to decide, on every restore, whether
+     * that record or this offer is the newer account. Neither is reliably newer on its own: the
+     * offer loses to a record written by an approval the cache has not seen, and the record loses
+     * to a read that happened after it (a different editor moved the row and this tab looked
+     * again). The id cannot separate those — it is the same row in both.
+     *
+     * This token can, because the parent bumps it on every write it makes to the row. An offer
+     * carrying a token ABOVE the one the parent stamped on its record was read after that write
+     * and is therefore the newer account; one at or below it is a replay of what this tab already
+     * held. Emitted rather than inferred, because only this tab knows which token its cached
+     * answer belongs to.
+     */
+    readAt: number;
+  }>();
 
   // === Constants ===
   protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
@@ -408,6 +450,29 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly hsHasAlternatives = computed(() => this.hsMatches().some((m) => m.hs_utm !== this.hsUtm()));
   protected readonly keywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The generated Google extension seeds, carried to the Implementation tab's editors.
+   *
+   * Held here rather than emitted straight through because generation and the hand-off are
+   * separate moments: the SSE events arrive while the operator is still reading the brief, and
+   * `onProceedToImplementation` is what posts them onward. There is no editor for either on THIS
+   * tab -- the Implementation tab owns that, and owns the cap enforcement with it.
+   */
+  protected readonly googleCallouts = signal<string[]>([]);
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  /**
+   * Negative keywords the generator produced, carried to the Optimize tab's editor the same way
+   * the two above are carried to the Implementation tab's — held here, emitted by
+   * `onProceedToImplementation`, no editor on THIS tab.
+   *
+   * Set by the GENERATE stream only, as those two are. A refinement leaves it alone, and not for
+   * their reason — there is nothing of the operator's here for a regeneration to overwrite, since
+   * the only place they edit these is the Optimize tab's own text box after launch. It is that
+   * `streamRefinedBrief` never scrapes: it has no event details to build negatives from, so a
+   * regeneration there would replace a list grounded in the event page with one built from the URL
+   * alone. A suggestion that is slightly stale beats one that is thinner.
+   */
+  protected readonly negativeKeywords = signal<string[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   private lastLookedUpEventValue = '';
@@ -519,11 +584,19 @@ export class PlanningTabComponent implements OnInit {
    * Whether that stored brief is APPROVED, carried alongside its id.
    *
    * The restore emits it because campaign-service refuses a create from an unapproved brief
-   * (`internal/service/brief.go:439`). Without it the parent files a restored brief as
+   * (`BriefService.CreateCampaigns`). Without it the parent files a restored brief as
    * create-ready and the Implementation tab enables Create for a request that cannot succeed —
    * the same defect the save path already guards, one restore apart.
    */
   private savedBriefApproved = false;
+
+  /**
+   * The refresh token the offer above was read under — see `restoreSavedBriefRequested`.
+   *
+   * Starts at 0, the same value `savedBriefRefreshToken` starts at, so an offer from the page's
+   * very first lookup is correctly NOT newer than a record the parent wrote before bumping.
+   */
+  private savedBriefReadAt = 0;
 
   private readonly slugInput$ = new Subject<string>();
 
@@ -607,7 +680,7 @@ export class PlanningTabComponent implements OnInit {
    * The active foundation as an OBSERVABLE, for the lookup pipeline.
    *
    * A foundation switch does NOT re-create this component: `/foundation/campaigns` is a
-   * two-segment route in the foundation lens, and `sidebar.component.ts` `contextSwitchTarget`
+   * two-segment route in the foundation lens, and `nav-menu-base.directive.ts` `contextSwitchTarget`
    * navigates only on a lens change, off an entity page, or off the Project lens
    * landing/checklist pages, so a same-lens pick here just moves `?project=` with `Location.replaceState`. The page stays mounted
    * and `activeContext()` changes underneath it — which makes the foundation part of the lookup
@@ -629,6 +702,13 @@ export class PlanningTabComponent implements OnInit {
   // Launch names a DIFFERENT brief, not a filter on the same one — without this the planner would
   // keep the previous stage's restore offer on screen for a brief the new stage does not have.
   private readonly emailStage$ = toObservable(this.emailStage);
+
+  // Part of the lookup key for a different reason than the three above: the others name a
+  // DIFFERENT row, this one says the SAME row changed. Folding it into the key is what lets a
+  // parent-side write get past `distinctUntilChanged`, which would otherwise drop a re-emission
+  // of an unchanged `(slug, project, delivery, stage)` — and dropping it is exactly how the
+  // cached answer outlived the row it described. See `savedBriefRefreshToken`.
+  private readonly savedBriefRefreshToken$ = toObservable(this.savedBriefRefreshToken);
 
   // === Lifecycle ===
   public ngOnInit(): void {
@@ -659,9 +739,9 @@ export class PlanningTabComponent implements OnInit {
     // exists. `onUrlInput` and the foundation subscription below both clear the offer
     // eagerly; without this guard the late response simply sets it again, for an event or a
     // foundation the user has already left.
-    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$])
+    combineLatest([this.slugInput$, this.activeFoundationSlug$, this.deliveryType$, this.emailStage$, this.savedBriefRefreshToken$])
       .pipe(
-        // Runs for BOTH surfaces. This was `filter(() => !this.isEmailLike())` while brief storage had
+        // Runs for BOTH surfaces. This was `filter(() => !this.isEmail())` while brief storage had
         // no delivery dimension: one row per `(foundation, event)` meant the row an email caller
         // found was whatever surface wrote last, and restoring a paid brief into an email plan
         // brings RSA headlines, a keyword list and a platform selection that mean nothing there.
@@ -678,19 +758,23 @@ export class PlanningTabComponent implements OnInit {
         // the surfaces apart now, but a stale upstream mid-rollout is exactly when a mismatched row
         // would arrive.
         distinctUntilChanged(
-          ([slug, project, delivery, stage], [nextSlug, nextProject, nextDelivery, nextStage]) =>
-            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage
+          ([slug, project, delivery, stage, token], [nextSlug, nextProject, nextDelivery, nextStage, nextToken]) =>
+            slug === nextSlug && project === nextProject && delivery === nextDelivery && stage === nextStage && token === nextToken
         ),
         debounceTime(500),
-        switchMap(([slug, project, delivery, stage]) =>
+        // `token` rides along for the same reason the key parts do, but it is not a staleness
+        // check: it is the provenance stamp `restoreSavedBriefRequested` carries to the parent.
+        // Taken from the REQUEST rather than read at response time, so an answer dispatched
+        // before a parent-side write cannot claim to post-date it.
+        switchMap(([slug, project, delivery, stage, token]) =>
           this.campaignService.loadBrief(slug, project, delivery, stage).pipe(
-            map((result) => ({ slug, project, delivery, stage, result })),
-            catchError(() => of({ slug, project, delivery, stage, result: null }))
+            map((result) => ({ slug, project, delivery, stage, token, result })),
+            catchError(() => of({ slug, project, delivery, stage, token, result: null }))
           )
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, delivery, stage, result }) => {
+      .subscribe(({ slug, project, delivery, stage, token, result }) => {
         // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
         // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
         // flips Paid <-> Email still arrives, and it answers a question about the other surface.
@@ -699,7 +783,7 @@ export class PlanningTabComponent implements OnInit {
         if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType() || stage !== this.emailStage()) {
           return;
         }
-        this.applySavedBrief(result);
+        this.applySavedBrief(result, token);
       });
 
     // Clear the offer the MOMENT the foundation changes, not when the re-lookup answers. Between
@@ -723,6 +807,11 @@ export class PlanningTabComponent implements OnInit {
       this.savedBriefId = null;
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
+      // Back to the floor with the rest of the pair-and-its-provenance, at all three clear sites.
+      // `savedBriefId` is `null` here so nothing can be emitted carrying it, but leaving a high
+      // stamp behind would make this field the one piece of a cleared offer that still asserts
+      // something — and the next reader of it would have no way to tell it was never refreshed.
+      this.savedBriefReadAt = 0;
       this.savedBriefWarning.set(null);
       // The HubSpot state is cleared too, and the stale-response guard is not enough on its own.
       // That guard stops a LATE answer from landing; it does nothing about an answer that
@@ -817,6 +906,7 @@ export class PlanningTabComponent implements OnInit {
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
+        this.savedBriefReadAt = 0;
         this.savedBriefWarning.set(null);
       });
   }
@@ -836,6 +926,9 @@ export class PlanningTabComponent implements OnInit {
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
     this.keywords.set([]);
+    this.googleCallouts.set([]);
+    this.googleSitelinks.set([]);
+    this.negativeKeywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     // Audience and pitch described the brief just DISCARDED; leaving them pre-filled the next New
@@ -935,6 +1028,7 @@ export class PlanningTabComponent implements OnInit {
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
+        this.savedBriefReadAt = 0;
         this.savedBriefWarning.set(null);
       }
       this.slugInput$.next(slug);
@@ -960,7 +1054,13 @@ export class PlanningTabComponent implements OnInit {
     // Both, or neither. A restore without its id would reach the parent as an unowned save and
     // be refused — a worse outcome than not offering the button, so the guard covers the pair.
     if (brief !== null && this.savedBriefId !== null) {
-      this.restoreSavedBriefRequested.emit({ brief, briefId: this.savedBriefId, etag: this.savedBriefEtag, approved: this.savedBriefApproved });
+      this.restoreSavedBriefRequested.emit({
+        brief,
+        briefId: this.savedBriefId,
+        etag: this.savedBriefEtag,
+        approved: this.savedBriefApproved,
+        readAt: this.savedBriefReadAt,
+      });
     }
   }
 
@@ -1253,6 +1353,9 @@ export class PlanningTabComponent implements OnInit {
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
+    this.googleCallouts.set([]);
+    this.googleSitelinks.set([]);
+    this.negativeKeywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
 
@@ -1339,6 +1442,19 @@ export class PlanningTabComponent implements OnInit {
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
+      // `undefined` when the generator produced nothing, never `[]`, because the two mean different
+      // things from here on: `[]` is a list and CLEARS the Implementation tab's editor, while
+      // absence leaves entries the operator typed by hand alone. Emitting `[]` unconditionally
+      // would store `[]` on every row this app writes and make the `null`-vs-`[]` contract
+      // `toBriefInput` and `populateFromBrief` are built on unreachable. Neither signal is operator-
+      // editable on this tab — they are set from the stream and cleared on reset — so an empty one
+      // can only mean the list was never generated.
+      googleCallouts: this.googleCallouts().length > 0 ? this.googleCallouts() : undefined,
+      googleSitelinks: this.googleSitelinks().length > 0 ? this.googleSitelinks() : undefined,
+      // `undefined` rather than `[]` on the same rule as the two above, though the consequence is
+      // milder: nothing is cleared by an empty negative list, it simply offers the Optimize tab
+      // nothing. Kept identical so one reader of these three lines does not have to hold two rules.
+      negativeKeywords: this.negativeKeywords().length > 0 ? this.negativeKeywords() : undefined,
       hsUtm: this.hsUtm(),
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
@@ -1560,7 +1676,7 @@ export class PlanningTabComponent implements OnInit {
       eventDetails: this.eventDetails(),
       // Same pair as the generate request: the delivery type is the signal the server acts on,
       // PAID-ONLY by construction: `submitRefine` returns above for email, so this request can
-      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmailLike()` here and
+      // never carry `deliveryType: 'email'`. An earlier version branched on `isEmail()` here and
       // documented a server refusal it could not reach — which made the client look as though it
       // exercised that path when nothing did. The server guard stays for direct callers; this
       // sends the paid shape unconditionally.
@@ -1681,12 +1797,13 @@ export class PlanningTabComponent implements OnInit {
    * `null` is the transport failure `catchError` mapped — distinct from every `status` the
    * server can report, and the only one that means "we do not know".
    */
-  private applySavedBrief(result: CampaignBriefLoadResult | null): void {
+  private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number): void {
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
+      this.savedBriefReadAt = readAt;
       this.savedBriefWarning.set('Could not check whether this event already has a saved brief.');
       return;
     }
@@ -1705,6 +1822,10 @@ export class PlanningTabComponent implements OnInit {
     // length of a deploy. Collapse absence to one spelling here, at the boundary.
     this.savedBriefEtag = result.status === 'loaded' ? (result.etag ?? null) : null;
     this.savedBriefApproved = result.status === 'loaded' && result.approved;
+    // Stamped for EVERY answer, loaded or not, and kept in step with the three fields above for
+    // the reason they are kept in step with each other: an offer must never be emitted with a
+    // provenance stamp belonging to a different read than the one that produced it.
+    this.savedBriefReadAt = readAt;
 
     this.savedBriefWarning.set(this.warningFor(result));
   }
@@ -1724,16 +1845,26 @@ export class PlanningTabComponent implements OnInit {
       return 'This event has a saved brief that could not be opened, so a new one cannot be saved over it. Ask an administrator to remove the stored brief.';
     }
 
-    // A stored brief that never reached `approved` is a save whose approve step failed. It is
-    // durable, so restoring it is safe and correct, but campaign creation and audience building
-    // both gate on `approved` — a silent restore would hand the user a brief that cannot proceed
-    // and give no reason. Restoring cannot fix it here: approval is a separate upstream call with
-    // no route on this service yet, and re-SAVING would rewrite the stored bytes with
-    // `fromBriefResponse`'s lossy reconstruction, which is the one outcome the restore path
-    // exists to avoid. So this says what is wrong rather than pretending it is fine. The
-    // approve-only endpoint is tracked as LFXV2-3205.
+    // A stored brief that never reached `approved` is a save whose approve step failed, or simply
+    // a row campaign-service reset to `draft` on its last PUT. It is durable, so restoring it is
+    // safe and correct — and restoring it is also the REMEDY: the parent approves the stored row
+    // through `POST /api/campaigns/brief/:briefId/approve`, which writes nothing, rather than
+    // re-SAVING it with `fromBriefResponse`'s lossy reconstruction, the one outcome the restore
+    // path exists to avoid.
+    //
+    // This sentence used to end "ask an administrator to approve the stored brief" — an action
+    // that existed nowhere in the product, so the warning named a dead end. It still warns rather
+    // than staying silent, because the approval is a second request that can fail, and a user who
+    // sees Create disabled afterwards needs to have been told what was wrong to begin with.
+    //
+    // Branched on the channel because ONE component serves both: the paid restore is wired to
+    // `onRestoreSavedBrief`, which approves; the email restore is wired to
+    // `onRestoreSavedEmailBrief`, which does not. Promising the approval on the email tab would be
+    // a sentence the code never delivers, so that channel says only what is true of it.
     if (result.status === 'loaded' && !result.approved) {
-      return 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restore it to review, then ask an administrator to approve the stored brief.';
+      return this.isEmailLike()
+        ? 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it brings the stored brief back for editing.'
+        : 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it approves the stored brief.';
     }
 
     return null;
@@ -2226,6 +2357,20 @@ export class PlanningTabComponent implements OnInit {
         break;
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
+        break;
+      case 'negativeKeywords':
+        this.negativeKeywords.set(event.data as string[]);
+        break;
+      // Only the GENERATE stream carries these two — and the `negativeKeywords` arm above, which is
+      // why none of the three has a counterpart in `handleRefineSSEEvent`. `streamRefinedBrief`
+      // yields no extension list because regenerating one would overwrite whatever the operator has
+      // since edited into it, and no negative-keyword list because it never scrapes, so it has
+      // nothing to rebuild the suggestion from.
+      case 'callouts':
+        this.googleCallouts.set(event.data as string[]);
+        break;
+      case 'sitelinks':
+        this.googleSitelinks.set(event.data as CampaignSitelink[]);
         break;
       case 'linkedin_strategy': {
         const raw = event.data as Record<string, unknown>;

@@ -1,73 +1,74 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Impersonation Banner -->
+<!-- Impersonation Banner — a fixed 36px bar; every top-[36px] / pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX -->
 <lfx-impersonation-banner />
 
-<div class="flex min-h-screen" [ngClass]="{ 'pt-12': userService.impersonating() }">
-  <!-- Sidebar - Desktop: lens switcher (48px) + nav panel (300px) = 348px -->
+<div class="flex min-h-screen" [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
+  <!-- Navbar - Desktop: floating 280px panel, 8px inset (288px gutter), or its 56px rail. From lg up; on a non-touch device
+       at every width, where the hamburger and drawer below never show. -->
   <div
-    class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"
+    class="flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
-      'top-12': userService.impersonating(),
+      'top-[36px]': userService.impersonating(),
       'top-0': !userService.impersonating(),
-    }">
-    <!-- Lens Switcher Column (48px) -->
-    <div class="w-[48px] flex-shrink-0" data-testid="lens-switcher-column">
-      <lfx-lens-switcher [showLensButtons]="false" [bannerOffset]="userService.impersonating()"></lfx-lens-switcher>
-    </div>
-    <!-- Nav Panel (300px) -->
-    <div class="w-[300px] flex-shrink-0">
-      <lfx-sidebar
-        [items]="sidebarItems()"
-        [showMeSelector]="activeLens() === 'me'"
-        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-        [showOrgSelector]="activeLens() === 'org'"
-        [(selectorPanelOpen)]="selectorPanelOpen"></lfx-sidebar>
-    </div>
+      flex: navbarCollapse.railAtAnyWidth(),
+      'hidden lg:flex': !navbarCollapse.railAtAnyWidth(),
+    }"
+    data-testid="navbar-column">
+    <lfx-navbar
+      [items]="sidebarItems()"
+      [showMeSelector]="activeLens() === 'me'"
+      [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+      [showOrgSelector]="activeLens() === 'org'"
+      [bannerOffset]="userService.impersonating()"
+      [(selectorPanelOpen)]="selectorPanelOpen"></lfx-navbar>
   </div>
 
-  <!-- Sidebar - Mobile Drawer -->
-  <p-drawer
-    [visible]="showMobileSidebar()"
-    (visibleChange)="onDrawerVisibilityChange($event)"
-    position="left"
-    [modal]="true"
-    [dismissible]="true"
-    [showCloseIcon]="true"
-    styleClass="lg:hidden w-[344px] mobile-sidebar-drawer"
+  <!-- Navbar - Mobile Drawer. A layout-owned panel, not PrimeNG's p-drawer: its Angular-animation lifecycle (re-parenting
+       the panel to <body> on enter, tearing down on leave) could leave the panel invisible or stripped on iOS WebKit while
+       the state said open. The panel always exists and slides with a CSS transition bound to the state, so what is shown
+       can't drift from it. The navbar mounts on first open and then stays. -->
+  @if (showMobileSidebar()) {
+    <div
+      class="lg:hidden fixed inset-0 z-[998] bg-black/40 touch-none mobile-navbar-backdrop"
+      (click)="closeMobileSidebar()"
+      aria-hidden="true"
+      data-testid="mobile-sidebar-backdrop"></div>
+  }
+  <div
+    #mobileDrawer
+    class="lg:hidden fixed top-0 left-0 z-[999] flex h-full w-[296px] flex-col outline-none mobile-navbar-drawer"
+    [class.is-open]="showMobileSidebar()"
+    [attr.inert]="showMobileSidebar() ? null : ''"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Navigation"
+    tabindex="-1"
+    pFocusTrap
+    [pFocusTrapDisabled]="!showMobileSidebar()"
     data-testid="mobile-sidebar-drawer">
-    <ng-template #header>
-      <div class="flex items-center gap-3">
-        <a [routerLink]="['/']" class="flex items-center">
-          <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-5" />
-        </a>
-      </div>
-    </ng-template>
-    <!-- Mobile: lens switcher horizontal strip + nav -->
-    <div class="flex flex-col h-full">
-      <div class="border-b border-gray-100">
-        <lfx-lens-switcher [mobile]="true" [showLensButtons]="false"></lfx-lens-switcher>
-      </div>
-      <div class="flex-1 min-h-0">
-        <lfx-sidebar
-          [items]="sidebarItems()"
-          [showMeSelector]="activeLens() === 'me'"
-          [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
-          [showOrgSelector]="activeLens() === 'org'"
-          [(selectorPanelOpen)]="selectorPanelOpen"
-          [mobile]="true"></lfx-sidebar>
-      </div>
-    </div>
-  </p-drawer>
+    @if (mobileNavbarMounted()) {
+      <!-- The drawer's lens tabs preview a lens's menu without switching the page's (#4208), so its selectors follow the menu lens. -->
+      <lfx-navbar
+        [items]="sidebarItems()"
+        [showMeSelector]="menuLens() === 'me'"
+        [showProjectSelector]="menuLens() === 'project' || menuLens() === 'foundation'"
+        [showOrgSelector]="menuLens() === 'org'"
+        [(selectorPanelOpen)]="selectorPanelOpen"
+        [mobile]="true"></lfx-navbar>
+    }
+  </div>
 
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
   @if (selectorPanelOpen()) {
     <div
-      class="hidden lg:block fixed inset-0 bg-black/10 z-30"
+      class="fixed inset-0 bg-black/10 z-30"
       [ngClass]="{
-        'top-12': userService.impersonating(),
+        'top-[36px]': userService.impersonating(),
         'top-0': !userService.impersonating(),
+        block: navbarCollapse.railAtAnyWidth(),
+        'hidden lg:block': !navbarCollapse.railAtAnyWidth(),
       }"
       (click)="selectorPanelOpen.set(false)"
       data-testid="selector-backdrop"></div>
@@ -75,16 +76,19 @@
 
   <!-- Main Content Area -->
   <!-- On the profile hub, reserve a right gutter (2xl:pr-[300px]) so content and the footer clear the fixed profile rail at 2xl and up; below 2xl the panel renders inline instead. -->
-  <main class="flex-1 min-w-0 lg:ml-[348px] flex flex-col" [ngClass]="{ '2xl:pr-[300px]': isProfileHub() }" data-testid="main-content">
-    <!-- Mobile Menu Button -->
+  <!-- The left gutter follows the desktop navbar: 288px docked open, 56px docked to its rail (a peek floats over it). -->
+  <main class="flex-1 min-w-0 flex flex-col" [ngClass]="[navbarCollapse.gutterClass(), isProfileHub() ? '2xl:pr-[300px]' : '']" data-testid="main-content">
+    <!-- Mobile Menu Button — touch devices below lg only; a non-touch device keeps the navbar rail instead. -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
-      [ngClass]="{ 'top-12': userService.impersonating(), 'top-0': !userService.impersonating() }">
+      [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating(), hidden: navbarCollapse.railAtAnyWidth() }">
       <button
+        #mobileMenuButton
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
-        (click)="toggleMobileSidebar()"
-        aria-label="Toggle menu"
+        (click)="openMobileSidebar()"
+        aria-label="Open menu"
+        [attr.aria-expanded]="showMobileSidebar()"
         data-testid="mobile-menu-button">
         <i class="fa-light fa-bars text-gray-600 text-xl"></i>
       </button>
@@ -93,6 +97,6 @@
       <router-outlet />
     </div>
     <!-- Footer Component -->
-    <lfx-footer class="md:ml-8 p-8 mt-auto" cookie-tracking="true"></lfx-footer>
+    <lfx-app-footer class="block mt-auto px-5 md:ml-8 md:px-8" data-testid="main-layout-footer"></lfx-app-footer>
   </main>
 </div>

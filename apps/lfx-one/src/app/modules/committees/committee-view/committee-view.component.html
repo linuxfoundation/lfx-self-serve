@@ -164,7 +164,7 @@
           <i class="fa-light fa-circle-info text-gray-400 shrink-0" aria-hidden="true"></i>
           <span>
             You're viewing this group in its {{ scopeLabel }} context: <span class="font-medium text-gray-800">{{ scopeName }}</span
-            >. Some options may differ from your personal My Groups view.
+            >. Some options may differ from your personal Groups view.
           </span>
           <button
             type="button"
@@ -172,7 +172,7 @@
             (click)="goBack()"
             data-testid="committee-view-context-notice-back">
             <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
-            Back to My Groups
+            Back to Groups
           </button>
         </div>
       }
@@ -215,6 +215,17 @@
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
                  Invite-only visitors see no header action (must wait for invitation). -->
             <div class="flex items-center gap-2 shrink-0">
+              @if (editLink(); as edit) {
+                <lfx-button
+                  label="Edit Group"
+                  icon="fa-light fa-pen-to-square"
+                  severity="secondary"
+                  [outlined]="true"
+                  size="small"
+                  [routerLink]="edit.commands"
+                  [queryParams]="edit.queryParams"
+                  data-testid="committee-view-edit-btn" />
+              }
               @if (isVisitor() && !pendingInvitation()) {
                 @if (committee()?.join_mode === 'open') {
                   <lfx-button
@@ -505,7 +516,8 @@
               [canEdit]="canEdit()"
               [votes]="votes()"
               [votesLoading]="votesLoading()"
-              (refresh)="onVotesRefreshed()" />
+              (refresh)="onVotesRefreshed()"
+              (voteExtended)="onVoteExtended($event)" />
           }
         }
         @case ('meetings') {
@@ -526,10 +538,10 @@
             (refresh)="onSurveysRefreshed()" />
         }
         @case ('documents') {
-          <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" />
+          <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" (documentsChanged)="onDocumentsChanged()" />
         }
         @case ('settings') {
-          <lfx-committee-settings-tab [committee]="committee()!" [canEdit]="canEdit()" (committeeUpdated)="refreshCommittee()" />
+          <lfx-committee-settings-tab [committee]="committee()!" [canEdit]="canEdit()" (committeeUpdated)="onSettingsSaved()" />
         }
       }
     </div>

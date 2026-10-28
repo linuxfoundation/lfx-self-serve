@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourses,
   HealthMetricsTrainingCoursesTypeOption,
@@ -23,8 +23,11 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     label: 'Enrollment & revenue',
     heading: 'Enrollment & revenue',
     description: 'Training is the third revenue stream and the widest top-of-funnel the foundation has — most enrollments are people who are not members yet.',
-    footnote:
-      'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
+    footnote: [
+      {
+        text: 'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
+      },
+    ],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
@@ -33,8 +36,11 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     label: 'Courses',
     heading: 'Courses',
     description: 'Individual courses and certifications by enrollment. Free courses show no revenue — that is reach, not a gap.',
-    footnote:
-      'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
+    footnote: [
+      {
+        text: 'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
+      },
+    ],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
@@ -45,17 +51,6 @@ export const HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX = 'sec-trn-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
 export const HEALTH_METRICS_TRAINING_DATA_SECTIONS = ['enroll', 'courses'] as const satisfies readonly HealthMetricsTrainingSectionKey[];
-
-/** Note under the sub-nav items, linking to the Members directory's per-organization training. */
-export const HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Corporate training purchases appear per organization in',
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'list',
-};
-
-/** The project selector does not narrow Training, so the page says so above its sections. */
-export const HEALTH_METRICS_TRAINING_SCOPE_NOTE = 'Training figures are foundation-wide. The project selector does not narrow them.';
 
 /** The state that replaces the shell when the foundation has no training programme. */
 export const HEALTH_METRICS_TRAINING_NO_PROGRAMME = {
@@ -87,9 +82,10 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
     COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
   },
   trend: [],
+  goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
 };
 
-/** The toggle above the by-type bars. */
+/** The toggle above the by-type list. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS: readonly HealthMetricsTrainingEnrollmentMetricOption[] = [
   { id: 'enrollments', label: 'Enrollments' },
   { id: 'revenue', label: 'Revenue' },
@@ -104,14 +100,11 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
   Bundle: 'Bundles',
 };
 
-/** Types whose zero on a measure is structural: Bundle is a purchase container, edX revenue is never captured. */
-export const HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES: Readonly<Record<HealthMetricsTrainingEnrollmentMetric, readonly string[]>> = {
-  enrollments: ['Bundle'],
-  revenue: ['edX'],
-};
+/** Types left out of revenue by type: edX revenue is never captured, so its zero is coverage, not free training. */
+export const HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES: readonly string[] = ['edX'];
 
-/** Fill for the by-type bars — applied via `[class]`, so it is safelisted in Tailwind. */
-export const HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS = 'bg-blue-600';
+/** Years the enrollment trend draws, ending with the current one; the view now goes back to 2016. */
+export const HEALTH_METRICS_TRAINING_TREND_YEARS = 6;
 
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
 export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };
@@ -145,7 +138,7 @@ export const HEALTH_METRICS_TRAINING_QUERY_PARAMS = {
   coursesPage: 'trnPage',
 } as const satisfies Record<string, keyof HealthMetricsTrainingQueryParams>;
 
-/** A course's type pill names one course, so it reads singular where the by-type bars read plural. */
+/** A course's type pill names one course, so it reads singular where the by-type list reads plural. */
 export const HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS: Readonly<Record<string, string>> = {
   'E-Learning': 'eLearning',
   'Certification Exam': 'Certification',

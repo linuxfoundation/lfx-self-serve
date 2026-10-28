@@ -45,13 +45,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-group-attendance',
       // Its empty state claims the foundation has no matching groups, so a zero-filled response
       // reads as measured absence.
-      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+    },
+    {
+      name: 'getEngagementAttendanceTrend',
+      url: '/api/analytics/engagement-attendance-trend',
+      // No months renders "no meeting attendance in the last twelve months", which a swallowed failure would fake.
+      call: () => service.getEngagementAttendanceTrend({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementOrgParticipation',
       url: '/api/analytics/engagement-org-participation',
       // An empty table renders "no organizations", which would state a failed read as measured fact.
-      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif', projectSlug: null }),
+      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementNonMemberParticipation',
@@ -65,7 +71,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would
       // read as a foundation where nobody is in that group.
-      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif', projectSlug: null }),
+      call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEventsRegistrationForecast',
@@ -77,6 +83,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEventsRegistrationForecastCurve',
       url: '/api/analytics/events-registration-forecast-curve',
       call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
+      name: 'getEventsRegistrationHistory',
+      url: '/api/analytics/events-registration-history',
+      call: () => service.getEventsRegistrationHistory({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
     {
       name: 'getEventsPast',
@@ -227,6 +238,48 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/training-courses',
       // A swallowed failure would read as a foundation with no courses.
       call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
+    },
+    {
+      name: 'getOverviewParticipatingOrgs',
+      url: '/api/analytics/overview-participating-orgs',
+      // A swallowed failure would read as no participating organizations.
+      call: () => service.getOverviewParticipatingOrgs({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewNps',
+      url: '/api/analytics/overview-nps',
+      // A swallowed failure would read as a foundation never surveyed.
+      call: () => service.getOverviewNps({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewChurn',
+      url: '/api/analytics/overview-churn',
+      // A swallowed failure would read as a foundation with no churn.
+      call: () => service.getOverviewChurn({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewOutstandingBalance',
+      url: '/api/analytics/overview-outstanding-balance',
+      // A swallowed failure would read as a foundation with nothing overdue.
+      call: () => service.getOverviewOutstandingBalance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewEvents',
+      url: '/api/analytics/overview-events',
+      // A swallowed failure would read as a foundation with no events.
+      call: () => service.getOverviewEvents({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewBoard',
+      url: '/api/analytics/overview-board',
+      // A swallowed failure would read as a board that never met.
+      call: () => service.getOverviewBoard({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewCode',
+      url: '/api/analytics/overview-code',
+      // A swallowed failure would read as a foundation with no contributors.
+      call: () => service.getOverviewCode({ foundationSlug: 'aaif' }),
     },
     {
       name: 'loadFoundationProjectsDetailGrouped',

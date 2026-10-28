@@ -3,7 +3,9 @@
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
-import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, MEETING_REMOVAL_SOURCES, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS } from '../constants/public-live-meeting.constants';
+import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -296,15 +298,15 @@ export interface Meeting {
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
   /**
-   * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
+   * Share the guest list with guests in LFX. Calendar invites never list other guests, whatever
+   * this is set to — each guest's invite names only the recipient. Board meetings can never
    * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
    * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
    * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
    * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
    * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
    * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
-   * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
+   * restricted meeting opted in, so that opt-in currently has no effect a guest can see — and the meeting card and
    * meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
@@ -489,7 +491,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
-  show_meeting_attendees?: boolean; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -520,7 +522,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
-  show_meeting_attendees?: boolean | null; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean | null; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -669,6 +671,12 @@ export interface MeetingRegistrant {
   rsvp?: MeetingRsvp | null;
 }
 
+/**
+ * UI surface a viewer removed themselves from a meeting on.
+ * Derived from the {@link MEETING_REMOVAL_SOURCES} constant so the union stays in sync with it.
+ */
+export type MeetingRemovalSource = (typeof MEETING_REMOVAL_SOURCES)[number];
+
 /** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
 export interface MeetingRegistrationRemovalResult {
   /** Registrant IDs whose upstream deletes succeeded. */
@@ -677,6 +685,16 @@ export interface MeetingRegistrationRemovalResult {
   remaining_registrant_ids: string[];
   /** Raw RSVP history for server-confirmed remaining IDs after partial removal. Omitted when unavailable; [] means no history. */
   remaining_rsvps?: MeetingRsvp[];
+}
+
+/**
+ * Registrants matched by the signed-in user's other verified emails.
+ */
+export interface MeetingRegistrantsByVerifiedEmails {
+  /** Matches ordered by email priority (meeting-invite preference first). */
+  registrants: MeetingRegistrant[];
+  /** True when nothing matched and an email source was unavailable. */
+  lookupFailed: boolean;
 }
 
 /**
@@ -854,6 +872,26 @@ export interface ComposerGuestRow {
    * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
    */
   removable: boolean;
+}
+
+/**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**
@@ -1861,15 +1899,46 @@ export type PublicMeetingProject = {
 };
 
 /**
+ * Anonymous full-access past-meeting detail, projected through `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousPastMeeting = Partial<Pick<PastMeeting, (typeof PUBLIC_ANONYMOUS_PAST_MEETING_KEYS)[number]>>;
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
  * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
+  meeting: PastMeeting | PublicAnonymousPastMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
+}
+
+/**
+ * Anonymous/guest-access live meeting detail, projected through `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousLiveMeeting = Partial<Pick<Meeting, (typeof PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS)[number]>>;
+
+/**
+ * Response from the public live/upcoming meeting endpoint.
+ * @description Returns meeting details with tiered access — `full_access` indicates whether the
+ * caller has an authenticated session with real access to the meeting (organizer, invitee, or
+ * member), as opposed to an anonymous visitor or a guest who only has the shared password. A
+ * private meeting reached without `full_access` returns only the fields in
+ * `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS` (title + enough context to join as a guest) — no agenda,
+ * materials, or date/time. `can_join` is a server-computed substitute for the join-window check the
+ * client can no longer run itself once `start_time`/`early_join_time_minutes` are stripped from a
+ * non-full-access response — it reuses the same window the controller already enforces before
+ * issuing a join URL, so the client's Join button state matches what the server will actually allow.
+ */
+export interface PublicMeetingResponse {
+  meeting: Meeting | PublicAnonymousLiveMeeting;
+  project: PublicMeetingProject;
+  full_access: boolean;
+  can_join: boolean;
 }
 
 /**
@@ -1877,9 +1946,10 @@ export interface PublicPastMeetingResponse {
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's
  * resolved branch so hydration keeps the SSR-rendered meeting on screen while the client
  * confirms it with its own fetch, instead of tearing it down for a blank/skeleton state until
- * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
- * because `MeetingJoinComponent.initializeMeeting()` sets them as side effects of the same
- * fetch — seeding the meeting alone would lose the past-meeting branch on hydration.
+ * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` / `liveMeetingFullAccess`
+ * are carried alongside `meeting` because `MeetingJoinComponent.initializeMeeting()` sets them as
+ * side effects of the same fetch — seeding the meeting alone would lose the past-meeting/full-access
+ * branch on hydration.
  * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
  * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
  * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
@@ -1888,6 +1958,8 @@ export interface MeetingJoinPageState {
   meeting: (Meeting & { project: PublicMeetingProject }) | null;
   loadedViaPastMeetingId: boolean;
   pastMeetingFullAccess: boolean;
+  liveMeetingFullAccess: boolean;
+  liveMeetingCanJoin: boolean;
   meetingLoadFailed: boolean;
 }
 
@@ -2263,24 +2335,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
-export interface CalendarLinkEvent {
-  title: string;
-  /** ISO start time. */
-  startIso: string;
-  durationMinutes: number;
-  description?: string;
-  joinUrl?: string;
-}
-
-/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
-export type MeetingCalendarScope = 'occurrence' | 'series';
-
-/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
-export interface VEventExtras {
-  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
-  description?: string;
-  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
-  joinUrl?: string;
-}

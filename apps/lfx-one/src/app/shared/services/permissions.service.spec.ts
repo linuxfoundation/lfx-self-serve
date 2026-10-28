@@ -305,6 +305,60 @@ describe('PermissionsService', () => {
         },
       ]);
     });
+
+    describe('meeting coordinators', () => {
+      const settingsWith = (overrides: Partial<ProjectSettings>): ProjectSettings => ({
+        uid: 'project-1',
+        announcement_date: '',
+        auditors: [],
+        writers: [],
+        meeting_coordinators: [],
+        created_at: '',
+        updated_at: '',
+        ...overrides,
+      });
+
+      const load = (settings: ProjectSettings): ProjectPermissionUser[] => {
+        let result: ProjectPermissionUser[] = [];
+        service.getProjectPermissions('project-1').subscribe((users) => {
+          result = users;
+        });
+        http.expectOne('/api/projects/project-1/permissions').flush(settings);
+        return result;
+      };
+
+      const jordan = { name: 'Jordan Lee', email: 'jlee@acme-motors.example', username: 'jordanlee' };
+
+      it("shows a meeting coordinator as a 'meeting_coordinator' row", () => {
+        const result = load(settingsWith({ meeting_coordinators: [jordan] }));
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'meeting_coordinator' });
+      });
+
+      it('collapses a user under auditors and meeting coordinators to view', () => {
+        const result = load(settingsWith({ auditors: [jordan], meeting_coordinators: [jordan] }));
+
+        expect(result).toHaveLength(1);
+        expect(result[0].role).toBe('view');
+      });
+
+      it('collapses a user under writers and meeting coordinators (a v1 sync) to manage', () => {
+        const result = load(settingsWith({ writers: [jordan], meeting_coordinators: [jordan] }));
+
+        expect(result).toHaveLength(1);
+        expect(result[0].role).toBe('manage');
+      });
+
+      it('carries a differing coordinator identifier as a duplicate so it is cleared with the row', () => {
+        const emailOnly = { name: 'Jordan Lee', email: 'jlee@acme-motors.example' };
+        const result = load(settingsWith({ auditors: [jordan], meeting_coordinators: [emailOnly] }));
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'view' });
+        expect(result[0].duplicateIdentifiers).toEqual(['jlee@acme-motors.example']);
+      });
+    });
   });
 
   describe('removeUserFromProject', () => {

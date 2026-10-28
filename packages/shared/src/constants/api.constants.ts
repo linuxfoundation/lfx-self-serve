@@ -23,6 +23,13 @@ export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
 export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 
 /**
+ * Request header naming the UI surface that triggered a self-removal from a meeting.
+ * @description Telemetry only: the BFF logs it so removals can be broken down by where they came from.
+ * Never used for authorization. Lowercase to match Express's normalized req.headers keys.
+ */
+export const MEETING_REMOVAL_SOURCE_HEADER = 'x-lfx-removal-source';
+
+/**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
  * more than this many IDs/values to OR together, split into chunks of this size to keep each
@@ -93,6 +100,13 @@ export const NATS_CONFIG = {
    * Request timeout in milliseconds
    */
   REQUEST_TIMEOUT: 5000,
+
+  /**
+   * Wall-clock budget, in milliseconds, for the best-effort stored-name lookup done on every
+   * authenticated SSR render. It covers the connection attempt as well as the request, so an
+   * unreachable NATS can never hold up a page for CONNECTION_TIMEOUT.
+   */
+  SSR_DISPLAY_NAME_TIMEOUT: 750,
 
   /**
    * Request timeout for the meeting-service `preferred_email.set` RPC, in milliseconds.

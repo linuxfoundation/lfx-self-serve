@@ -10,6 +10,7 @@ import type {
   CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
+  CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
@@ -108,6 +109,219 @@ export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[nu
 /** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
 export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 
+/** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
+export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
+
+/** Where an image upload in the create form stands; a finished upload is its asset id being set. */
+export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
+/**
+ * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
+ * upload per owner, so a pick on one platform never cancels or takes over another's.
+ * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
+ * upload still running in another, as a second Meta pick replaces the first.
+ */
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft';
+
+/**
+ * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
+ * returns it to the browser.
+ *
+ * `created` is false when an identical image had already been uploaded to the same brief:
+ * campaign-service dedupes on the content checksum and returns the existing row (200 rather than
+ * 201), so the `id` is equally usable either way.
+ */
+export interface CreativeAssetUploadResult {
+  id: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  created: boolean;
+}
+
+/**
+ * campaign-service's `CreativeAsset` as the upload answers it (`design/brief.go`). `created` is
+ * the string `"true"`/`"false"` upstream, mirroring its 201/200 split.
+ */
+export interface CampaignServiceCreativeAsset {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  mime_type: string;
+  byte_size: number;
+  checksum: string;
+  /**
+   * Pixel dimensions as read from the image header at upload. OPTIONAL upstream, and absent means
+   * UNKNOWN rather than 0: the service began recording them in migration 000047, so an asset stored
+   * before it has none and never will until a backfill runs. Carrying a fabricated 0 would read to a
+   * slot matcher as "fails every minimum", which is a different and wrong answer.
+   */
+  width?: number;
+  height?: number;
+  created?: 'true' | 'false';
+}
+
+/** campaign-service's `creative-asset-list` — the brief's library plus the quota an upload is judged against. */
+export interface CampaignServiceCreativeAssetList {
+  assets: CampaignServiceCreativeAsset[];
+  count: number;
+  count_limit: number;
+  bytes_used: number;
+  bytes_limit: number;
+}
+
+/** campaign-service's `creative-slot-assignment` — one platform image slot and the assets that fill it. */
+export interface CampaignServiceCreativeSlotAssignment {
+  slot_key: string;
+  platform: string;
+  /** Absent where the platform has a single ad shape. */
+  channel?: string;
+  slot: string;
+  label: string;
+  requirement: string;
+  asset_ids: string[];
+  min_count: number;
+  max_count: number;
+}
+
+/** campaign-service's `creative-slot-gap` — one required rule the library cannot meet. */
+export interface CampaignServiceCreativeSlotGap {
+  platform: string;
+  channel?: string;
+  /** Absent when the requirement spans several slots and no single one is required on its own. */
+  slot_key?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** campaign-service's `creative-asset-plan` — which stored assets fit which slots, and what is missing. */
+export interface CampaignServiceCreativeAssetPlan {
+  platforms: string[];
+  assignments: CampaignServiceCreativeSlotAssignment[];
+  gaps: CampaignServiceCreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One stored creative asset as the browser sees it.
+ *
+ * `width`/`height` stay optional here for the same reason they are optional upstream — absent means
+ * the dimensions were never recorded, which a slot grid must render as "unknown", not as "0".
+ */
+export interface StoredCreativeAsset {
+  id: string;
+  projectId: string;
+  briefId: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * A brief's creative-asset library plus its quota.
+ *
+ * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
+ * knows before it starts how many assets and bytes it may still add — instead of discovering the
+ * brief is full by sending file 51 and being refused.
+ */
+export interface CreativeAssetLibrary {
+  assets: StoredCreativeAsset[];
+  count: number;
+  countLimit: number;
+  bytesUsed: number;
+  bytesLimit: number;
+}
+
+/** One platform image slot and the stored assets that fill it, best fit first. */
+export interface CreativeSlotAssignment {
+  slotKey: string;
+  platform: string;
+  channel?: string;
+  slot: string;
+  label: string;
+  /** The slot's rule as an operator-readable sentence, carried even on a full slot. */
+  requirement: string;
+  assetIds: string[];
+  minCount: number;
+  maxCount: number;
+}
+
+/** One required slot or cross-slot rule the library leaves short. */
+export interface CreativeSlotGap {
+  platform: string;
+  channel?: string;
+  slotKey?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** The computed slot grid for a brief's library. A pure read — nothing is attached to anything. */
+export interface CreativeAssetPlan {
+  platforms: string[];
+  assignments: CreativeSlotAssignment[];
+  gaps: CreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One row of the slot-coverage grid: a slot the plan filled, a slot it left short, or a
+ * cross-slot requirement that names no single slot.
+ *
+ * Assembled from a plan's `assignments` and `gaps` TOGETHER, because the two describe the same
+ * slot from opposite sides — a slot holding one of the two images it needs appears in both, and
+ * rendering them as separate rows would show an operator the same slot twice with contradictory
+ * answers.
+ */
+export interface CreativeSlotCoverageRow {
+  key: string;
+  label: string;
+  /** The slot's rule as a sentence, when the plan carried an assignment for it. */
+  requirement: string;
+  /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
+  filled: number;
+  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  need: number;
+  /** The plan's own words for why it is short. Empty when nothing is missing. */
+  reason: string;
+  status: 'filled' | 'short' | 'missing';
+  statusLabel: string;
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in.
+   */
+  countText: string;
+}
+
+/** The coverage rows for one platform, or for one channel within a platform. */
+export interface CreativeSlotCoverageGroup {
+  key: string;
+  /** The platform's display label, with its channel appended when the plan named one. */
+  label: string;
+  rows: CreativeSlotCoverageRow[];
+  /** Rows still short or missing — what an operator has to act on in this group. */
+  openCount: number;
+}
+
+/**
+ * The slot grid's own read of `get-asset-plan`.
+ *
+ * `idle` is NOT `ready` with an empty plan: before a brief is saved there is nothing to plan
+ * against, and an empty plan rendered as a result would read as "no gaps — this library can
+ * launch", which is the one thing it does not mean.
+ */
+export interface CreativeSlotCoverageState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  plan: CreativeAssetPlan | null;
+  message: string;
+}
+
 /** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
 export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
 
@@ -192,7 +406,13 @@ export interface CampaignPlatformOption {
   id: CampaignPlatform;
   label: string;
   icon: string;
+  /** CREATE is off for the platform: the Ad Channels picker and the Implement tab do not offer it. */
   disabled?: boolean;
+  /**
+   * Whether the Monitoring tab offers the platform's monitor, independently of `disabled`. Omitted,
+   * it follows create (offered unless `disabled`); see `campaignPlatformMonitorable`.
+   */
+  monitorable?: boolean;
 }
 
 export interface CampaignGoalOption {
@@ -229,6 +449,9 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
+  | 'callouts'
+  | 'sitelinks'
   | 'linkedin_strategy'
   | 'error'
   | 'done'
@@ -412,6 +635,33 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, for the Optimize tab's
+   * negative-keyword editor to open pre-filled with once the campaign is live.
+   *
+   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
+   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
+   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
+   * So this list is never sent by anything; it fills the editor's text, the operator edits it
+   * there, and nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
+   * never opens holding a line it would refuse the operator for typing.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;
@@ -458,6 +708,51 @@ export interface CampaignBriefOutput {
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
   metaCopy?: MetaBriefCopy;
+  /**
+   * Google callout extensions the brief generated, for the Implementation tab's editor to open on.
+   *
+   * A SEED, not a decision: the operator adds, edits and removes entries there exactly as before,
+   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave.
+   *
+   * Absent and empty do NOT agree, and the difference is load-bearing. `undefined` means the brief
+   * carries no list at all — a brief generated before this feature shipped, or restored from a row
+   * written then — and the Implementation tab leaves its editor untouched for it, so entries the
+   * operator typed by hand survive. `[]` is a list, and assigning it CLEARS that editor. The brief
+   * restore path is written to the same rule: it returns `undefined`, never `[]`, for a stored row
+   * that carries no list.
+   *
+   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} by the generator, which also DROPS an entry
+   * past {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} rather than shortening it — so the editor never
+   * opens holding a list it would refuse the operator for typing, and never holding a phrase cut
+   * mid-word that nobody wrote. (The restore path bounds instead, because there the alternative is
+   * losing an entry the operator typed.)
+   */
+  googleCallouts?: string[];
+  /**
+   * Google sitelink extensions the brief derived from the event page's own links.
+   *
+   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, with
+   * absent and empty meaning different things.
+   *
+   * Three producers, and they guarantee different things about `finalUrl`. The GENERATOR builds
+   * each one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
+   * sitelink cannot point at a destination the model composed. The brief RESTORE path rebuilds the
+   * list from campaign-service's opaque `copy` blob, which carries no page provenance to check; it
+   * guarantees only what it can enforce on the value itself — an absolute http(s) URL within
+   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. The CARRY
+   * (the Implementation tab's `briefWithCarriedExtensions`) re-attaches the operator's own edited
+   * list, which the editor's add-guards vetted on the same value-only terms — a destination the
+   * operator typed or pasted there was never fetched and is not known to resolve. Do not treat a
+   * value read off this field as page-verified.
+   *
+   * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
+   * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
+   * final URL goes through), so a click on one attributes to google/cpc under this campaign's
+   * `utm_campaign` with no help from this app. Tagging here as well would hand that builder a
+   * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
+   * would end up attributed to a campaign other than the one that bought the click.
+   */
+  googleSitelinks?: CampaignSitelink[];
 }
 
 /**
@@ -534,6 +829,63 @@ export interface CampaignBriefPersistResult {
 }
 
 /**
+ * What `POST /api/campaigns/brief/:briefId/approve` reports back.
+ *
+ * Approval used to exist only as the tail of a save: `saveBrief` writes the row, then calls
+ * campaign-service's `approve-brief` with the write's own ETag. That left one state with no way
+ * out — a stored brief sitting in `draft`, because the write's approval failed or because a later
+ * replace reset it (campaign-service resets `status` to `draft` on every PUT). RESTORING such a
+ * brief deliberately suppresses the save, since re-saving would PUT a lossy reconstruction over
+ * the stored bytes, so the only path back to `approved` was also the one path the restore must
+ * not take. Campaign creation and audience building both refuse an unapproved brief, so the brief
+ * was durable and unusable at once. This endpoint approves the STORED row and writes nothing.
+ *
+ * Deliberately NOT `CampaignBriefPersistResult`: `created` is meaningless here (nothing is
+ * written), and the conflicts a save can hit are not the ones an approve can.
+ */
+export interface CampaignBriefApproveResult {
+  /** `false` when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off — see `CampaignBriefPersistResult.enabled`. */
+  enabled: boolean;
+  /** The brief that was approved, echoed back so a caller holding several can match the answer to one. */
+  briefId: string;
+  /**
+   * The approved row's new validator, or `null` when the outcome left it unknowable.
+   *
+   * Approval bumps the row's `version` upstream, and the ETag mirrors the version — so the
+   * validator the caller approved WITH is stale the moment this succeeds, and a caller that
+   * keeps it would have its next save refused with a 412. Re-record this one.
+   */
+  etag: string | null;
+  /** Whether the stored brief is now `approved`. `false` with no `conflict` means the outcome is unknown. */
+  approved: boolean;
+  /**
+   * Why approval did not happen, when it did not. Absent means it did.
+   *
+   * `stale-brief`: the `If-Match` validator was rejected with a 412 — the row moved since the
+   * caller read it. The remedy is to reload the brief and approve the version that is actually
+   * stored, never to retry with the same validator.
+   *
+   * `brief-not-found`: the row is gone — a typed 404 on the approve itself.
+   *
+   * `rejected`: campaign-service refused the approval outright (a 4xx that is neither of the
+   * above) — the brief is stored but campaign-service will not approve it as it stands.
+   *
+   * `unverified-validator`: the caller held no validator, so nothing was sent. The same name and
+   * the same meaning as `CampaignBriefPersistResult`'s: an approval the server would accept is
+   * not the same as an approval that is about the row the user was SHOWN, and without a
+   * validator from the read that filled the screen, nothing can tell the two apart. Reading one
+   * here rather than refusing is what made this path able to approve an intervening writer's
+   * content — the restore approves automatically, one round trip after its own read, and
+   * campaign creation then builds from the approved row. The remedy is a fresh read: reload and
+   * re-enter the event URL.
+   *
+   * An indeterminate outcome (5xx, timeout) carries NO conflict and `approved: false`: the
+   * approval may or may not have landed, and claiming either way would be a guess.
+   */
+  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected' | 'unverified-validator';
+}
+
+/**
  * The Implementation tab's view of whether the brief behind it is durable.
  *
  * `off` renders nothing — see `CampaignBriefPersistResult.enabled`. `error` carries a message
@@ -559,7 +911,7 @@ export interface CampaignBriefPersistenceState {
    * Is the stored brief APPROVED, and therefore usable for campaign creation?
    *
    * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
-   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * from an unapproved brief outright — `BriefService.CreateCampaigns` returns 400 "brief must be
    * approved before creating campaigns" — so the Implementation tab has to know, and matching on
    * banner prose to find out would break the first time the copy is edited.
    *
@@ -716,6 +1068,13 @@ export interface CampaignImplementationDraft {
   metaPixelId?: string;
   metaGeoTargets?: string[];
   /**
+   * The Meta Instagram account id and EU DSA beneficiary/payor, as typed. Optional on the same
+   * present-only rule as the fields above: absent means the draft predates them.
+   */
+  metaInstagramUserId?: string;
+  metaDsaBeneficiary?: string;
+  metaDsaPayor?: string;
+  /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
    * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
@@ -796,11 +1155,72 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
+   * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
+   * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
+   * brief being created from is still that brief. Round-trips regardless of
+   * `redditAssetUploadEnabled`, for the reason the three above do.
+   */
+  redditImageAssetId?: string;
+  redditImageAssetName?: string;
+  redditImageAssetBriefId?: string;
+  /**
+   * The file name of a Reddit image upload still in flight when the draft was taken. The request
+   * outlives the tab (`CampaignService.uploadCreativeAsset`), so a remount resumes it by brief
+   * instead of losing the image the operator picked; empty when nothing is uploading.
+   */
+  redditImageUploadPendingName?: string;
+  /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
+  redditImageUploadPendingBriefId?: string;
+  /**
+   * A failed upload's reason and the brief it was for, kept until the operator removes or replaces
+   * the image, so a tab switch cannot lift the block it raises (`uploadFailed`) and let Create send
+   * the campaign without the image they chose. Empty when no upload has failed.
+   */
+  redditImageUploadFailedMessage?: string;
+  redditImageUploadFailedBriefId?: string;
+  /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
    */
   redditVideoGoal?: RedditVideoGoal | '';
+  /**
+   * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
+   * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
+   * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
+   * failure raises. Round-trips regardless of `metaCreativeEnabled` and `metaAssetUploadEnabled`.
+   */
+  metaImageUrl?: string;
+  metaImageAssetId?: string;
+  metaImageAssetName?: string;
+  metaImageAssetBriefId?: string;
+  metaImageUploadPendingName?: string;
+  metaImageUploadPendingBriefId?: string;
+  metaImageUploadFailedMessage?: string;
+  metaImageUploadFailedBriefId?: string;
+  /**
+   * The LinkedIn ad image, an upload only (LinkedIn has no image-URL path), on the Meta upload
+   * fields' terms above. Round-trips regardless of `linkedInAssetUploadEnabled`.
+   */
+  linkedInImageAssetId?: string;
+  linkedInImageAssetName?: string;
+  linkedInImageAssetBriefId?: string;
+  linkedInImageUploadPendingName?: string;
+  linkedInImageUploadPendingBriefId?: string;
+  linkedInImageUploadFailedMessage?: string;
+  linkedInImageUploadFailedBriefId?: string;
+  /**
+   * The Microsoft image extension, an upload only, on the Meta upload fields' terms above.
+   * Round-trips regardless of `microsoftAssetUploadEnabled`.
+   */
+  microsoftImageAssetId?: string;
+  microsoftImageAssetName?: string;
+  microsoftImageAssetBriefId?: string;
+  microsoftImageUploadPendingName?: string;
+  microsoftImageUploadPendingBriefId?: string;
+  microsoftImageUploadFailedMessage?: string;
+  microsoftImageUploadFailedBriefId?: string;
   /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
@@ -859,12 +1279,57 @@ export interface CampaignImplementationDraft {
    */
   googleCreatives?: Record<string, Record<string, string>>;
   /**
+   * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
+   * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
+   * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
+   * rather than sends another brief's asset.
+   *
+   * With them, an upload still in flight (its file name, brief and slot) and a failed upload's
+   * reason, on the Meta image fields' terms: a tab switch neither loses the images nor lifts the
+   * block a failure raises. Round-trips regardless of `googleAssetUploadEnabled`, and restored only
+   * when present.
+   */
+  googleImageAssets?: Record<string, GoogleCreativeHeldImage[]>;
+  googleImageUploadPendingName?: string;
+  googleImageUploadPendingBriefId?: string;
+  googleImageUploadPendingSlot?: string;
+  googleImageUploadFailedMessage?: string;
+  googleImageUploadFailedBriefId?: string;
+  googleImageUploadFailedSlot?: string;
+  /**
    * Google's own geo targets, separate from {@link countryCode} rather than a widening of it.
    *
    * Empty means "use the event country", which is what this path did before the list existed — so
    * an absent field and an empty list agree, and neither is a silent change of target.
    */
   googleGeoTargets?: string[];
+  /**
+   * Google's postal-code targets, as the raw geo target constant ids the operator typed.
+   *
+   * Ids rather than postal codes because that is what the wire takes: upstream's `resolveGeoList`
+   * reads a numeric entry in `geoTargets` as a constant id from Google's published geo-targets
+   * table, and neither campaign-service nor this application exposes a lookup from a postal code to
+   * its id. Sent in the same `geoTargets` list as {@link googleGeoTargets}, after the countries.
+   *
+   * Empty means "no postal codes", so an absent field and an empty list agree. Restored whatever the
+   * capability says: the section and the payload both gate on the campaign-service road, so a list
+   * restored on the legacy road is held rather than sent.
+   */
+  googlePostalGeoTargets?: string[];
+  /**
+   * Display labels for {@link googlePostalGeoTargets}, by id — Google's canonical name, recorded when
+   * an id was PICKED from the geo target search rather than typed. Display only: the request carries
+   * the ids alone, so an id with no label here still renders (as itself) and still dispatches.
+   */
+  googlePostalGeoLabels?: Record<string, string>;
+  /**
+   * Google's radius targets, as the operator added them — already validated, because an entry only
+   * reaches this list once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleLanguages}: absent and empty agree, and a list
+   * saved under a channel that takes no radius targets (Demand Gen) is kept rather than discarded.
+   */
+  googleProximityTargets?: CampaignProximityTarget[];
   /**
    * Google's campaign languages, as ISO 639-1 codes the operator picked.
    *
@@ -890,6 +1355,45 @@ export interface CampaignImplementationDraft {
    * and a list saved under a non-Search channel is kept rather than discarded.
    */
   googleSitelinks?: CampaignSitelink[];
+  /**
+   * Google's structured snippets, as the operator typed them.
+   *
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
+   */
+  googleStructuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * Google's audience segments, as the user-list resource names the operator entered — already
+   * trimmed, because an entry only becomes a chip once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
+   * saved under a non-Search channel is kept rather than discarded. Typed by hand like
+   * {@link googleStructuredSnippets}, so it shares their shorter lifetime.
+   */
+  googleAudienceSegments?: string[];
+  /**
+   * Google's call, promotion and price extensions, as the operator added them.
+   *
+   * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and
+   * empty agree, a list saved under a non-Search channel is kept rather than discarded, and — being
+   * typed by hand with no brief counterpart — none of the three outlives a re-generate or a Start
+   * Over.
+   */
+  googleCallExtensions?: CampaignCallExtension[];
+  googlePromotions?: CampaignPromotion[];
+  googlePrices?: CampaignPriceExtension[];
   /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
@@ -980,7 +1484,15 @@ export interface LinkedInGeoTarget {
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
+  /** An existing `urn:li:image` used verbatim as the dark post's thumbnail. Never sent with `imageAssetId`. */
   imageUrn?: string;
+  /**
+   * A creative asset uploaded to the brief, which campaign-service uploads through LinkedIn's Images
+   * API at dispatch and uses as the dark post's article thumbnail. Mutually exclusive with
+   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sets the same
+   * asset on every variant.
+   */
+  imageAssetId?: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -1253,6 +1765,17 @@ export interface RedditCampaignCreateRequest {
    */
   imageUrl?: string;
   /**
+   * The alternative to `imageUrl`: the id of an image uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`. campaign-service serves it to Reddit at a
+   * short-lived signed URL (LFXV2-2665). Exactly one of `imageUrl` / `imageAssetId`, and never with
+   * `postUrl` — upstream refuses any such combination with a 400.
+   *
+   * campaign-service only: the legacy creator does not read it, and campaign-service refuses it
+   * unless its URL signing is configured. Hence `CampaignListResult.redditAssetUploadEnabled`, and
+   * the create route refuses this field while that capability is off rather than dropping it.
+   */
+  imageAssetId?: string;
+  /**
    * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
    * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
    */
@@ -1305,6 +1828,14 @@ export interface MetaAdVariant {
   primaryText: string;
   headline: string;
   description?: string;
+  /**
+   * The ad's image, as ONE of a public https URL Meta fetches or a creative asset uploaded to the
+   * brief (campaign-service resolves the asset's bytes and uploads them to the ad account's image
+   * library at dispatch). Never both: campaign-service refuses a variant carrying the two. Absent
+   * is a link ad with no image of its own. The Implement tab sets the same image on every variant.
+   */
+  imageUrl?: string;
+  imageAssetId?: string;
 }
 
 export interface MetaBriefCopy {
@@ -1360,6 +1891,22 @@ export interface MetaCampaignCreateRequest {
   objective?: MetaObjective;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
+  /**
+   * The Instagram account id (IGSID, numeric) campaign-service binds to each ad creative as
+   * `instagram_user_id` when an Instagram placement is enabled. Meta will not publish an Instagram
+   * placement without it. Sent ONLY when `CampaignListResult.metaInstagramDsaEnabled` is an explicit
+   * yes; the create route refuses it while the capability is off.
+   */
+  instagramUserId?: string;
+  /**
+   * EU Digital Services Act "advertiser": who the ads benefit, set on the ad set as
+   * `dsa_beneficiary`. Sent together with {@link dsaPayor} or not at all, and REQUIRED with it when
+   * `geoTargets` include an EU country (`META_DSA_TERRITORIES`). At most
+   * `META_DSA_NAME_MAX_LENGTH` characters, one line. Same capability gate as {@link instagramUserId}.
+   */
+  dsaBeneficiary?: string;
+  /** EU DSA "payer": who pays for the ads, set on the ad set as `dsa_payor`. Same rules as {@link dsaBeneficiary}. */
+  dsaPayor?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -1422,17 +1969,20 @@ export interface MicrosoftCampaignCreateRequest {
   hsToken?: string;
   /** Daily budget, whole units of the account currency. Must be finite and > 0. */
   budgetUsd: number;
-  // NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
-  //
-  // `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
-  // neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
-  // both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
-  // put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
-  // the operator never gets.
-  //
-  // The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
-  // automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
-  // the fix; see the note on the implementation tab's Microsoft section.
+  /**
+   * OPTIONAL flight start, `"YYYY-MM-DD"` — the same key and format as `metaConfig.startDate`.
+   * campaign-service sets it on the Microsoft ad group (linuxfoundation/lfx-v2-campaign-service#409),
+   * and either date may be sent alone. Sent ONLY when `CampaignListResult.microsoftScheduleEnabled`
+   * is an explicit yes: an older service discards both keys and creates the campaign with NO flight,
+   * which is why the create route refuses them while the capability is off. A malformed date fails
+   * the platform job rather than the request.
+   *
+   * Without it the campaign is created PAUSED with no automatic stop, which is why the UI states
+   * that rather than hiding it — see the note on the implementation tab's Microsoft section.
+   */
+  startDate?: string;
+  /** OPTIONAL flight end, `"YYYY-MM-DD"`. Same rules as {@link startDate}. */
+  endDate?: string;
   /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
   geoTargets: string[];
   /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */
@@ -1455,6 +2005,13 @@ export interface MicrosoftCampaignCreateRequest {
    * manual one beside a different `cpcBid`.
    */
   bidding?: CampaignBiddingConfig;
+  /**
+   * OPTIONAL creative asset uploaded to the brief. At dispatch campaign-service uploads it to the ad
+   * account's media library and attaches it to the campaign as an image ad extension. Refused
+   * pre-create over 76,800 bytes or outside 40x20..2592x2048 pixels; its alt text defaults to the
+   * event name.
+   */
+  imageAssetId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1517,6 +2074,62 @@ export interface MetaActionItem {
 export interface MetaAccountOption {
   key: string;
   label: string;
+}
+
+/**
+ * One Google Ads account the project's own connection can reach, as `GET /api/campaigns/google/accounts`
+ * answers it: the Meta/Reddit picker option shape. `key` is the upstream id verbatim (bare digits).
+ */
+export interface GoogleAdsAccountOption {
+  key: string;
+  label: string;
+}
+
+/**
+ * One Google Ads location, as `GET /api/campaigns/google/geo-targets` answers it: campaign-service's
+ * suggestion in this app's camelCase vocabulary. `id` goes into `geoTargets` as-is.
+ */
+export interface GoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonicalName: string;
+  countryCode: string;
+  targetType: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /api/campaigns/google/geo-targets`. `truncated` says more locations matched than were returned. */
+export interface GoogleAdsGeoTargetSearchResult {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+}
+
+/**
+ * One row of the Implement tab's location picker: a suggestion plus `disabled`, set when its id is
+ * already a postal-code target, so the row is listed but cannot be picked twice.
+ */
+export interface GoogleAdsGeoTargetOption extends GoogleAdsGeoTargetSuggestion {
+  disabled: boolean;
+}
+
+/**
+ * Where the location picker's search stands. `failed` is a search that did not come back — not an
+ * empty answer, which is `suggestions: []` with `failed: false`. `pending` is a search waiting out
+ * its debounce or its request: its rows are already cleared, but "nothing matched" is not yet true.
+ */
+export interface GoogleAdsGeoTargetSearchState {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+  failed: boolean;
+  pending: boolean;
+}
+
+/** The optional narrowing a geo target search may carry beside its query text. */
+export interface GoogleAdsGeoTargetSearchOptions {
+  countryCode?: string;
+  targetTypes?: string[];
+  limit?: number;
 }
 
 export interface MetaMonitorResponse {
@@ -1708,6 +2321,102 @@ export interface GoogleCreativeFieldSpec {
   requiredOnce?: boolean;
   /** Anything true of this field that its bounds do not say, shown beneath the control. */
   hint?: string;
+  /**
+   * Set on an IMAGE slot, and only there: the shape Google requires of every image in it. Its
+   * presence is also what marks the list as one whose entries may name a stored asset
+   * ({@link GoogleCreativeImageRef}) rather than only a URL — `youtubeVideoIds` is a list too, and
+   * an asset ref there would be refused upstream.
+   */
+  image?: GoogleCreativeImageShape;
+}
+
+/**
+ * The shape one Google image slot requires: a target aspect ratio, held to
+ * `GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE`, and a floor on each side with no ceiling.
+ *
+ * The numbers are campaign-service's own (`demandGenImageSlots`, `performanceMaxImageSlots` and
+ * `displayImageSlots` in `internal/platform/googleads/`), which publish them as the slot catalogue
+ * `get-asset-plan` classifies against. They are restated here rather than read from the plan
+ * because the plan answers a different question: it PLACES only as many assets as a slot's minimum
+ * (one, for an optional slot), so an image that fits but ranks below another is reported unused,
+ * and a picker built on it could never offer the operator their second-best fit.
+ */
+export interface GoogleCreativeImageShape {
+  ratioW: number;
+  ratioH: number;
+  minWidth: number;
+  minHeight: number;
+}
+
+/**
+ * One stored creative asset named in a Google image slot, in place of a URL — campaign-service's
+ * `googleAdsImageRef` (`internal/dispatch/googleads_image_ref.go`).
+ *
+ * An OBJECT and not a bare id, and in the SAME array as the URLs rather than a parallel
+ * `*AssetIds` list, because that is the wire: upstream decodes each slot entry as either a bare
+ * string (a URL, today's shape) or an object, and finds an asset reference only under the
+ * `imageAssetId` key — the key its dangling-reference guard scans a stored config for. A bare id
+ * would be fetched as a URL and refused.
+ */
+export interface GoogleCreativeImageAssetRef {
+  imageAssetId: string;
+}
+
+/** One entry in a Google image slot: a hosted image URL, or a stored asset of the brief's. */
+export type GoogleCreativeImageRef = string | GoogleCreativeImageAssetRef;
+
+/**
+ * One stored image the Implement tab holds in one Google image slot.
+ *
+ * `briefId` is the brief the asset was stored for, kept per image because an asset belongs to one
+ * brief's library and campaign-service refuses it under another ("does not exist for this brief").
+ * `name` is the uploaded file's name, or `''` for an image picked from the library, which records
+ * no file name — the label then falls back to the library's own description of it.
+ */
+export interface GoogleCreativeHeldImage {
+  id: string;
+  name: string;
+  briefId: string;
+}
+
+/** One held image as a slot renders it, with the reason it cannot be sent when there is one. */
+export interface GoogleCreativeHeldImageView {
+  id: string;
+  label: string;
+  problem: string;
+}
+
+/** One library image offered for a slot — already narrowed to the images that fit it. */
+export interface GoogleCreativeImageOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * One Google image slot's library controls, assembled by the Implement tab for
+ * `lfx-google-creative-image-library`. `key` is `<request key>.<control>`, the key the held images
+ * and the draft are stored under.
+ */
+export interface GoogleCreativeImageSlotView {
+  key: string;
+  label: string;
+  /** The shape as a sentence an operator can take to a designer. */
+  requirement: string;
+  held: GoogleCreativeHeldImageView[];
+  options: GoogleCreativeImageOption[];
+  /** Why no option is offered, or `''` when some are. */
+  optionsNote: string;
+  /** False once the slot's URLs and held images reach its catalogued `max`. */
+  canAdd: boolean;
+  uploading: boolean;
+  /** A failed upload into this slot, or `''`. */
+  error: string;
+}
+
+/** The Implement tab's read of the brief's creative-asset library, for the Google image slots. */
+export interface CreativeAssetLibraryState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  assets: StoredCreativeAsset[];
 }
 
 /**
@@ -1787,10 +2496,13 @@ export interface GoogleBiddingOption {
  * The Demand Gen ad's creative, typed to `googleAdsConfig.demandGenCreative`
  * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenCreativeConfig`).
  *
- * Images are URLs the caller already hosts, matching Reddit's and Meta's `imageUrl`. Google is the
- * one platform that will not fetch a URL itself, so campaign-service downloads each one and uploads
- * the bytes — which is why a URL that 404s fails the create rather than producing an ad with a
- * missing image.
+ * Each image is a URL the caller already hosts, or a stored asset of the brief's named by
+ * {@link GoogleCreativeImageAssetRef} in the same array. Google is the one platform that will not
+ * fetch a URL itself, so campaign-service downloads each URL and uploads the bytes — which is why a
+ * URL that 404s fails the create rather than producing an ad with a missing image. A stored asset
+ * skips the download: its bytes are read from the library and POSTed to `assets:mutate`, after the
+ * same size and shape checks a fetched image gets. Asset refs are sent only while
+ * `CampaignListResult.googleAssetUploadEnabled` is true; the BFF refuses them otherwise.
  *
  * Counts and widths are Demand Gen's own and are NOT the Search ad's. See
  * `GOOGLE_CREATIVE_FIELD_SPECS['demand-gen']`.
@@ -1801,12 +2513,12 @@ export interface GoogleDemandGenCreative {
    * the upstream preflight. At least one of `marketingImages` or `squareMarketingImages` is
    * required; the four share a COMBINED cap.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  portraitImages?: string[];
-  tallPortraitImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
+  tallPortraitImages?: GoogleCreativeImageRef[];
   /** REQUIRED upstream: 1-5 square images. A Demand Gen ad with no logo is refused. */
-  logoImages?: string[];
+  logoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   descriptions?: string[];
   /** REQUIRED by Google when a creative is supplied. */
@@ -1830,14 +2542,14 @@ export interface GooglePerformanceMaxCreative {
   /**
    * `marketingImages` (1.91:1) and `squareMarketingImages` (1:1) are BOTH required here — unlike
    * Demand Gen, where either satisfies the other. `portraitImages` (4:5) is optional, and the three
-   * share a combined cap.
+   * share a combined cap. Every image list here, as on Demand Gen, carries URLs and asset refs alike.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  portraitImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
   /** `logoImages` (1:1) is REQUIRED, 1-5. `landscapeLogoImages` (4:1) is optional. */
-  logoImages?: string[];
-  landscapeLogoImages?: string[];
+  logoImages?: GoogleCreativeImageRef[];
+  landscapeLogoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   /** A DISTINCT asset field type (`LONG_HEADLINE`), not a long `headlines` entry. 1-5 required. */
   longHeadlines?: string[];
@@ -1866,12 +2578,12 @@ export interface GoogleDisplayCreative {
    * The two marketing arrays are reciprocally required — Google requires each when the other is
    * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
    * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
-   * slots'.
+   * slots'. Each list carries URLs and asset refs alike, as on the siblings.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  logoImages?: string[];
-  squareLogoImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  logoImages?: GoogleCreativeImageRef[];
+  squareLogoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   /** Scalar. See the interface docblock. */
   longHeadline?: string;
@@ -1896,6 +2608,184 @@ export interface CampaignSitelink {
   description1?: string;
   description2?: string;
   finalUrl: string;
+}
+
+/**
+ * One Google structured snippet: a header and the list of things it enumerates, rendered under the
+ * text ad as a single "Header: value, value, value" line.
+ *
+ * Both fields are REQUIRED. A snippet carries no link of its own, so unlike {@link CampaignSitelink}
+ * there is no destination; what makes it servable is having a header and enough values, and upstream
+ * (`assets.go`'s `validateStructuredSnippets`) refuses the whole create when either is missing.
+ *
+ * `values` is bounded at BOTH ends — see {@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, which is counted
+ * after blanks and case-folded repeats are removed, so the length of this array is not the number
+ * upstream judges.
+ *
+ * `header` must be one of Google's predefined headers FOR THE CAMPAIGN'S LANGUAGE, a list Google
+ * publishes per locale; neither upstream nor this app checks membership. See
+ * {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}.
+ */
+export interface CampaignStructuredSnippet {
+  header: string;
+  values: string[];
+}
+
+/**
+ * The structured-snippet sub-form as the operator is filling it in, before it becomes a
+ * {@link CampaignStructuredSnippet}.
+ *
+ * `values` is ONE STRING here, not a list: the box is a textarea taking one value per line, the
+ * same shape the Google conversion-action textarea uses. Keeping the raw text rather than a parsed
+ * list is what lets a refused snippet stay on screen exactly as it was typed — trailing blank
+ * lines, repeats and all — so the warning the operator is being asked to act on still describes
+ * what they can see.
+ */
+export interface CampaignStructuredSnippetDraft {
+  header: string;
+  values: string;
+}
+
+/**
+ * One Google call extension: a phone number shown with the Search ad, and the country it belongs to.
+ *
+ * Both fields are REQUIRED. `countryCode` is the ISO alpha-2 country, because Google interprets the
+ * number against it and has no default to pick; upstream (`assets_extended.go`'s
+ * `validateCallExtensions`) upper-cases it before judging it, and this app sends it upper-cased.
+ * `phoneNumber` is the number as a human writes it for that country — Google normalises it, and
+ * neither upstream nor this app tries to.
+ */
+export interface CampaignCallExtension {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * One Google promotion extension: what is on sale, the discount, and where a click lands.
+ *
+ * Mirrors `googleAdsPromotionConfig` (`internal/dispatch/googleads.go`) field for field. Every
+ * money and percentage field is a NUMBER in whole units and is OMITTED when unset — upstream decodes
+ * an absent field to `0`, which is its own "unset", so sending `0` and omitting the key mean the
+ * same thing there.
+ *
+ * Two oneofs, both Google's. `discountPercent` and `discountAmount` — EXACTLY one. `promotionCode`
+ * and `ordersOverAmount` — AT MOST one. `currencyCode` is required whenever either money field is
+ * set. `occasion` is Google's `PromotionExtensionOccasion` name, checked for shape and not for
+ * membership. The four dates are optional `YYYY-MM-DD` pairs — a serving window and a redemption
+ * window, each ordered on its own.
+ *
+ * `finalUrl` is REQUIRED and UNTAGGED here, as a sitelink's is: campaign-service tags it exactly as
+ * it tags the ad's own final URL.
+ */
+export interface CampaignPromotion {
+  promotionTarget: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  ordersOverAmount?: number;
+  currencyCode?: string;
+  promotionCode?: string;
+  occasion?: string;
+  languageCode?: string;
+  startDate?: string;
+  endDate?: string;
+  redemptionStartDate?: string;
+  redemptionEndDate?: string;
+  finalUrl: string;
+}
+
+/**
+ * One row of a {@link CampaignPriceExtension}, mirroring `googleAdsPriceOfferingConfig`.
+ *
+ * Each row carries its OWN destination: Google serves the rows as separate clickable entries.
+ * `amount` must be greater than zero in `currencyCode` units — a free row is not a price row, and
+ * `0` reaches Google as unset. `unit` is Google's `PriceExtensionPriceUnit` name, optional.
+ */
+export interface CampaignPriceOffering {
+  header: string;
+  description: string;
+  amount: number;
+  currencyCode: string;
+  unit?: string;
+  finalUrl: string;
+}
+
+/**
+ * One Google price extension: a typed table of 3-8 priced rows, mirroring `googleAdsPriceConfig`.
+ *
+ * `type` (Google's `PriceExtensionType`) and `languageCode` are REQUIRED — upstream refuses a price
+ * asset without a language rather than picking one. `priceQualifier` (`FROM`, `UP_TO`, `AVERAGE`) is
+ * optional. Row headers must be distinct, case-folded: Google serves one row per header.
+ */
+export interface CampaignPriceExtension {
+  type: string;
+  priceQualifier?: string;
+  languageCode: string;
+  offerings: CampaignPriceOffering[];
+}
+
+/**
+ * The call-extension sub-form as the operator is filling it in — the two boxes' raw text, before
+ * trimming, so a refused entry stays on screen exactly as typed.
+ */
+export interface CampaignCallExtensionDraft {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * Which arm of the promotion's discount oneof the sub-form is filling in. A select, not two boxes,
+ * because Google takes exactly one of the two.
+ */
+export type CampaignPromotionDiscountKind = 'percent' | 'amount';
+
+/**
+ * Which arm of the promotion's eligibility oneof the sub-form is filling in — `none` being the
+ * legal third state, since Google takes AT MOST one of the two.
+ */
+export type CampaignPromotionEligibilityKind = 'none' | 'code' | 'ordersOver';
+
+/**
+ * The promotion sub-form as the operator is filling it in. Every box is RAW TEXT, numbers included —
+ * the same choice the bidding controls make: an empty box is "not filled in", a different state from
+ * a zero, and a refused entry must stay on screen as typed.
+ */
+export interface CampaignPromotionDraft {
+  promotionTarget: string;
+  discountKind: CampaignPromotionDiscountKind;
+  discount: string;
+  eligibilityKind: CampaignPromotionEligibilityKind;
+  promotionCode: string;
+  ordersOverAmount: string;
+  currencyCode: string;
+  occasion: string;
+  languageCode: string;
+  startDate: string;
+  endDate: string;
+  redemptionStartDate: string;
+  redemptionEndDate: string;
+  finalUrl: string;
+}
+
+/** One price row as the operator is filling it in, raw text throughout. */
+export interface CampaignPriceOfferingDraft {
+  header: string;
+  description: string;
+  amount: string;
+  unit: string;
+  finalUrl: string;
+}
+
+/**
+ * The price sub-form as the operator is filling it in. `currencyCode` is ONE box for the whole
+ * table — every row of a price extension is in the same currency in practice — and is copied onto
+ * each row's `currencyCode`, which is where the wire carries it.
+ */
+export interface CampaignPriceExtensionDraft {
+  type: string;
+  priceQualifier: string;
+  languageCode: string;
+  currencyCode: string;
+  offerings: CampaignPriceOfferingDraft[];
 }
 
 /**
@@ -1924,6 +2814,22 @@ export interface CampaignProximityTarget {
   longitude: number;
   radius: number;
   radiusUnit: GoogleAdsRadiusUnit;
+}
+
+/**
+ * The Implementation tab's radius sub-form as TYPED, before it becomes a
+ * {@link CampaignProximityTarget}.
+ *
+ * The three numbers are raw text for the reason {@link CampaignStructuredSnippetDraft.values} is: an
+ * empty box is "not filled in yet", which is a different state from a zero, and a zero latitude is
+ * a real point in the Gulf of Guinea that nothing downstream would refuse. `radiusUnit` admits `''`
+ * because upstream supplies no default and neither does the form — the operator picks one.
+ */
+export interface CampaignProximityTargetDraft {
+  latitude: string;
+  longitude: string;
+  radius: string;
+  radiusUnit: GoogleAdsRadiusUnit | '';
 }
 
 /**
@@ -2038,6 +2944,13 @@ export interface CampaignCreateRequest {
   demandGenCreative?: GoogleDemandGenCreative;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
+  /**
+   * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
+   * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
+   * shape. The Implementation tab sends its country chips first and its postal-code ids after them.
+   *
+   * Bounded by {@link GOOGLE_ADS_MAX_GEO_TARGETS} across both spellings together.
+   */
   geoTargets: string[];
   /**
    * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
@@ -2166,6 +3079,43 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   sitelinks?: CampaignSitelink[];
+  /**
+   * The Google campaign's structured snippets — one "Header: value, value, value" line each,
+   * enumerating what the campaign offers rather than claiming anything about it.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  structuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * The existing Google Ads user lists the Search ad group targets, as full resource names
+   * (`customers/{customerId}/userLists/{id}`, see `GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN`).
+   *
+   * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
+   * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
+   * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
+   * upstream refuses the create on any other channel, so the UI withholds the list there and the BFF
+   * refuses it by name.
+   */
+  audienceSegments?: string[];
+  /**
+   * The Google campaign's call extensions — a phone number shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}. The key is
+   * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
+   */
+  callExtensions?: CampaignCallExtension[];
+  /**
+   * The Google campaign's promotion extensions — a discount shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  promotions?: CampaignPromotion[];
+  /**
+   * The Google campaign's price extensions — a table of priced rows shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  prices?: CampaignPriceExtension[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -2866,6 +3816,42 @@ export interface CampaignServiceConnection {
   status: 'active' | 'inactive' | 'error' | 'deleted';
 }
 
+/**
+ * One element of campaign-service's account discovery (`AccessibleAccount`). `id` is opaque and
+ * per-provider; `label` is optional on the wire.
+ */
+export interface CampaignServiceAccessibleAccount {
+  id: string;
+  label?: string;
+}
+
+/** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
+export interface CampaignServiceAccessibleAccounts {
+  accounts: CampaignServiceAccessibleAccount[];
+}
+
+/**
+ * One element of campaign-service's geo target suggest (`google-ads-geo-target-suggestion`,
+ * linuxfoundation/lfx-v2-campaign-service#411). `id` is the bare numeric geo target constant id, in
+ * exactly the form `googleAdsConfig.geoTargets` accepts; `reach` is absent when Google sent none.
+ */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonical_name: string;
+  country_code: string;
+  target_type: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /projects/{id}/google-ads/geo-targets` (`suggest-google-ads-geo-targets`). */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestions {
+  suggestions: CampaignServiceGoogleAdsGeoTargetSuggestion[];
+  suggestion_count: number;
+  truncated: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // The Monitor tab's campaign-service shapes (#2519)
 //
@@ -2921,8 +3907,12 @@ export type MonitorTabPlatform = 'google' | MonitorPanelKey;
 /** The Monitor tab's trailing-days choices; a member of `MONITOR_DATE_RANGE_OPTIONS`. */
 export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number];
 
-/** Why a Monitor panel shows an empty state instead of data: a connection state, or the platform's metrics switched off upstream. */
-export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled';
+/**
+ * Why a Monitor panel shows an empty state instead of data: a connection state, the platform's metrics
+ * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
+ * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
+ */
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
 
 /** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
 export interface MonitorPanelNotice {
@@ -3853,7 +4843,7 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
@@ -3973,6 +4963,27 @@ export interface CampaignNegativeKeywordsRequestState {
   platform: NegativeKeywordCampaignPlatform;
   /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
   settleCount: number;
+  /**
+   * Each keyword's LAST outcome on this campaign, by the text sent, across requests: a later request
+   * for other keywords does not erase it, so a keyword that was not confirmed keeps its
+   * verify-first advice until it is itself sent again.
+   */
+  keywordOutcomes: Record<string, CampaignNegativeKeywordLastOutcome>;
+}
+
+/** One keyword's last outcome on a campaign (`CampaignNegativeKeywordsRequestState.keywordOutcomes`). */
+export interface CampaignNegativeKeywordLastOutcome {
+  /** A batch with no per-keyword results counts as FAILED (refused) or UNCONFIRMED for each keyword sent. */
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** The per-keyword detail, or the batch's message. */
+  detail: string;
+  /**
+   * When it was recorded, as a sequence number that only grows across every settled request
+   * (`CampaignNegativeKeywordsService`): what decides whether an outcome is NEWER than something
+   * recorded against an earlier one, such as the Reddit keyword table's not-sent note.
+   */
+  seq: number;
 }
 
 /** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
@@ -3988,13 +4999,14 @@ export interface CampaignNegativeKeywordsSubmission {
   matchType: CampaignNegativeKeywordMatchType;
   /**
    * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
-   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    */
   revision?: string;
 }
 
 /** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
-export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
 
 /** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
 export interface CampaignNegativeKeywordPlatformRules {
@@ -4006,6 +5018,13 @@ export interface CampaignNegativeKeywordPlatformRules {
   defaultMatchType: CampaignNegativeKeywordMatchType;
   /** Most keywords one request may carry on this platform. */
   maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
   /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
   requiresRevision: boolean;
   /** Where the negatives land, for the field hint. */
@@ -4216,6 +5235,78 @@ export interface CampaignListResult {
    */
   redditCreativeEnabled: boolean;
   /**
+   * Whether the Reddit section may offer an image UPLOAD, sent as `redditConfig.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` flag, which says the deployed campaign-service has
+   * its creative-asset URL signing configured (signing key + public base URL). Neither alone is
+   * enough: the legacy creator never reads `imageAssetId`, and a campaign-service without signing
+   * refuses it ("stored creative assets are not enabled for Reddit"). Modelled on the client like
+   * the capabilities above (`boolean | null`, `null` for unanswered), which withholds the control;
+   * the pasted image URL stays offered either way.
+   */
+  redditAssetUploadEnabled: boolean;
+  /**
+   * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
+   * brief and naming them by asset id in the Google creative fields.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` flag. The claim the flag makes is deliberately NOT
+   * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
+   * `assets:mutate`, so no URL signing is involved and none is asserted
+   * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
+   * that the deployed campaign-service resolves Google creative asset ids, which every release from
+   * v1.0.21 does — an older one types the image arrays as strings and cannot decode an asset entry,
+   * so its Google create fails. The legacy creator never reads them at all, hence the cutover half.
+   *
+   * The Implement tab reads it as `boolean | null`, `null` for unanswered, like the Reddit and Meta
+   * siblings: only an explicit `true` offers the library controls in each Google image slot — upload
+   * into the brief's library, or pick a stored image that fits — and sends the picks as
+   * {@link GoogleCreativeImageAssetRef} entries beside the pasted URLs. Anything else withholds the
+   * controls and blocks Create while a stored image is still held, rather than dropping it. The
+   * pasted image URLs are offered either way.
+   */
+  googleAssetUploadEnabled: boolean;
+  /**
+   * Whether a Meta ad image (`MetaAdVariant.imageUrl`) will actually be used.
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `googleCreativeEnabled`: campaign-service reads
+   * the image on every variant, the legacy Meta creator reads none. Modelled on the client the
+   * same way (`boolean | null`, `null` for unanswered), which withholds the image controls.
+   */
+  metaCreativeEnabled: boolean;
+  /**
+   * Whether the Meta section may offer an image UPLOAD, sent as `MetaAdVariant.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS` flag. Like its Google sibling and unlike Reddit's it
+   * asserts no URL signing: Meta's dispatch path uploads the stored bytes to the ad account's image
+   * library, so no URL leaves the service. What it asserts is that the deployed campaign-service
+   * resolves Meta asset ids. Modelled on the client like the capabilities above.
+   */
+  metaAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer an image UPLOAD, sent as
+   * `LinkedInCreativeVariant.imageAssetId` on every variant.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: LinkedIn's dispatch path uploads the stored bytes through the Images API. There is no
+   * pasted-URL alternative, so there is no LinkedIn `…CreativeEnabled` to pair it with. Modelled on
+   * the client like the capabilities above.
+   */
+  linkedInAssetUploadEnabled: boolean;
+  /**
+   * Whether the Microsoft section may offer an image UPLOAD, sent as
+   * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: Microsoft's dispatch path uploads the stored bytes to the account's media library.
+   * Modelled on the client like the capabilities above.
+   */
+  microsoftAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -4226,6 +5317,51 @@ export interface CampaignListResult {
    * capabilities above (`boolean | null`, `null` for unanswered), which withholds the control.
    */
   biddingEnabled: boolean;
+  /**
+   * Whether a Microsoft create may carry the flight dates, as `microsoftConfig.startDate` / `endDate`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` flag says the deployed campaign-service
+   * understands the two keys (linuxfoundation/lfx-v2-campaign-service#409). An older service
+   * ignores them and creates the campaign with no flight, and the legacy creator never reads them.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which sends no dates and keeps the "ignores the flight dates" warning.
+   */
+  microsoftScheduleEnabled: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` flag says the deployed campaign-service
+   * refuses an EU-targeted Meta create without the disclosures (linuxfoundation/lfx-v2-campaign-service#414). Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which hides the
+   * inputs and sends none of the three keys.
+   */
+  metaInstagramDsaEnabled: boolean;
+  /**
+   * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
+   *
+   * Per CALLER, unlike every capability above: true only when the campaign-service create path
+   * serves the create AND the caller is a ROOT writer or ROOT campaign manager. Every foundation's
+   * Google Ads connection points at one shared LF customer, and a user list cannot yet be mapped to
+   * a project, so a non-root operator could otherwise target another foundation's list — the same
+   * reason campaign-service refuses to list user lists on the shared account
+   * (linuxfoundation/lfx-v2-campaign-service#411). The create route refuses a non-root caller's
+   * segments with a 403 `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
+   */
+  googleAudienceSegmentsEnabled: boolean;
+  /**
+   * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
+   * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` flag says the deployed campaign-service has the
+   * suggest endpoint (linuxfoundation/lfx-v2-campaign-service#411). An older service answers it 404.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which keeps the typed-id box.
+   */
+  googleGeoSearchEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -4390,6 +5526,91 @@ export interface CampaignBiddingCapabilityBlock {
    * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
    */
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why generated Google callouts and sitelinks are being WITHHELD from the create because the
+ * create-capability answer is not an explicit yes. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ *
+ * Unlike that one this does not block Create, and the difference is deliberate. A withheld manual
+ * bid changes what the campaign DOES — it would be created automatic, spending differently from
+ * what was chosen — so the create waits for the answer. Withheld extensions cost only the
+ * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
+ * capability read for that is worse than creating and saying so.
+ */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for postal-code or radius targets the draft holds but the request cannot
+ * carry, because the campaign-service create capability is unanswered or answered no. The kinds
+ * mean what they do on {@link CampaignGoogleExtensionsCapabilityBlock}.
+ *
+ * Unlike that block this one GATES Create: a withheld location list does not shrink the campaign, it
+ * WIDENS it — the request falls back to the event country, so a 25-mile radius would become a
+ * nationwide campaign. The operator retries the check or removes the targets explicitly.
+ */
+export interface CampaignGoogleLocationsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Google audience segments the draft still holds but the request cannot
+ * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
+ * would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * campaign-service create path does not serve this deployment. The other kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
+ */
+export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
+ * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
+ * was made for a different brief than the one now open, so it is never sent whatever the capability.
+ */
+export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Meta image the draft still holds but the request cannot
+ * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.
+ */
+export interface CampaignMetaImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a stored image held in a Google image slot that the request cannot
+ * carry, or that campaign-service would refuse. The first six kinds mean what they do on
+ * `CampaignMetaImageAssetBlock`. `missing`: the asset is no longer in the brief's library (it was
+ * deleted). `misfit`: its recorded dimensions do not meet the slot's shape.
+ */
+export interface CampaignGoogleImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed' | 'missing' | 'misfit';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s LinkedIn sibling, with the same kinds. */
+export interface CampaignLinkedInImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s Microsoft sibling, with the same kinds. */
+export interface CampaignMicrosoftImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
 
@@ -4660,7 +5881,7 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
   errorCode?: string;
 }
 
@@ -4762,8 +5983,10 @@ export interface CampaignServiceCampaignMetrics {
   impressions: number;
   clicks: number;
   /**
-   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
-   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * Cost in MICRO-UNITS. ALWAYS USD on LinkedIn (its Ad Analytics `costInUsd`, whatever the ad
+   * account bills in); the ad ACCOUNT's own currency everywhere else — Google Ads, Meta, Microsoft,
+   * Reddit (its report's "microcurrency") and X (`billed_charge_local_micro`), none of which the
+   * read names. campaign-service performs no FX conversion, so these must never be
    * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
    * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
    */
@@ -5101,14 +6324,14 @@ export interface AudienceCardBucket {
 }
 
 /**
- * How a suppression list was found, which is also its priority order in the UI.
+ * How a suppression list was found, which is also its order in the UI.
  *
- * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
- * over from a prior edition already bundles that event's current-registrant and unsubscribe
- * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
- * never assumed.
+ * `current_registrants` comes first (the edition's own registrants are the exclusion a
+ * registration push most needs), then `event_specific` (carried over from a prior edition),
+ * `brand`, and `standard`: the portfolio-wide hygiene lists, shown as one entry because they are
+ * applied through the project's one shared standard suppression list.
  */
-export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
 export interface AudienceSuppressionList {
   /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
@@ -5119,6 +6342,21 @@ export interface AudienceSuppressionList {
   size?: number;
   category: AudienceSuppressionCategory;
   hubspotUrl: string;
+  /**
+   * The list does not exist yet: attach or compose creates it by name when the row is applied.
+   * Only the `current_registrants` row sets it, and such a row has an empty `listId`.
+   */
+  willCreate?: boolean;
+}
+
+/**
+ * The suppression rows for a scope, and the project's standing standard suppression list when it
+ * already exists. `standardList` is absent until the first attach or compose that applies every
+ * resolved standard row creates it, so its absence is how the tab knows that write will CREATE it.
+ */
+export interface AudienceSuppressionListsResult {
+  lists: AudienceSuppressionList[];
+  standardList?: AudienceComposedList;
 }
 
 /**
@@ -5217,6 +6455,8 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /** Edition (event name with year) whose current registrants the master also excludes. */
+  currentRegistrantsEvent?: string;
   /**
    * Attach the composed master to this brief, as its built send audience.
    *
@@ -5261,20 +6501,26 @@ export interface AudienceComposeUnattachedEvent {
 /**
  * Result of composing a master list.
  *
- * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
- * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
- * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ * `suppression` is the project's standing standard suppression list, which the master excludes
+ * directly beside every other selected suppression. It is reused across composes, never created
+ * per compose, and absent unless every resolved standard list was selected.
  *
- * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
- * failure (suppression created, master failed) is reported as an error that still carries
- * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
- * offer a bare retry on failure.
+ * This operation is NOT idempotent: the master is a real HubSpot create. An unconfirmed master
+ * create is reported as a partial error carrying the master's name. (Older deployments could
+ * also report a combined suppression list created before a failed master.) Do not offer a bare
+ * retry on failure.
  */
 export interface AudienceComposeMasterResult {
   master: AudienceComposedList;
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * The suppression list ids the master actually excludes: the standing list first (in place of
+   * the standard rows), then the other exclusions, then the edition's current-registrants list.
+   * Not the ids sent. Absent from an upstream that predates it, so every reader needs a fallback.
+   */
+  suppressionListIds?: string[];
   /**
    * Whether the master was recorded as the brief's built send audience.
    *
@@ -5364,6 +6610,11 @@ export interface AudienceAttachExistingRequestBase {
   briefId: string;
   /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
   suppressionListIds: string[];
+  /**
+   * Edition (event name with year) whose current registrants the send also suppresses, through a
+   * `<edition> - Current Registrants` list campaign-service finds or creates by name.
+   */
+  currentRegistrantsEvent?: string;
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -5372,6 +6623,11 @@ export interface AudienceAttachExistingRequestBase {
 export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
+  /**
+   * The project's standing standard suppression list, reused across audiences and recorded in
+   * place of the standard lists. Absent unless every resolved standard list was sent.
+   */
+  standardSuppression?: AudienceComposedList;
   audience: CampaignAudience;
 }
 
@@ -5600,8 +6856,110 @@ export interface AudienceCustomRequest {
   name?: string;
 }
 
-/** How the Audience tab builds the send audience — the legacy builder's three modes. */
-export type AudienceBuildMode = 'event' | 'custom' | 'reuse';
+/**
+ * What an attach or compose expected to create, captured at dispatch so its result can say what
+ * actually happened: whether the standing standard list existed, and the name of the
+ * current-registrants list it was asked to create ('' when none).
+ */
+export interface AudienceWriteDispatchContext {
+  standingExisted: boolean;
+  registrantsName: string;
+}
+
+/**
+ * A 409 from compose or attach: a HubSpot list already holds the name of the standing standard
+ * suppression list or of the edition's current-registrants list. `message` is upstream's, naming
+ * the list and its id; `fromCompose` says whether the compose latch waits on the operator's fix.
+ */
+export interface AudienceListNameConflict {
+  message: string;
+  fromCompose: boolean;
+}
+
+/**
+ * A step-4 reuse attach (an existing master list, or a past send's lists) waiting for the operator
+ * to confirm the lists it would create in HubSpot.
+ */
+export interface AudiencePendingReuseAttach {
+  kind: 'master' | 'send';
+  /** The master list id, or the past send's email id. */
+  id: string;
+  /** What the operator is attaching, for the confirmation. */
+  label: string;
+  /** The lists this attach would create, as one phrase: it can differ from the step-6 attach's. */
+  creates: string;
+}
+
+/**
+ * The project's standing standard list and the standard rows it stands for, so a past send that
+ * excluded the standing list is compared with a recorded audience in the same terms.
+ */
+export interface AudienceStandingExpansion {
+  listId: string;
+  rowIds: readonly string[];
+}
+
+/** An action that starts the Audience tab over and so waits for the operator to confirm it. */
+export type AudienceStartOverAction = 'discover' | 'draft';
+
+/** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
+export interface AudienceStandardSuppressionToggle {
+  keys: readonly string[];
+  selected: boolean;
+}
+
+/** How the Audience tab sets the send audience: build a new list, or use existing lists. */
+export type AudienceBuildMode = 'build' | 'reuse';
+
+/** The Audience tab's numbered steps, in page order. Numbers are assigned to the visible ones only. */
+export type AudienceStepKey = 'discover' | 'include' | 'exclude' | 'reuse' | 'gaps' | 'compose' | 'qa';
+
+/** The two opt-in signals an event draft adds as existing lists rather than as new filters. */
+export type AudienceOptInSignal = 'project_opt_in' | 'lf_newsletter_opt_in';
+
+/**
+ * The existing opt-in lists looked up for an event draft. Opt-ins are HubSpot subscription types
+ * spread over many portal-specific properties, so they are never built as filters: the lists the
+ * portal already keeps for them are found by discovery and joined to Include instead.
+ */
+export interface AudienceOptInLookup {
+  status: 'idle' | 'loading' | 'done' | 'failed';
+  /**
+   * Lists this lookup actually inserted into Include: one per signal, the largest found. A list
+   * the operator had already included, or had marked Exclude, is never counted here, so a later
+   * draft's clean-up cannot take out a list the operator chose.
+   */
+  added: AudienceDiscoveredList[];
+  /**
+   * Picked lists waiting for the drafted list to be created. Added before it, they enabled the main
+   * attach with only the portfolio-wide newsletter list in the send.
+   */
+  pending: AudienceDiscoveredList[];
+  /** Further opt-in lists found, offered but not added. */
+  others: AudienceDiscoveredList[];
+  /** Opt-in signals discovery found no list for. */
+  missing: AudienceOptInSignal[];
+}
+
+/** The follow-up a readiness notice offers, emitted back to the tab that raised it. */
+export type AudienceReadinessAction = 'retry-audience-read' | 'retry-brief';
+
+/**
+ * One reason the Audience tab is paused or limited. The tab raises several at once (a staging
+ * pause, an unread audience, an unsaved plan, a degraded connection); the banner shows the most
+ * urgent first and folds the rest behind a toggle.
+ */
+export interface AudienceReadinessNotice {
+  /** The notice's `data-testid`, unchanged from when each was its own banner. */
+  testId: string;
+  /** `busy` shows a spinner; `warn` is amber and announced as an alert. */
+  tone: 'busy' | 'info' | 'warn';
+  title?: string;
+  message: string;
+  /** A `data-testid` for the message itself, when the copy variant matters to a test. */
+  messageTestId?: string;
+  action?: { kind: AudienceReadinessAction; label: string; testId: string };
+}
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {

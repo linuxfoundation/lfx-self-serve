@@ -8,6 +8,7 @@ import { SummaryModalComponent } from '@components/summary-modal/summary-modal.c
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyDocumentItem } from '@lfx-one/shared/interfaces';
+import { DocumentDisplayNamePipe } from '@app/shared/pipes/document-display-name.pipe';
 import { DocumentKindTagPipe } from '@app/shared/pipes/document-kind-tag.pipe';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -15,7 +16,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-documents-table',
-  imports: [TableComponent, TagComponent, ButtonComponent, DatePipe, MyDocumentSourceTagPipe, DocumentKindTagPipe, TooltipModule],
+  imports: [TableComponent, TagComponent, ButtonComponent, DatePipe, MyDocumentSourceTagPipe, DocumentKindTagPipe, DocumentDisplayNamePipe, TooltipModule],
   providers: [DialogService],
   templateUrl: './documents-table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

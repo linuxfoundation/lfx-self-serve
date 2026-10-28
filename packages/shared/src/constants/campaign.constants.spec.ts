@@ -3,11 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { CampaignPlatform, GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
 import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
 import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  isCreativeAssetMimeType,
+  sniffCreativeAssetMimeType,
   BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
   DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -65,13 +69,41 @@ import {
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
   googleAdsEchoed,
+  googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
   isGoSpaceCode,
   PAUSE_ONLY_CAMPAIGN_PLATFORMS,
   campaignResumeWithheldForPlatform,
+  campaignPlatformMonitorable,
 } from './campaign.constants';
+
+/**
+ * The Monitoring tab's offer is decoupled from the CREATE flow's `disabled` flag, as the toggle is.
+ * X's adopted campaigns are live and spending, so its monitor shows while its create stays off.
+ */
+describe('campaignPlatformMonitorable', () => {
+  it('offers X to the Monitoring tab while X create stays disabled', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(campaignPlatformMonitorable('twitter-ads')).toBe(true);
+  });
+
+  it('offers every create-enabled platform', () => {
+    for (const platform of CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)) {
+      expect(campaignPlatformMonitorable(platform.id)).toBe(true);
+    }
+  });
+
+  it('keeps X out of the create-enabled platforms the Implement tab and the picker offer', () => {
+    expect(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id)).not.toContain('twitter-ads');
+  });
+
+  it('answers false for a platform the list does not know', () => {
+    expect(campaignPlatformMonitorable('unknown-ads' as CampaignPlatform)).toBe(false);
+  });
+});
 
 /**
  * The toggle is decoupled from the CREATE flow's `disabled` flag. A campaign reaches this app by
@@ -1091,6 +1123,24 @@ describe('Google Ads string rules', () => {
     expect(googleAdsEchoed(input)).toBe(expected);
   });
 
+  // The extension bound the brief generator and the brief restore both call, so a callout or a
+  // sitelink label arriving from a model response or from an opaque stored row is held to the
+  // same rule the editor's own add-guard applies.
+  it.each([
+    ['a non-string', 42, 25, ''],
+    ['text inside the cap, trimmed', '  Free Admission  ', 25, 'Free Admission'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 25, 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', 25, '\ufeffFree'],
+    // Counted in runes, not UTF-16 units: `.slice(0, 3)` would cut this after the lone high
+    // surrogate of the second emoji and leave an unpaired one behind.
+    ['astral characters, counted as runes', '🎉🎉🎉🎉', 3, '🎉🎉🎉'],
+    // The cut lands immediately after a space, and a trailing space is a difference upstream's
+    // own duplicate check sees — so the bound re-trims after cutting.
+    ['a cut that lands on a space', 'Free Admission Today', 5, 'Free'],
+  ])('bounds %s', (_label, value, maxRunes, expected) => {
+    expect(googleAdsBoundExtensionText(value, maxRunes)).toBe(expected);
+  });
+
   it.each([
     ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
     ['a dotted capital I, to a plain i', 'İnfo', 'info'],
@@ -1200,6 +1250,38 @@ describe('Google Ads campaign criteria vocabularies', () => {
   });
 });
 
+describe('creative-asset upload allowlist', () => {
+  // campaign-service's `upload-creative-asset` content_type enum; anything else is refused upstream.
+  it('admits exactly PNG and JPEG', () => {
+    expect([...CREATIVE_ASSET_MIME_TYPES]).toEqual(['image/png', 'image/jpeg']);
+    expect(isCreativeAssetMimeType('image/png')).toBe(true);
+    expect(isCreativeAssetMimeType('image/jpeg')).toBe(true);
+    for (const other of ['image/gif', 'image/webp', 'image/jpg', 'IMAGE/PNG', '', undefined, 42]) {
+      expect(isCreativeAssetMimeType(other)).toBe(false);
+    }
+  });
+
+  // Below campaign-service's own 30 MiB decoded ceiling, so nothing this app sends is refused there for size.
+  it('bounds an upload at 10 MiB, inside the upstream 30 MiB ceiling', () => {
+    expect(CREATIVE_ASSET_MAX_BYTES).toBe(10 * 1024 * 1024);
+    expect(CREATIVE_ASSET_MAX_BYTES).toBeLessThan(30 * 1024 * 1024);
+  });
+
+  it('sniffs the PNG signature and the JPEG SOI marker, and nothing else', () => {
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))).toBe('image/png');
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    // A truncated PNG signature, a GIF and an empty body are not images this upload accepts.
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new TextEncoder().encode('GIF89a'))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new Uint8Array())).toBeNull();
+    // Only a real byte buffer is read: a request body tampered into an array or a string whose
+    // indexes spell a PNG signature is not an image (CodeQL type confusion).
+    expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
+    expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
+  });
+});
+
 describe('budget-writable platforms (#3299)', () => {
   // campaign-service's `update-campaign-budget` serves Google, LinkedIn, Meta, Microsoft, Reddit
   // and X (docs/api-catalog.md); every other platform is a 400 upstream.
@@ -1216,5 +1298,50 @@ describe('budget-writable platforms (#3299)', () => {
     for (const platform of DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS) {
       expect(BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(platform)).toBe(true);
     }
+  });
+});
+
+/**
+ * The accept set the editor's add guard, the brief-restore path and the sitelink generator all
+ * share, and whose refusals `describeDestinationUrl` (`campaign.controller.ts`) reports by name.
+ *
+ * It existed as three hand-written copies before, and the third had drifted to a scheme check
+ * alone — so these cases pin the set itself rather than any one tier's use of it.
+ */
+describe('isGoogleAdsServableUrl', () => {
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register', true],
+    ['a plain http URL, which four of five platforms accept', 'http://events.example.org/register', true],
+    ['a URL with an ordinary & query', 'https://events.example.org/r?a=1&b=2', true],
+    ['an empty string', '', false],
+    ['a relative path', '/register', false],
+    ['an unparseable value', 'not a url', false],
+    ['a javascript: destination', 'javascript:alert(1)', false],
+    ['a mailto: destination', 'mailto:hello@example.org', false],
+    ['a URL with no hostname', 'https:///register', false],
+    ['embedded credentials', 'https://user:pw@events.example.org/', false],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', false],
+    ['no // after the scheme', 'https:events.example.org/register', false],
+    ['a `;` separating query parameters', 'https://events.example.org/r?a=1;b=2', false],
+    ['a stray `%` that is not an escape', 'https://events.example.org/r?q=100%', false],
+    ['a backslash in the authority', 'https://events.example.org\\evil/', false],
+  ])('judges %s', (_label, url, expected) => {
+    expect(isGoogleAdsServableUrl(url)).toBe(expected);
+  });
+
+  /**
+   * The contract the docblock states: the argument must ALREADY be trimmed, with
+   * `googleAdsTrimSpace` rather than `String.prototype.trim`. The two disagree on U+0085 and
+   * U+FEFF, and the trimmed value is the one the caller goes on to store — so trimming inside
+   * would judge a string no caller keeps.
+   */
+  it('refuses an untrimmed value rather than trimming it', () => {
+    const url = 'https://events.example.org/register';
+    expect(isGoogleAdsServableUrl(` ${url} `)).toBe(false);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(` ${url} `))).toBe(true);
+    // U+0085 is whitespace to Go and not to `String.prototype.trim`, which is why callers must use
+    // `googleAdsTrimSpace`: `.trim()` would leave it in and this would still refuse.
+    expect(`\u0085${url}`.trim()).toBe(`\u0085${url}`);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(`\u0085${url}`))).toBe(true);
   });
 });

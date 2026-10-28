@@ -2,12 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-contributions-page">
-  <header class="flex flex-col gap-2" data-testid="org-contributions-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-contributions-title">Code Contributions</h1>
-    <p class="text-sm text-gray-500" data-testid="org-contributions-subtitle">
-      Commits, contributors, maintainers, and collaborators across your active projects.
-    </p>
-  </header>
+  <lfx-page-header
+    title="Code Contributions"
+    description="Commits, contributors, maintainers, and collaborators across your projects."
+    titleTestId="org-contributions-title"
+    descriptionTestId="org-contributions-subtitle"
+    data-testid="org-contributions-header" />
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state
@@ -33,14 +33,27 @@
   } @else {
     <!-- KPI strip -->
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-contributions-kpis" />
+    <p class="-mt-2 flex items-start gap-1 text-xs text-gray-500">
+      <span data-testid="org-contributions-window-caption">{{ windowCaption() }}</span>
+      <button
+        type="button"
+        class="mt-0.5 inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        aria-label="How the count is defined"
+        [pTooltip]="metricDefinition()"
+        tooltipPosition="top"
+        tooltipEvent="both"
+        data-testid="org-contributions-metric-definition">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+      </button>
+    </p>
 
     <!-- Content card: tabs + shared filter bar + active table -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-contributions-content-card">
       <lfx-card-tabs-bar [options]="mainTabs()" [selectedFilter]="mainTab()" (filterChange)="onMainTabChange($event)" data-testid="org-contributions-tabs" />
 
       <!-- Filter bar (shared across both tabs) -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
-        <div class="relative flex-1">
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
+        <div class="relative flex-1 sm:min-w-56">
           <lfx-input-text
             [form]="filterForm"
             control="search"
@@ -59,6 +72,26 @@
             styleClass="w-full"
             ariaLabel="Filter by date range"
             dataTest="org-contributions-date-range-filter" />
+        </div>
+        <div class="w-full sm:w-44">
+          <lfx-select
+            [form]="filterForm"
+            control="projectScope"
+            size="small"
+            [options]="projectScopeOptions"
+            styleClass="w-full"
+            ariaLabel="Filter by project scope"
+            dataTest="org-contributions-project-scope-filter" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
+            control="metric"
+            size="small"
+            [options]="metricOptions"
+            styleClass="w-full"
+            ariaLabel="Count all commits, only main branch commits or all code contributions"
+            dataTest="org-contributions-metric-filter" />
         </div>
         <div class="w-full sm:w-52">
           <lfx-multi-select
@@ -88,6 +121,15 @@
             size="small"
             styleClass="w-full" />
         </div>
+        @if (isFiltering()) {
+          <button
+            type="button"
+            class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 sm:self-auto"
+            data-testid="org-contributions-filter-bar-clear-filters"
+            (click)="clearFilters()">
+            Clear filters
+          </button>
+        }
       </div>
 
       @if (fetchError()) {
@@ -121,12 +163,13 @@
             <tr>
               @let icons = sortIconMap();
               @let aria = ariaSortMap();
+              @let labels = metricLabels();
               <th scope="col"><span class="text-xs font-medium text-gray-500">Project</span></th>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Repository</span></th>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Source</span></th>
               <th scope="col" [attr.aria-sort]="aria.commits">
                 <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500" (click)="onSort('commits')">
-                  Commits <i [class]="icons.commits" aria-hidden="true"></i>
+                  {{ labels.count }} <i [class]="icons.commits" aria-hidden="true"></i>
                 </button>
               </th>
               <th scope="col" [attr.aria-sort]="aria.firstCommit">
@@ -134,7 +177,7 @@
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
                   (click)="onSort('firstCommit')">
-                  First Commit <i [class]="icons.firstCommit" aria-hidden="true"></i>
+                  {{ labels.firstDate }} <i [class]="icons.firstCommit" aria-hidden="true"></i>
                 </button>
               </th>
               <th scope="col" [attr.aria-sort]="aria.lastCommit">
@@ -142,7 +185,7 @@
                   type="button"
                   class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium text-gray-500"
                   (click)="onSort('lastCommit')">
-                  Last Commit <i [class]="icons.lastCommit" aria-hidden="true"></i>
+                  {{ labels.lastDate }} <i [class]="icons.lastCommit" aria-hidden="true"></i>
                 </button>
               </th>
             </tr>

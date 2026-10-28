@@ -8,6 +8,7 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { MENTORSHIP_MENTOR_PAGE_TABS } from '@lfx-one/shared/constants';
 import { MentorshipMentorPageTab } from '@lfx-one/shared/interfaces';
 import { filter, map } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Shell for the mentor experience — owns the page H1 and the underline tab bar, and hands
@@ -24,7 +25,7 @@ import { filter, map } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentor-page',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, PageHeaderComponent],
   templateUrl: './mentor-page.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

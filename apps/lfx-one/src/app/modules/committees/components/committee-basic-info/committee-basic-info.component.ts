@@ -8,10 +8,11 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { Committee, ParentCommitteeOption } from '@lfx-one/shared/interfaces';
+import { buildParentCommitteeOptions } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, filter, map, of, switchMap } from 'rxjs';
+import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-basic-info',
@@ -30,33 +31,17 @@ export class CommitteeBasicInfoComponent {
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
 
   // Load parent committee options — reactive to project context changes
-  public parentCommitteeOptions: Signal<{ label: string; value: string | null }[]> = this.initializeParentCommitteeOptions();
+  public parentCommitteeOptions: Signal<ParentCommitteeOption[]> = this.initializeParentCommitteeOptions();
 
-  private initializeParentCommitteeOptions(): Signal<{ label: string; value: string | null }[]> {
+  private initializeParentCommitteeOptions(): Signal<ParentCommitteeOption[]> {
     const committees = toSignal(
       toObservable(this.projectContextService.activeContext).pipe(
         filter((ctx) => !!ctx?.uid),
-        switchMap((ctx) =>
-          this.committeeService.getCommitteesByProject(ctx!.uid).pipe(
-            map((committees: Committee[]) => {
-              const topLevelCommittees = committees.filter((committee) => !committee.parent_uid);
-              const currentCommitteeId = this.committeeId();
-              return currentCommitteeId ? topLevelCommittees.filter((committee) => committee.uid !== currentCommitteeId) : topLevelCommittees;
-            }),
-            catchError(() => of([] as Committee[]))
-          )
-        )
+        switchMap((ctx) => this.committeeService.getCommitteesByProject(ctx!.uid))
       ),
-      { initialValue: [] }
+      { initialValue: [] as Committee[] }
     );
 
-    return computed(() => {
-      const options = committees().map((committee) => ({
-        label: committee.display_name || committee.name,
-        value: committee.uid,
-      }));
-
-      return [{ label: 'No Parent ' + this.committeeLabel, value: null }, ...options];
-    });
+    return computed(() => buildParentCommitteeOptions(committees(), this.committeeId(), this.committeeLabel));
   }
 }

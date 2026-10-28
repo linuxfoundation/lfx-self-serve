@@ -72,6 +72,7 @@ export class PersonaEnrichmentService {
       parentProjectUid: project.parent_uid ? project.parent_uid : null,
       description: project.description ? project.description : null,
       isFoundation: computeIsFoundation(project),
+      tierResolved: true,
     };
   }
 

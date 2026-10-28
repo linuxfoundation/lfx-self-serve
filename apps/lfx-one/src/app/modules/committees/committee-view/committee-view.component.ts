@@ -34,6 +34,7 @@ import {
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
   CommitteeOrganizationReference,
+  GroupEditLink,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -42,13 +43,20 @@ import {
   TabConfigEntry,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_VALID_TABS,
+  VOTE_INVITATION_COUNT_REFRESH_MS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
+  getGroupEditLink,
   hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -62,6 +70,9 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+import { DocumentService } from '@services/document.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
@@ -190,8 +201,10 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly surveyService = inject(SurveyService);
   private readonly voteService = inject(VoteService);
+  private readonly documentService = inject(DocumentService);
   private readonly invitationService = inject(InvitationService);
   private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
@@ -248,6 +261,22 @@ export class CommitteeViewComponent {
   public surveysLoading = signal<boolean>(true);
   private readonly votesRefresh = signal(0);
   private readonly surveysRefresh = signal(0);
+  // Documents are only counted (not fetched) so the tab badge is available before the tab is opened;
+  // the tab itself loads the rows when it is. documentsRefresh re-counts after a document is added.
+  public documentCountLoading = signal<boolean>(true);
+  private readonly documentsRefresh = signal(0);
+  // Set by the invitation-count poll before it bumps votesRefresh (GH-4078) and consumed by the next
+  // initVotes fetch, which then runs silently: no badge-hiding votesLoading, no error toast, and a
+  // failure keeps the current rows instead of emptying the Votes tab.
+  private votesRefreshSilent = false;
+  // Committee whose fetch produced the current rawVotes(), so a failed silent poll only keeps rows it owns.
+  private votesCommitteeUid: string | undefined;
+  // Confirmed deadline from committee-votes' voteExtended output, held until rawVotes() reflects a
+  // deadline at least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — this
+  // must live here rather than in CommitteeVotesComponent because @switch destroys that component on
+  // every tab switch, which previously dropped the override and let the stale pre-extension deadline
+  // reappear once the user returned to the Votes tab (per @audigregorie, GH-3823 review).
+  private readonly extendedVoteOverrides = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -284,8 +313,19 @@ export class CommitteeViewComponent {
   public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
   // Pre-fetched so tab badge counts are available before the user visits each tab. The child
   // components receive these as inputs and emit refresh outputs to trigger re-fetches here.
-  public votes: Signal<Vote[]> = this.initVotes();
+  private readonly rawVotes: Signal<Vote[]> = this.initVotes();
+  // Overlays extendedVoteOverrides onto rawVotes so the extension survives committee-votes being
+  // destroyed/recreated on tab switches (per @audigregorie, GH-3823 review).
+  public votes: Signal<Vote[]> = computed(() => {
+    const overrides = this.extendedVoteOverrides();
+    if (overrides.size === 0) return this.rawVotes();
+    return this.rawVotes().map((vote) => {
+      const override = overrides.get(vote.uid);
+      return override ? { ...vote, ...override } : vote;
+    });
+  });
   public surveys: Signal<Survey[]> = this.initSurveys();
+  public documentCount: Signal<number | null> = this.initDocumentCount();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
   public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -343,9 +383,46 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /**
+   * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
+   * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
+   * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   * Tagged with the committee uid it was fetched for: this view is reused across `/groups/:id`
+   * navigations, so an untagged result from the previous group would stay visible until the next
+   * lookup settles.
+   */
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean } | null> = toSignal(
+    toObservable(this.committee).pipe(
+      map((committee) =>
+        committee?.writer ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) } : null
+      ),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key),
+      switchMap((target) => {
+        if (!target) {
+          return of(null);
+        }
+        if (!target.key) {
+          return of({ uid: target.uid, writer: false });
+        }
+        return this.projectService.getProject(target.key, false).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true })),
+          catchError(() => of({ uid: target.uid, writer: false }))
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
+  /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
+  public editLink: Signal<GroupEditLink | null> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
+  });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {
@@ -516,7 +593,13 @@ export class CommitteeViewComponent {
     // group page itself) also governs /committees/:id/folders, /links, and committee_document
     // query-service resources, so a viewer of a public committee already has read access to all
     // three document sub-types. No separate document-level visibility flag exists in the model.
-    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => true },
+    {
+      key: 'documents',
+      label: 'Documents',
+      icon: 'fa-folder-open',
+      visible: () => true,
+      badge: () => (this.documentCountLoading() ? null : this.documentCount()),
+    },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
@@ -537,6 +620,43 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+
+    // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
+    // real participation count appears without a manual reload; stops once the carrier window ends.
+    // A tick that lands while a foreground fetch is loading is skipped so it never cancels that fetch;
+    // the poll re-arms once its rows arrive.
+    toObservable(this.rawVotes)
+      .pipe(
+        switchMap((votes) => (this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        filter(() => !this.votesLoading()),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.votesRefreshSilent = true;
+        this.votesRefresh.update((v) => v + 1);
+      });
+
+    // Self-healing eviction for extendedVoteOverrides (mirrors votes-table's own extendedDeadlines
+    // pattern): once rawVotes() reflects a deadline at least as new as the override, drop it rather
+    // than keep shadowing a now-accurate search-index row indefinitely.
+    toObservable(this.rawVotes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((votes) => {
+        const overrides = this.extendedVoteOverrides();
+        if (overrides.size === 0) return;
+        const next = new Map(overrides);
+        let changed = false;
+        for (const vote of votes) {
+          const override = next.get(vote.uid);
+          if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
+            next.delete(vote.uid);
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.extendedVoteOverrides.set(next);
+        }
+      });
 
     // Populate the shared invitation cache once in the browser so a direct landing on an invited
     // group (e.g. via the email link) can surface the Accept/Decline banner. Browser-only: the
@@ -626,6 +746,25 @@ export class CommitteeViewComponent {
     this.router.navigate(['/', 'groups']);
   }
 
+  /**
+   * Settings saved. Normally a plain refetch by the route id — but a rename regenerates `sso_group_name`
+   * for public / SSO groups, so a page opened through the old vanity slug would refetch a slug that no
+   * longer resolves. Move to the stable UID route first; the param change drives the refetch.
+   */
+  public onSettingsSaved(): void {
+    const committee = this.committee();
+    if (committee?.uid && this.committeeId() !== committee.uid) {
+      // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+        queryParams: { tab: this.activeTab() },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      return;
+    }
+    this.refreshCommittee();
+  }
+
   public refreshCommittee(): void {
     // Set synchronously here, not only inside initializeCommittee's async switchMap below (which
     // still sets it too, on the actual refetch) -- closes a race where refreshMembers() bumps
@@ -656,6 +795,17 @@ export class CommitteeViewComponent {
 
   public onVotesRefreshed(): void {
     this.votesRefresh.update((v) => v + 1);
+  }
+
+  /** committee-votes' voteExtended output (relayed from votes-table) — held in parent-owned state so the
+   *  confirmed deadline survives the Votes tab being destroyed/recreated on tab switches (per
+   *  @audigregorie, GH-3823 review). */
+  public onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverrides.update((map) => new Map(map).set(vote.uid, { end_time: vote.end_time, end_time_timezone: vote.end_time_timezone }));
+  }
+
+  public onDocumentsChanged(): void {
+    this.documentsRefresh.update((v) => v + 1);
   }
 
   public onSurveysRefreshed(): void {
@@ -1679,17 +1829,36 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.votesRefresh)]).pipe(
         switchMap(([committee]) => {
+          const silent = this.votesRefreshSilent;
+          this.votesRefreshSilent = false;
           // Only fetch if voting is enabled and the user has access (member or admin, not visitor).
           if (!committee?.uid || !committee.enable_voting || (!committee.my_role && !committee.writer)) {
             this.votesLoading.set(false);
             return of([]);
           }
-          this.votesLoading.set(true);
+          if (!silent) this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(committee.uid).pipe(
-            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
-            // stale index rows — same transformation the child component previously applied.
+            // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote that is missing
+            // from the page entirely while the search index catches up — scoped to this committee so
+            // a vote created elsewhere can't leak in. getVotesByCommittee is unpaginated (returns the
+            // full list in one call), so isFirstPage defaults true with no duplication risk.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay (Copilot/dealako, GH-4007 round
+            // 4): the created-carrier's eviction check reads `vote.status`, and if the opened overlay
+            // ran first it would see an already-rebadged Active row and evict the carrier while the
+            // index is still actually lagging — losing the new vote again once it converges.
+            map((votes) => this.voteService.mergeRecentlyCreatedVotes(votes, { committeeUid: committee.uid })),
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
+            // index rows — same transformation the child component previously applied.
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            tap(() => (this.votesCommitteeUid = committee.uid)),
             catchError(() => {
+              // A failed background poll keeps the current rows without a toast; the new array re-arms
+              // the poll so it retries while the carrier window is still live (GH-4078). The rows are
+              // kept only when they were fetched for this same committee, so a poll can never surface
+              // another committee's votes (keyed on the fetch, not each row's committee_uid, because a
+              // multi-committee vote carries only its primary committee there).
+              if (silent) return of(this.votesCommitteeUid === committee.uid ? [...this.rawVotes()] : []);
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
             }),
@@ -1725,6 +1894,27 @@ export class CommitteeViewComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /**
+   * Counts this committee's documents so the Documents tab badge is available before the user first
+   * opens the tab. Uses the query service count endpoint, so no document rows are fetched. Resolves to
+   * null on failure, which keeps the badge hidden.
+   */
+  private initDocumentCount(): Signal<number | null> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.documentsRefresh)]).pipe(
+        switchMap(([committee]) => {
+          if (!committee?.uid) {
+            this.documentCountLoading.set(false);
+            return of(null);
+          }
+          this.documentCountLoading.set(true);
+          return this.documentService.getCommitteeDocumentCount(committee.uid).pipe(finalize(() => this.documentCountLoading.set(false)));
+        })
+      ),
+      { initialValue: null }
     );
   }
 

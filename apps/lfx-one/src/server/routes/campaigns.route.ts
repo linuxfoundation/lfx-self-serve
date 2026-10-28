@@ -1,17 +1,55 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Router } from 'express';
+import { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
 import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
-import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
+import { MicroserviceError } from '../errors';
+import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
+
+/**
+ * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
+ * reaches the global error handler, which keeps the real status only for BaseApiError instances
+ * and would otherwise flatten it into a 500. Mirrors `mentorship-mentee.route.ts`.
+ */
+function handleCreativeAssetParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
+  if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    next(
+      new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+        operation: 'campaign_upload_creative_asset',
+        service: 'campaign_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  // Every other body-parser refusal (an aborted upload, an unsupported Content-Encoding, a size
+  // that disagrees with Content-Length) is the client's, and keeps its 4xx rather than becoming a 500.
+  const status = err && typeof err === 'object' ? (err as { status?: unknown }).status : undefined;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    next(
+      new MicroserviceError('The image upload could not be read. Please try again.', status, status === 415 ? 'UNSUPPORTED_MEDIA_TYPE' : 'BAD_REQUEST', {
+        operation: 'campaign_upload_creative_asset',
+        service: 'campaign_controller',
+        path: req.path,
+      })
+    );
+    return;
+  }
+  next(err);
+}
 
 const router = Router();
 const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
+
+// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
+// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -26,12 +64,40 @@ router.post('/brief/generate', (req, res, next) => campaignController.generateBr
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
+// Approves a brief that is already stored, and writes nothing to it. Two path segments after
+// `/brief`, so it cannot collide with the single-segment `/brief/persist` or `/brief/metrics`
+// routes, whichever order they are registered in. Empty body: the
+// brief is the path, the foundation is `?project=`, and the validator is the request's `If-Match`.
+router.post('/brief/:briefId/approve', (req, res, next) => campaignController.approveBrief(req, res, next));
 // campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its
 // per-platform siblings below, which read the ad platforms directly and derive action items from
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
-// not a drop-in replacement for them; nothing is cut over to it yet.
+// not a drop-in replacement for them; nothing is cut over to it yet. Because the Google, Meta,
+// Reddit and X accounts are shared by every foundation, those account monitors (and LinkedIn's
+// legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
+// An image for the brief, stored by campaign-service and named by asset id in a platform's
+// creative config — `redditConfig.imageAssetId` (decision D3), and the Google creative fields. The
+// body is the raw PNG/JPEG bytes, buffered here (at most CREATIVE_ASSET_MAX_BYTES) so the upstream
+// JSON body can be sent with a declared Content-Length.
+router.post(
+  '/brief/creative-assets',
+  express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
+  handleCreativeAssetParseError,
+  (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
+);
+// Reads and pruning of that same library. Unlike the upload they are gated on
+// LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS alone, not on either creative-asset capability flag: they are
+// addressed by a campaign-service brief, and a deployment must be able to see and prune what it
+// already stores whatever platform may currently consume it.
+router.get('/brief/creative-assets', (req, res, next) => campaignController.listCreativeAssets(req, res, next));
+// BEFORE the `:assetId` route below: Express matches in registration order, so a `plan` registered
+// after it would be swallowed as an asset id. The handler also refuses an `:assetId` that is not a
+// UUID, so reordering this fails loudly instead of silently reading `plan` as an id.
+router.get('/brief/creative-assets/plan', (req, res, next) => campaignController.getCreativeAssetPlan(req, res, next));
+router.get('/brief/creative-assets/:assetId', (req, res, next) => campaignController.getCreativeAsset(req, res, next));
+router.delete('/brief/creative-assets/:assetId', (req, res, next) => campaignController.deleteCreativeAsset(req, res, next));
 router.get('/list', (req, res, next) => campaignController.listBriefCampaigns(req, res, next));
 router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(req, res, next));
 // The email channel's template picker. Registered before `/hubspot/utm` only for reading order —
@@ -40,7 +106,6 @@ router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSp
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
 router.post('/send-workflow', (req, res, next) => campaignController.createSendWorkflow(req, res, next));
-router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
 // Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
@@ -50,6 +115,13 @@ router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccount
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
+// campaign-service account discovery for the project's Google Ads connection, behind
+// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
+router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
+// Google's geo target table, searched for the Implement tab's location picker (campaign-service #411),
+// behind LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH — 404 while it is off. Public location data,
+// so not root-only: `requireCampaignManager` above is the gate.
+router.get('/google/geo-targets', (req, res, next) => campaignController.searchGoogleAdsGeoTargets(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
@@ -70,9 +142,15 @@ router.patch('/:campaignId/status', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 // campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
-// campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
+// campaign-service only: Google Ads, Microsoft Advertising, Reddit and X. Positional response: results[i] answers
 // negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+// One campaign's live counters (`get-campaign-metrics`): the Optimize tab's per-row Refresh, and the
+// precise reason for a row the brief-wide read could not measure. Takes `?project=&briefId=` and an
+// optional `?window=`. Behind LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS — 404 while it is off.
+// Order is safe because the only fixed `/<segment>/metrics` GET, `/brief/metrics`, is registered ABOVE
+// and so matches first; no fixed `/x/metrics` GET is registered after this one for it to shadow.
+router.get('/:campaignId/metrics', (req, res, next) => campaignController.getCampaignMetrics(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
@@ -103,6 +181,8 @@ router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs
 router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
+// Read-only: there is no per-ad lever. `truncated` in the answer says Meta's ad listing passed its page cap.
+router.get('/:campaignId/meta-ad-sets/:adSetId/ads', (req, res, next) => optimizeController.listMetaAds(req, res, next));
 // If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.
 router.post('/:campaignId/meta-ad-sets/:adSetId/status', (req, res, next) => optimizeController.updateMetaAdSetStatus(req, res, next));
 router.get('/:campaignId/keyword-targeting', (req, res, next) => optimizeController.getKeywordTargeting(req, res, next));

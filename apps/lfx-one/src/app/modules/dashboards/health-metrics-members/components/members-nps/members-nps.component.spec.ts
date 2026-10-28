@@ -119,6 +119,7 @@ describe('MembersNpsComponent', () => {
     expect(text('members-nps-audience-pills')).toContain('Committers');
     expect(text('members-nps-updated')).toBe('Last updated Q2 2026');
     expect(text('members-nps-score')).toBe('+62');
+    expect(query('members-nps-score')?.classList).toContain('text-gray-900');
     expect(text('members-nps-change')).toBe('+4pp');
     expect(query('members-nps-change')?.classList).toContain('text-emerald-600');
     expect(text('members-nps-caption')).toBe('Net Promoter Score · board audience');
@@ -154,23 +155,25 @@ describe('MembersNpsComponent', () => {
       ['Q2 26', '+62', '69%'],
     ]);
     expect(query('members-nps-chart')?.getAttribute('aria-label')).toContain('over 2 survey waves');
+    expect(query('members-nps-legend-low-response')).toBeNull();
     expect(text('members-nps-trend-note')).toBe('Response rate is holding around 69%, so the movement in the score is meaningful.');
   });
 
   it('marks a wave below the rate floor in red and warns a rising score on a falling rate is unproven', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 45, 0.55), quarter('2026-04-01', 'Q2 26', 60, 0.38)] }));
+    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 45, 0.55), quarter('2026-04-01', 'Q2 26', 60, 0.33)] }));
 
-    const [line] = fixture.componentInstance['chartData']().datasets as ChartDataset<'line'>[];
+    const [line, bars] = fixture.componentInstance['chartData']().datasets as ChartDataset<'line'>[];
     expect(line.pointBackgroundColor).toEqual([lfxColors.amber[600], lfxColors.red[600]]);
+    expect(bars.backgroundColor).toEqual([lfxColors.blue[300], lfxColors.amber[300]]);
     expect(text('members-nps-trend-note')).toBe(
-      'The score is up 15 points while the response rate fell from 55% to 38%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
+      'The score is up 15 points while the response rate fell from 55% to 33%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
     );
   });
 
   it('warns that a rate below the floor makes neither the score nor its trend a foundation-wide signal', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.36), quarter('2026-04-01', 'Q2 26', 55, 0.35)] }));
+    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.32), quarter('2026-04-01', 'Q2 26', 55, 0.3)] }));
 
-    expect(text('members-nps-trend-note')).toBe('Response rate is 35% — below the 40% floor, so neither the score nor its trend is a foundation-wide signal.');
+    expect(text('members-nps-trend-note')).toBe('Response rate is 30% — below the 35% floor, so neither the score nor its trend is a foundation-wide signal.');
   });
 
   it('leaves out the trend for a single wave', async () => {
@@ -178,20 +181,40 @@ describe('MembersNpsComponent', () => {
 
     expect(query('members-nps-trend')).toBeNull();
     expect(query('members-nps-hero')).not.toBeNull();
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-nps-hero')?.classList).not.toContain('border');
   });
 
-  it('withholds a score on too small a sample, explaining the gap instead of showing the side stats', async () => {
+  it('shows a score on too small a sample in amber, with the side stats and a caution', async () => {
     const flagged = audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true });
-    await render(response({ audiences: [flagged] }));
+    await render(response({ audiences: [flagged], trend: [quarter('2025-10-01', 'Q4 25', 54, 0.71), quarter('2026-04-01', 'Q2 26', 80, 0.21, true)] }));
 
-    expect(text('members-nps-low-sample')).toBe(
-      'Only 5 of 24 responded (21%). Below the confidence threshold — the score is suppressed rather than shown as precise.'
+    expect(text('members-nps-low-sample')).toBe('Only 5 of 24 responded (21%). Below the confidence threshold, so read this score with caution.');
+    expect(text('members-nps-score')).toBe('+80');
+    expect(query('members-nps-score')?.classList).toContain('text-amber-600');
+    expect(query('members-nps-score')?.classList).not.toContain('text-gray-900');
+    expect(text('members-nps-caption')).toBe('Net Promoter Score · board audience');
+    expect(text('members-nps-responded')).toBe('5 of 24');
+    expect(query('members-nps-rate')?.classList).toContain('text-amber-600');
+    expect(text('members-nps-footer')).toBe('19 of 24 did not respond. A score computed on 5 replies is not a foundation-wide signal.');
+    const rows = [...(query('members-nps-chart-table')?.querySelectorAll('tbody tr') ?? [])].map((row) =>
+      [...row.querySelectorAll('td')].map((cell) => cell.textContent?.trim())
     );
+    expect(rows).toEqual([
+      ['+54', '71%'],
+      ['+80 (low response)', '21%'],
+    ]);
+    expect(query('members-nps-legend-low-response')).not.toBeNull();
+  });
+
+  it('dashes an audience the view has no score for, keeping the side stats', async () => {
+    await render(response({ audiences: [audience({ npsScore: null, scoreChangePp: null })] }));
+
     expect(text('members-nps-score')).toBe('—');
     expect(query('members-nps-score')?.classList).toContain('text-gray-400');
     expect(text('members-nps-caption')).toBe('Not enough responses to report a score');
-    expect(query('members-nps-side')).toBeNull();
-    expect(text('members-nps-footer')).toBe('19 of 24 did not respond. A score computed on 5 replies is not a foundation-wide signal.');
+    expect(query('members-nps-low-sample')).toBeNull();
+    expect(text('members-nps-responded')).toBe('18 of 26');
   });
 
   it('switches audience, re-reading it and writing it to the URL, and clears the URL back on the first audience', async () => {

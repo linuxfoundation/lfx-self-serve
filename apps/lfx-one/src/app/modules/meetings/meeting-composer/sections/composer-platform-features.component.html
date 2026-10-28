@@ -85,13 +85,16 @@
         @if (emailReminderEnabled()) {
           <!-- Same text-column indent as the AI-approval checkbox above -->
           <div class="ml-[calc(2.5rem+0.75rem)] mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
-            <!-- Compact number fields: exact px (the 14px root shrinks the rem scale) so three digits still fit -->
+            <!-- Compact number fields: exact px (the 14px root shrinks the rem scale) so three digits still fit.
+                 min/max stop the spinner at the validators' bounds; a typed value past them still shows the error. -->
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
               <div class="flex items-center gap-2">
                 <lfx-input-number
                   class="w-[56px] flex-none"
                   [form]="form()"
                   control="reminderHours"
+                  [min]="minReminderHours"
+                  [max]="maxReminderHours"
                   size="small"
                   styleClass="!h-[28px] !px-2 !py-0 text-center"
                   inputId="composer-reminder-hours"
@@ -103,6 +106,8 @@
                   class="w-[56px] flex-none"
                   [form]="form()"
                   control="reminderMinutes"
+                  [min]="minReminderMinutes"
+                  [max]="maxReminderMinutes"
                   size="small"
                   styleClass="!h-[28px] !px-2 !py-0 text-center"
                   inputId="composer-reminder-minutes"
@@ -139,7 +144,9 @@
               </p>
             }
             @if (reminderMinutesError()) {
-              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">
+                Minutes must be a whole number between {{ minReminderMinutes }} and {{ maxReminderMinutes }}
+              </p>
             }
           </div>
         }

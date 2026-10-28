@@ -3,26 +3,31 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="documents-dashboard">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="dashboard-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
     <div class="flex flex-col gap-6">
       <!-- Page Header -->
-      <div class="flex items-start justify-between mt-3">
-        <div>
-          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle }}</h1>
-          <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
-            {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
-          </p>
-        </div>
-      </div>
+      <lfx-page-header
+        [title]="pageTitle"
+        [description]="documentLabel.plural + ', links, and attachments across groups, meetings, and foundations.'"
+        titleTestId="documents-dashboard-title"
+        descriptionTestId="documents-dashboard-description" />
 
       <!-- Filter Bar + Table -->
       <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
         @if (useProjectSource()) {
           <!-- ── PROJECT / FOUNDATION lens ───────────────────────────────────── -->
+          <!-- Source Pills -->
+          <lfx-card-tabs-bar
+            [options]="projectSourceTabOptions()"
+            [selectedFilter]="projectSourceTab()"
+            (filterChange)="onProjectSourceTabChange($event)"
+            data-testid="documents-source-pills">
+          </lfx-card-tabs-bar>
+
           <div class="px-5 pt-4 flex flex-col gap-3">
             <!-- Toolbar -->
             @if (canUpload()) {
@@ -69,7 +74,7 @@
               </nav>
             }
 
-            <!-- Search + Source filter -->
+            <!-- Search -->
             <div class="pb-3 border-b border-gray-100">
               <div class="flex flex-wrap items-center gap-2">
                 <div class="flex-1 min-w-48">
@@ -82,18 +87,6 @@
                     size="small"
                     data-testid="documents-search-input">
                   </lfx-input-text>
-                </div>
-                <div class="w-40 shrink-0 overflow-hidden">
-                  <lfx-select
-                    [form]="filterForm"
-                    control="projectDocumentSource"
-                    size="small"
-                    [options]="projectDocumentSourceOptions"
-                    placeholder="All Sources"
-                    [showClear]="true"
-                    styleClass="w-full"
-                    data-testid="documents-dashboard-source-filter">
-                  </lfx-select>
                 </div>
               </div>
             </div>

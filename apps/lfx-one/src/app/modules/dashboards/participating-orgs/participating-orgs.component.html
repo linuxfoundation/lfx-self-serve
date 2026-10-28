@@ -1,0 +1,293 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="participating-orgs-page">
+  <lfx-page-header
+    data-testid="participating-orgs-header"
+    title="Participating Organizations"
+    [description]="subtitle()"
+    titleTestId="participating-orgs-title"
+    descriptionTestId="participating-orgs-subtitle" />
+
+  @switch (viewState()) {
+    @case ('forbidden') {
+      <lfx-empty-state
+        icon="fa-light fa-lock"
+        title="You don't have access to this project's participating organizations"
+        data-testid="participating-orgs-no-access" />
+    }
+    @case ('error') {
+      <div role="alert" data-testid="participating-orgs-error">
+        <lfx-empty-state
+          icon="fa-light fa-triangle-exclamation"
+          title="Failed to load participating organizations"
+          [subtitle]="errorSubtitle()"
+          ctaLabel="Retry"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="retry()" />
+      </div>
+    }
+    @default {
+      @if (viewState() === 'ready') {
+        <lfx-stat-card-grid [cards]="tiles()" [columns]="4" [loading]="summaryLoading()" data-testid="participating-orgs-tiles" />
+      }
+
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="participating-orgs-content-card">
+        <lfx-card-tabs-bar
+          [options]="tabs()"
+          [selectedFilter]="segment()"
+          styleClass="flex-wrap items-center gap-x-4 gap-y-3"
+          (filterChange)="onSegmentChange($event)"
+          data-testid="participating-orgs-tabs">
+          <lfx-button
+            label="Export CSV"
+            icon="fa-light fa-download"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [loading]="exporting()"
+            [disabled]="pageLoading() || exporting() || totalRecords() === 0"
+            [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
+            (onClick)="exportCsv()"
+            data-testid="participating-orgs-export-csv" />
+        </lfx-card-tabs-bar>
+
+        <div class="flex flex-col gap-3 px-5 pt-4 pb-3 sm:flex-row sm:items-center" data-testid="participating-orgs-filter-bar">
+          <div class="relative flex-1" data-testid="participating-orgs-search-field">
+            <label class="sr-only" for="participating-orgs-search">Search organizations</label>
+            <lfx-input-text
+              [form]="filterForm"
+              control="search"
+              inputId="participating-orgs-search"
+              [maxlength]="maxSearchLength"
+              placeholder="Search organizations"
+              icon="fa-light fa-search"
+              size="small"
+              styleClass="w-full"
+              dataTest="participating-orgs-search" />
+          </div>
+          <div class="w-full sm:w-44" data-testid="participating-orgs-tier">
+            <lfx-select
+              [form]="filterForm"
+              control="tier"
+              size="small"
+              [options]="tierOptions"
+              placeholder="All Tiers"
+              [showClear]="true"
+              styleClass="w-full"
+              ariaLabel="Filter by membership tier"
+              dataTest="participating-orgs-tier-filter" />
+          </div>
+          @if (isFoundationProject()) {
+            <div class="w-full sm:w-52" data-testid="participating-orgs-contribution">
+              <lfx-select
+                [form]="filterForm"
+                control="contribution"
+                size="small"
+                [options]="contributionOptions"
+                styleClass="w-full"
+                ariaLabel="Filter by contribution activity"
+                dataTest="participating-orgs-contribution-filter" />
+            </div>
+          }
+          <!-- The window applies to the tiles and the table alike, and stays reachable when a window has no activity. -->
+          <div class="w-full sm:w-44" data-testid="participating-orgs-range">
+            <lfx-select
+              [form]="rangeForm"
+              control="range"
+              size="small"
+              [options]="rangeOptions"
+              styleClass="w-full"
+              ariaLabel="Time range"
+              dataTest="participating-orgs-range-filter" />
+          </div>
+        </div>
+
+        @if (viewState() === 'empty') {
+          <div class="p-5">
+            <lfx-empty-state
+              icon="fa-light fa-code"
+              [withCard]="false"
+              title="No code contributions from companies in this period"
+              data-testid="participating-orgs-empty" />
+          </div>
+        } @else {
+          <!-- Inset like the Groups and Documents tables, so the paginator sits inside the card's rounded edge.
+               Skeletons only on the first load; a refresh keeps the current rows on screen, dimmed, until the next page lands. -->
+          <div class="px-5 pb-5 transition-opacity" [class.opacity-60]="refreshing()" [attr.aria-busy]="pageLoading()">
+            <lfx-table
+              [value]="rows()"
+              [loading]="showSkeleton()"
+              [lazy]="true"
+              [lazyLoadOnInit]="false"
+              [paginator]="totalRecords() > 0"
+              [rows]="pageSize()"
+              [first]="offset()"
+              [totalRecords]="totalRecords()"
+              [rowsPerPageOptions]="rppOptions()"
+              [showCurrentPageReport]="true"
+              [showFirstLastIcon]="false"
+              currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+              paginatorPosition="bottom"
+              (onPage)="onTablePage($event)"
+              data-testid="participating-orgs-table">
+              <ng-template #header>
+                <tr>
+                  @let icons = sortIconMap();
+                  @let aria = ariaSortMap();
+                  <th scope="col" [attr.aria-sort]="aria.name">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'name', label: 'Organization', icon: icons.name, end: false }" />
+                  </th>
+                  <th scope="col" class="w-28 text-right" [attr.aria-sort]="aria.commits">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'commits', label: 'Commits', icon: icons.commits, end: true }" />
+                  </th>
+                  <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.commits_change">
+                    <ng-container
+                      *ngTemplateOutlet="
+                        sortButton;
+                        context: { $implicit: 'commits_change', label: 'Change', icon: icons.commits_change, end: true, srLabel: 'Commits change' }
+                      " />
+                  </th>
+                  <th scope="col" class="w-32 text-right" [attr.aria-sort]="aria.contributors">
+                    <ng-container
+                      *ngTemplateOutlet="sortButton; context: { $implicit: 'contributors', label: 'Contributors', icon: icons.contributors, end: true }" />
+                  </th>
+                  <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.contributors_change">
+                    <ng-container
+                      *ngTemplateOutlet="
+                        sortButton;
+                        context: {
+                          $implicit: 'contributors_change',
+                          label: 'Change',
+                          icon: icons.contributors_change,
+                          end: true,
+                          srLabel: 'Contributors change',
+                        }
+                      " />
+                  </th>
+                  <th scope="col" class="w-44" [attr.aria-sort]="aria.tier">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'tier', label: 'Membership', icon: icons.tier, end: false }" />
+                  </th>
+                </tr>
+              </ng-template>
+
+              <ng-template #body let-row>
+                <tr [attr.data-testid]="'participating-orgs-row-' + row.participantKey">
+                  <td>
+                    <div class="flex min-w-0 items-center gap-2">
+                      @if (row.logoUrl) {
+                        <img [src]="row.logoUrl" alt="" loading="lazy" class="h-7 w-7 shrink-0 rounded-md object-contain" />
+                      } @else {
+                        <span
+                          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-semibold text-blue-600"
+                          aria-hidden="true">
+                          {{ row.initial }}
+                        </span>
+                      }
+                      @switch (row.nameKind) {
+                        @case ('org-lens-link') {
+                          <a
+                            class="truncate rounded text-sm font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                            [routerLink]="row.orgLensLink"
+                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
+                            {{ row.name }}
+                          </a>
+                        }
+                        @case ('no-access') {
+                          <span
+                            class="truncate text-sm font-medium text-gray-900"
+                            tabindex="0"
+                            role="note"
+                            [attr.aria-label]="row.name + ' — ' + noAccessTooltip"
+                            [pTooltip]="noAccessTooltip"
+                            tooltipPosition="top"
+                            tooltipEvent="both"
+                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'">
+                            {{ row.name }}
+                          </span>
+                        }
+                        @default {
+                          <span
+                            class="truncate text-sm font-medium text-gray-900"
+                            [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-name'"
+                            >{{ row.name }}</span
+                          >
+                        }
+                      }
+                    </div>
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm tabular-nums text-gray-900" [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-commits'">{{
+                      row.commits.value | number
+                    }}</span>
+                  </td>
+                  <td class="text-right">
+                    <span
+                      class="text-sm font-medium tabular-nums"
+                      [class]="row.commits.changeClass"
+                      [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-commits-change'"
+                      >{{ row.commits.changeLabel }}</span
+                    >
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm tabular-nums text-gray-900" [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-contributors'">{{
+                      row.contributors.value | number
+                    }}</span>
+                  </td>
+                  <td class="text-right">
+                    <span
+                      class="text-sm font-medium tabular-nums"
+                      [class]="row.contributors.changeClass"
+                      [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-contributors-change'"
+                      >{{ row.contributors.changeLabel }}</span
+                    >
+                  </td>
+                  <td [attr.data-testid]="'participating-orgs-row-' + row.participantKey + '-membership'">
+                    @if (row.membershipLabel) {
+                      <span
+                        class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        [class]="row.membershipBadgeClass">
+                        <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                        {{ row.membershipLabel }}
+                      </span>
+                    } @else {
+                      <span
+                        class="inline-flex items-center whitespace-nowrap rounded-full border border-gray-300 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                        Non-member
+                      </span>
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+
+              <ng-template #emptymessage>
+                <tr>
+                  <td colspan="6" class="py-10 text-center text-sm text-gray-500" data-testid="participating-orgs-no-match">
+                    @if (!pageLoading()) {
+                      No organizations match these filters.
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          </div>
+        }
+      </lfx-card>
+    }
+  }
+</div>
+
+<!-- One sortable header: the active column reads darker with a direction arrow; the rest show the neutral sort icon. -->
+<ng-template #sortButton let-field let-label="label" let-icon="icon" let-end="end" let-srLabel="srLabel">
+  <button
+    type="button"
+    class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium"
+    [class.ml-auto]="end"
+    [class.text-gray-900]="sort() === field"
+    [class.text-gray-500]="sort() !== field"
+    [attr.aria-label]="srLabel ?? null"
+    [attr.data-testid]="'participating-orgs-sort-' + field"
+    (click)="onSort(field)">
+    {{ label }} <i class="text-[10px]" [class]="icon" aria-hidden="true"></i>
+  </button>
+</ng-template>

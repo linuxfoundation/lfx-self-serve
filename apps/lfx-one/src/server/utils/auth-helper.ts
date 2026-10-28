@@ -5,6 +5,8 @@ import { Request } from 'express';
 
 import { LfxAccessTokenClaims, AuditUserProfile, ImpersonationUser, User } from '@lfx-one/shared/interfaces';
 
+import { logger } from '../services/logger.service';
+
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
  * Returns the raw username if no prefix is present.
@@ -122,16 +124,17 @@ export function getRawEffectiveEmail(req: Request): string | null {
 }
 
 /**
- * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
- * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
- * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is
- * layered on top via `req.appSession`, never by replacing `req.oidc.user`), so this is just
- * `getEffectiveEmail`'s non-impersonating branch, unconditionally — including its null for an
- * unverified email.
+ * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — one of
+ * the real-identity getters in this file (with `getRealUsername`) that do NOT resolve to the
+ * impersonation target. `req.oidc.user` is always the actual authenticated user's OIDC session,
+ * impersonation or not (impersonation is layered on top via `req.appSession`, never by replacing
+ * `req.oidc.user`), so this is just `getEffectiveEmail`'s non-impersonating branch,
+ * unconditionally — including its null for an unverified email.
  *
- * Use this only where the real actor's identity — not the target's — must be attributed for a
- * genuinely externally-visible, hard-to-retract action (e.g. weekly-brief mailing-list share,
- * LFXV2-3093). Most callers want `getEffectiveEmail` instead.
+ * Use this only where the real actor — not the target — must be attributed or must act as
+ * themselves: a genuinely externally-visible, hard-to-retract action (e.g. weekly-brief
+ * mailing-list share, LFXV2-3093), or joining a meeting. Most callers want `getEffectiveEmail`
+ * instead.
  */
 export function getRealEmail(req: Request): string | null {
   return getVerifiedOidcEmail(req)?.toLowerCase() || null;
@@ -155,6 +158,19 @@ export function getEffectiveUsername(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
+  return getRealUsername(req);
+}
+
+/**
+ * Gets the REAL (impersonator's own) username, deliberately ignoring impersonation state — the
+ * username counterpart of `getRealEmail`. `req.oidc.user` is always the actual authenticated
+ * user's OIDC session, impersonation or not, so this is `getEffectiveUsername`'s non-impersonating
+ * branch, unconditionally: the IdP-asserted LF username claim, or null when the session has none.
+ *
+ * Use this only where the real actor must act as themselves while impersonating (e.g. joining a
+ * meeting). Most callers want `getEffectiveUsername` instead.
+ */
+export function getRealUsername(req: Request): string | null {
   const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
   if (typeof claim === 'string' && claim) {
     return claim;
@@ -289,6 +305,41 @@ export async function resolveRealAccessToken(req: Request): Promise<string | nul
     return refreshed?.access_token ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Refreshes an expired access token during the SSR document-render path, before the request's
+ * `authenticated` status is decided.
+ *
+ * `req.oidc.isAuthenticated()` only inspects the ID token claims, so a session with a valid
+ * refresh token but an expired access token still reports authenticated — yet the SSR handler
+ * historically also required `!accessToken.isExpired()` before treating the user as signed in,
+ * so an idle session rendered as signed-out on the next full page load even though XHRs (which
+ * already refresh on demand, see `auth.middleware.ts`) saw the same session as valid. That
+ * asymmetry left `FeatureFlagService.initialize()` uncalled on the client (it only runs for an
+ * authenticated SSR user), which kept LaunchDarkly on its anonymous bootstrap context until a
+ * `/login` round-trip re-minted tokens — the root cause behind GH-4179.
+ *
+ * No-ops (and never throws) when there is nothing to refresh: no session, no access token, or an
+ * access token that isn't expired. A failed refresh falls through to the caller's existing
+ * `isExpired()` check, which correctly treats a genuinely dead session as signed-out — but the
+ * failure itself is still logged (mirroring `auth.middleware.ts`'s `extractBearerToken`), so a
+ * dead refresh token shows up in logs instead of silently reading as "page just rendered signed
+ * out".
+ */
+export async function refreshExpiredSsrAccessToken(req: Request): Promise<void> {
+  if (!req.oidc?.isAuthenticated() || !req.oidc.accessToken?.isExpired()) {
+    return;
+  }
+  try {
+    await req.oidc.accessToken.refresh();
+  } catch (error) {
+    logger.warning(req, 'ssr_token_refresh', 'SSR token refresh failed - rendering as signed out', {
+      path: req.path,
+      failure_reason: 'token_refresh_failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
 

@@ -3,16 +3,17 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { MAX_RECENT_IMPERSONATIONS, RECENT_IMPERSONATIONS_STORAGE_KEY } from '@lfx-one/shared/constants';
 import {
   ImpersonationStartRequest,
   ImpersonationStartResponse,
   ImpersonationStatusResponse,
+  ImpersonationTransition,
   PersonaType,
   RecentImpersonation,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, Observable, of, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -21,13 +22,21 @@ export class ImpersonationService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
 
-  public startImpersonation(targetUser: string, personaContext?: PersonaType | null): Observable<ImpersonationStartResponse> {
+  /**
+   * The impersonation change in flight, or null. Set when a start/switch/stop begins and left set on success,
+   * because the page reloads afterwards: clearing it early would drop the loading UI for the whole reload.
+   */
+  public readonly transition = signal<ImpersonationTransition | null>(null);
+
+  public startImpersonation(targetUser: string, personaContext?: PersonaType | null, switching = false): Observable<ImpersonationStartResponse> {
     const body: ImpersonationStartRequest = personaContext ? { targetUser, personaContext } : { targetUser };
-    return this.http.post<ImpersonationStartResponse>('/api/impersonate', body);
+    this.transition.set(switching ? 'switching' : 'starting');
+    return this.http.post<ImpersonationStartResponse>('/api/impersonate', body).pipe(tap({ error: () => this.transition.set(null) }));
   }
 
   public stopImpersonation(): Observable<{ impersonating: false }> {
-    return this.http.post<{ impersonating: false }>('/api/impersonate/stop', {});
+    this.transition.set('stopping');
+    return this.http.post<{ impersonating: false }>('/api/impersonate/stop', {}).pipe(tap({ error: () => this.transition.set(null) }));
   }
 
   public getStatus(): Observable<ImpersonationStatusResponse> {

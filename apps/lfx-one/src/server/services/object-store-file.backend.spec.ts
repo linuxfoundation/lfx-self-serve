@@ -5,10 +5,17 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OBJECT_STORE_FILE_METADATA_SUFFIX } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { FileObjectStoreBackend } from './object-store-file.backend';
+
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>();
+  return { ...fs, mkdir: vi.fn(fs.mkdir) };
+});
+const realFs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
 
 describe('FileObjectStoreBackend', () => {
   let scratch: string;
@@ -16,6 +23,7 @@ describe('FileObjectStoreBackend', () => {
   let backend: FileObjectStoreBackend;
 
   beforeEach(async () => {
+    vi.mocked(mkdir).mockImplementation(realFs.mkdir);
     scratch = await mkdtemp(join(tmpdir(), 'lfx-file-backend-spec-'));
     root = join(scratch, 'marketing-os-artifacts');
     backend = new FileObjectStoreBackend(root);
@@ -23,6 +31,121 @@ describe('FileObjectStoreBackend', () => {
 
   afterEach(async () => {
     await rm(scratch, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('retries a writer whose empty parent was pruned before lock acquisition', async () => {
+    const input = { body: Buffer.from('Synthetic profile'), contentType: 'text/plain', cacheControl: 'private' };
+    await backend.putObject('profiles/one/current.json', input);
+    let started: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let intercepted = false;
+    vi.mocked(mkdir).mockImplementation(async (path, options) => {
+      if (path === join(root, 'profiles/one/next.json.lock.partial') && !intercepted) {
+        intercepted = true;
+        started?.();
+        await resumed;
+      }
+      return realFs.mkdir(path, options);
+    });
+    const writing = new FileObjectStoreBackend(root).putObject('profiles/one/next.json', input);
+    try {
+      await paused;
+      await backend.deleteObject('profiles/one/current.json');
+      await expect(stat(join(root, 'profiles/one'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      release?.();
+      await writing;
+    }
+    expect(await backend.getObject('profiles/one/next.json')).toMatchObject({ body: 'Synthetic profile' });
+  });
+
+  it('serializes conditional writes across independent backend instances', async () => {
+    const other = new FileObjectStoreBackend(root);
+    const input = { body: Buffer.from('first'), contentType: 'text/plain', cacheControl: 'private', ifNoneMatch: '*' as const };
+    const results = await Promise.allSettled([backend.putObject('current.json', input), other.putObject('current.json', input)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const stored = await backend.getObject('current.json');
+    expect(stored?.etag).toBeTruthy();
+    await backend.putObject('current.json', { ...input, body: Buffer.from('second'), ifNoneMatch: undefined, ifMatch: stored!.etag });
+    await expect(other.putObject('current.json', { ...input, ifNoneMatch: undefined, ifMatch: stored!.etag })).rejects.toMatchObject({ statusCode: 412 });
+    expect((await backend.getObject('current.json'))?.body).toBe('second');
+  });
+
+  it('keeps abandoned locks until operator recovery, including for unconditional writes', async () => {
+    await mkdir(join(root, 'current.json.lock.partial'), { recursive: true });
+    const input = { body: Buffer.from('current'), contentType: 'application/json', cacheControl: 'private' };
+    await expect(backend.putObject('current.json', input)).rejects.toMatchObject({ statusCode: 412 });
+    await rm(join(root, 'current.json.lock.partial'), { recursive: true });
+    await expect(backend.putObject('current.json', input)).resolves.toBeUndefined();
+  });
+
+  it('deletes the current body and metadata, prunes empty folders but preserves the store root', async () => {
+    const key = 'profiles/one/current.json';
+    await backend.putObject(key, { body: Buffer.from('Private profile'), contentType: 'application/json', cacheControl: 'private, no-store' });
+    expect((await stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).isFile()).toBe(true);
+    await backend.deleteObject(key);
+    expect(await backend.getObject(key)).toBeNull();
+    await expect(stat(join(root, key))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'profiles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await backend.readiness()).toBe(true);
+    await backend.deleteObject(key);
+    await expect(backend.deleteObject('../outside')).rejects.toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses deletion while a conditional writer holds the same per-key lock', async () => {
+    const key = 'profiles/one/current.json';
+    const input = { body: Buffer.from('first'), contentType: 'application/json', cacheControl: 'private', metadata: { version: '1' } };
+    await backend.putObject(key, input);
+    const stored = await backend.getObject(key);
+    if (!stored?.etag) throw new Error('Expected the stored test object to have a conditional token');
+    const other = new FileObjectStoreBackend(root);
+    let compared: (() => void) | undefined;
+    let resume: (() => void) | undefined;
+    const comparisonStarted = new Promise<void>((resolve) => {
+      compared = resolve;
+    });
+    const comparisonReleased = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    vi.spyOn(other, 'getObject').mockImplementationOnce(async (requestedKey) => {
+      compared?.();
+      await comparisonReleased;
+      return backend.getObject(requestedKey);
+    });
+    const writing = other.putObject(key, { ...input, body: Buffer.from('second'), metadata: { version: '2' }, ifMatch: stored.etag });
+    try {
+      await comparisonStarted;
+      expect((await stat(join(root, `${key}.lock.partial`))).isDirectory()).toBe(true);
+      await expect(backend.deleteObject(key)).rejects.toMatchObject({ statusCode: 412 });
+      expect(await backend.getObject(key)).toMatchObject({ body: 'first', metadata: { version: '1' } });
+    } finally {
+      resume?.();
+      await writing;
+    }
+    expect(await backend.getObject(key)).toMatchObject({ body: 'second', metadata: { version: '2' } });
+    await backend.deleteObject(key);
+    expect(await backend.getObject(key)).toBeNull();
+    await expect(stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'profiles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await backend.readiness()).toBe(true);
+  });
+
+  it('stops empty-folder pruning at a parent with a nonempty sibling folder', async () => {
+    const input = { body: Buffer.from('Private profile'), contentType: 'application/json', cacheControl: 'private, no-store' };
+    await backend.putObject('profiles/one/current.json', input);
+    await backend.putObject('profiles/two/current.json', input);
+    await backend.deleteObject('profiles/one/current.json');
+    await expect(stat(join(root, 'profiles/one'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(join(root, 'profiles'))).isDirectory()).toBe(true);
+    expect(await backend.getObject('profiles/two/current.json')).toMatchObject({ body: 'Private profile' });
   });
 
   describe('bucket (folder) lifecycle', () => {
@@ -96,7 +219,7 @@ describe('FileObjectStoreBackend', () => {
 
       await backend.putObject(key, { body: Buffer.from('# doc'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '1' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# doc', metadata: { version: '1' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# doc', metadata: { version: '1' }, etag: expect.any(String) });
     });
 
     it('headObject returns the stored metadata, and null for a missing object', async () => {
@@ -112,21 +235,21 @@ describe('FileObjectStoreBackend', () => {
 
       await backend.putObject(key, { body: Buffer.from('# doc ünïcödé'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '3' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# doc ünïcödé', metadata: { version: '3' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# doc ünïcödé', metadata: { version: '3' }, etag: expect.any(String) });
     });
 
     it('writes with no metadata read back as empty metadata, as an S3 object written without any would', async () => {
       await backend.putObject(key, { body: Buffer.from('img'), contentType: 'image/png', cacheControl: 'public, max-age=86400' });
 
       await expect(backend.headObject(key)).resolves.toEqual({});
-      await expect(backend.getObject(key)).resolves.toEqual({ body: 'img', metadata: {} });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: 'img', metadata: {}, etag: expect.any(String) });
     });
 
     it('a body with no sidecar (or an unreadable one) still reads, with empty metadata', async () => {
       await mkdir(join(root, 'brand-kit', 'proj-uid-1'), { recursive: true });
       await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'abc.md'), '# bare');
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# bare', metadata: {} });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# bare', metadata: {}, etag: expect.any(String) });
 
       await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'abc.md.meta.json'), 'not json');
 
@@ -137,7 +260,7 @@ describe('FileObjectStoreBackend', () => {
       await backend.putObject(key, { body: Buffer.from('v1'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '1' } });
       await backend.putObject(key, { body: Buffer.from('v2'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '2' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: 'v2', metadata: { version: '2' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: 'v2', metadata: { version: '2' }, etag: expect.any(String) });
     });
   });
 
@@ -252,7 +375,7 @@ describe('FileObjectStoreBackend', () => {
           await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
           await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
         }
-        await expect(backend.getObject('a/b')).resolves.toEqual({ body: 'x', metadata: {} });
+        await expect(backend.getObject('a/b')).resolves.toMatchObject({ body: 'x', metadata: {}, etag: expect.any(String) });
       });
 
       it('refuses writing a key that is the folder of stored objects with a typed 400', async () => {
@@ -261,7 +384,7 @@ describe('FileObjectStoreBackend', () => {
         const put = backend.putObject('a/b', input);
         await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
         await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
-        await expect(backend.getObject('a/b/c')).resolves.toEqual({ body: 'x', metadata: {} });
+        await expect(backend.getObject('a/b/c')).resolves.toMatchObject({ body: 'x', metadata: {}, etag: expect.any(String) });
         // The failed rename cleaned up after itself: no .partial file next to the folder.
         await expect(readdir(join(root, 'a'))).resolves.toEqual(['b']);
       });

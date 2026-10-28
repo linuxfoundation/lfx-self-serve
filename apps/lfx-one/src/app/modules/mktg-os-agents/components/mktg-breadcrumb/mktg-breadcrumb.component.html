@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (items().length) {
+  <nav aria-label="Breadcrumb" data-testid="mktg-breadcrumb" class="text-sm text-gray-500">
+    <ol class="flex flex-wrap items-center gap-x-2 gap-y-1">
+      @for (crumb of items(); track $index; let last = $last) {
+        <li class="flex min-w-0 items-center gap-2">
+          @if ($index > 0) {
+            <span aria-hidden="true">›</span>
+          }
+          @if (!last && crumb.route) {
+            <a
+              [routerLink]="crumb.route"
+              [queryParams]="crumb.queryParams"
+              class="break-words text-blue-700 hover:underline focus-visible:outline-blue-600"
+              [attr.data-testid]="'mktg-breadcrumb-link-' + $index"
+              >{{ crumb.label }}</a
+            >
+          } @else {
+            <span [attr.aria-current]="last ? 'page' : null" class="break-words" [attr.data-testid]="last ? 'mktg-breadcrumb-current' : null">{{
+              crumb.label
+            }}</span>
+          }
+        </li>
+      }
+    </ol>
+  </nav>
+}

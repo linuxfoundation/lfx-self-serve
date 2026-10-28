@@ -23,6 +23,7 @@ import {
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
@@ -36,7 +37,7 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
  */
 @Component({
   selector: 'lfx-formations-queue',
-  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent],
+  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent, PageHeaderComponent],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })

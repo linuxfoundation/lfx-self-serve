@@ -34,8 +34,8 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
   change: { enrollments: 0.2, certifications: 0, revenueUsd: -0.2 },
   byType: [
-    { deliveryType: 'E-Learning', enrollments: 9000, revenueUsd: 30000 },
-    { deliveryType: 'Certification Exam', enrollments: 3000, revenueUsd: 70000 },
+    { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 9000, revenueUsd: 30000 },
+    { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 3000, revenueUsd: 70000 },
   ],
 };
 
@@ -52,6 +52,7 @@ function enrollment(
       { year: currentYear, enrollments: 4000 },
       { year: currentYear - 1, enrollments: 8000 },
     ],
+    goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
     ...overrides,
   };
 }
@@ -121,6 +122,8 @@ describe('TrainingEnrollComponent', () => {
     await render();
 
     expect(text('training-enroll-headline-value')).toBe('12,000');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('training-enroll-hero')?.classList).not.toContain('border');
     expect(text('training-enroll-headline-delta')).toBe('+20%');
     expect(query('training-enroll-headline-delta')?.classList).toContain('text-emerald-600');
     expect(text('training-enroll-side-certifications-value')).toBe('300');
@@ -138,8 +141,7 @@ describe('TrainingEnrollComponent', () => {
     expect(text('training-enroll-by-type-title')).toBe('Enrollments by type');
     expect(text('training-enroll-type-0')).toContain('eLearning');
     expect(text('training-enroll-type-0-value')).toBe('9,000');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="training-enroll-type-"] .bg-blue-600');
-    expect((bars[1] as HTMLElement).style.width).toBe(`${(3000 / 9000) * 100}%`);
+    expect(fixture.nativeElement.querySelector('[data-testid^="training-enroll-type-"] [style*="width"]')).toBeNull();
 
     (query('filter-pill-revenue') as HTMLButtonElement).click();
     await settle();

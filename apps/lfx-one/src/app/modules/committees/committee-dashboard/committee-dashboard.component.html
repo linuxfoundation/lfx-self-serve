@@ -3,16 +3,15 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="dashboard-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
     <div class="flex flex-col gap-6">
       <!-- Page Header -->
-      <div class="mt-3">
-        <div class="flex justify-between items-center w-full gap-4">
-          <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
+      <lfx-page-header [title]="committeeLabel.plural">
+        <ng-container pageHeaderActions>
           @if (!isMeLens() && canWrite()) {
             <lfx-button
               [label]="'Create ' + committeeLabel.singular"
@@ -23,8 +22,8 @@
               data-testid="committee-new-cta">
             </lfx-button>
           }
-        </div>
-        <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
+        </ng-container>
+        <span pageHeaderDescription data-testid="dashboard-hero-description">
           @if (isMeLens()) {
             @if (projectFilter() || foundationFilter()) {
               {{ committeeLabel.plural }} you are a member of in the selected scope.
@@ -37,8 +36,8 @@
           } @else {
             Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
           }
-        </p>
-      </div>
+        </span>
+      </lfx-page-header>
 
       <!-- Summary Stat Cards (Foundation/Project lens) -->
       @if (!isMeLens()) {
@@ -102,7 +101,7 @@
         <lfx-committee-pending-applications class="contents" [myCommitteeUids]="myCommitteeUids()" data-testid="committees-me-pending-applications" />
 
         @if (myCommittees().length > 0 || myCommitteesLoading()) {
-          <section class="flex flex-col gap-4 bg-white rounded-lg border border-gray-200 p-4" aria-label="My Groups filters" data-testid="groups-filter-panel">
+          <section class="flex flex-col gap-4 bg-white rounded-lg border border-gray-200 p-4" aria-label="Groups filters" data-testid="groups-filter-panel">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
                 <ng-container [ngTemplateOutlet]="categoryControls" />

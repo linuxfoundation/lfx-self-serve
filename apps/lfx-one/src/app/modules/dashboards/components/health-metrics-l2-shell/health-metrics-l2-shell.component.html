@@ -1,49 +1,42 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The design's `l2Shell`: a fixed sub-nav beside a single stacked column of anchored sections. -->
-<div
-  class="flex flex-col gap-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8"
-  [attr.data-testid]="'health-metrics-' + testIdPrefix() + '-page'">
+<!-- The design's `.hm-row`: a single stacked column of anchored sections with the section nav on its right, reversed
+     in the row so the nav still comes first in reading order. Pixel sizes follow the design; the 14px root makes the
+     rem scale undershoot them. -->
+<div class="flex flex-row-reverse items-start gap-[32px]" [attr.data-testid]="'health-metrics-' + testIdPrefix() + '-page'">
   <lfx-health-metrics-l2-sub-nav
     [items]="subNavItems()"
     [activeKey]="activeSection()"
-    [topPx]="chrome.stickyTopPx()"
+    [topPx]="subNavTopPx()"
     [ariaLabel]="navLabel()"
     [testIdPrefix]="testIdPrefix()"
-    [crossReference]="crossReference()"
     (sectionPicked)="scrollToSection($event)" />
 
-  <!-- The design's `.panes`: the only thing that scrolls. Its height is measured off the viewport so
-       the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
-       variable goes unused and the page scrolls normally. Set imperatively by measurePanesHeight()
-       rather than bound, because that method makes two sequential writes with a layout read between
-       them — not expressible as a single declarative binding. `relative` makes this pane the
-       containing block for any absolutely-positioned descendant rendered inline rather than through
-       PrimeNG's `appendTo: 'body'` (e.g. the table paginator's rows-per-page dropdown). Without it,
-       such a descendant resolves to an ancestor outside the pane, escapes this element's
-       `overflow-y-auto` clipping, and extends `document.documentElement.scrollHeight` past the
-       viewport — which is what made the whole page scrollable before this was added. -->
-  <div #panes class="relative flex min-w-0 flex-col gap-6 lg:h-[var(--l2-panes-height)] lg:overflow-y-auto lg:pr-2">
+  <!-- The page scrolls the sections, beside the sticky nav. `relative` anchors absolutely-positioned descendants
+       rendered inline (e.g. icon-field decorations) to the column. -->
+  <!-- The header only sticks at `lg`, so only there does a section need its offset as a scroll margin. -->
+  <div class="relative flex min-w-0 flex-1 flex-col gap-[24px]" [style.--l2-sticky-top]="chrome.stickyTopPx() + 'px'">
+    <!-- Lights the first section when the reader lands back at the top, which a jump there never crosses the band for. -->
+    <div #startSentinel class="absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);
       <section
         [id]="section.id"
-        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5"
+        class="flex flex-col gap-[16px] rounded-[12px] border border-gray-200 bg-white p-[20px] lg:scroll-mt-[var(--l2-sticky-top)]"
         [attr.data-testid]="testIdPrefix() + '-section-' + section.key">
-        <div class="flex flex-col gap-1" [id]="section.headingId">
-          <div class="flex flex-wrap items-center gap-2">
-            <h2 class="text-base font-semibold text-gray-900">{{ section.heading }}</h2>
+        <div class="flex flex-col gap-[2px]" [id]="section.headingId">
+          <div class="flex flex-wrap items-center gap-[6px]">
+            <h2 class="m-0 text-[16px] font-semibold text-gray-900">{{ section.heading }}</h2>
             @if (section.headingBadge) {
-              <!-- Pixel size follows the design; the 14px root makes the rem scale undershoot it. -->
               <span
-                class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
+                class="inline-flex h-[18px] items-center rounded-full bg-amber-50 px-[7px] text-[10px] font-semibold uppercase tracking-[0.04em] text-amber-800"
                 [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
                 >{{ section.headingBadge }}</span
               >
             }
           </div>
-          <p class="text-[13px] text-gray-500">{{ section.description }}</p>
+          <p class="m-0 text-[12px] leading-normal text-gray-400">{{ section.description }}</p>
         </div>
 
         @if (body) {
@@ -53,13 +46,12 @@
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 
-        @if (section.footnote) {
-          <p class="border-t border-gray-100 pt-3 text-[12px] text-gray-400">
-            @if (section.footnoteCaution) {
-              <i class="fa-light fa-triangle-exclamation mr-1 text-amber-500" aria-hidden="true"></i>
-            }
-            {{ section.footnote }}
-          </p>
+        <!-- A footnote explains a body, so it waits until there is one. -->
+        @if (body && section.footnote.length) {
+          <lfx-health-metrics-footnote
+            [parts]="section.footnote"
+            [caution]="section.footnoteCaution"
+            [attr.data-testid]="testIdPrefix() + '-footnote-' + section.key" />
         }
       </section>
     }

@@ -11,6 +11,9 @@ const searchController = new SearchController();
 // User search route
 router.get('/users', (req, res, next) => searchController.searchUsers(req, res, next));
 
+// GET /api/search/users/impersonator — user search as the signed-in admin (not the impersonation target); requires can_impersonate
+router.get('/users/impersonator', (req, res, next) => searchController.searchUsersAsImpersonator(req, res, next));
+
 // GET /api/search/users/:lfid/work-experiences — work-experience lookup for any user by LFID
 router.get('/users/:lfid/work-experiences', (req, res, next) => searchController.getUserWorkExperiences(req, res, next));
 

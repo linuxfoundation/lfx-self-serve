@@ -17,9 +17,11 @@ router.get('/requests', (req, res, next) => mentorController.getMentorRequests(r
 // Refused while impersonating: upstream would ask to join a program, or withdraw a request, as the impersonated user.
 router.post('/requests', blockDuringImpersonation, (req, res, next) => mentorController.requestToMentor(req, res, next));
 router.post('/requests/:requestId/withdraw', blockDuringImpersonation, (req, res, next) => mentorController.withdrawMentorRequest(req, res, next));
-// Refused while impersonating: upstream would answer the impersonated user's mentor invitation.
+// Refused while impersonating: upstream would answer the impersonated user's mentor invitation, by email token or in app.
 router.post('/invites/accept', blockDuringImpersonation, (req, res, next) => mentorController.acceptMentorInvite(req, res, next));
 router.post('/invites/decline', blockDuringImpersonation, (req, res, next) => mentorController.declineMentorInvite(req, res, next));
+router.post('/invitations/:invitationId/accept', blockDuringImpersonation, (req, res, next) => mentorController.acceptMentorInvitation(req, res, next));
+router.post('/invitations/:invitationId/decline', blockDuringImpersonation, (req, res, next) => mentorController.declineMentorInvitation(req, res, next));
 router.get('/programs', (req, res, next) => mentorController.getMentorPrograms(req, res, next));
 router.get('/programs/:programId', (req, res, next) => mentorController.getMentorProgram(req, res, next));
 // Refused while impersonating: upstream would save a reviewer note as the impersonated mentor.

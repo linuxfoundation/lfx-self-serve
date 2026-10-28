@@ -57,7 +57,7 @@ const projectService = new ProjectService();
  * is set to true in options; this allows shared endpoints (e.g. marketing analytics used by both
  * ED and LF Staff) to grant LF Staff access while keeping other endpoints ED/FGA-only. A caller
  * without ED/root status is authorized only via an actual FGA relation: either a ROOT grant that
- * cascades to every project (ROOT `marketing_auditor`, or ROOT `marketing_ops` for campaigns) or a
+ * cascades to every project (ROOT `marketing_auditor`) or a
  * grant scoped to the specific foundation/project the request names. ROOT `global_marketing_ops`
  * does not cascade, so it answers only a campaign request that names no project.
  *
@@ -123,8 +123,7 @@ function createMarketingAccessMiddleware(
 
       // `marketing_auditor` cascades (`from parent`), so a ROOT grant answers for every project.
       // `campaign_manager` does not: ROOT `global_marketing_ops` answers only an unscoped request,
-      // and a request naming a project is answered by that project's own relation below. ROOT
-      // `marketing_ops` does cascade, so it answers a named project here, before the slug lookup.
+      // and a request naming a project is answered by that project's own relation below.
       if (access === 'marketing_auditor' || !requestedSlug) {
         const hasRootAccess =
           access === 'marketing_auditor'
@@ -134,9 +133,6 @@ function createMarketingAccessMiddleware(
           next();
           return;
         }
-      } else if (await personaDetectionService.checkRootCampaignManagerCascade(req)) {
-        next();
-        return;
       }
 
       // No slug to scope against — the route handler is responsible for rejecting a missing
@@ -222,3 +218,24 @@ export const requireNorthStarAccess = createMarketingAccessMiddleware('marketing
 
 /** Campaigns endpoints — read and write. */
 export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');
+
+/**
+ * Google account monitor only: its required project does not scope the shared account. With marketing
+ * FGA enabled, ROOT writers and ROOT `global_marketing_ops` may reach the controller without an
+ * additional project grant. Other callers retain the ordinary project check and the controller's
+ * shared-account refusal. Flag-off keeps the existing ED-only baseline. Never use for project writes.
+ */
+export async function requireGoogleMonitorAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (
+      isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga) &&
+      ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req)))
+    ) {
+      next();
+      return;
+    }
+    await requireCampaignManager(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+}

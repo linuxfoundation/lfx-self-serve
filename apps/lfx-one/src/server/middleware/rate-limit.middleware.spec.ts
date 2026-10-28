@@ -4,7 +4,14 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter, apiRateLimiter, emailSendCodeTargetRateLimiter, emailSendCodeUserRateLimiter } from './rate-limit.middleware';
+import {
+  aiRateLimiter,
+  apiRateLimiter,
+  emailSendCodeTargetRateLimiter,
+  emailSendCodeUserRateLimiter,
+  selfResendInviteRateLimiter,
+} from './rate-limit.middleware';
+import { SELF_RESEND_INVITE_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/meeting-registrant.constants';
 import { EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX, EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/profile.constants';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
@@ -78,6 +85,8 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
     json: vi.fn(),
     end: vi.fn(),
     on: vi.fn(),
+    // express-rate-limit registers its close/finish/error handlers with `once` when skipFailedRequests is set.
+    once: vi.fn(),
   };
 
   return res as unknown as Response & { statusCode?: number; headers: Record<string, string> };
@@ -103,12 +112,14 @@ async function request(
   // could regress to true while these in-memory request tests still passed.
   if (opts.downstreamStatus !== undefined && (next as unknown as ReturnType<typeof vi.fn>).mock.calls.length > 0) {
     res.statusCode = opts.downstreamStatus;
-    const listeners = res.on as unknown as ReturnType<typeof vi.fn>;
-    for (const [event, listener] of listeners.mock.calls) {
+    const listeners = [res.on, res.once].flatMap((register) => (register as unknown as ReturnType<typeof vi.fn>).mock.calls);
+    for (const [event, listener] of listeners) {
       if (event === 'finish') {
         await listener();
       }
     }
+    // The limiter refunds a failed request in a follow-up task of its own; let it land before the next request counts.
+    await new Promise((resolve) => setImmediate(resolve));
   }
 
   const sent = res.send as unknown as ReturnType<typeof vi.fn>;
@@ -256,5 +267,35 @@ describe('emailSendCodeTargetRateLimiter', () => {
     expect(rejected.allowed).toBe(false);
     expect(rejected.statusCode).toBe(429);
     expect((await request({ sub: `${sub}-another-user`, email }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('selfResendInviteRateLimiter', () => {
+  it('allows the per-window budget of resends per user, then rejects with the 429 envelope', async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus: 200 }, selfResendInviteRateLimiter)).allowed).toBe(true);
+    }
+    const rejected = await request({ sub }, selfResendInviteRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'You have resent your invitation too many times. Please try again later.', code: 'RATE_LIMITED' });
+  });
+
+  it("does not let one user's resends spend another user's budget", async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX; attempt++) {
+      await request({ sub, downstreamStatus: 200 }, selfResendInviteRateLimiter);
+    }
+
+    expect((await request({ sub }, selfResendInviteRateLimiter)).allowed).toBe(false);
+    expect((await request({ sub: `${sub}-another-user` }, selfResendInviteRateLimiter)).allowed).toBe(true);
+  });
+
+  it.each([400, 403, 404, 500, 503])('does not spend budget on a request that fails with %s', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX + 3; attempt++) {
+      expect((await request({ sub, downstreamStatus }, selfResendInviteRateLimiter)).allowed, `failed request ${attempt}`).toBe(true);
+    }
   });
 });

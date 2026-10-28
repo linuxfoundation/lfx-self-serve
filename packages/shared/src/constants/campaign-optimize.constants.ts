@@ -20,6 +20,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
+import type { CampaignMetricsWindow } from '../interfaces/campaign.interface';
 import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -359,19 +360,77 @@ export const CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK =
 export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be read. Nothing was changed; try again.';
 
 // ---------------------------------------------------------------------------
+// Live counters (one campaign's get-campaign-metrics read, on demand)
+// ---------------------------------------------------------------------------
+
+/** The email channel's platform token on a campaign row: its live counters are opens to date, with no cost. */
+export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
+
+/**
+ * Platforms whose metrics read reports cost in USD whatever the ad account bills in: LinkedIn, whose
+ * Ad Analytics `costInUsd` campaign-service converts to micros. Every other platform reports the ad
+ * account's own currency (Google Ads, Meta, Microsoft, Reddit's "microcurrency", X's
+ * `billed_charge_local_micro`), which the read does not name.
+ */
+export const CAMPAIGN_USD_COST_PLATFORMS: ReadonlySet<string> = new Set(['linkedin-ads']);
+
+/** The live cost counter's label, by what the platform's read reports cost in. */
+export const CAMPAIGN_LIVE_COST_LABELS = {
+  usd: 'Cost (USD)',
+  account: 'Cost (ad account currency)',
+} as const;
+
+/** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
+export const CAMPAIGN_LIVE_METRICS_WINDOW_PHRASES: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'today',
+  yesterday: 'yesterday',
+  last_7_days: 'the last 7 days',
+  last_14_days: 'the last 14 days',
+  last_30_days: 'the last 30 days',
+  this_month: 'this month',
+  last_month: 'last month',
+};
+
+/**
+ * Upstream's 400: no metrics read is wired for the campaign's platform. Not a failure, so it is shown
+ * as a property of the row and offers no retry.
+ */
+export const CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE = 'Live counters are not available for this platform.';
+
+/**
+ * What a row says when its live counters read is refused, by status. A 404 is either campaign-service
+ * (no connection for the channel) or this BFF (the read is not served while campaign-service briefs
+ * are off); the sentence covers both.
+ */
+export const CAMPAIGN_LIVE_METRICS_READ_ERRORS: Readonly<Record<number, string>> = {
+  403: 'You do not have permission to read this campaign.',
+  404: "Live counters are not available here: this project has no connection for the campaign's channel, or this deployment does not serve them.",
+  500: 'The live counters could not be read because of a connection problem an administrator must fix.',
+  503: 'The platform could not be reached, or answered with something LFX One could not trust. Try again.',
+};
+
+/** A 409's fallback when the response carried no readable reason. */
+export const CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK =
+  'The live counters cannot be read for this campaign: it is not created on its platform yet, reported no data for the window, or belongs to a different ad account than this project now uses.';
+
+export const CAMPAIGN_LIVE_METRICS_READ_FALLBACK = 'The live counters could not be read. Try again.';
+
+// ---------------------------------------------------------------------------
 // Act from Monitor
 // ---------------------------------------------------------------------------
 
 /**
- * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta and Microsoft Ads (Google Ads is
- * another owner's lane). X shares Microsoft's report-backed panel but is not here: its toggle and
- * budget levers are not offered yet.
+ * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta, Microsoft Ads and X (Google Ads
+ * is another owner's lane). X shares Microsoft's report-backed panel. Its rows are adopted ones, since X
+ * create is off, so the act dialog withholds Resume (`PAUSE_ONLY_CAMPAIGN_PLATFORMS`) and offers a
+ * daily budget only (`DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`).
  */
 export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
   'linkedin-ads',
   'reddit-ads',
   'meta-ads',
   'microsoft-ads',
+  'twitter-ads',
 ]);
 
 /** The act dialog's header per lever, and the Monitor row button's visible text. */
@@ -718,10 +777,60 @@ export const META_AD_SET_BUDGET_AMOUNT_NOT_REPORTED = '{type} budget, amount not
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
 
+/**
+ * A reporting window as a sentence names it ("Last 30 days"), for a read that states which window
+ * its counters cover. `PLATFORM_AUDIENCE_WINDOW_LABELS` covers the same values but in the audience
+ * selector's compact form ("30d"), which does not read as a label beside a timestamp.
+ */
+export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last_7_days: 'Last 7 days',
+  last_14_days: 'Last 14 days',
+  last_30_days: 'Last 30 days',
+  this_month: 'This month',
+  last_month: 'Last month',
+};
+
+/** What the Ads section says when the read fails without a readable message. */
+export const META_ADS_READ_FAILED_MESSAGE = "This ad set's ads could not be read from Meta.";
+
+/**
+ * What the Ads section says when `truncated` is true: the LISTING passed its page cap, so some ads
+ * are missing, but delivery is all or nothing, so any unlisted ad that delivered is still shown.
+ */
+export const META_ADS_TRUNCATED_NOTE =
+  'Meta lists more ads in this ad set than can be read at once, so not every ad is shown. Any ad past the listing that delivered in this window is still shown, with its counters only.';
+
+/** An ad Meta's listing did not return (`listed: false`): its counters count, but nothing describes it. */
+export const META_AD_UNLISTED_NOTE = 'Not listed by Meta (deleted, archived, or past the listing); counters only.';
+
+/** The creative cell when neither the creative's name nor its id is reported. */
+export const META_AD_CREATIVE_NOT_REPORTED = 'Creative not reported';
+
 // --- Keyword targeting panel (Reddit and X) ----------------------------------
 
 /** The platforms whose campaigns have keyword targeting the Optimize tab can read and remove from. */
 export const KEYWORD_TARGETING_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<KeywordTargetingPlatform>(['reddit-ads', 'twitter-ads']);
+
+/**
+ * The keyword-targeting platforms whose read carries a `revision` fingerprinting the WHOLE targeting
+ * (excluded keywords included), which a removal must send back: Reddit. A negative-keyword add there
+ * rewrites the same object, so it makes a read stale and the two levers are serialized. X keeps each
+ * keyword as its own criterion with no revision, so its negatives neither invalidate nor hold a removal.
+ */
+export const KEYWORD_TARGETING_REVISION_PLATFORMS: ReadonlySet<KeywordTargetingPlatform> = new Set<KeywordTargetingPlatform>(['reddit-ads']);
+
+/** Why Remove is held: a removal of the same campaign, sent under another brief id, is still running. */
+export const KEYWORD_TARGETING_REMOVAL_IN_PROGRESS_REASON = 'Another removal for this campaign is already running. Wait for it to finish.';
+
+/** Why a removal the operator CONFIRMED was not sent, stated on the panel rather than dropped silently. */
+export const KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES: Readonly<Record<'busy' | 'held' | 'reread' | 'noRevision', string>> = {
+  busy: 'Another removal for this campaign is already running. Nothing was sent.',
+  held: 'Negative keywords started being added to this campaign while you were confirming. Nothing was sent; try again once that finishes.',
+  reread: 'The keyword targeting was read again while you were confirming. Nothing was sent; check the list and try again.',
+  noRevision: 'The read did not include the version Reddit needs. Nothing was sent; reload the keyword targeting and try again.',
+};
 
 /** Each keyword-targeting platform's name in the panel's text. */
 export const KEYWORD_TARGETING_PLATFORM_LABELS: Readonly<Record<KeywordTargetingPlatform, string>> = {
@@ -815,6 +924,34 @@ export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'd
     "Reddit keyword metrics can't be read for this foundation: it has more Reddit campaigns than one report can cover, or a campaign belongs to a different ad account.",
   other: 'Reddit keyword metrics are unavailable right now. Try again.',
 };
+
+/**
+ * What a Reddit keyword row says when its "Add as negative" could not read the `revision` Reddit
+ * requires (the read failed, or answered none): nothing was sent. The negative-keyword editor's own wording.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR =
+  "The ad group's targeting couldn't be read, and Reddit needs it before keywords can be excluded. Nothing was sent.";
+
+/**
+ * What a Reddit keyword row says when, by the time its revision read answered, another change to the
+ * campaign's keywords (a negative-keyword request or a keyword-targeting removal) had started: the
+ * add was not sent, and the operator tries again once that one settles.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE = 'Another keyword change for this campaign started first. Nothing was sent.';
+
+/**
+ * What a Reddit keyword row says when, by the time its revision read answered, the page had moved
+ * to another project or brief or the campaign had stopped taking negative keywords: nothing was sent.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE =
+  "This campaign can't take negative keywords from here any more (the page changed project or brief, or the campaign changed). Nothing was sent.";
+
+/**
+ * The `read` of a Reddit keyword "Not sent" note recorded after the page LEFT the note's project (an
+ * add abandoned by that move). No read of that project is current, so the note takes the first read
+ * of the next visit instead. A real read id always contains `|`, so this never matches one.
+ */
+export const REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ = 'next-visit';
 
 /**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a

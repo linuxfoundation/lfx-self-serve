@@ -19,11 +19,6 @@ export const ALTERNATE_EMAIL = 'alt.user@example.com';
 // A third row exists so the in-flight guard can be proven on a row other than the one clicked.
 export const SECOND_ALTERNATE_EMAIL = 'second.alt@example.com';
 
-// Mirrors MEETING_INVITE_PRIMARY_SENTINEL in @lfx-one/shared/constants. Inlined rather than
-// imported because the shared constants barrel transitively pulls Angular runtime code that
-// the Playwright Node loader can't compile (same reason as profile-identities-support-link).
-export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
-
 // Upstream copy for a rejected address, as profile.controller.ts returns it on a 400.
 export const INVITE_VALIDATION_MESSAGE =
   'This email is not an active, verified address on your account yet. Choose a different email, or verify it and try again.';
@@ -93,8 +88,8 @@ function errorBody(behavior: { status: number; message: string }): Record<string
     : { ...base, code: 'SERVICE_UNAVAILABLE' };
 }
 
-function inviteStateFor(email: string | null): InviteState {
-  return email === null ? NO_INVITE_OVERRIDE : { email_id: `email-id-${email}`, email };
+function inviteStateFor(email: string): InviteState {
+  return { email_id: `email-id-${email}`, email };
 }
 
 /**
@@ -153,8 +148,7 @@ export async function installEmailMocks(page: Page, options: EmailMockOptions = 
           });
         }
 
-        const isReset = body.email.trim().toLowerCase() === MEETING_INVITE_PRIMARY_SENTINEL;
-        invite = inviteStateFor(isReset ? null : body.email);
+        invite = inviteStateFor(body.email);
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(invite) });
       }
     }
@@ -179,19 +173,19 @@ export async function installEmailMocks(page: Page, options: EmailMockOptions = 
 }
 
 /**
- * Neutralize the Osano consent overlay, which otherwise intercepts pointer events on the
+ * Neutralize the Transcend consent overlay, which otherwise intercepts pointer events on the
  * kebab triggers. Registered via addInitScript so it applies before page scripts on every
  * navigation (mirrors profile-identities-support-link / profile-edit-drawer).
  */
 export async function suppressCookieBanner(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const hide = (): void => {
-      if (document.getElementById('e2e-hide-osano')) {
+      if (document.getElementById('e2e-hide-transcend')) {
         return;
       }
       const style = document.createElement('style');
-      style.id = 'e2e-hide-osano';
-      style.textContent = '.osano-cm-window { display: none !important; pointer-events: none !important; }';
+      style.id = 'e2e-hide-transcend';
+      style.textContent = '#transcend-consent-manager { display: none !important; pointer-events: none !important; }';
       (document.head ?? document.documentElement).appendChild(style);
     };
     if (document.readyState === 'loading') {

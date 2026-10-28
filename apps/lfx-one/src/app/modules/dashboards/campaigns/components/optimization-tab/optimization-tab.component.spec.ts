@@ -32,6 +32,7 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   campaignResumeAdoptedReason,
   campaignResumeRefusedAdoptedMessage,
@@ -61,6 +62,7 @@ import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form
 import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
@@ -3749,18 +3751,20 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers negative keywords on Microsoft, Reddit and X rows only', () => {
+  it('offers negative keywords on Google, Microsoft, Reddit and X rows only', () => {
     render([
       doc(),
-      doc({ id: 'c-2', platform: 'google-ads', campaign_name: 'Other' }),
+      doc({ id: 'c-2', platform: 'linkedin-ads', campaign_name: 'Other' }),
       doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
       doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+      doc({ id: 'c-5', platform: 'google-ads', campaign_name: 'Google one' }),
     ]);
 
     expect(q('optimization-campaign-negatives-edit-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-2')).toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-3')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-4')).not.toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-5')).not.toBeNull();
 
     (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -3816,6 +3820,37 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     q('optimization-refresh')!.click();
     fixture.detectChanges();
     expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
+  });
+
+  // The table's "Add as negative" writes through the same lever as the row's editor, so it is offered
+  // for exactly the Reddit rows whose editor is available, and never for a Reddit id two rows share.
+  it('hands the Reddit keyword table the brief and the Reddit campaigns that take negatives now', () => {
+    render([
+      doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-2', platform: 'reddit-ads', platform_campaign_id: 't3_del', status: 'deleted' }),
+      doc({ id: 'c-3', platform: 'reddit-ads', platform_campaign_id: undefined }),
+      doc({ id: 'c-4', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-5', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-6', platform: 'microsoft-ads', platform_campaign_id: '99' }),
+    ]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.briefId()).toBe('b-1');
+    expect(table.negativeTargets()).toEqual({ t3_abc: { campaignId: 'c-1', campaignName: 'Reddit one' } });
+  });
+
+  // Unknown is not empty: a list still loading hands the table `null`, which a pending add waits out.
+  // A FAILED list read ends nothing on its own, so it hands `{}` and the add stops, saying so.
+  it('hands the Reddit keyword table null while the campaign list loads, and no targets once it fails', () => {
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.detectChanges();
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.negativeTargets()).toBeNull();
+
+    fixture.componentRef.setInput('campaignsUnavailable', true);
+    fixture.detectChanges();
+    expect(table.negativeTargets()).toEqual({});
   });
 
   // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
@@ -4891,5 +4926,282 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     const panel = fixture.debugElement.query(By.directive(MetaAdSetsPanelComponent)).componentInstance as MetaAdSetsPanelComponent;
     expect(panel.campaignId()).toBe('c-1');
+  });
+});
+
+/**
+ * Live counters on each campaign row (#3299): rendered from the brief-wide metrics read the tab
+ * already makes, so opening the tab adds no per-campaign read; a row reads campaign-service for
+ * itself only on Refresh, or when clicked after the brief-wide read could not measure it.
+ */
+describe('OptimizationTabComponent — live counters (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let getCampaignMetrics: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '1234567890',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  const briefMetrics: BriefMetrics = {
+    brief_id: 'b-1',
+    window: 'last_30_days',
+    rows: [
+      {
+        campaign_id: 'c-1',
+        platform: 'meta-ads',
+        status: 'ok',
+        metrics: {
+          campaign_id: 'c-1',
+          platform_campaign_id: '1234567890',
+          window: 'last_30_days',
+          impressions: 1000,
+          clicks: 40,
+          cost_micros: 5000000,
+          ctr: 0.04,
+        },
+        pacing: { label: 'normal', pct: 100 },
+      },
+      { campaign_id: 'c-2', platform: 'twitter-ads', status: 'failed', reason: 'the platform read failed' },
+    ],
+    ok_count: 1,
+    action_items: [],
+  };
+
+  beforeEach(async () => {
+    getCampaignMetrics = vi
+      .fn()
+      .mockReturnValue(
+        of({ campaign_id: 'c-2', platform_campaign_id: '99', window: 'last_7_days', impressions: 500, clicks: 25, cost_micros: 12500000, ctr: 0.05 })
+      );
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getCampaignMetrics,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of(briefMetrics)),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.componentRef.setInput('briefCampaigns', [doc(), doc({ id: 'c-2', platform: 'twitter-ads', campaign_name: 'OSS Summit' })]);
+    fixture.detectChanges();
+  });
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it("hands every row its brief-wide row and shows an ok row's counters without a read of its own", () => {
+    const panels = fixture.debugElement.queryAll(By.directive(CampaignLiveMetricsComponent)).map((de) => de.componentInstance as CampaignLiveMetricsComponent);
+
+    expect(panels.map((p) => [p.projectSlug(), p.briefId(), p.campaignId(), p.campaignName(), p.platform(), p.briefRow()?.status])).toEqual([
+      ['tlf', 'b-1', 'c-1', 'KubeCon EU', 'meta-ads', 'ok'],
+      ['tlf', 'b-1', 'c-2', 'OSS Summit', 'twitter-ads', 'failed'],
+    ]);
+    expect(q('optimization-campaign-row-c-1')!.contains(q('optimization-campaign-live-counters-c-1'))).toBe(true);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('40');
+    expect(q('optimization-campaign-live-counters-c-2')).toBeNull();
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+  });
+
+  it('reads one campaign only when its row is clicked, for the precise answer', () => {
+    (q('optimization-campaign-live-load-c-2') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(getCampaignMetrics).toHaveBeenCalledWith('tlf', 'b-1', 'c-2');
+    expect(q('optimization-campaign-live-counters-c-2')).not.toBeNull();
+    expect(q('optimization-campaign-live-window-c-2')!.textContent).toContain('the last 7 days');
+  });
+
+  // The tab's Refresh clears its brief-wide read first; a failed re-read must not take a row's own answer with it.
+  it("keeps a row's own refreshed counters through a tab Refresh whose brief-wide read fails", () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+
+    service.getBriefMetrics.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' })));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(service.getBriefMetrics).toHaveBeenCalledTimes(2);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the fresh brief-wide counters once a tab Refresh succeeds after a row Refresh', () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const fresh = structuredClone(briefMetrics);
+    fresh.rows[0].metrics!.clicks = 77;
+    service.getBriefMetrics.mockReturnValue(of(fresh));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('77');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the row read-only: refreshing counters calls no write', () => {
+    const service = TestBed.inject(CampaignService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const called = Object.entries(service)
+      .filter(([, fn]) => fn.mock.calls.length > 0)
+      .map(([name]) => name);
+    expect(called).not.toContain('updateCampaignStatus');
+    expect(called).not.toContain('updateCampaignBudget');
+    expect(called).toContain('getCampaignMetrics');
+  });
+});
+
+/**
+ * lfx-self-serve-ops#54: a non-root caller is refused the Google Ads monitor, whose customer is shared
+ * by every foundation. The tab says so instead of reporting a failure, and still shows the wasted and
+ * low-quality-score keyword sections, which read only the project-scoped `/keywords`.
+ */
+describe('OptimizationTabComponent — shared Google Ads account restriction', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let service: Record<string, ReturnType<typeof vi.fn>>;
+
+  /** Spend with no conversions (wasted) and a quality score of 3 (low quality), so both sections render. */
+  const flaggedKeyword = {
+    keyword: 'cheap cloud',
+    matchType: 'BROAD',
+    qualityScore: 3,
+    status: 'ENABLED',
+    adGroup: 'AG',
+    adGroupId: '1',
+    criterionId: '2',
+    campaign: 'C',
+    campaignId: '555',
+    googleAdsUrl: '',
+    impressions: 1000,
+    clicks: 10,
+    ctr: 1,
+    avgCpc: 0.5,
+    spend: 5,
+    conversions: 0,
+  };
+
+  beforeEach(async () => {
+    service = {
+      updateCampaignStatus: vi.fn(),
+      getMonitorData: vi.fn().mockReturnValue(of(null)),
+      getKeywords: vi.fn().mockReturnValue(of({ keywords: [flaggedKeyword], truncated: false })),
+      getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+      getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+      getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+      getRedditAccounts: vi.fn().mockReturnValue(of([])),
+      getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
+      getMetaAccounts: vi.fn().mockReturnValue(of([])),
+      getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
+      getRedditMonitor: vi.fn().mockReturnValue(of(null)),
+      getMetaMonitor: vi.fn().mockReturnValue(of(null)),
+      executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [provideNoopAnimations(), { provide: MessageService, useValue: { add: vi.fn() } }, { provide: CampaignService, useValue: service }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('shows the restricted notice and keeps the wasted and low-quality keyword sections', () => {
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('optimization-restricted')?.textContent).toContain('Google Ads optimization is limited to LF administrators');
+    expect(el('optimization-error')).toBeNull();
+    expect(el('optimization-wasted-keywords')?.textContent).toContain('cheap cloud');
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+  });
+
+  it('still reports any other monitor failure as an error', () => {
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } })));
+    fixture.detectChanges();
+
+    expect(el('optimization-error')).not.toBeNull();
+    expect(el('optimization-restricted')).toBeNull();
+  });
+
+  it('clears cached Google monitor data after a refusal so a pending retry shows loading', () => {
+    const payload = { campaigns: [], accountTotals: null, actionItems: [], dateRange: { mode: 'last_30_days' }, pulledAt: '2026-10-01T00:00:00Z' };
+    service['getMonitorData'].mockReturnValue(of(payload));
+    fixture.detectChanges();
+    const instance = fixture.componentInstance as unknown as { fetchData(): void; monitorData(): unknown };
+    expect(instance.monitorData()).toEqual(payload);
+
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+    );
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-restricted')).not.toBeNull();
+    expect(instance.monitorData()).toBeNull();
+
+    service['getMonitorData'].mockReturnValue(new Subject<never>());
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-loading')).not.toBeNull();
+    expect(el('optimization-summary')).toBeNull();
+  });
+
+  it('replaces refused legacy keywords with a notice, clears cached rows, and recovers on retry', () => {
+    const restricted = () => new HttpErrorResponse({ status: 403, error: { code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } });
+    service['getMonitorData'].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+
+    const instance = fixture.componentInstance as unknown as { fetchData(): void; keywordsData(): unknown };
+    service['getKeywords'].mockReturnValue(throwError(restricted));
+    instance.fetchData();
+    fixture.detectChanges();
+    expect(el('optimization-keywords-restricted')?.textContent).toContain('keyword insights are limited to LF administrators');
+    expect(el('optimization-low-qs')).toBeNull();
+    expect(el('wasted-keywords-all-clear')).toBeNull();
+    expect(instance.keywordsData()).toBeNull();
+
+    service['getKeywords'].mockReturnValue(of({ keywords: [flaggedKeyword], truncated: false }));
+    fixture.componentRef.setInput('projectSlug', 'acme-foundation');
+    fixture.detectChanges();
+    expect(el('optimization-keywords-restricted')).toBeNull();
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+    expect(service['getKeywords']).toHaveBeenLastCalledWith('acme-foundation', 30);
   });
 });

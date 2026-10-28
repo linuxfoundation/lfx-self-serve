@@ -5,12 +5,16 @@ import { createHmac } from 'node:crypto';
 
 import { constantTimeEquals } from './security.util';
 
-// Stateless owner tokens for Marketing OS chat sessions (LFXAI-97). A token binds
-// a Guild session to the user who created it, so only that user can post
-// follow-up messages (history reads stay open to any Marketing-permitted user).
-// The token is HMAC-SHA256(`${userId}:${sessionId}`) — no server-side storage, so
-// it survives restarts and works across multiple SSR pods. Reuses the app session
-// secret (PCC_AUTH0_SECRET) rather than introducing a new one.
+// Stateless owner tokens for Marketing OS sessions (LFXAI-97). A token binds
+// what a caller may act on to the user it was issued to: a chat session's id,
+// so only its creator can post follow-up messages (history reads stay open to
+// any Marketing-permitted user), or a purpose-prefixed binding string that
+// names more than the session (Export to Google Slides binds the session to
+// the project, document and exact revision it exports, so a poll cannot file
+// the deck under another revision). The token is HMAC-SHA256(`${userId}:${binding}`)
+// — no server-side storage, so it survives restarts and works across multiple
+// SSR pods. Reuses the app session secret (PCC_AUTH0_SECRET) rather than
+// introducing a new one.
 
 /** Signing key — the app session secret (same default as the auth config). */
 function signingSecret(): string {
@@ -18,21 +22,23 @@ function signingSecret(): string {
 }
 
 /**
- * Create an opaque owner token binding `sessionId` to its creator `userId`.
- * Returned to the browser on session creation and replayed on follow-up.
+ * Create an opaque owner token binding `binding` — a Guild session id, or a
+ * purpose-prefixed string that includes one — to `userId`. Returned to the
+ * browser on session creation and replayed on follow-up.
  */
-export function createSessionOwnerToken(userId: string, sessionId: string): string {
-  return createHmac('sha256', signingSecret()).update(`${userId}:${sessionId}`).digest('hex');
+export function createSessionOwnerToken(userId: string, binding: string): string {
+  return createHmac('sha256', signingSecret()).update(`${userId}:${binding}`).digest('hex');
 }
 
 /**
- * Verify that `userId` is the creator of `sessionId`. Recomputes the token and
- * compares in constant time. Returns false on any missing input or mismatch —
- * a different user can't produce a matching token without the signing secret.
+ * Verify that the token was issued to `userId` for `binding` (the same value
+ * the token was created with). Recomputes the token and compares in constant
+ * time. Returns false on any missing input or mismatch — a different user
+ * can't produce a matching token without the signing secret.
  */
-export function verifySessionOwnerToken(token: string | null | undefined, userId: string, sessionId: string): boolean {
+export function verifySessionOwnerToken(token: string | null | undefined, userId: string, binding: string): boolean {
   if (!token) {
     return false;
   }
-  return constantTimeEquals(token, createSessionOwnerToken(userId, sessionId));
+  return constantTimeEquals(token, createSessionOwnerToken(userId, binding));
 }

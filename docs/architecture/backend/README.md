@@ -46,6 +46,8 @@ Request → Controller → Service → Microservice/Data Layer
 | [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
 | [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
 | [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
+| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
+| [Marketing OS Downstream Rebuild](./mktg-rebuild.md)                  | Current-revision staleness, ordered rebuild sessions, questions and Drafts      |
 | [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
 | [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
 | [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
@@ -59,6 +61,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag    |
 | [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
+| [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries |
 
 ### Committee Management
 

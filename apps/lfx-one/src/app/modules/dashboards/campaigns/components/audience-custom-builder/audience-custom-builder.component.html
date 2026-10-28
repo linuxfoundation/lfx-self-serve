@@ -26,7 +26,7 @@
       <div>
         <button
           type="button"
-          (click)="onStartOver()"
+          (click)="onStartOverClicked()"
           class="rounded border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
           data-testid="audience-custom-builder-another">
           Build another
@@ -399,7 +399,7 @@
           </button>
           <button
             type="button"
-            (click)="onStartOver()"
+            (click)="onStartOverClicked()"
             [disabled]="creating()"
             class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             data-testid="audience-custom-builder-reset">
@@ -422,9 +422,15 @@
             <input
               type="text"
               [formControl]="nameControl"
+              [attr.maxlength]="nameMaxLength"
               class="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm"
               data-testid="audience-custom-builder-name" />
           </label>
+          @if (nameTooLong()) {
+            <p class="text-xs text-red-700" role="alert" data-testid="audience-custom-builder-name-too-long">
+              A list name can be at most {{ nameMaxLength }} characters, HubSpot's limit for finding a list by name.
+            </p>
+          }
         </fieldset>
         <ul class="flex flex-col gap-1 text-xs text-gray-700">
           <li>{{ p.branchCount }} filter branches</li>

@@ -42,11 +42,11 @@ For a recurring meeting, **This date or all dates?** asks which dates your respo
 - **All dates** — the entire series.
 - **This date and all following dates** — this date and future dates; earlier dates keep their responses.
 
-The saved confirmation and current response show the date scope. Choosing No leaves the meeting findable in My Meetings under **All meetings** and, for the applicable date, **Not going**.
+The saved confirmation and current response show the date scope. Choosing No leaves the meeting findable in Meetings under **All meetings** and, for the applicable date, **Not going**.
 
 ## Meeting materials
 
-The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). You need to be **signed in** to see materials — this applies to every meeting, not just Private ones. Only the meeting organizer can add or update materials.
+The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). You need to be **signed in** to see materials — this applies to every meeting, not just Private ones. On a recurring meeting, each item is labeled **This occurrence** (added for this date only) or **All occurrences** (shared by every date), so you can tell which materials belong to the date you are viewing. Only the meeting organizer can add or update materials.
 
 ## After the meeting: recording, transcript, and AI summary
 

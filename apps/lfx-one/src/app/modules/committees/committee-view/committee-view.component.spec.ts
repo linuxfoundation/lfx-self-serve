@@ -5,7 +5,9 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import type { Committee, CommitteeMember, CommitteeTab, Meeting } from '@lfx-one/shared/interfaces';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
+import { getGroupCommands } from '@lfx-one/shared/utils';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -18,10 +20,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { DocumentService } from '@services/document.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, EMPTY, of, Subject } from 'rxjs';
+import { BehaviorSubject, EMPTY, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeViewComponent } from './committee-view.component';
@@ -91,13 +94,22 @@ describe('CommitteeViewComponent', () => {
         },
         { provide: MeetingService, useValue: { getMeetingsByCommittee } },
         { provide: MailingListService, useValue: { getMailingListsByCommittee: vi.fn(() => of([])) } },
-        { provide: VoteService, useValue: { getVotesByCommittee: vi.fn(() => of([])), mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v) } },
+        {
+          provide: VoteService,
+          useValue: {
+            getVotesByCommittee: vi.fn(() => of([])),
+            mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
+            mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
+            hasVotesAwaitingInvitationCount: vi.fn(() => false),
+          },
+        },
         { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
+        { provide: DocumentService, useValue: { getCommitteeDocumentCount: vi.fn(() => of(null)) } },
         { provide: MessageService, useValue: { add: vi.fn(), clear: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: UserService, useValue: { user: signal(null), viewerUsername: signal<string | null>('viewer') } },
         { provide: LensService, useValue: { activeLens: signal('project'), setLens: vi.fn() } },
-        { provide: ProjectContextService, useValue: { setProject: vi.fn(), setFoundation: vi.fn() } },
+        { provide: ProjectContextService, useValue: { setProject: vi.fn(), setFoundation: vi.fn(), activeContext: signal(null) } },
         { provide: ProjectService, useValue: { getProject: vi.fn(() => of(null)) } },
         {
           provide: InvitationService,
@@ -146,6 +158,96 @@ describe('CommitteeViewComponent', () => {
     flush();
 
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fetches votes while a just-opened vote is still counting invitations, then stops (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      // The first fetched list is still counting; the catch-up refetch has converged.
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation(
+        (votes: Vote[]) => votes.length > 0 && getVotesByCommittee.mock.calls.length === 1
+      );
+
+      createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the votes, badge and silence when a background poll fails, then retries (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const messageService = TestBed.inject(MessageService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+
+      const setVotesLoading = vi.spyOn(component.votesLoading, 'set');
+      getVotesByCommittee.mockReturnValue(throwError(() => new Error('index unavailable')));
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votes().map((vote) => vote.uid)).toEqual(['vote-1']);
+      expect(setVotesLoading).not.toHaveBeenCalledWith(true);
+      expect(messageService.add).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips a poll tick while a foreground votes fetch is loading, so it cannot cancel it (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      // A foreground reload is still in flight when the armed timer fires.
+      const pending = new Subject<Vote[]>();
+      getVotesByCommittee.mockReturnValue(pending);
+      component.onVotesRefreshed();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votesLoading()).toBe(true);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(pending.observed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   describe('Members tab badge', () => {
@@ -416,6 +518,105 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(component.activeTab()).toBe('members');
+    });
+  });
+
+  describe('Edit Group link and settings-saved navigation', () => {
+    const getProject = (): ReturnType<typeof vi.fn> => TestBed.inject(ProjectService).getProject as unknown as ReturnType<typeof vi.fn>;
+    const asWriter = (overrides: Partial<Committee> = {}): void => {
+      currentCommittee = { ...committee, writer: true, project_slug: 'proj', is_foundation: false, ...overrides } as unknown as Committee;
+    };
+
+    it('offers the wizard link to a writer whose project also reports writer access', () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: true }));
+
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toEqual({ commands: getGroupCommands(currentCommittee, 'edit'), queryParams: { project: 'proj' } });
+    });
+
+    it('hides the link from a committee-only writer, since writerGuard would redirect them with an access-denied notice', () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: false }));
+
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toBeNull();
+    });
+
+    it('hides the link and skips the project lookup for a non-writer', () => {
+      currentCommittee = { ...committee, writer: false } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toBeNull();
+      expect(getProject()).not.toHaveBeenCalled();
+    });
+
+    it('refreshes in place after a settings save when the page was opened by UID', () => {
+      asWriter();
+      const component = createComponent();
+      flush();
+      const refresh = vi.spyOn(component, 'refreshCommittee');
+
+      component.onSettingsSaved();
+
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
+
+    it('moves to the stable UID route after a settings save when the page was opened by a vanity slug', () => {
+      asWriter();
+      routeParams.next(convertToParamMap({ id: 'old-vanity-slug' }));
+      const component = createComponent();
+      flush();
+      const refresh = vi.spyOn(component, 'refreshCommittee');
+
+      component.onSettingsSaved();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(getGroupCommands(currentCommittee) ?? ['/groups', 'committee-1'], {
+        queryParams: { tab: 'overview' },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      expect(refresh).not.toHaveBeenCalled();
+    });
+    it('keeps the tab the user was on when the redirect moves a slug-opened group to its UID route', () => {
+      asWriter();
+      routeParams.next(convertToParamMap({ id: 'old-vanity-slug' }));
+      const component = createComponent();
+      flush();
+      component.activeTab.set('settings');
+
+      component.onSettingsSaved();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ queryParams: { tab: 'settings' } }));
+    });
+
+    it("hides the link from a newly loaded group until that group's own project lookup settles", () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: true }));
+      const component = createComponent();
+      flush();
+      expect(component.editLink()).not.toBeNull();
+
+      const pending = new Subject<{ writer: boolean }>();
+      getProject().mockReturnValue(pending);
+      asWriter({ uid: 'committee-2', project_slug: 'other-project' });
+      routeParams.next(convertToParamMap({ id: 'committee-2' }));
+      flush();
+
+      expect(component.committee()?.uid).toBe('committee-2');
+      expect(component.editLink()).toBeNull();
+
+      pending.next({ writer: true });
+      flush();
+
+      expect(component.editLink()).not.toBeNull();
     });
   });
 });

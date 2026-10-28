@@ -33,6 +33,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectDocumentMetadata: vi.fn(),
     getProjectDocumentStream: vi.fn(),
     deleteProjectDocument: vi.fn(),
+    uploadProjectDocument: vi.fn(),
   },
 }));
 
@@ -961,6 +962,49 @@ function buildPermissionsReqRes(uid: string, username: string, body: unknown = {
   return { req, res, next };
 }
 
+describe('ProjectController permissions role validation', () => {
+  const EMAIL = 'blair.chen@vendor-corp.example';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("addUserToProjectPermissions accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+
+    await controller.addUserToProjectPermissions(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'add', EMAIL, role, undefined);
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("updateUserPermissionRole accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', role, undefined, undefined);
+  });
+
+  it.each([['owner'], ['none'], [1]])('rejects role %j on add and update without calling the service', async (role) => {
+    const controller = new ProjectController();
+    const add = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+    const update = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.addUserToProjectPermissions(add.req, add.res, add.next);
+    await controller.updateUserPermissionRole(update.req, update.res, update.next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(add.next).toHaveBeenCalledTimes(1);
+    expect(update.next).toHaveBeenCalledTimes(1);
+  });
+});
+
 // GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
 // unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
 // write as the primary identifier, instead of a second non-atomic client call (Copilot
@@ -1300,5 +1344,34 @@ describe('ProjectController.deleteProjectDocument uid/documentId validation', ()
     expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('ProjectController.uploadProjectDocument body type', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const controller = new ProjectController();
+    const req = {
+      params: { uid: PROJECT_UID },
+      body,
+      query: { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' },
+      headers: {},
+      path: `/api/projects/${PROJECT_UID}/documents`,
+    } as any;
+    const next = vi.fn();
+
+    await controller.uploadProjectDocument(req, { json: vi.fn(), status: vi.fn().mockReturnThis() } as any, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(projectSvc.uploadProjectDocument).not.toHaveBeenCalled();
   });
 });

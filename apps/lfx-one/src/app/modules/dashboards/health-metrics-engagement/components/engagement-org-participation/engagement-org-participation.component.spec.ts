@@ -98,7 +98,7 @@ describe('EngagementOrgParticipationComponent', () => {
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
 
-    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
+    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]');
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('21 / 27');
@@ -113,17 +113,6 @@ describe('EngagementOrgParticipationComponent', () => {
     const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
     expect(label?.textContent?.trim()).toBe('Search organization');
     expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
-  });
-
-  it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
-    await render();
-    getEngagementOrgParticipation.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   // The period pill projects the loaded rows, so switching it must not cost another request.
@@ -145,6 +134,40 @@ describe('EngagementOrgParticipationComponent', () => {
 
     expect(emitted).toEqual([null, { orgs: 136, lapsedOrgs: 54 }]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 organizations · 54 lapsed');
+  });
+
+  it('drops the lapsed part of the caption at zero', async () => {
+    await render(response({ counts: { orgs: 1, lapsedOrgs: 0 } }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('1 organization');
+  });
+
+  // The design's tier pill: blue for Platinum / Premier / Founding in any case, grey for every other tier.
+  it('pills the top tiers blue and every other tier grey', async () => {
+    await render(
+      response({
+        rows: [
+          orgRow({ accountId: 'a-1', membershipTier: 'Platinum' }),
+          orgRow({ accountId: 'a-2', membershipTier: 'founding' }),
+          orgRow({ accountId: 'a-3', membershipTier: 'Silver' }),
+          orgRow({ accountId: 'a-4', membershipTier: '' }),
+        ],
+        counts: { orgs: 4, lapsedOrgs: 0 },
+      })
+    );
+
+    const tier = (id: string) => fixture.nativeElement.querySelector(`[data-testid="engagement-org-participation-row-${id}-tier"]`) as HTMLElement | null;
+    expect(tier('a-1')?.textContent?.trim()).toBe('Platinum');
+    expect(tier('a-1')?.className).toContain('bg-blue-50');
+    expect(tier('a-1')?.className).toContain('text-blue-700');
+    expect(tier('a-1')?.className).toContain('rounded-full');
+    expect(tier('a-1')?.className).toContain('text-[12px]');
+    expect(tier('a-2')?.className).toContain('bg-blue-50');
+    expect(tier('a-3')?.className).toContain('bg-gray-100');
+    expect(tier('a-3')?.className).toContain('text-gray-600');
+    // No tier at all is an em dash, not an empty pill.
+    expect(tier('a-4')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-4"]').textContent).toContain('—');
   });
 
   // A view that reports no scope count has not measured zero organizations, and the table says so.

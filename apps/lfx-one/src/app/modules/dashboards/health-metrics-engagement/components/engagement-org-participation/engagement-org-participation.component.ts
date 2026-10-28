@@ -22,6 +22,7 @@ import {
   formatHealthMetricsEngagementAvgReps,
   formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
+  resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementOrgPeriod,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -97,10 +98,7 @@ export class EngagementOrgParticipationComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(
-      () =>
-        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`
-    ),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
@@ -120,6 +118,7 @@ export class EngagementOrgParticipationComponent {
             lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
             avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
             attendedLabel: formatHealthMetricsEngagementRatio(period?.attendedCount ?? null, period?.meetingsTotal ?? null),
+            tierPillClass: resolveHealthMetricsEngagementOrgTierPillClass(row.membershipTier),
           },
         ];
       })
@@ -144,7 +143,9 @@ export class EngagementOrgParticipationComponent {
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed`;
+    const orgs = `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
+    // The lapsed part drops at zero, as in the design.
+    return counts.lapsedOrgs > 0 ? `${orgs} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed` : orgs;
   });
 
   public constructor() {
@@ -170,7 +171,7 @@ export class EngagementOrgParticipationComponent {
   }
 
   private initQuery(): HealthMetricsEngagementOrgQuery {
-    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', projectSlug: this.chrome.selectedProjectSlug() };
+    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '' };
   }
 
   private initResponse(): Signal<HealthMetricsEngagementOrgParticipation> {
@@ -185,7 +186,7 @@ export class EngagementOrgParticipationComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);

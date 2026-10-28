@@ -110,7 +110,27 @@
         @if (status(); as statusDisplay) {
           <lfx-tag [value]="statusDisplay.label" [severity]="statusDisplay.severity" data-testid="org-easycla-detail-status" />
         }
+        @if (viewOnly()) {
+          <span
+            class="flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700"
+            data-testid="org-easycla-detail-view-only">
+            <i class="fa-light fa-eye" aria-hidden="true"></i>
+            {{ viewOnlyCopy.label }}
+          </span>
+        }
       </div>
+      @if (viewOnly()) {
+        <p class="text-sm text-gray-600" data-testid="org-easycla-detail-view-only-reason">
+          {{ viewOnlyCopy.reason }}
+          <button
+            type="button"
+            class="font-medium text-blue-600 hover:underline"
+            (click)="focusTab('managers')"
+            data-testid="org-easycla-detail-view-only-managers-link">
+            {{ viewOnlyCopy.managersLink }}
+          </button>
+        </p>
+      }
       @if (group.signingEntityName) {
         <p class="text-sm text-gray-500" data-testid="org-easycla-detail-signing-entity">{{ group.signingEntityName }}</p>
       }
@@ -243,16 +263,8 @@
                 <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
               }
               @if (alreadyDesignee()) {
-                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-identified">{{ designeeStartCopy.identified }}</p>
-                <p class="text-sm text-gray-700">{{ designeeStartCopy.role }}</p>
-                <p class="font-semibold text-sm text-gray-900">{{ designeeStartCopy.stepsHeading }}</p>
-                <ol class="flex list-none flex-col gap-2 p-0" data-testid="org-easycla-detail-designee-steps">
-                  @for (step of designeeStartCopy.steps; track step.label) {
-                    <li class="text-sm text-gray-700">
-                      <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
-                    </li>
-                  }
-                </ol>
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-identified">{{ designeeRestingCopy.identified }}</p>
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-role">{{ designeeRestingCopy.role }}</p>
               } @else {
                 <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
                 <!--
@@ -299,31 +311,12 @@
             -->
               <div class="flex flex-wrap items-center gap-3">
                 <lfx-button
-                  [label]="notStartedCopy.startLabel"
+                  [label]="startLabel()"
                   icon="fa-light fa-file-signature"
                   [disabled]="startDisabled()"
                   [ariaLabel]="startAriaLabel()"
                   (onClick)="startClaProcess()"
                   data-testid="org-easycla-detail-start-cla" />
-                <!--
-                The same refusal reason as Start, but this control keeps its own visible name.
-                Reusing startAriaLabel() would announce "Start the CLA process" for a link that
-                still reads Identify someone else.
-
-                aria-disabled rather than [disabled]: a native-disabled button leaves the tab
-                order, so a keyboard or screen-reader user would never hear the reason the
-                accessible name carries. requireSignableContext() refuses the activation instead
-                (same pattern as org-meetings-time-range).
-              -->
-                <button
-                  type="button"
-                  class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
-                  [attr.aria-disabled]="startDisabled() ? true : null"
-                  [attr.aria-label]="identifySomeoneElseAriaLabel()"
-                  (click)="identifySomeoneElse()"
-                  data-testid="org-easycla-detail-identify-someone-else">
-                  {{ notStartedCopy.identifySomeoneElseLabel }}
-                </button>
               </div>
             </div>
           }

@@ -3,7 +3,10 @@
 
 import { Meeting } from '@lfx-one/shared';
 import {
+  ERROR_CODES,
   MEETING_PASSWORD_HEADER,
+  PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS,
+  PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   PUBLIC_REGISTRATION_FIELD_LABELS,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
   PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
@@ -14,15 +17,18 @@ import {
   CreateMeetingRegistrantRequest,
   MeetingOccurrenceSummary,
   MeetingRegistrant,
+  PastMeeting,
   Project,
+  PublicAnonymousLiveMeeting,
+  PublicAnonymousPastMeeting,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { canJoinMeeting, getCurrentOrNextOccurrence, getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthenticationError, AuthorizationError } from '../errors/authentication.error';
 import {
   addInvitedStatusToMeeting,
@@ -36,7 +42,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getRealEmail, getRealUsername, isImpersonating } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -148,10 +154,20 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
+      // Computed once against the full internal meeting (before any field stripping below) so every
+      // response branch — including the anonymous/guest one — can tell the client whether the join
+      // window is currently open. Mirrors the full-access client's own canJoinMeeting(meeting,
+      // currentOccurrence) — bounded by the 40-minute end buffer and occurrence-aware for recurring
+      // series — rather than isWithinJoinWindow's open-ended, series-start-only check used to gate
+      // postMeetingLink. This is advisory for UI state only, never a bypass of that gate.
+      const canJoin = canJoinMeeting(meeting, getCurrentOrNextOccurrence(meeting));
+
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -166,6 +182,8 @@ export class PublicMeetingController {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -174,28 +192,44 @@ export class PublicMeetingController {
       // service OR lookup had a false negative. Re-check directly by email with M2M.
       if (isAuthenticated) {
         const userEmail = getEffectiveEmail(req);
+        let fallbackMatch = false;
         if (userEmail) {
           try {
-            const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
-            if (registrantsByEmail.length > 0) {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken)).length > 0;
+            if (fallbackMatch) {
               logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
                 meeting_id: id,
                 email: userEmail,
               });
-              meeting.invited = true;
-              await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
-              res.json({
-                meeting,
-                project: this.toPublicMeetingProject(project, parent),
-              });
-              return;
             }
           } catch (fallbackError) {
-            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing', {
               meeting_id: id,
               err: fallbackError,
             });
           }
+        }
+        // An alias row (meeting-invite preference) only matches through the user's other verified emails.
+        if (!fallbackMatch && !isImpersonating(req)) {
+          try {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, userEmail || undefined)).registrants.length > 0;
+          } catch (fallbackError) {
+            logger.warning(req, 'get_public_meeting_by_id', 'Verified-email registrant check failed, continuing to password gate', {
+              meeting_id: id,
+              err: fallbackError,
+            });
+          }
+        }
+        if (fallbackMatch) {
+          meeting.invited = true;
+          await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
+          res.json({
+            meeting,
+            project: this.toPublicMeetingProject(project, parent),
+            full_access: true,
+            can_join: canJoin,
+          });
+          return;
         }
       }
 
@@ -205,8 +239,17 @@ export class PublicMeetingController {
         return;
       }
 
-      // Send the meeting and project data to the client
-      res.json({ meeting, project: this.toPublicMeetingProject(project, parent) });
+      // A correct password only proves the caller has the shared link/passcode — not that they
+      // have a real session with access (organizer/invitee/member). Anonymous visitors and
+      // password-only guests both land here, so neither gets agenda, materials, or date/time:
+      // only the title + enough context to join as a guest (per Nirav/Jordan — a private meeting
+      // must show nothing beyond that without login).
+      res.json({
+        meeting: this.toAnonymousLiveMeetingResponse(meeting),
+        project: this.toPublicMeetingProject(project, parent),
+        full_access: false,
+        can_join: canJoin,
+      });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -312,8 +355,9 @@ export class PublicMeetingController {
       // created_by/owner from the live v1_meeting index (webhook-created past meetings lack a human
       // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
       // and strip all three identity fields (created_by is present as zoom.webhooks).
+      const hasUserSession = isAuthenticated && originalToken !== undefined;
       let enrichedMeeting = meeting;
-      if (isAuthenticated && originalToken !== undefined) {
+      if (hasUserSession) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
         delete (meeting as Partial<Meeting>).organizers;
@@ -321,32 +365,37 @@ export class PublicMeetingController {
         delete (meeting as Partial<Meeting>).owner;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI.
-      // created_by/owner are included (authenticated callers only, per the strip above) so the
-      // basic view can still show the organizer name.
-      const meetingResponse = fullAccess
-        ? enrichedMeeting
-        : {
-            id: enrichedMeeting.id,
-            title: enrichedMeeting.title,
-            visibility: enrichedMeeting.visibility,
-            meeting_type: enrichedMeeting.meeting_type,
-            restricted: enrichedMeeting.restricted,
-            start_time: enrichedMeeting.start_time,
-            scheduled_start_time: enrichedMeeting.scheduled_start_time,
-            scheduled_end_time: enrichedMeeting.scheduled_end_time,
-            duration: enrichedMeeting.duration,
-            recurrence: enrichedMeeting.recurrence,
-            recording_enabled: enrichedMeeting.recording_enabled,
-            transcript_enabled: enrichedMeeting.transcript_enabled,
-            youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
-            show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
-            ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
-            project_uid: enrichedMeeting.project_uid,
-            meeting_id: enrichedMeeting.meeting_id,
-            created_by: enrichedMeeting.created_by,
-            owner: enrichedMeeting.owner,
-          };
+      // Authenticated full-access callers keep the whole detail; anonymous full-access callers
+      // get the allowlist. Non-full-access callers keep the basic UI projection, including
+      // created_by/owner only for authenticated callers per the strip above.
+      let meetingResponse: Partial<PastMeeting>;
+      if (fullAccess && hasUserSession) {
+        meetingResponse = enrichedMeeting;
+      } else if (fullAccess) {
+        meetingResponse = this.toAnonymousPastMeetingResponse(enrichedMeeting);
+      } else {
+        meetingResponse = {
+          id: enrichedMeeting.id,
+          title: enrichedMeeting.title,
+          visibility: enrichedMeeting.visibility,
+          meeting_type: enrichedMeeting.meeting_type,
+          restricted: enrichedMeeting.restricted,
+          start_time: enrichedMeeting.start_time,
+          scheduled_start_time: enrichedMeeting.scheduled_start_time,
+          scheduled_end_time: enrichedMeeting.scheduled_end_time,
+          duration: enrichedMeeting.duration,
+          recurrence: enrichedMeeting.recurrence,
+          recording_enabled: enrichedMeeting.recording_enabled,
+          transcript_enabled: enrichedMeeting.transcript_enabled,
+          youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
+          show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
+          ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
+          project_uid: enrichedMeeting.project_uid,
+          meeting_id: enrichedMeeting.meeting_id,
+          created_by: enrichedMeeting.created_by,
+          owner: enrichedMeeting.owner,
+        };
+      }
 
       res.json({
         meeting: meetingResponse,
@@ -432,9 +481,13 @@ export class PublicMeetingController {
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const password = this.getRequestMeetingPassword(req);
-    const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
-    const email: string = bodyEmail || getEffectiveEmail(req) || '';
-    const username = getEffectiveUsername(req);
+    // While impersonating, the viewer joins as themselves, never as the impersonation target. The
+    // client-supplied email is the target's (the SSR user is overridden), so it is ignored in favor
+    // of the real session's identity.
+    const impersonating = isImpersonating(req);
+    const bodyEmail = !impersonating && typeof req.body.email === 'string' ? req.body.email.trim() : '';
+    const email: string = bodyEmail || (impersonating ? getRealEmail(req) : getEffectiveEmail(req)) || '';
+    const username = impersonating ? getRealUsername(req) : getEffectiveUsername(req);
     const startTime = logger.startOperation(req, 'post_meeting_link', {
       meeting_id: id,
     });
@@ -490,7 +543,6 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
-        email: joinEmail,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -815,6 +867,23 @@ export class PublicMeetingController {
   }
 
   /**
+   * Project anonymous full-access past-meeting detail through an allowlist rather than
+   * a denylist, so new upstream identity or credential fields cannot pass through by default.
+   */
+  private toAnonymousPastMeetingResponse(meeting: PastMeeting): PublicAnonymousPastMeeting {
+    return Object.fromEntries(PUBLIC_ANONYMOUS_PAST_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
+  }
+
+  /**
+   * Projects a live/upcoming meeting down to the anonymous/guest-access allowlist through an
+   * allowlist rather than a denylist, so new upstream fields (agenda, materials, date/time,
+   * password) cannot pass through by default to a caller who only has the shared password.
+   */
+  private toAnonymousLiveMeetingResponse(meeting: Meeting): PublicAnonymousLiveMeeting {
+    return Object.fromEntries(PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
+  }
+
+  /**
    * Sets up M2M token for API calls
    */
   private async setupM2MToken(req: Request): Promise<string> {
@@ -893,6 +962,20 @@ export class PublicMeetingController {
         }
       } catch (error) {
         logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      }
+    }
+
+    if (!isImpersonating(req)) {
+      try {
+        const { registrants } = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, meeting.id, email || undefined);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Verified-email registrant check failed, continuing to organizer check', {
           meeting_id: meeting.id,
           err: error,
         });
@@ -1013,7 +1096,7 @@ export class PublicMeetingController {
     // accounts with multiple emails. Email is the fallback for unauthenticated flows or when
     // no username is available.
     let registrants: MeetingRegistrant[] = [];
-    let matchedBy: 'username' | 'email' | null = null;
+    let matchedBy: 'username' | 'email' | 'verified_email' | null = null;
     if (username) {
       registrants = await this.meetingService.getMeetingRegistrantsByUsername(req, id, username);
       if (registrants.length > 0) {
@@ -1024,6 +1107,25 @@ export class PublicMeetingController {
       registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
       if (registrants.length > 0) {
         matchedBy = 'email';
+      }
+    }
+    // The verified-email lookup resolves the target's emails; an impersonator joins as themselves.
+    if (registrants.length === 0 && !isImpersonating(req)) {
+      const byVerifiedEmail = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, email);
+      registrants = byVerifiedEmail.registrants;
+      if (registrants.length > 0) {
+        matchedBy = 'verified_email';
+      } else if (byVerifiedEmail.lookupFailed) {
+        // Don't tell a registered user they aren't registered because an email source is down.
+        throw new MicroserviceError(
+          'Unable to verify your meeting registration right now, please reload the page in a moment',
+          503,
+          ERROR_CODES.SERVICE_ADVISORY,
+          {
+            operation: 'post_meeting_link',
+            service: 'public_meeting_controller',
+          }
+        );
       }
     }
 

@@ -56,8 +56,8 @@ describe('HealthMetricsChromeService', () => {
   it('offsets the sticky top from the measured header height, with a pre-hydration fallback', () => {
     const service = create();
 
-    expect(service.headerHeightPx()).toBe(72);
-    expect(service.stickyTopPx()).toBe(88);
+    expect(service.headerHeightPx()).toBe(136);
+    expect(service.stickyTopPx()).toBe(152);
 
     service.headerHeightPx.set(120);
     expect(service.stickyTopPx()).toBe(136);
@@ -71,7 +71,7 @@ describe('HealthMetricsChromeService', () => {
 
     impersonating.set(true);
 
-    expect(service.stickyTopPx()).toBe(178);
+    expect(service.stickyTopPx()).toBe(172);
   });
 
   it('selects the range off the clicked period, so every tab reads the same one', () => {
@@ -80,21 +80,5 @@ describe('HealthMetricsChromeService', () => {
     service.setPeriod(service.periods[2]);
 
     expect(service.selectedRange()).toBe(service.periods[2].range);
-  });
-
-  it('starts on all projects and resolves the selected slug against the loaded list', () => {
-    const service = create();
-
-    expect(service.selectedProjectSlug()).toBeNull();
-    expect(service.projects()).toBeNull();
-    expect(service.selectedProject()).toBeNull();
-
-    service.selectedProjectSlug.set('beta');
-    service.projects.set([
-      { slug: 'alpha', name: 'Alpha', initials: 'AL', colorClass: 'bg-blue-500' },
-      { slug: 'beta', name: 'Beta', initials: 'BE', colorClass: 'bg-teal-500' },
-    ]);
-
-    expect(service.selectedProject()?.name).toBe('Beta');
   });
 });

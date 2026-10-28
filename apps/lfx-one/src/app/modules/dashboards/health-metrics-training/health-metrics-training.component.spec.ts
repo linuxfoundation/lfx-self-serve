@@ -113,7 +113,7 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(testId('health-metrics-training-page')?.textContent).not.toContain('Awaiting data');
   });
 
-  it('lists every section in the sub-nav, with no badge before a read and the Members cross-reference', async () => {
+  it('lists every section in the sub-nav, with no badge before a read', async () => {
     await setup();
     const nav = testId('training-sub-nav') as HTMLElement;
 
@@ -121,8 +121,6 @@ describe('HealthMetricsTrainingComponent', () => {
       expect(testId(`training-sub-nav-${section.key}`)?.textContent).toContain(section.label);
     }
     expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('Corporate training purchases appear per organization in');
-    expect(testId('training-sub-nav-cross-reference-link')?.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
   });
 
   it('badges Courses with the in-scope count it reports, and clears it while a read is pending', async () => {
@@ -137,14 +135,6 @@ describe('HealthMetricsTrainingComponent', () => {
     courses.countChange.emit(null);
     await flush();
     expect(testId('training-sub-nav-courses')?.textContent).not.toMatch(/\d/);
-  });
-
-  it('says above the sections that the project selector does not narrow them', async () => {
-    await setup();
-    const note = testId('training-scope-note') as HTMLElement;
-
-    expect(note.textContent).toContain('foundation-wide');
-    expect(note.compareDocumentPosition(testId('health-metrics-training-page') as HTMLElement)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('re-lands a held deep link as each data section settles, releasing it once both have', async () => {
@@ -189,7 +179,6 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(card.textContent).toContain(HEALTH_METRICS_TRAINING_NO_PROGRAMME.body);
     expect(testId('training-no-programme-hint')?.textContent).toContain(HEALTH_METRICS_TRAINING_NO_PROGRAMME.hint);
     expect(testId('health-metrics-training-page')).toBeNull();
-    expect(testId('training-scope-note')).toBeNull();
   });
 
   it('shows an error, not the no-training card, when the presence read fails', async () => {

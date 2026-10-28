@@ -6,12 +6,14 @@
     <lfx-votes-table
       [votes]="votes()"
       [hasPMOAccess]="canEdit()"
+      [showParticipationProgress]="true"
       [loading]="votesLoading()"
       [totalRecords]="votes().length"
       [editQueryParamsFallback]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
       (viewVote)="viewVoteResults($event)"
-      (refresh)="refreshVotes()">
+      (refresh)="refreshVotes()"
+      (voteExtended)="onVoteExtended($event)">
       @if (canEdit()) {
         <lfx-button
           tableActions

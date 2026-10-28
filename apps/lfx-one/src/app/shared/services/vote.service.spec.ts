@@ -10,12 +10,12 @@ import {
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
 
-import type { CreateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
+import type { CreateVoteRequest, ExtendVoteRequest, Vote } from '@lfx-one/shared/interfaces';
 
 function buildVote(overrides: Partial<Vote> = {}): Vote {
   return {
@@ -48,6 +48,27 @@ describe('VoteService', () => {
     });
 
     service = TestBed.inject(VoteService);
+  });
+
+  it('serves an uncached vote read per subscription, never touching the detail cache', () => {
+    http.get.mockImplementation(() => of({ uid: 'v1' }));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    service.getVoteDetail('v1').subscribe();
+    service.getVoteDetail('v1').subscribe();
+    expect(http.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels an uncached vote read when its subscriber leaves', () => {
+    const teardown = vi.fn();
+    http.get.mockImplementation(() => defer(() => new Subject<Vote>().pipe(finalize(teardown))));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe().unsubscribe();
+
+    expect(teardown).toHaveBeenCalledTimes(1);
   });
 
   it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {
@@ -83,6 +104,44 @@ describe('VoteService', () => {
     }
   );
 
+  it.each([
+    { search: undefined, group: undefined, keys: ['parent'] },
+    { search: ' ', group: '', keys: ['parent'] },
+    { search: ' Steering ', group: 'Synthetic Board', keys: ['group', 'name', 'parent'] },
+  ])('requests only parent/name/group status-count parameters and preserves the response: %j', ({ search, group, keys }) => {
+    const result = { all: 5, active: 2, disabled: 0, ended: 3 };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service.getVoteStatusCountsByProject('synthetic-project', search, group).subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/status-counts');
+    expect(options.params.keys().sort()).toEqual(keys);
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('name')).toBe(search?.trim() || null);
+    expect(options.params.get('group')).toBe(group || null);
+    expect(next).toHaveBeenCalledWith(result);
+  });
+
+  it.each([new HttpErrorResponse({ status: 503, error: { message: 'Synthetic private upstream detail' } }), new Error('Synthetic network failure')])(
+    'logs only the status-count failure status once and propagates the original error: %s',
+    (failure) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        http.get.mockReturnValue(throwError(() => failure));
+        const error = vi.fn();
+        const next = vi.fn();
+        service.getVoteStatusCountsByProject('synthetic-project').subscribe({ next, error });
+        expect(next).not.toHaveBeenCalled();
+        expect(error).toHaveBeenCalledExactlyOnceWith(failure);
+        expect(log).toHaveBeenCalledExactlyOnceWith('Failed to load vote status counts', {
+          status: failure instanceof HttpErrorResponse ? failure.status : undefined,
+        });
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+
   it.each([undefined, false, true])('adds only the optional closing flag and forwards authoritative totals: %s', (closingOnly) => {
     const result = { data: [], total_records: 0 };
     http.get.mockReturnValue(of(result));
@@ -101,12 +160,46 @@ describe('VoteService', () => {
     expect(next).toHaveBeenCalledWith(result);
   });
 
+  it.each([true, false])('requests the opt-in envelope and preserves personal-feed completeness: %s', (complete) => {
+    const result = { votes: [buildVote()], complete };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/my-votes');
+    expect(options.params.keys()).toEqual(['include_status']);
+    expect(options.params.get('include_status')).toBe('true');
+    expect(next).toHaveBeenCalledExactlyOnceWith(result);
+  });
+
+  it.each([false, true])('keeps legacy array rows without treating their totals as complete (empty: %s)', (empty) => {
+    const votes = empty ? [] : [buildVote()];
+    http.get.mockReturnValue(of(votes));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith({ votes, complete: false });
+  });
+
   it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {
     const failure = new Error('Personal feed unavailable');
     http.get.mockReturnValue(throwError(() => failure));
     const next = vi.fn();
     const error = vi.fn();
     service.getMyVotes().subscribe({ next, error });
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
+  it('propagates vote-count HTTP failures instead of reporting a zero total (GH-4078)', () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    http.get.mockReturnValue(throwError(() => failure));
+    const next = vi.fn();
+    const error = vi.fn();
+    service.getVotesCountByProject('p1').subscribe({ next, error });
     expect(next).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(failure);
   });
@@ -135,7 +228,7 @@ describe('VoteService', () => {
     it('evicts the carried uid once a fetched row comes back active — the server value has converged', () => {
       service.markVoteOpened('v1');
 
-      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })]);
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
 
       // After eviction the carrier no longer overlays — a stale row would flow through unchanged.
       const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
@@ -148,7 +241,7 @@ describe('VoteService', () => {
       // A just-opened vote can end early inside the TTL (ITX's EndPollIfAllResponded), so any
       // converged non-disabled status — not just `active` — is the server's truth and must not be
       // overlaid back to active.
-      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED })]);
+      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 4 })]);
       expect(converged[0].status).toBe(PollStatus.ENDED);
 
       // The carry was evicted on convergence — a subsequent stale row flows through unchanged.
@@ -204,6 +297,379 @@ describe('VoteService', () => {
     });
   });
 
+  // GH-4078: a vote inside either carrier window can't be trusted to report its electorate yet.
+  describe('awaiting invitation count (GH-4078)', () => {
+    it('reports nothing awaiting when no vote was marked', () => {
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })])).toBe(false);
+    });
+
+    it('treats a just-opened vote as awaiting until its carrier expires', () => {
+      vi.useFakeTimers();
+      try {
+        service.markVoteOpened('v1');
+        expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+        expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats a just-created open vote as awaiting, but not a just-created draft', () => {
+      service.markVoteCreated(buildVote({ uid: 'opened' }), true);
+      service.markVoteCreated(buildVote({ uid: 'draft' }), false);
+
+      expect(service.isAwaitingInvitationCount('opened')).toBe(true);
+      expect(service.isAwaitingInvitationCount('draft')).toBe(false);
+    });
+
+    it('stops awaiting once a fetched row converges and evicts the carrier', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
+
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+    });
+
+    it('does not reopen a just-opened vote as Active from a stale draft row after it was seen as Ended', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
+
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+      // Re-opening the vote restarts the carrier, so a stale draft row is overlaid as Active again.
+      service.markVoteOpened('v1');
+      expect(service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the just-opened carrier while the index reports a non-draft status before its electorate', () => {
+      service.markVoteOpened('v1');
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      // The server status still wins; only eviction waits for the count.
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+    });
+
+    it('keeps the just-created carrier while the indexed row is open but has no electorate yet', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+      const serverRow = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+
+      expect(service.mergeRecentlyCreatedVotes([serverRow])).toEqual([serverRow]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+    });
+
+    it('adopts a fetched Ended status so the retained carrier is not re-inserted as Active', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote', project_uid: 'p1' }), true);
+
+      // All tab: the index already reports Ended, but no electorate yet — the carrier is retained.
+      const ended = buildVote({ uid: 'new-vote', project_uid: 'p1', status: PollStatus.ENDED, total_voting_request_invitations: 0 });
+      expect(service.mergeRecentlyCreatedVotes([ended], { projectUid: 'p1', statusFilter: null })).toEqual([ended]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+
+      // Active tab: the server no longer returns the ended vote, and the carrier must not put it back.
+      expect(service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      // Ended tab: the carrier now inserts under the status the server reported.
+      const endedTab = service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ENDED });
+      expect(endedTab.map((vote) => [vote.uid, vote.status])).toEqual([['new-vote', PollStatus.ENDED]]);
+    });
+
+    it('counts a list as awaiting only for open rows still missing a positive electorate', () => {
+      service.markVoteOpened('v1');
+
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 0 })])).toBe(true);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })])).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])).toBe(false);
+    });
+  });
+
+  // GH-4007: a just-created (including cloned) vote can be missing entirely from a fetched page
+  // until the search index catches up — unlike the GH-2730 carrier above, there is no row to patch,
+  // so the carrier must insert one. Self-heals the same way: evict on convergence, prune at the TTL.
+  describe('recently-created vote carrier (GH-4007)', () => {
+    it('passes rows through untouched (same array) when nothing was marked', () => {
+      const votes = [buildVote({ uid: 'v1' }), buildVote({ uid: 'v2' })];
+
+      expect(service.mergeRecentlyCreatedVotes(votes)).toBe(votes);
+    });
+
+    it('prepends a marked vote missing from the fetched page', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Cloned ballot' });
+      service.markVoteCreated(created, false);
+
+      const votes = [buildVote({ uid: 'v1' })];
+      const merged = service.mergeRecentlyCreatedVotes(votes);
+
+      expect(merged).toEqual([created, votes[0]]);
+    });
+
+    it('evicts the carried uid once a fetched row reports a converged (non-disabled) status — the server row wins', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow]);
+
+      expect(merged).toEqual([serverRow]);
+      // The carry was evicted on convergence — a later fetch missing the row does not re-insert it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('keeps the carried (known-open) status when a fetched row on another tab/page is still stale Disabled', () => {
+      // Regression: a present row no longer unconditionally evicted the carrier — a stale Disabled
+      // row on a different tab (e.g. Draft) must not discard a known-open creation before the index
+      // has actually converged, or returning to Active loses the vote.
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow]);
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // Carrier is still live — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    // GH-4007 round 3 (Copilot/dealako/greptile-apps/cursor[bot]): the overlay above must not
+    // re-badge a stale Disabled row outside the tab its carried status belongs to — a Draft-tab
+    // fetch (statusFilter: DISABLED) can still return this uid's stale index row, and the lazy
+    // table never re-filters returned rows, so overlaying Active here would violate the Draft tab.
+    it('does not re-badge a present stale Disabled row to the carried status when it conflicts with the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.DISABLED });
+
+      expect(merged).toEqual([staleServerRow]);
+    });
+
+    it('still re-badges a present stale Disabled row when it matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+    });
+
+    // GH-4007 round 4 (Copilot/dealako): mergeRecentlyCreatedVotes must run on the RAW fetched rows,
+    // not on a row the opened-overlay has already rebadged to Active — otherwise the eviction check
+    // (`vote.status !== DISABLED`) fires on the optimistic status while the index is still actually
+    // lagging, discarding the carrier before it ever converges for real.
+    it('does not evict the created carrier when the raw row is still Disabled, even if an opened-overlay would rebadge it first', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+      service.markVoteOpened('new-vote');
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+
+      // Correct order: created-merge sees the raw Disabled row and keeps the carrier; the
+      // opened-overlay runs after, on the already-correct Active result.
+      const correctOrder = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([staleServerRow]));
+      expect(correctOrder).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // The carrier is still live afterward — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('keeps inserting inside the TTL window', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created, false);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('prunes entries older than the TTL so a never-indexed vote cannot be pinned into the list forever', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created, false);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('evictRecentlyCreatedVote is a no-op for uids that are not carried', () => {
+      expect(() => service.evictRecentlyCreatedVote('never-marked')).not.toThrow();
+    });
+
+    it('normalizes the carried status to Active when the vote was successfully opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the carried status as-is when the vote was not opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.DISABLED);
+    });
+
+    it('does not insert a carried vote scoped to a different project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-a' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different committee', () => {
+      const created = buildVote({ uid: 'new-vote', committee_uid: 'committee-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { committeeUid: 'committee-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    // GH-4007 round 2 (dealako): inserted rows previously ignored the free-text search box and the
+    // Group dropdown, so a carried vote could appear on a page the user had filtered away from.
+    it('does not insert a carried vote whose name does not match the active search term', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Board decision' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose name matches the active search term, case-insensitively', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Approve the Budget' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Marketing Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Technical Steering Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote whose status does not match the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose status matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert on a page other than the first, to avoid duplicating the row across pagination', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('still evicts a converged carried uid even on a non-first page', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
+
+      expect(merged).toEqual([serverRow]);
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('does not insert a carried vote outside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-02-01T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote that falls inside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-01-03T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+  });
+
+  describe('deleteVote', () => {
+    it('evicts the recently-created carrier so a deleted synthesized draft cannot reappear in the list', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+      http.delete.mockReturnValue(of(undefined));
+
+      service.deleteVote('new-vote').subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+  });
+
   it('createVote posts a plain create — no params, no options (GH-2826 removed the fused open flag)', () => {
     http.post.mockReturnValue(of(buildVote()));
 
@@ -219,6 +685,50 @@ describe('VoteService', () => {
     service.enableVote('vote-1').subscribe();
 
     expect(http.put).toHaveBeenCalledWith('/api/votes/vote-1/enable', {});
+  });
+
+  describe('reminders (#3769)', () => {
+    it('getReminderRecipients GETs the encoded reminder-recipients URL', () => {
+      const recipients = [{ uid: 'r-1' }];
+      http.get.mockReturnValue(of(recipients));
+      const next = vi.fn();
+
+      service.getReminderRecipients('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/reminder-recipients');
+      expect(next).toHaveBeenCalledWith(recipients);
+    });
+
+    it('sendReminders POSTs the recipient IDs to the encoded reminders URL', () => {
+      http.post.mockReturnValue(of({ recipient_count: 2 }));
+      const next = vi.fn();
+
+      service.sendReminders('vote/1', ['r-1', 'r-2']).subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
+      expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
+  });
+
+  describe('vote summary (#3662)', () => {
+    it('sendVoteSummary POSTs an empty body to the encoded summary URL and passes through the response', () => {
+      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+      const next = vi.fn();
+
+      service.sendVoteSummary('vote/1').subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
+      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0 });
+    });
+  });
+
+  it('extendVote posts the new end_time/end_time_timezone to the dedicated extend endpoint', () => {
+    const data: ExtendVoteRequest = { end_time: '2026-09-01T23:59:00.000Z', end_time_timezone: 'America/New_York' };
+    http.post.mockReturnValue(of(buildVote({ end_time: data.end_time })));
+
+    service.extendVote('vote-1', data).subscribe();
+
+    expect(http.post).toHaveBeenCalledWith('/api/votes/vote-1/extend', data);
   });
 
   // GH-2826 Design A: dialog-open fires the speculative create; accept chains the enable onto it. The
@@ -253,6 +763,33 @@ describe('VoteService', () => {
       // The service (not the component) marks the vote opened so the carrier survives navigation.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+
+    // GH-4007 round 2 (dealako): markVoteCreated previously fired from the component's own `next`
+    // handler, so a user navigating away before confirm$ settled dropped the carrier. Moved into this
+    // same service-subscribed tap as markVoteOpened so both survive navigation identically.
+    it('marks the vote created inside the service-owned confirm chain, not just opened', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(of({ uid: 'vote-1', status: PollStatus.ACTIVE }));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('marks the vote created with its pre-enable status when the enable call fails (opened: false)', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(throwError(() => new Error('enable failed')));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(buildVote().status);
     });
 
     it('confirm before the create resolves waits for the uid, then enables — one PUT, no duplicate POST', () => {

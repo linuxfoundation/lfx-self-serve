@@ -10,6 +10,7 @@ import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CdpService } from '../services/cdp.service';
 import { SearchService } from '../services/search.service';
+import { resolveImpersonatorToken } from '../utils/impersonator-token';
 
 /**
  * Controller for handling search HTTP requests
@@ -23,11 +24,62 @@ export class SearchController {
    * Searches for users across meeting registrants and committee members
    */
   public async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runUserSearch(req, res, next, false);
+  }
+
+  /**
+   * GET /search/users/impersonator
+   * The same search, run with the signed-in admin's own token instead of the impersonation target's. Used to
+   * pick who to switch to: while impersonating, `req.bearerToken` is the current target's, so the plain route
+   * would only find people that target can see. Gated on the admin's `can_impersonate` claim.
+   */
+  public async searchUsersAsImpersonator(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.runUserSearch(req, res, next, true);
+  }
+
+  /**
+   * GET /search/users/:lfid/work-experiences
+   * Returns the computed current employer ({name, id}) for any user by LFID, or null.
+   * Used to pre-fill the organization field in the add-member dialog.
+   *
+   * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
+   * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
+   * is a single computed org reference (no employment dates or job titles) to limit PII exposure.
+   * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
+   */
+  public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { lfid } = req.params;
+    const startTime = logger.startOperation(req, 'get_user_work_experiences', { lfid });
+
+    try {
+      if (!lfid || typeof lfid !== 'string') {
+        return next(
+          ServiceValidationError.forField('lfid', 'lfid path parameter is required', {
+            operation: 'get_user_work_experiences',
+            service: 'search_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
+      const employer: CommitteeOrganizationReference | null = currentEmployerFromWorkExperiences(workExperiences);
+
+      logger.success(req, 'get_user_work_experiences', startTime, { lfid, found: !!employer });
+
+      res.json(employer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  private async runUserSearch(req: Request, res: Response, next: NextFunction, asImpersonator: boolean): Promise<void> {
     const { name, type, tags } = req.query;
     const startTime = logger.startOperation(req, 'search_users', {
       has_name: !!name,
       has_type: !!type,
       has_tags: !!tags,
+      as_impersonator: asImpersonator,
     });
 
     try {
@@ -104,7 +156,8 @@ export class SearchController {
       };
 
       // Perform the search
-      const results = await this.searchService.searchUsers(req, searchParams);
+      const options = asImpersonator ? { bearerToken: await resolveImpersonatorToken(req, 'search_users') } : undefined;
+      const results = await this.searchService.searchUsers(req, searchParams, options);
 
       logger.success(req, 'search_users', startTime, {
         result_count: results.results.length,
@@ -112,42 +165,6 @@ export class SearchController {
       });
 
       res.json(results);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /search/users/:lfid/work-experiences
-   * Returns the computed current employer ({name, id}) for any user by LFID, or null.
-   * Used to pre-fill the organization field in the add-member dialog.
-   *
-   * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
-   * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
-   * is a single computed org reference (no employment dates or job titles) to limit PII exposure.
-   * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
-   */
-  public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { lfid } = req.params;
-    const startTime = logger.startOperation(req, 'get_user_work_experiences', { lfid });
-
-    try {
-      if (!lfid || typeof lfid !== 'string') {
-        return next(
-          ServiceValidationError.forField('lfid', 'lfid path parameter is required', {
-            operation: 'get_user_work_experiences',
-            service: 'search_controller',
-            path: req.path,
-          })
-        );
-      }
-
-      const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
-      const employer: CommitteeOrganizationReference | null = currentEmployerFromWorkExperiences(workExperiences);
-
-      logger.success(req, 'get_user_work_experiences', startTime, { lfid, found: !!employer });
-
-      res.json(employer);
     } catch (error) {
       next(error);
     }

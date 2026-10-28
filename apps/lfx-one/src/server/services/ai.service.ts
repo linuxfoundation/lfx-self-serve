@@ -4,7 +4,6 @@
 import {
   AI_AGENDA_SYSTEM_PROMPT,
   AI_BRIEF_ACTION_ITEMS_SYSTEM_PROMPT,
-  AI_MODEL,
   AI_NEWSLETTER_SYSTEM_PROMPT,
   AI_RECONCILIATION_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
@@ -32,15 +31,21 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { AiProxyError, aiErrorDetail } from '../helpers/ai-error.helper';
+import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { logger } from './logger.service';
 
 export class AiService {
-  private readonly model = AI_MODEL;
-
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _aiProxyUrl: string | undefined;
   private _aiKey: string | undefined;
+
+  // AI_MODEL env var, falling back to the AI_MODEL constant; memoized in the helper so
+  // campaign-proxy.service.ts sends the same name.
+  private get model(): string {
+    return getAiModel();
+  }
 
   private get aiProxyUrl(): string {
     return (this._aiProxyUrl ??= process.env['AI_PROXY_URL'] || '');
@@ -94,7 +99,7 @@ export class AiService {
           },
         ],
         max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        ...getAiSamplingParams(),
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -164,7 +169,7 @@ export class AiService {
         // which we don't want — agendas have a documented ~2k character
         // target and shouldn't drift larger.
         max_tokens: NEWSLETTER_AI_MAX_TOKENS,
-        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        ...getAiSamplingParams(),
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -232,7 +237,7 @@ export class AiService {
           { role: 'user', content: `Weekly committee brief:\n"""\n${request.brief_text.trim()}\n"""` },
         ],
         max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        ...getAiSamplingParams(),
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -321,7 +326,7 @@ export class AiService {
           { role: 'user', content: this.buildReconciliationPrompt(request) },
         ],
         max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-        temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+        ...getAiSamplingParams(),
         response_format: {
           type: 'json_schema',
           json_schema: {
@@ -623,9 +628,14 @@ export class AiService {
       signal: AbortSignal.timeout(timeoutMs),
     });
 
+    // Same three guards the campaign brief path uses, from the same helper: the body read cannot
+    // throw over the status it is reporting, the body cannot bury the log line, and the key cannot
+    // ride out in it. Every caller puts this message in a log: `generateMeetingAgenda` and
+    // `generateNewsletter` pass it to logger.error directly, and `extractBriefActionItems` and
+    // `reconcileAttendees` fold it into the message their own caller logs at WARN. `AI_API_KEY`
+    // travels in the Authorization header the proxy is free to echo back.
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI request failed: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new AiProxyError(`AI request failed: ${response.status} ${response.statusText}`, await aiErrorDetail(response, this.aiKey));
     }
 
     return response.json();

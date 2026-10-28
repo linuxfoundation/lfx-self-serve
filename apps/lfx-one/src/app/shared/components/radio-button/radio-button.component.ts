@@ -17,6 +17,8 @@ export class RadioButtonComponent {
   public readonly value = input.required<any>();
   public readonly label = input<string>('');
   public readonly inputId = input<string>();
+  // Grows the row to a 44px tap target and makes the whole label area selectable (touch surfaces).
+  public readonly touchTarget = input<boolean>(false);
 
   // Events
   public readonly onChange = output<any>();

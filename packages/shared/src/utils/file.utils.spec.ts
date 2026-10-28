@@ -3,7 +3,64 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadFromUrl, formatFileSize, isSafeUploadFileName, parseContentDispositionFilename } from './file.utils';
+import { ALLOWED_FILE_TYPES } from '../constants/file-upload.constants';
+import { downloadFromUrl, formatFileSize, isFileTypeAllowed, isSafeUploadFileName, parseContentDispositionFilename, resolveFileMimeType } from './file.utils';
+
+describe('resolveFileMimeType', () => {
+  it.each([
+    ['', 'agenda.pdf', 'application/pdf'],
+    ['application/octet-stream', 'agenda.pdf', 'application/pdf'],
+    ['', 'AGENDA.PDF', 'application/pdf'],
+    ['application/octet-stream', 'Minutes.DocX', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['', 'notes.md', 'text/markdown'],
+    ['', 'notes.markdown', 'text/markdown'],
+    ['', 'budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['', 'deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('infers the MIME type for %p on %p', (mimeType, fileName, expected) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(expected);
+  });
+
+  it.each([
+    ['application/pdf', 'agenda.pdf'],
+    ['text/x-markdown', 'notes.md'],
+    ['application/x-pdf', 'agenda.txt'],
+    ['application/zip', 'agenda.pdf'],
+  ])('keeps the explicit MIME type %p on %p unchanged', (mimeType, fileName) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(mimeType);
+  });
+
+  it.each([
+    ['', 'archive.zip'],
+    ['application/octet-stream', 'archive.zip'],
+    ['', 'README'],
+    ['application/octet-stream', 'README'],
+  ])('keeps %p when %p has no known extension', (mimeType, fileName) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(mimeType);
+  });
+});
+
+describe('isFileTypeAllowed alongside resolveFileMimeType', () => {
+  it.each([
+    ['', 'agenda.pdf'],
+    ['application/octet-stream', 'AGENDA.PDF'],
+    ['', 'notes.md'],
+    ['application/octet-stream', 'deck.pptx'],
+    ['application/pdf', 'agenda.pdf'],
+  ])('accepts %p on %p and resolves an allowed MIME type', (mimeType, fileName) => {
+    expect(isFileTypeAllowed(mimeType, fileName, ALLOWED_FILE_TYPES)).toBe(true);
+    expect(ALLOWED_FILE_TYPES).toContain(resolveFileMimeType(mimeType, fileName));
+  });
+
+  it.each([
+    ['application/zip', 'agenda.pdf'],
+    ['', 'archive.zip'],
+    ['application/octet-stream', 'archive.zip'],
+    ['', 'README'],
+    ['application/octet-stream', 'README'],
+  ])('still rejects %p on %p', (mimeType, fileName) => {
+    expect(isFileTypeAllowed(mimeType, fileName, ALLOWED_FILE_TYPES)).toBe(false);
+  });
+});
 
 describe('parseContentDispositionFilename', () => {
   it('reads the quoted ASCII fallback form', () => {

@@ -11,7 +11,12 @@ import type {
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
-import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import {
+  MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
+  MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS,
+  MENTORSHIP_MENTEE_STATUS_LABELS,
+  MENTORSHIP_MENTOR_STATUS_LABELS,
+} from './mentorship.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -196,8 +201,8 @@ export const MENTORSHIP_MENTOR_PICKER_LIST_PADDING = '0.5rem';
  */
 export const MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS = { autoSize: false };
 
-/** Note on a disabled picker option the mentor holds an invitation to. */
-export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = 'Invited';
+/** Note on a disabled picker option the mentor holds an invitation to: the admin Mentors tab's wording for it. */
+export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited;
 
 /**
  * Note on a disabled picker option a request found gone (404). A page of programs already read still
@@ -234,6 +239,31 @@ export const MENTORSHIP_MENTOR_WITHDRAW_ERROR_SUMMARY = 'Could not withdraw the 
 export const MENTORSHIP_MENTOR_WITHDRAW_STALE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
   404: 'This request no longer exists. Your requests have been refreshed.',
   409: 'This request is no longer pending, so it cannot be withdrawn. Your requests have been refreshed.',
+};
+
+/** Badge on an invitation row in the request list, worded and colored as the admin Mentors tab shows an invited mentor. */
+export const MENTORSHIP_MENTOR_INVITATION_STATUS_LABEL = MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited;
+export const MENTORSHIP_MENTOR_INVITATION_STATUS_BADGE_CLASS = MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES.invited;
+
+export const MENTORSHIP_MENTOR_INVITATION_ACCEPT_LABEL = 'Accept';
+export const MENTORSHIP_MENTOR_INVITATION_DECLINE_LABEL = 'Decline';
+export const MENTORSHIP_MENTOR_INVITATION_DECLINE_CONFIRM =
+  'Are you sure you want to decline this invitation? Only a program administrator can invite you again.';
+export const MENTORSHIP_MENTOR_INVITATION_DECLINE_CONFIRM_HEADER = 'Decline Invitation';
+export const MENTORSHIP_MENTOR_INVITATION_ACCEPT_SUCCESS_SUMMARY = 'Invitation accepted';
+export const MENTORSHIP_MENTOR_INVITATION_ACCEPT_SUCCESS_DETAIL = 'You are now a mentor of this program.';
+export const MENTORSHIP_MENTOR_INVITATION_DECLINE_SUCCESS_SUMMARY = 'Invitation declined';
+export const MENTORSHIP_MENTOR_INVITATION_DECLINE_SUCCESS_DETAIL = 'You have declined the invitation to mentor this program.';
+export const MENTORSHIP_MENTOR_INVITATION_ERROR_SUMMARY = 'Could not answer the invitation';
+
+/**
+ * Accept or decline failures that mean the mentor's view of the invitation is out of date, keyed by status:
+ * 404 is an invitation that is gone or not the mentor's, and 409 one already answered or revoked. The drawer
+ * shows this copy and re-reads the requests; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTOR_INVITATION_STALE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  404: 'This invitation no longer exists. Your requests have been refreshed.',
+  409: 'This invitation has already been answered or withdrawn. Your requests have been refreshed.',
 };
 
 export const MENTORSHIP_MENTOR_REQUEST_SUCCESS_SUMMARY = 'Request sent';

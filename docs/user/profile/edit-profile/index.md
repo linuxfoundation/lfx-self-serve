@@ -4,7 +4,7 @@ description: How to update your personal information, photo, location, and conta
 audience: [all]
 product_area: Profile
 tags: [profile, edit, about-me, bio, photo, location]
-last_updated: 2026-08-12
+last_updated: 2026-10-20
 intercom_collection: Profile
 ---
 
@@ -46,7 +46,7 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 
 ### Primary email address
 
-Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. Choosing a new primary email applies immediately — it is saved as soon as you select it, not on **Save Changes**. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/).
+Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. Choosing a new primary email applies immediately — it is saved as soon as you select it, not on **Save Changes**. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/). Changing your primary email doesn't change where meeting invitations go — they stay on their current address.
 
 ### Location information
 

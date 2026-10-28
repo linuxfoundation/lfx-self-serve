@@ -10,7 +10,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
-import { IDENTITY_LINK_ERROR_MESSAGES, PROFILE_AUTH_ERROR_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  IDENTITY_ALREADY_CONNECTED_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
+  IDENTITY_ALREADY_CONNECTED_SUMMARY,
+  IDENTITY_LINK_ERROR_MESSAGES,
+  PROFILE_AUTH_ERROR_MESSAGES,
+} from '@lfx-one/shared/constants';
 import {
   AddAccountDialogData,
   ConnectedIdentityFull,
@@ -74,9 +80,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       .map((enriched) => this.mapToConnectedIdentity(enriched))
   );
   public readonly loading: Signal<boolean> = computed(() => !this.identitiesState().loaded);
-  public readonly isEmpty: Signal<boolean> = computed(
-    () => !this.identitiesLoadError() && this.identitiesState().loaded && this.identitiesState().identities.length === 0
-  );
+  public readonly isEmpty: Signal<boolean> = computed(() => !this.identitiesLoadError() && this.identitiesState().loaded && this.identities().length === 0);
 
   // Raw EnrichedIdentity[] passed to ProfileLinuxEmailComponent to avoid a duplicate
   // getIdentities() fetch when both panels render on the Identities tab.
@@ -85,6 +89,8 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
+  // An unverified primary has no Verify action here, so it alone must not prompt the user to verify.
+  public readonly hasActionableUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().some((i) => !i.isPrimary));
   // Preferred meeting-invitation email (meeting-service). Its identity cannot be removed here — doing so
   // would orphan the meeting-service preference. Null address = no override (uses primary).
   public readonly meetingInviteEmail: Signal<string | null> = computed(() => this.identitiesState().inviteEmail);
@@ -99,6 +105,15 @@ export class ProfileIdentitiesComponent implements OnInit {
       this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
       this.userService.refreshUserIdentities();
       this.clearQueryParams();
+    } else if (params['success'] === IDENTITY_ALREADY_CONNECTED_STATUS) {
+      // #4327: the reconnected social identity is already this account's — a no-op, not a new link
+      // and not a conflict. Browser-only so SSR renders no toast that hydration would repeat. The
+      // refresh shows the canonical identity states; nothing here claims a row was verified.
+      if (isPlatformBrowser(this.platformId)) {
+        this.messageService.add({ severity: 'success', summary: IDENTITY_ALREADY_CONNECTED_SUMMARY, detail: IDENTITY_ALREADY_CONNECTED_MESSAGE });
+        this.userService.refreshUserIdentities();
+        this.clearQueryParams();
+      }
     } else if (params['error'] === 'already_linked') {
       this.conflictDetected.set(true);
       this.clearQueryParams();
@@ -241,7 +256,7 @@ export class ProfileIdentitiesComponent implements OnInit {
       identifier: enriched.value,
       state: enriched.displayState === 'verified' ? 'verified' : 'unverified',
       icon: enriched.icon,
-      isPrimary: false,
+      isPrimary: enriched.isPrimary === true,
       ...(enriched.auth0UserId ? { auth0UserId: enriched.auth0UserId } : {}),
     };
   }

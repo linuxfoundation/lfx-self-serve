@@ -191,19 +191,27 @@ Campaign endpoints are being moved off this application's vendor-direct integrat
 lfx-v2-campaign-service one at a time (LFXV2-3070). Each move is gated so it can be reversed by
 changing a value here rather than by shipping a revert.
 
-| Parameter                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                          | Required | Default  |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`            | Serves campaign job status from campaign-service; see the accepted values below                                                                                                                                                                                                                                                                                                                      | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`          | Persists the generated brief in campaign-service instead of only in the browser tab                                                                                                                                                                                                                                                                                                                  | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                  | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                       | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`         | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                                                                            | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`         | Serves the LinkedIn, Meta and Reddit account monitors from campaign-service and enables the campaign-service-only Microsoft, X and HubSpot monitor routes (#2519) — reads with the project's OWN connection only; a mixed rollout is safe (an off pod refuses a connection-picked read with a retryable 409); see `values.yaml`                                                                      | No       | off      |
+| Parameter                                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Required | Default  |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_JOBS`               | Serves campaign job status from campaign-service; see the accepted values below                                                                                                                                                                                                                                                                                                                                                                                                                                | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`             | Persists the generated brief in campaign-service instead of only in the browser tab                                                                                                                                                                                                                                                                                                                                                                                                                            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`             | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                                                                                                                            | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`         | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                                                                                                                                        | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS`    | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                                                                                                                                 | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`            | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` | Applies the flight dates to Microsoft Ads, sent as `microsoftConfig.startDate` / `endDate`. Requires [campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409) deployed (v1.0.21 drops the dates silently) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                    | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` | Collects the Meta Instagram account id and EU/EEA DSA beneficiary/payor, sent as `metaConfig.instagramUserId` / `dsaBeneficiary` / `dsaPayor`, and blocks Create until they are filled in where Meta needs them. Requires [campaign-service #414](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/414) deployed and the create pipeline on; see `values.yaml`                                                                                                                                  | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH`  | Replaces the Implement tab's typed postal-code geo target id with a search of Google's geo target table. Requires [campaign-service #411](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/411) released and deployed (older releases have no suggest route) and the create pipeline on; see `values.yaml`                                                                                                                                                                                      | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`      | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`      | Offers the brief's stored image library in each Google creative image slot — upload, or pick a stored image that fits the slot — sent as `{ imageAssetId }` entries beside pasted image URLs. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                       | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS`        | Offers a PNG/JPEG image upload in the Meta create section, sent as `imageAssetId` on every ad. NOT about URL signing: Meta's dispatch uploads the stored bytes to the ad account's image library. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS`    | Offers a PNG/JPEG image upload in the LinkedIn create section, sent as `imageAssetId` on every variant (the dark post's thumbnail). NOT about URL signing: LinkedIn's dispatch uploads the stored bytes through the Images API. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                                                         | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS`   | Offers a PNG/JPEG image upload in the Microsoft create section, sent as `imageAssetId` and attached as an image ad extension (at most 76,800 bytes). NOT about URL signing: Microsoft's dispatch uploads the stored bytes to the account's media library. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                               | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`      | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                                                                                                                           | No       | `"true"` |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`           | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                                                                                                                           | No       | on       |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS`    | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml`                                                                                                           | No       | on       |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`        | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                                                                                                                                                                                      | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`            | Serves the LinkedIn, Meta and Reddit account monitors from campaign-service and enables the campaign-service-only Microsoft, X and HubSpot monitor routes (#2519) — reads with the project's OWN connection only — and Google Ads account discovery, which is root-only because a project with no connection of its own is answered from the LF system credential and can list LF-wide accounts; a mixed rollout is safe (an off pod refuses a connection-picked read with a retryable 409); see `values.yaml` | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -219,8 +227,9 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The other six flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._INSIGHTS`,
-`..._KEYWORD_ACTIONS` and `..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._INSIGHTS`,
+`..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`, `..._META_ASSETS`) and `..._MONITOR`
+-- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
 matters to an operator deciding whether an override is needed:
 
@@ -228,10 +237,10 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
-  are about the create pipeline only; each of these six carries its own note in `values.yaml`.
+  are about the create pipeline only; each of the flags outside the enable order carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
@@ -338,6 +347,87 @@ would be lost while the job reports success. It also needs the create pipeline o
 legacy creator never reads `bidding`. Off (the default), the Bidding control is hidden and a create
 request carrying `bidding` is refused with a 400. On, the form sends `bidding` on every LinkedIn,
 Meta, Microsoft Ads and Reddit config — `{"strategy":"automatic"}` unless the operator picks Manual.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` is a fourth (decision D3): does the deployed
+campaign-service have creative-asset URL signing configured — `CREATIVE_ASSET_URL_SIGNING_KEY` and
+an https `CREATIVE_ASSET_PUBLIC_BASE_URL` (LFXV2-2665)? Reddit only fetches a promoted-post image from
+a public URL, and a short-lived signed URL is how an uploaded asset becomes one; without signing,
+campaign-service refuses every `redditConfig.imageAssetId` with a 400. It also needs the create
+pipeline on, because the legacy creator never reads `imageAssetId`. Off (the default), the Reddit
+section offers only the pasted image URL and a create request carrying `imageAssetId` is refused
+with a 400. On, the section also offers a PNG/JPEG upload (up to 10 MB), stored against the brief
+and sent as `imageAssetId` in place of `imageUrl`.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` is a fifth, and asserts something different from its
+Reddit sibling: does the deployed campaign-service resolve **Google** creative asset ids? It is
+**not** about URL signing — Google's dispatch path reads the stored bytes and POSTs them to the
+Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service. Every release from
+v1.0.21 resolves them ([campaign-service #394](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/394)),
+so it is **on** in this chart, like the Meta flag; turn it off only for a deployment pinned to an older
+campaign-service, which cannot decode an asset entry and would fail the Google create. It needs the
+create pipeline on for the same reason the Reddit flag does. On, each Google creative image slot
+(Demand Gen, Performance Max and Display) offers the brief's library: upload a PNG/JPEG into it, or
+pick a stored image that fits the slot's aspect ratio and minimum size. A pick is sent as an
+`{ "imageAssetId": "<id>" }` entry in the slot's own array, beside any pasted image URLs. Off, the
+library controls are hidden, Create is blocked while a stored image is still held, and a create
+request carrying a Google `imageAssetId` is refused with a 400. The two are siblings rather than one
+flag so either platform's asset support can ship without the other: the shared upload route accepts
+a request on **any** asset flag's authority, and the brief's asset list, get, plan and delete routes
+are gated on `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` alone, so a deployment can always read and prune
+the library it already holds.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS` is a sixth, of the Google kind: it asserts that the
+deployed campaign-service resolves **Meta** creative asset ids, which every release from v1.0.21
+does, and nothing about URL signing, since Meta's dispatch path uploads the stored bytes to the ad
+account's image library. It is **on** in this chart, like the Google flag, because nothing has to be
+configured on campaign-service first. Off, the Meta section offers only the pasted image URL and a create request
+carrying a Meta `imageAssetId` is refused with a 400. The upload route accepts a request on any of
+any asset flag's authority.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` is a seventh, of the Meta kind: it asserts that the
+deployed campaign-service resolves **LinkedIn** creative asset ids, which every release from
+v1.0.21 does, uploading the stored bytes through LinkedIn's Images API as each dark post's
+thumbnail. It is **on** in this chart for the same reason as the Meta flag. Off, the LinkedIn
+section offers no image at all (LinkedIn takes no image URL) and a create request carrying a
+LinkedIn `imageAssetId` is refused with a 400. The upload route accepts a request on any asset
+flag's authority.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` is an eighth, of the Meta kind: it asserts that the
+deployed campaign-service resolves **Microsoft** creative asset ids, which every release from
+v1.0.21 does, uploading the stored bytes to the ad account's media library and attaching them to
+the campaign as an image ad extension. It is **on** in this chart for the same reason as the Meta
+flag. Off, the Microsoft section offers no image and a create request carrying
+`microsoftConfig.imageAssetId` is refused with a 400. The upload route accepts a request on any
+asset flag's authority.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` is a ninth, of the Bidding kind: does the
+deployed campaign-service understand `microsoftConfig.startDate` / `endDate` from
+[campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409)? It
+**must stay off until #409 is released and deployed**: v1.0.21 drops both keys and creates the
+campaign with no flight while the job reports success. It also needs the create pipeline on, because
+the legacy creator never reads Microsoft dates. Off (the default), the form sends no Microsoft dates
+and keeps its "ignores the flight dates" warning, and a create request carrying either key is
+refused with a 400. On, the form sends the flight dates on `microsoftConfig` exactly as it does on
+`metaConfig`.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` is another of the Bidding kind: does the deployed
+campaign-service enforce the Meta launch-readiness rules from
+[campaign-service #414](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/414)? That
+release refuses with a 400 an EU-targeted Meta create without both `dsaBeneficiary` and `dsaPayor`,
+a one-sided pair, and a non-numeric `instagramUserId`. Keep it **off until #414 is released and
+deployed**, and keep the create pipeline on. Off (the default), the Meta section shows none of the
+three inputs and a create request carrying any of the keys is refused with a 400. On, the form asks
+for the Instagram account id when an Instagram placement is enabled and for both disclosures when an
+EU or EEA country is targeted, and Create stays blocked until they are valid.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` is an eighth, of the same kind: does the deployed
+campaign-service have `GET /projects/{project_id}/google-ads/geo-targets` from
+[campaign-service #411](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/411)? It
+**must stay off until #411 is released and deployed**: an older campaign-service has no suggest route,
+so every search would fail. It also needs the create pipeline on, because postal-code ids reach a
+campaign on that road only. Off (the default), the Implement tab asks for a typed geo target constant
+id and the search route answers 404. On, the operator searches by postal code or place name and picks
+a result; its id is sent in `googleAdsConfig.geoTargets` exactly as a typed one is.
 
 **Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
 creates a Video campaign, so campaign-service refuses one in the first statement of
@@ -685,10 +775,16 @@ as long as the twin route is deployed, which is why step 1 precedes it.
 
 #### AI Service Configuration
 
-| Parameter                  | Description                              | Required | Default |
-| -------------------------- | ---------------------------------------- | -------- | ------- |
-| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
-| `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
+| Parameter                  | Description                                                                                                                                                                           | Required | Default             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible)                                                                                                                                              | **Yes**  | -                   |
+| `environment.AI_MODEL`     | Model sent to the proxy — a short name its `model_list` publishes. Unset or empty falls back to the code default. `temperature` is sent only to models known to accept it (see below) | No       | `claude-sonnet-4-5` |
+| `environment.AI_API_KEY`   | API key for AI service                                                                                                                                                                | **Yes**  | -                   |
+
+`AI_MODEL` makes a model swap a values change rather than a release. The server logs the resolved
+model and its sampling mode once at startup (`ai_model_config`). Claude Opus 4.7 or later, any
+5-series Claude model and any name the server does not recognise are sent no sampling parameter,
+because those models answer a non-default `temperature` with a `400`.
 
 #### Guild AI Integration
 
@@ -701,6 +797,7 @@ Server-side credentials for the Marketing OS agents proxy. Consumed only by the 
 | `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                           | No       | `linux-foundation`     |
 | `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                       | No       | `marketing-os`         |
 | `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                     | No       | Marketing OS folder    |
 | `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration

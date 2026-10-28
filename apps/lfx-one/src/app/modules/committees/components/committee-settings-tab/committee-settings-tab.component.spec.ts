@@ -10,6 +10,7 @@ import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,6 +36,7 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
     uid: 'committee-1',
     name: 'Test Committee',
     project_uid: 'project-1',
+    category: 'Board',
     has_slack_webhook: false,
   } as Committee;
 
@@ -48,7 +50,8 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: CommitteeService, useValue: { updateCommittee, getCommittee: vi.fn(() => of(COMMITTEE)) } },
+        { provide: CommitteeService, useValue: { updateCommittee, getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
         { provide: LensService, useValue: { activeLens: signal('project') } },
         {
@@ -289,5 +292,150 @@ describe('CommitteeSettingsTabComponent — Slack webhook (LFXV2-3080)', () => {
 
     expect(emitted).toHaveLength(0);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Must be a valid Slack Incoming Webhook URL' }));
+  });
+});
+
+describe('CommitteeSettingsTabComponent — general settings (name, type, parent)', () => {
+  let fixture: ComponentFixture<CommitteeSettingsTabComponent>;
+  let component: CommitteeSettingsTabComponent;
+  let updateCommittee: ReturnType<typeof vi.fn>;
+  let confirmationService: ConfirmationService;
+
+  const COMMITTEE: Committee = {
+    uid: 'committee-1',
+    name: 'Test Committee',
+    project_uid: 'project-1',
+    category: 'Board',
+    parent_uid: 'parent-1',
+    has_slack_webhook: false,
+  } as Committee;
+
+  beforeEach(async () => {
+    updateCommittee = vi.fn(() => of(COMMITTEE));
+
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: CommitteeService, useValue: { updateCommittee, getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) } },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of([])),
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    confirmationService = TestBed.inject(ConfirmationService);
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+  });
+
+  it('patches name, category and parent_uid from the committee', () => {
+    expect(component.form.getRawValue()).toMatchObject({ name: 'Test Committee', category: 'Board', parent_uid: 'parent-1' });
+  });
+
+  it('saves a rename without a confirmation, sending only the changed general field', () => {
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    component.form.patchValue({ name: '  Renamed  ' });
+
+    component.saveSettings();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(updateCommittee).toHaveBeenCalledOnce();
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload.name).toBe('Renamed');
+    expect(payload).not.toHaveProperty('category');
+    expect(payload).not.toHaveProperty('parent_uid');
+  });
+
+  it('omits name, category and parent_uid when none were touched — echoing a stale page would revert another writer', () => {
+    component.form.patchValue({ join_mode: 'open' });
+
+    component.saveSettings();
+
+    const payload = updateCommittee.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('name');
+    expect(payload).not.toHaveProperty('category');
+    expect(payload).not.toHaveProperty('parent_uid');
+    expect(payload.join_mode).toBe('open');
+  });
+
+  it('still saves unrelated settings for a group that has no category', async () => {
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, category: undefined } as unknown as Committee);
+    await fixture.whenStable();
+    component.form.patchValue({ join_mode: 'open' });
+
+    expect(component.form.invalid).toBe(false);
+    component.saveSettings();
+
+    expect(updateCommittee).toHaveBeenCalledOnce();
+    expect(updateCommittee.mock.calls[0][1]).not.toHaveProperty('category');
+  });
+
+  it('words the type-change confirmation without "undefined" when the group had no type', async () => {
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentRef.setInput('committee', { ...COMMITTEE, category: undefined } as unknown as Committee);
+    await fixture.whenStable();
+    component.form.patchValue({ category: 'Maintainers' });
+
+    component.saveSettings();
+
+    const { message } = confirm.mock.calls[0][0];
+    expect(message).toContain('to Maintainers');
+    expect(message).not.toMatch(/undefined|null/);
+  });
+
+  it('asks for confirmation before saving a changed type and does not save until accepted', () => {
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    component.form.patchValue({ category: 'Maintainers' });
+
+    component.saveSettings();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(updateCommittee).not.toHaveBeenCalled();
+
+    confirm.mock.calls[0][0].accept?.();
+
+    expect(updateCommittee).toHaveBeenCalledOnce();
+    expect(updateCommittee.mock.calls[0][1]).toMatchObject({ category: 'Maintainers' });
+  });
+
+  it('never saves when the type-change confirmation is rejected', () => {
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    component.form.patchValue({ category: 'Maintainers' });
+
+    component.saveSettings();
+    confirm.mock.calls[0][0].reject?.();
+
+    expect(updateCommittee).not.toHaveBeenCalled();
+  });
+
+  it('sends parent_uid: null when the parent is cleared', () => {
+    component.form.patchValue({ parent_uid: null });
+
+    component.saveSettings();
+
+    expect(updateCommittee.mock.calls[0][1].parent_uid).toBeNull();
+  });
+
+  it('marks the form invalid for a whitespace-only name, so Save is disabled instead of silently dropping it', () => {
+    component.form.patchValue({ name: '   ' });
+
+    expect(component.form.controls.name.invalid).toBe(true);
+    expect(component.form.invalid).toBe(true);
   });
 });

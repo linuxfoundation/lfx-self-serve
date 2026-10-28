@@ -24,6 +24,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { validateProjectPermissionRole } from '../helpers/project-permission.helper';
 import { getStringQueryParam, getValidatedDuplicateIdentifiers, validateUidParameter } from '../helpers/validation.helper';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
@@ -297,14 +298,9 @@ export class ProjectController {
       }
 
       // Validate role value
-      if (!['view', 'manage'].includes(userData.role)) {
-        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
-          operation: 'add_user_project_permissions',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
+      const addRoleError = validateProjectPermissionRole(userData.role, 'add_user_project_permissions', req.path);
+      if (addRoleError) {
+        next(addRoleError);
         return;
       }
 
@@ -391,14 +387,9 @@ export class ProjectController {
       }
 
       // Validate role value
-      if (!['view', 'manage'].includes(roleData.role)) {
-        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
-          operation: 'update_user_role_project_permissions',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
+      const updateRoleError = validateProjectPermissionRole(roleData.role, 'update_user_role_project_permissions', req.path);
+      if (updateRoleError) {
+        next(updateRoleError);
         return;
       }
 

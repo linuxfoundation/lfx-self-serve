@@ -6,15 +6,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { NgClass } from '@angular/common';
-import { AnalyticsService } from '@services/analytics.service';
+import { SelectComponent } from '@components/select/select.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { PopoverModule } from 'primeng/popover';
-import { of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { FoundationProjectsDetailGroupedResponse, ProjectContext, ProjectTableRow } from '@lfx-one/shared/interfaces';
+import type { FormControl, FormGroup } from '@angular/forms';
+import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 import { HealthMetricsGateComponent } from './health-metrics-gate.component';
@@ -27,33 +25,11 @@ class LegacyStubComponent {}
 @Component({ selector: 'lfx-route-stub', template: '' })
 class RouteStubComponent {}
 
-function projectsResponse(...projects: [string, string][]): FoundationProjectsDetailGroupedResponse {
-  return {
-    groups: [
-      {
-        foundationSlug: 'acme-foundation',
-        foundationName: 'Acme Foundation',
-        foundationUid: 'uid-1',
-        projects: projects.map(([projectSlug, projectName]) => ({ projectSlug, projectName }) as ProjectTableRow),
-      },
-    ],
-    totalCount: projects.length,
-    complete: true,
-  };
-}
-
 describe('HealthMetricsGateComponent', () => {
   let fixture: ComponentFixture<HealthMetricsGateComponent>;
   const impersonating = signal(false);
-  const selectedFoundation = signal<ProjectContext | null>({ slug: 'acme-foundation' } as ProjectContext);
-  let loadFoundationProjectsDetailGrouped: ReturnType<typeof vi.fn>;
 
-  async function render(
-    overviewEnabled: WritableSignal<boolean>,
-    url = '/',
-    projects: FoundationProjectsDetailGroupedResponse = projectsResponse(['beta-mesh', 'Beta Mesh'], ['alpha', 'Alpha'])
-  ): Promise<void> {
-    loadFoundationProjectsDetailGrouped = vi.fn(() => of(projects));
+  async function render(overviewEnabled: WritableSignal<boolean>, url = '/'): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsGateComponent],
       providers: [
@@ -61,12 +37,10 @@ describe('HealthMetricsGateComponent', () => {
         provideNoopAnimations(),
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => overviewEnabled } },
         { provide: UserService, useValue: { impersonating } },
-        { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: AnalyticsService, useValue: { loadFoundationProjectsDetailGrouped } },
       ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
-        set: { imports: [NgClass, PopoverModule, RouterLink, RouterLinkActive, RouterOutlet, LegacyStubComponent] },
+        set: { imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, SelectComponent, LegacyStubComponent] },
       })
       .compileComponents();
 
@@ -82,7 +56,6 @@ describe('HealthMetricsGateComponent', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     impersonating.set(false);
-    selectedFoundation.set({ slug: 'acme-foundation' } as ProjectContext);
   });
 
   function query(testId: string): HTMLElement | null {
@@ -92,6 +65,10 @@ describe('HealthMetricsGateComponent', () => {
   async function settle(): Promise<void> {
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function periodForm(): FormGroup<{ range: FormControl<HealthMetricsRange> }> {
+    return (fixture.componentInstance as unknown as { periodForm: FormGroup<{ range: FormControl<HealthMetricsRange> }> }).periodForm;
   }
 
   function currentUrl(): string {
@@ -129,7 +106,10 @@ describe('HealthMetricsGateComponent', () => {
   it('renders every tab, each linking to its Level 2 page', async () => {
     await render(signal(true));
 
-    const labels = Array.from<Element>(fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-tab-"]')).map((el) => el.textContent?.trim());
+    // The first span is the label; the second is its hidden width-reserving copy.
+    const labels = Array.from<Element>(fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-tab-"]')).map((el) =>
+      el.querySelector('span > span')?.textContent?.trim()
+    );
     expect(labels).toEqual(['Overview', 'Engagement', 'Events', 'Members', 'Non-Members', 'Training']);
 
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-overview"]').getAttribute('href')).toBe('/foundation/health-metrics');
@@ -142,6 +122,25 @@ describe('HealthMetricsGateComponent', () => {
       '/foundation/health-metrics/non-members'
     );
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-training"]').getAttribute('href')).toBe('/foundation/health-metrics/training');
+  });
+
+  // The design's own title type rather than the shared page header's.
+  it('titles the page in light Roboto Slab at 24px over the refresh note', async () => {
+    await render(signal(true));
+
+    expect(query('health-metrics-page')?.classList).toContain('max-w-[1384px]');
+    for (const cls of ['font-display', 'font-light', 'text-[24px]', 'text-gray-900']) expect(query('health-metrics-title')?.classList).toContain(cls);
+    for (const cls of ['text-[13px]', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
+    expect(query('health-metrics-subtitle')?.textContent?.trim()).toBe('Operational health across your foundation. Data updated every 24-48 hours.');
+  });
+
+  // The design's `.tab.on`: a dark medium-weight label over a blue underline.
+  it('marks the selected tab with a dark label over the accent underline', async () => {
+    await render(signal(true), '/foundation/health-metrics');
+
+    const selected = fixture.nativeElement.querySelector('[aria-current="page"]') as HTMLElement;
+    expect(selected?.getAttribute('data-testid')).toBe('health-metrics-tab-overview');
+    for (const cls of ['!text-gray-900', '!border-blue-500', 'font-medium']) expect(selected.classList).toContain(cls);
   });
 
   it('measures the sticky header via ResizeObserver and publishes it as the shared sticky offset', async () => {
@@ -197,178 +196,53 @@ describe('HealthMetricsGateComponent', () => {
     impersonating.set(true);
     await render(signal(true));
 
-    const header = fixture.nativeElement.querySelector('header');
-    expect(header.className).toContain('lg:top-12');
-    expect(header.className).not.toContain('lg:top-0');
+    const header = query('health-metrics-sticky-header');
+    expect(header?.className).toContain('lg:top-[36px]');
+    expect(header?.className).not.toContain('lg:top-0');
   });
 
-  describe('project selector', () => {
-    it('never fetches the project list while the flag is off', async () => {
-      await render(signal(false), '/foundation/health-metrics/engagement');
+  describe('period', () => {
+    it('offers the four periods as a pill and as the narrow-width dropdown, with YTD selected', async () => {
+      await render(signal(true));
 
-      expect(loadFoundationProjectsDetailGrouped).not.toHaveBeenCalled();
-    });
-
-    it('stays inert on a tab that does not follow it', async () => {
-      await render(signal(true), '/foundation/health-metrics?projectScope=alpha');
-
-      const trigger = query('health-metrics-overview-project-selector');
-      expect(trigger?.getAttribute('aria-disabled')).toBe('true');
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('All projects');
-
-      trigger?.click();
-      await settle();
-      expect(query('health-metrics-project-menu')).toBeNull();
-    });
-
-    it('lists all projects first, then the foundation projects by name, and writes the pick to the URL', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement#committees');
-
-      const trigger = query('health-metrics-overview-project-selector');
-      expect(trigger?.getAttribute('aria-disabled')).toBeNull();
-      expect(loadFoundationProjectsDetailGrouped).toHaveBeenCalledWith('acme-foundation');
-
-      trigger?.click();
-      await settle();
-      const options = Array.from(query('health-metrics-project-menu')?.querySelectorAll('[role="option"] .flex-1') ?? []).map((el) => el.textContent?.trim());
-      expect(options).toEqual(['All projects', 'Alpha', 'Beta Mesh']);
-
-      query('health-metrics-project-option-beta-mesh')?.click();
-      await settle();
-
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=beta-mesh#committees');
-      expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBe('beta-mesh');
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Beta Mesh');
-    });
-
-    it('reads the selection off the URL and clears it again on all projects', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha&groupPage=2');
-      await settle();
-
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Alpha');
-
-      query('health-metrics-overview-project-selector')?.click();
-      await settle();
-      query('health-metrics-project-option-all')?.click();
-      await settle();
-
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?groupPage=2');
-      expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBeNull();
-    });
-
-    it('drops a slug the foundation does not carry', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=unknown-project');
-      await settle();
-
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
-    });
-
-    it('ignores a malformed slug rather than reading with it', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=Not%20A%20Slug');
-
-      expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBeNull();
-    });
-
-    it('resets to all projects when the foundation changes', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
-      await settle();
-
-      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['alpha', 'Alpha'])));
-      selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
-      await settle();
-
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
-      expect(loadFoundationProjectsDetailGrouped).toHaveBeenLastCalledWith('other-foundation');
-    });
-
-    it('leaves the app-wide project context param alone', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?project=acme-foundation');
-      await settle();
-
-      expect(fixture.debugElement.injector.get(HealthMetricsChromeService).selectedProjectSlug()).toBeNull();
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?project=acme-foundation');
-    });
-
-    it('keeps the selection through a failed list load and retries on click', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
-      loadFoundationProjectsDetailGrouped.mockReturnValue(throwError(() => new Error('upstream failed')));
-      selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
-      await settle();
-      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/engagement?projectScope=alpha');
-      await settle();
-
+      const pills = Array.from(query('health-metrics-overview-period-selector')?.querySelectorAll('button') ?? []);
       const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
-      expect(chrome.projectsFailed()).toBe(true);
-      expect(chrome.selectedProjectSlug()).toBe('alpha');
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=alpha');
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('alpha');
-      expect(query('health-metrics-project-selector-retry')).not.toBeNull();
-
-      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['alpha', 'Alpha'])));
-      query('health-metrics-overview-project-selector')?.click();
-      await settle();
-
-      expect(loadFoundationProjectsDetailGrouped).toHaveBeenLastCalledWith('other-foundation');
-      expect(chrome.projectsFailed()).toBe(false);
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('Alpha');
-      expect(query('health-metrics-project-menu')).toBeNull();
+      expect(pills.map((pill) => pill.textContent?.trim())).toEqual(chrome.periods.map((period) => period.label));
+      expect(pills).toHaveLength(4);
+      expect(pills.find((pill) => pill.getAttribute('aria-pressed') === 'true')?.textContent?.trim()).toBe('YTD');
+      expect(query('health-metrics-period-select')).not.toBeNull();
+      expect(periodForm().controls.range.value).toBe('YTD');
     });
 
-    it('drops a kept slug only once a retried list loads without it', async () => {
-      selectedFoundation.set({ slug: 'other-foundation' } as ProjectContext);
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=alpha');
-      loadFoundationProjectsDetailGrouped.mockReturnValue(throwError(() => new Error('upstream failed')));
-      selectedFoundation.set({ slug: 'third-foundation' } as ProjectContext);
-      await settle();
-      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/engagement?projectScope=alpha');
-      await settle();
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=alpha');
+    it('shows the year-to-date span only while YTD is selected', async () => {
+      await render(signal(true));
+      expect(query('health-metrics-period-range')?.textContent?.trim()).toMatch(/^Jan 1 – [A-Z][a-z]{2} \d{1,2}, \d{4}$/);
 
-      loadFoundationProjectsDetailGrouped.mockReturnValue(of(projectsResponse(['beta-mesh', 'Beta Mesh'])));
-      query('health-metrics-overview-project-selector')?.click();
+      (query('health-metrics-overview-period-selector')?.querySelector('button') as HTMLButtonElement).click();
       await settle();
 
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
+      expect(query('health-metrics-period-range')).toBeNull();
     });
 
-    it('keeps a slug a partial list does not carry', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=nested-project', {
-        ...projectsResponse(['alpha', 'Alpha']),
-        complete: false,
-      });
-      await settle();
+    it('sets the period from the dropdown, and keeps the dropdown in step with the pill', async () => {
+      await render(signal(true));
+      const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
 
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement?projectScope=nested-project');
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('nested-project');
-
-      query('health-metrics-overview-project-selector')?.click();
+      periodForm().controls.range.setValue(chrome.periods[0].range);
       await settle();
-      const all = query('health-metrics-project-option-all');
-      expect(all?.getAttribute('aria-selected')).toBe('false');
-      expect(all?.querySelector('.fa-check')).toBeNull();
-      expect(query('health-metrics-project-option-alpha')?.getAttribute('aria-selected')).toBe('false');
+      expect(chrome.selectedRange()).toBe(chrome.periods[0].range);
+
+      (query('health-metrics-overview-period-selector')?.querySelectorAll('button')[1] as HTMLButtonElement).click();
+      await settle();
+      expect(periodForm().controls.range.value).toBe(chrome.periods[1].range);
     });
+  });
 
-    it('keeps the pill live on an empty partial list so a kept slug can be cleared', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement?projectScope=nested-project', { ...projectsResponse(), complete: false });
-      await settle();
+  it('carries no project selector or export, and leaves the URL alone', async () => {
+    await render(signal(true), '/foundation/health-metrics/engagement?project=acme-foundation');
 
-      const trigger = query('health-metrics-overview-project-selector');
-      expect(trigger?.getAttribute('aria-disabled')).toBeNull();
-      expect(query('health-metrics-project-selector-label')?.textContent?.trim()).toBe('nested-project');
-
-      trigger?.click();
-      await settle();
-      query('health-metrics-project-option-all')?.click();
-      await settle();
-
-      expect(currentUrl()).toBe('/foundation/health-metrics/engagement');
-    });
-
-    it('hides the pill once the foundation turns out to have no projects', async () => {
-      await render(signal(true), '/foundation/health-metrics/engagement', projectsResponse());
-
-      expect(query('health-metrics-overview-project-selector')).toBeNull();
-    });
+    expect(query('health-metrics-overview-project-selector')).toBeNull();
+    expect(query('health-metrics-overview-export')).toBeNull();
+    expect(currentUrl()).toBe('/foundation/health-metrics/engagement?project=acme-foundation');
   });
 });

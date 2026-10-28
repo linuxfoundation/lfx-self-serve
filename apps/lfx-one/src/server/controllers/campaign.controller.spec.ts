@@ -3,17 +3,20 @@
 
 import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -22,12 +25,13 @@ import {
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   saveBrief,
+  approveStoredBrief,
   loadBrief,
   loadBriefById,
   createCampaigns,
@@ -43,6 +47,7 @@ const {
   svcGetMicrosoftKeywords,
   listBriefCampaigns,
   getBriefMetrics,
+  getCampaignMetrics,
   svcListAudiences,
   svcGetKeywords,
   svcResolveCampaign,
@@ -61,6 +66,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
+  approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
   createCampaigns: vi.fn(),
@@ -76,6 +82,7 @@ const {
   svcGetMicrosoftKeywords: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  getCampaignMetrics: vi.fn(),
   svcListAudiences: vi.fn(),
   svcGetKeywords: vi.fn(),
   svcResolveCampaign: vi.fn(),
@@ -103,6 +110,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
+      public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
       public createCampaigns = createCampaigns;
@@ -116,6 +124,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getMicrosoftAdsKeywords = svcGetMicrosoftKeywords;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public getCampaignMetrics = getCampaignMetrics;
       public listAudiences = svcListAudiences;
       public getGoogleAdsKeywords = svcGetKeywords;
       public resolveGoogleAdsCampaign = svcResolveCampaign;
@@ -152,7 +161,13 @@ vi.mock('../services/campaign-metrics.service', () => ({
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
+// The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
+// outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
+vi.mock('../utils/persona-helper', () => ({
+  personaDetectionService: { checkRootWriter: vi.fn(async () => true), checkRootCampaignManager: vi.fn(async () => true) },
+}));
 
+import { personaDetectionService } from '../utils/persona-helper';
 import { CampaignController } from './campaign.controller';
 
 /** The narrowest brief that reaches campaign-service: a slug is the only field the controller reads. */
@@ -303,6 +318,135 @@ describe('CampaignController.persistBrief', () => {
 
     // The whole point of the feature is that the user learns the brief is not durable. Answering
     // 200 here would leave them working on a brief they believe is saved.
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The third verb beside `persistBrief` and `loadBrief`: approving a brief that is already stored.
+ *
+ * What is only decidable at this layer is that the validator arrives as a HEADER and an absent one
+ * is a supported case rather than an error, that the foundation and the brief id are refused
+ * instead of defaulted, and that a dark cutover answers a complete `CampaignBriefApproveResult`
+ * the client can branch on. Everything about the upstream call itself belongs to the service spec.
+ */
+describe('CampaignController.approveBrief', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function buildApproveReq(
+    params: Record<string, unknown> = { briefId: 'brief-1' },
+    query: Record<string, unknown> = { project: 'tlf' },
+    headers: Record<string, string> = {}
+  ): Request {
+    return {
+      params,
+      query,
+      path: '/api/campaigns/brief/brief-1/approve',
+      get: (name: string) => headers[name],
+    } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+  });
+
+  it('answers a dark cutover with enabled:false and never calls campaign-service', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    // Every field present, and no `conflict`: nothing was refused, the cutover is simply dark,
+    // and the client branches on `enabled` alone.
+    expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, approved: false });
+  });
+
+  it("approves with the caller's If-Match and returns the result unchanged", async () => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, { 'If-Match': 'W/"1"' }), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0].slice(1)).toEqual(['tlf', 'brief-1', 'W/"1"']);
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // The controller NORMALISES rather than decides. Absent and blank both become a null
+  // validator and are forwarded, because what to do about a missing one is the service's call:
+  // `approveStoredBrief` answers it with `conflict: 'unverified-validator'` and approves
+  // nothing. Rejecting here instead would turn that classified refusal — which the client has a
+  // message and a recovery path for — into a 400 the client cannot tell apart from a bad
+  // request, and would duplicate a decision that already has exactly one home.
+  it.each([
+    ['no If-Match header at all', {}],
+    ['a blank If-Match header', { 'If-Match': '   ' }],
+  ])('normalises %s to a null validator and forwards it for the service to classify', async (_label, headers) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, headers), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0][3]).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // Same rule as `persistBrief`: a brief lives inside one foundation's project, and guessing
+  // which would approve a row in a foundation the user never chose.
+  it.each([
+    ['no project param at all', {}],
+    ['a blank project param', { project: '   ' }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'] }],
+  ])('refuses %s rather than defaulting the foundation', async (_label, query) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, query), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'project', message: 'no foundation is selected; reload the campaigns page from the sidebar', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['a blank brief id', { briefId: '   ' }],
+    ['a missing brief id', {}],
+  ])('refuses %s before spending a round trip', async (_label, params) => {
+    await controller.approveBrief(buildApproveReq(params), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([{ field: 'briefId', message: 'brief id is required', code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  // A conflict is a RESULT, not a failure: the service already classified it, and the component
+  // turns each value into its own sentence. Turning it into an error here would replace that
+  // with a generic failure the user can do nothing with.
+  it('passes a refused approval through as a result the client can explain', async () => {
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+  });
+
+  it('sends a thrown failure to the error middleware instead of answering 200', async () => {
+    const failure = new Error('campaign-service returned 500');
+    approveStoredBrief.mockRejectedValue(failure);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
   });
@@ -1166,11 +1310,50 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
     [
+      'an oversized audience segment list',
+      { audienceSegments: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `customers/1/userLists/${i}`) },
+    ],
+    [
       'an oversized sitelink list',
       { sitelinks: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ text: `s-${i}`, finalUrl: 'https://x.example' })) },
     ],
     ['an oversized sitelink field', { sitelinks: [{ text: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), finalUrl: 'https://x.example' }] }],
     ['an oversized sitelink URL', { sitelinks: [{ text: 'Register', finalUrl: `https://x.example/${'a'.repeat(2084)}` }] }],
+    // Every snippet row runs on `display`, where the named snippet caps never fire — they sit
+    // behind a resolvable Search channel, read out of the envelope this guard runs before. These
+    // pin the bound that holds whatever the channel turns out to be.
+    [
+      'an oversized structured-snippet list',
+      {
+        structuredSnippets: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ header: `H${i}`, values: ['A', 'B', 'C'] })),
+      },
+    ],
+    ['an oversized structured-snippet header', { structuredSnippets: [{ header: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), values: ['A'] }] }],
+    [
+      'an oversized structured-snippet value list',
+      {
+        structuredSnippets: [{ header: 'Brands', values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES + 1 }, (_v, i) => `v-${i}`) }],
+      },
+    ],
+    ['an oversized structured-snippet value', { structuredSnippets: [{ header: 'Brands', values: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] }] }],
+    // The nested ceiling is raised for `values` alone, because that is the only nested name
+    // upstream decodes as a list. A nested array under a name upstream decodes as a plain string
+    // is a body upstream refuses outright, so it stays on the flat entry cap.
+    [
+      'an oversized array under a nested name that is a scalar upstream',
+      { sitelinks: [{ text: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `t-${i}`), finalUrl: 'https://x.example' }] },
+    ],
+    // Each list is inside the nested ceiling and the outer list is inside its own, so the only
+    // bound left to fire is the aggregate — the one that stops per-list ceilings multiplying.
+    [
+      'structured-snippet value lists that exceed the nested total',
+      {
+        structuredSnippets: Array.from({ length: GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS + 1 }, (_v, i) => ({
+          header: `H${i}`,
+          values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES }, (_w, j) => `v-${i}-${j}`),
+        })),
+      },
+    ],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -1207,12 +1390,56 @@ describe('CampaignController.createCampaign cutover', () => {
       'a callout padded with U+0085, which Go trims',
       { campaignTypes: ['search'], callouts: [`Free shipping${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`] },
     ],
+    // The snippet normaliser trims with Go's rules, as the callout one does, so U+0085 is the
+    // direction that matters for both of its string fields.
+    [
+      'a structured-snippet header padded with U+0085, which Go trims',
+      {
+        campaignTypes: ['search'],
+        structuredSnippets: [{ header: `Brands${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`, values: ['Go', 'Rust', 'Zig'] }],
+      },
+    ],
+    [
+      'a structured-snippet value padded with U+0085, which Go trims',
+      {
+        campaignTypes: ['search'],
+        structuredSnippets: [{ header: 'Brands', values: [`Go${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`, 'Rust', 'Zig'] }],
+      },
+    ],
   ])('does not refuse %s that is only over the bound because of padding upstream trims', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     // Past the bound: normalisation ran. Whatever the later guards decide, it was not this one.
+    expect(createConfigEnvelope).toHaveBeenCalled();
+  });
+
+  /**
+   * The aggregate is derived from the raw snippet count upstream refuses past, so the largest body
+   * that can reach upstream's value loop sits exactly on it: `validateStructuredSnippets` checks
+   * `len(snippets)` before it reads one, and each list is already bounded above. This pins that the
+   * aggregate does not refuse that body — normalisation runs, and whatever the named snippet caps
+   * decide afterwards, the resource ceiling was not what stopped it.
+   */
+  it('does not refuse the largest nested-value payload that can reach upstream', async () => {
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['display'],
+          structuredSnippets: Array.from({ length: GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS }, (_v, i) => ({
+            header: `H${i}`,
+            values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES }, (_w, j) => `v-${i}-${j}`),
+          })),
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
     expect(createConfigEnvelope).toHaveBeenCalled();
   });
 
@@ -1521,8 +1748,8 @@ describe('CampaignController.createCampaign cutover', () => {
     eventSlug: 'kubecon',
     registrationUrl: 'https://example.com',
     budgetUsd: 300,
-    startDate: '2026-01-01',
-    endDate: '2026-02-01',
+    // No flight dates by default, matching the form while the Microsoft-schedule capability is off
+    // — see the `flight dates` block below for both sides of that capability.
     geoTargets: ['US'],
     keywords: [{ text: 'kubernetes', matchType: 'Exact' }],
     ...overrides,
@@ -1801,15 +2028,218 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * `microsoftConfig` declares no scheduling fields, so dates on the wire are silently discarded.
-   * Sending them implied a flight the operator never gets.
+   * Microsoft flight dates (linuxfoundation/lfx-v2-campaign-service#409). With the capability on,
+   * `startDate` / `endDate` reach campaign-service UNTOUCHED, as Meta's do: the service judges the
+   * format and fails the job on a bad one. With it off, the request is refused rather than the keys
+   * dropped, because both creators that would serve it ignore them and would create no flight.
    */
-  it('sends no flight dates, which microsoftConfig does not carry', async () => {
-    await createWithMicrosoft();
+  describe('flight dates', () => {
+    const flagsWith = (schedule: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMicrosoftSchedule ? schedule : cutover));
+    };
 
-    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
-    expect(sent).not.toHaveProperty('startDate');
-    expect(sent).not.toHaveProperty('endDate');
+    it.each([
+      ['both dates', { startDate: '2026-01-01', endDate: '2026-02-01' }],
+      ['a start date alone', { startDate: '2026-01-01' }],
+      ['an end date alone', { endDate: '2026-02-01' }],
+      ['a date campaign-service will refuse, which is its call', { startDate: '2026-02-31' }],
+    ])('forwards %s untouched when the capability is on', async (_label, dates) => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(dates) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent['startDate']).toBe((dates as Record<string, unknown>)['startDate']);
+      expect(sent['endDate']).toBe((dates as Record<string, unknown>)['endDate']);
+      expect('startDate' in sent).toBe('startDate' in dates);
+      expect('endDate' in sent).toBe('endDate' in dates);
+    });
+
+    it.each([
+      ['the schedule flag is off', false, true],
+      ['the create cutover is dark', true, false],
+      ['both are off', false, false],
+    ])('refuses a request carrying Microsoft dates when %s, creating nothing', async (_label, scheduleFlag, cutover) => {
+      flagsWith(scheduleFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(
+          { platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ startDate: '2026-01-01', endDate: '2026-02-01' }) },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'microsoftConfig.startDate',
+          message: 'Microsoft flight dates are not enabled on this deployment; omit startDate and endDate from microsoftConfig',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it.each([
+      ['an end date alone', { endDate: '2026-02-01' }, 'microsoftConfig.endDate'],
+      ['an explicit null start date, rather than reading it as absent', { startDate: null }, 'microsoftConfig.startDate'],
+    ])('refuses %s while the capability is off, naming the field', async (_label, dates, field) => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(dates) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('lets a Microsoft request without dates through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig() }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('startDate');
+      expect(sent).not.toHaveProperty('endDate');
+      expect(sent['budget']).toBe(300);
+    });
+
+    it("leaves Meta's dates alone when the Microsoft flag is off", async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          {
+            platforms: ['meta-ads'],
+            metaConfig: {
+              budgetUsd: 250,
+              lifetimeBudget: false,
+              startDate: '2026-01-01',
+              endDate: '2026-02-01',
+              geoTargets: ['US'],
+              variants: [{ primaryText: 'p', headline: 'h' }],
+            },
+          },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent['startDate']).toBe('2026-01-01');
+      expect(sent['endDate']).toBe('2026-02-01');
+    });
+  });
+
+  /**
+   * The Meta Instagram id and EU DSA disclosures (linuxfoundation/lfx-v2-campaign-service#414). With
+   * the capability on they reach campaign-service UNTOUCHED, which judges them and answers a missing
+   * or malformed one with a 400. With it off the request is refused rather than the keys dropped.
+   */
+  describe('meta instagram and dsa', () => {
+    const flagsWith = (metaDsa: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaInstagramDsa ? metaDsa : cutover));
+    };
+    const metaConfig = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      budgetUsd: 250,
+      lifetimeBudget: false,
+      startDate: '2026-01-01',
+      endDate: '2026-02-01',
+      geoTargets: ['DE'],
+      variants: [{ primaryText: 'p', headline: 'h' }],
+      ...extra,
+    });
+    const identity = { instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF', dsaPayor: 'The Linux Foundation' };
+
+    it('forwards all three untouched when the capability is on', async () => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(identity) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent['instagramUserId']).toBe('17841400000000000');
+      expect(sent['dsaBeneficiary']).toBe('CNCF');
+      expect(sent['dsaPayor']).toBe('The Linux Foundation');
+    });
+
+    it.each([
+      ['the flag is off', false, true],
+      ['the create cutover is dark', true, false],
+    ])('refuses a request carrying them when %s, creating nothing', async (_label, metaDsaFlag, cutover) => {
+      flagsWith(metaDsaFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(identity) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'metaConfig.instagramUserId',
+          message:
+            'The Meta Instagram account and EU DSA fields are not enabled on this deployment; omit instagramUserId, dsaBeneficiary and dsaPayor from metaConfig',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it.each([
+      ['a payor alone', { dsaPayor: 'LF' }, 'metaConfig.dsaPayor'],
+      ['an explicit null beneficiary, rather than reading it as absent', { dsaBeneficiary: null }, 'metaConfig.dsaBeneficiary'],
+    ])('refuses %s while the capability is off, naming the field', async (_label, extra, field) => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(extra) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('lets a Meta request without them through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig() }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('instagramUserId');
+      expect(sent).not.toHaveProperty('dsaBeneficiary');
+      expect(sent['budget']).toBe(250);
+    });
   });
 
   /**
@@ -2758,17 +3188,78 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toHaveLength(30);
   });
 
-  it('refuses a 31-code list even when the 31st is a repeat, because upstream caps before it de-duplicates', async () => {
+  /** Thirty canonical postal-code constant ids — with `ALL_MAPPED_GEOS`, the targeted cap exactly. */
+  const THIRTY_POSTAL_IDS = Array.from({ length: 30 }, (_, i) => String(9031900 + i));
+
+  it('refuses a list over the cap even when the extra entry is a repeat, because upstream caps before it de-duplicates', async () => {
     // `validateGeoTargets` checks `len(geoTargets) > maxGeoTargets` on the raw slice, so a list
-    // that is only over the cap because it repeats a code is still refused there. Judging the
+    // that is only over the cap because it repeats an entry is still refused there. Judging the
     // de-duplicated length here would accept a create Go then kills.
-    await controller.createCampaign(buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
 
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
-    expect(error.field).toBe('countryCode');
-    expect(error.message).toContain('31');
+    expect(error.field).toBe('geoTargets');
+    expect(error.message).toContain('61');
+  });
+
+  /**
+   * Postal-code targets: raw numeric geo target constant ids in the SAME `geoTargets` list as the
+   * countries, which is the only place upstream's wire takes them. Judged for shape only — there is
+   * no lookup from a postal code to its id anywhere on this road, upstream's or this one's.
+   */
+  it('dispatches postal-code ids after the countries, up to the combined cap upstream applies', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets'] as string[];
+    expect(sent).toHaveLength(60);
+    expect(sent.slice(30)).toEqual(THIRTY_POSTAL_IDS);
+  });
+
+  it('dispatches a postal-only list, trimmed, with no country beside it', async () => {
+    // The builder's shape test used to be alpha-2 only, so a numeric entry made it return null and
+    // the create was refused as "No configuration was built for: google-ads".
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: [' 9031945 '] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toEqual(['9031945']);
+  });
+
+  it.each([['02840'], ['0'], ['123456789012345678901']])('names the non-canonical postal-code id %s rather than calling it a country', async (id) => {
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', id] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('geoTargets');
+    expect(error.message).toContain('canonical');
+    // Any numeric id, not only a postal code, so the message names a location.
+    expect(error.message).toContain('Google Ads location');
+  });
+
+  it('refuses a postal-code id that the event also excludes, compared by resolved id', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['9031945'], excludedGeoTargets: ['9031945'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('excludedGeoTargets');
   });
 
   /**
@@ -2956,6 +3447,78 @@ describe('CampaignController.createCampaign cutover', () => {
    * over-refusing.
    */
   const SYDNEY = { latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' };
+
+  /**
+   * The Implementation tab's own shape: a postal-code id in `geoTargets` and a radius beside it, the
+   * two halves of one location plan. Both must reach `googleAdsConfig` under upstream's keys.
+   */
+  it('dispatches postal-code ids and radius targets together, under the keys upstream reads', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001a', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['US', '9031945'], proximityTargets: [SYDNEY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['geoTargets']).toEqual(['US', '9031945']);
+    expect(sent['proximityTargets']).toEqual([SYDNEY]);
+  });
+
+  /**
+   * The LEGACY road drops both shapes — `geoTargets` through the 30-country map, `proximityTargets`
+   * unread — so a postal-only or radius-only create would serve with no location limit. Refused by
+   * field, before either creator runs, exactly as an unservable `bidding` is.
+   */
+  it.each([
+    ['a postal-code id in geoTargets', { geoTargets: ['US', ' 9031945 '] }, 'geoTargets'],
+    ['a postal-only geoTargets', { geoTargets: ['9031945'] }, 'geoTargets'],
+    ['radius targets', { proximityTargets: [SYDNEY] }, 'proximityTargets'],
+    ['a malformed proximityTargets', { proximityTargets: {} }, 'proximityTargets'],
+  ])('refuses %s while the cutover is dark, creating nothing', async (_label, overrides, field) => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('not enabled on this deployment');
+  });
+
+  /** The contrast: countries alone, and an empty radius list, are what the legacy creator serves. */
+  it('still serves a country-only create with an empty radius list on the legacy road', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', 'CA'], proximityTargets: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
+  /** A Google-shaped body sent for another platform only is not this guard's business. */
+  it('does not refuse postal ids on a create that does not include google-ads', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['meta-ads'], metaConfig: { budgetUsd: 250 }, geoTargets: ['9031945'] }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+    expect(fields).not.toContain('geoTargets');
+  });
 
   it('dispatches radius targets at both unit ceilings, which is exactly what upstream accepts', async () => {
     // The contrast for every radius refusal below, and the boundary itself: `validateProximityTargets`
@@ -4159,6 +4722,217 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain(expected);
   });
 
+  /**
+   * Root-only, until a user list can be mapped to a project: every foundation's Google Ads
+   * connection points at one shared LF customer, so a non-root caller could name another
+   * foundation's list. Refused FIRST, before any normalising or dispatch, on either path.
+   */
+  const asNonRoot = (): void => {
+    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(false);
+    vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(false);
+  };
+
+  it.each([
+    ['a user list', ['customers/1234567890/userLists/111']],
+    ['a malformed value, which must not reach the shape refusal first', 'customers/1234567890/userLists/111'],
+    ['a list a later guard would refuse', ['nope']],
+  ])('refuses %s from a non-root caller with a 403 before anything is built or created', async (_label, audienceSegments) => {
+    asNonRoot();
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.statusCode).toBe(403);
+    expect(error.code).toBe(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE);
+    expect(createConfigEnvelope).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-root caller on the legacy path too, which would otherwise drop the list', async () => {
+    asNonRoot();
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+    expect(legacyCreate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A ROOT caller's segments are REFUSED, not dropped, when the serving create path cannot carry
+   * them: the legacy creator never reads the key and would report success without the user lists.
+   * Reachable from the page mid-rollout, when the capability read and the create land on pods with
+   * different flags.
+   */
+  it("refuses a root caller's segments by name when the cutover is off, rather than falling through to legacy", async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('audienceSegments');
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+  });
+
+  it('still serves a root caller on the legacy path when the segment list is empty', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_2' });
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches segments for a ROOT campaign manager who is not a root writer', async () => {
+    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(false);
+    vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['audienceSegments']).toEqual(['customers/1/userLists/2']);
+  });
+
+  it.each([
+    ['no segment list', {}],
+    ['an empty segment list', { audienceSegments: [] }],
+    ['a null segment list', { audienceSegments: null }],
+  ])('asks no persona question and refuses nothing for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b2', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The audience segment guards, one test per branch of upstream's `validateAudienceSegments`
+   * (`internal/platform/googleads/targeting.go`) plus its Search-only fence, and the accept-cases
+   * that keep them from over-refusing. Each runs before the budget mutate upstream, so each would
+   * otherwise cost the whole campaign as the orchestrator's opaque "platform campaign creation failed".
+   */
+  const SEGMENTS_20 = Array.from({ length: 20 }, (_, i) => `customers/1234567890/userLists/${i + 1}`);
+
+  it("dispatches the segments inside googleAdsConfig as audienceSegments, trimmed with Go's rules", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a1', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: ['\u00a0customers/1234567890/userLists/111\u0085', 'customers/1234567890/userLists/222'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['audienceSegments']).toEqual(['customers/1234567890/userLists/111', 'customers/1234567890/userLists/222']);
+    // Under googleAdsConfig only: no other platform config carries Google's resource names.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('audienceSegments');
+  });
+
+  it('dispatches a list of 20 segments, and a repeat, which upstream collapses rather than refuses', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a2', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: [...SEGMENTS_20.slice(0, 19), SEGMENTS_20[0]] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['audienceSegments']).toHaveLength(20);
+  });
+
+  it('refuses a 21-segment list even when the 21st is a repeat, because upstream caps the raw list', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: [...SEGMENTS_20, SEGMENTS_20[0]] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain('21');
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['customers/1/userLists/2', '  '], 'blank entry (segment 2)'],
+    ['a custom audience, which upstream parses and refuses on Search', ['customers/1/customAudiences/2'], 'custom audience'],
+    ['a customer id written with dashes', ['customers/123-456-7890/userLists/2'], 'not a user list resource name'],
+    ['a bare id', ['2'], 'not a user list resource name'],
+    ['an interest category', ['customers/1/userInterests/80'], 'not a user list resource name'],
+    ['a bare string', 'customers/1/userLists/2', 'must be a list'],
+    ['a list holding a number', ['customers/1/userLists/2', 123], 'must be a list'],
+    ['a list holding null', [null], 'must be a list'],
+  ])('refuses %s by name rather than dropping it', async (_label, audienceSegments, expected) => {
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['demand-gen', 'Demand Gen'],
+    ['performance-max', 'Performance Max'],
+    ['display', 'Display'],
+  ])('refuses segments on %s by name, because upstream refuses the whole create there', async (channel, label) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(label);
+  });
+
+  it.each([
+    ['the cap before a bad entry', { audienceSegments: [...SEGMENTS_20, 'nope'] }, '21'],
+    ['the first bad entry', { audienceSegments: ['customers/1/customAudiences/2', 'nope'] }, 'custom audience'],
+    [
+      'a bad entry before the channel, as upstream validates before it fences',
+      { campaignTypes: ['demand-gen'], audienceSegments: ['nope'] },
+      'not a user list',
+    ],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, expected) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['an absent segment list', {}],
+    ['an empty segment list', { audienceSegments: [] }],
+    ['a null segment list, which the Go decode reads as absent', { audienceSegments: null }],
+  ])('omits the audienceSegments key entirely for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a3', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('audienceSegments');
+  });
+
   it.each([
     ['a trailing U+0085, which Go trims and JS `trim` keeps', ['Free shipping', 'free shipping\u0085']],
     ['final sigma, which JS `toLowerCase` folds differently from Go', ['ΟΔΟΣ', 'οδοσ']],
@@ -4472,6 +5246,514 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
     expect(refusalFrom().message).not.toContain('🎉🎉');
+  });
+
+  /**
+   * The structured-snippet guards, one test per branch of upstream's `validateStructuredSnippets`
+   * (`internal/platform/googleads/assets.go`), plus the accept-cases that keep them from
+   * over-refusing. Same preflight position as the two sets above — inside `validateAssetPlan`,
+   * before the budget mutate — so every one of these costs the whole campaign, not just the snippet.
+   */
+  const snip = (header: string, values: string[] = ['Alpha', 'Beta', 'Gamma']) => ({ header, values });
+  const SNIPPETS_10 = Array.from({ length: 10 }, (_, i) => snip(`Header ${i + 1}`));
+
+  it('dispatches a list of 10 structured snippets, which is exactly what upstream accepts', async () => {
+    // The contrast for the cap below: without it a controller that refused every snippet list would
+    // pass every refusal test here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a1', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: SNIPPETS_10 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toHaveLength(10);
+  });
+
+  it('refuses an 11-snippet list even when the 11th repeats a header, because upstream caps before it de-duplicates', async () => {
+    // `validateStructuredSnippets` compares `len(in.StructuredSnippets) > maxStructuredSnippets` on
+    // the RAW slice, before any entry is read.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [...SNIPPETS_10, snip('Header 1')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('11');
+  });
+
+  it('names a snippet with no header instead of letting Google refuse it opaquely', async () => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('  ')] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('structured snippet 1 has no header');
+  });
+
+  it('names a snippet header over the 25-rune bound', async () => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('A'.repeat(26))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('dispatches a 25-EMOJI snippet header, because upstream counts runes and not UTF-16 units', async () => {
+    // A header of 25 astral characters is 50 UTF-16 units. `.length` would refuse a header Google
+    // accepts — and Google publishes its header lists PER LOCALE, so a non-ASCII header is ordinary.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a2', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('🎉'.repeat(25))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('refuses a header repeated in a different case, which upstream refuses rather than merges', async () => {
+    // Google serves one line per header, so the second would be dropped silently.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands'), snip('brands')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it.each([
+    ['a trailing U+0085, which Go trims and JS `trim` keeps', 'brands', 'Brands'],
+    ['a final sigma, which JS `toLowerCase` folds differently from Go', 'ΟΔΟΣ', 'οδοσ'],
+  ])("refuses a repeated header hidden by %s, judging it with Go's string rules", async (_label, repeat, first) => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip(first), snip(repeat)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it('names a snippet value over the 25-rune bound', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'B'.repeat(26), 'Gamma'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('refuses an over-long value that merely repeats an earlier one, because upstream checks the bound before it collapses repeats', async () => {
+    // Upstream's value loop skips blanks, checks the rune bound, and only THEN skips a case-folded
+    // repeat. De-duplicating first would let this through — and Go would then kill the campaign.
+    const long = 'B'.repeat(26);
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', long, 'Gamma', long])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('refuses three values of which two are the same, because two render and Google needs three', async () => {
+    // Upstream's own reason for de-duplicating BEFORE it counts the minimum.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Go', 'go', 'Rust'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('at least 3');
+  });
+
+  it('refuses a snippet whose third value is blank, since a blank is skipped before the count', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'Beta', '   '])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at least 3');
+  });
+
+  it('dispatches exactly 3 distinct values, the minimum upstream accepts', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a3', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'Beta', 'Gamma'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('dispatches exactly 10 distinct values and refuses 11', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `Value ${i + 1}`);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a4', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('Brands', ten)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(next).not.toHaveBeenCalled();
+
+    vi.mocked(next).mockClear();
+    createCampaigns.mockClear();
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', [...ten, 'Value 11'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at most 10 values');
+  });
+
+  it("dispatches each snippet trimmed with Go's rules, repeats kept as the guard judged them", async () => {
+    // The dispatched list must be the one this controller judged — dropping the repeat here would
+    // ship a list Go counts differently from the one that passed the guard.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a5', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [{ header: ' Brands', values: [' Alpha ', 'Beta', 'Gamma', 'alpha'] }] } as never), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([
+      { header: 'Brands', values: ['Alpha', 'Beta', 'Gamma', 'alpha'] },
+    ]);
+  });
+
+  it.each([
+    ['an absent snippet list', {}],
+    ['an empty snippet list', { structuredSnippets: [] }],
+    ['a null snippet list, which the Go decode reads as absent', { structuredSnippets: null }],
+  ])('omits the structuredSnippets key entirely for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a6', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('structuredSnippets');
+  });
+
+  it.each([
+    ['a bare object', { header: 'Brands', values: ['a', 'b', 'c'] }],
+    ['a non-object entry', [123]],
+    ['an array entry', [['Brands']]],
+    ['a header that is not a string', [{ header: 7, values: ['a', 'b', 'c'] }]],
+    ['a values list that is not a list', [{ header: 'Brands', values: 'Alpha' }]],
+    ['a values list holding a non-string', [{ header: 'Brands', values: ['Alpha', 2, 'Gamma'] }]],
+  ])('refuses %s by name rather than dropping it', async (_label, structuredSnippets) => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('must be a list of objects');
+  });
+
+  it('reads a null entry as a blank snippet and refuses it by name, as the Go decode does', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands'), null] } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('structured snippet 2 has no header');
+  });
+
+  it('admits a null VALUE and dispatches it dropped, because Go decodes it to a blank it then skips', async () => {
+    // `Values` is a plain `[]string`, so a null element decodes to `""` and
+    // `validateStructuredSnippets` skips it exactly as it skips a blank. Refusing the shape here
+    // would refuse a create upstream accepts — the over-refusal these guards exist to avoid.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [{ header: 'Brands', values: ['Alpha', null, 'Beta', 'Gamma'] }] } as never), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([
+      { header: 'Brands', values: ['Alpha', 'Beta', 'Gamma'] },
+    ]);
+  });
+
+  it('dispatches a duplicate-heavy value list above the flat entry cap, which upstream counts as three values', async () => {
+    // The Implementation tab stores what was typed rather than the collapsed list, so a pasted
+    // list of repeats reaches the BFF at its raw length. Upstream caps only the DISTINCT count, so
+    // the flat 100 would refuse a create it accepts — see MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b2', error: null });
+    const pasted = Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ['Alpha', 'Beta', 'Gamma'][i % 3]);
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('Brands', pasted)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([{ header: 'Brands', values: pasted }]);
+  });
+
+  it.each([
+    ['a snippet', [snip('Brands')]],
+    ['an entry with every field blank, which upstream still counts as asked', [{ header: '', values: [] }]],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, structuredSnippets) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], structuredSnippets }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('Demand Gen');
+  });
+
+  it.each([
+    ['the callout guard before the snippet guard', { callouts: [''], structuredSnippets: [snip('')] }, 'callouts'],
+    ['the channel before the cap', { campaignTypes: ['demand-gen'], structuredSnippets: [...SNIPPETS_10, snip('Extra')] }, 'structuredSnippets'],
+    ['the cap before a bad entry', { structuredSnippets: [...SNIPPETS_10, snip('')] }, 'structuredSnippets'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field) => {
+    // `validateAssetPlan` runs sitelinks, then callouts, then structured snippets; inside
+    // `validateStructuredSnippets` the channel fence and the cap both come before any entry is read.
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+  });
+
+  it('refuses the header before the values, and the first bad entry before a later one', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('A'.repeat(26), ['only one']), snip('Brands', ['x'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('cuts an echoed snippet header by code point, so an emoji at the cut is never split', async () => {
+    // The header comes from an unvalidated body, so the refusal echoes it short.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip(`${'A'.repeat(31)}${'🎉'.repeat(5)}`)] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
+    expect(refusalFrom().message).not.toContain('🎉🎉');
+  });
+
+  /**
+   * The call, promotion and price guards. The per-entry rules are `campaign-google-assets.utils`'
+   * and are tested branch by branch there; what is tested here is the walk around them — decode
+   * shape, the Search-only fence, the raw cap, the entry numbering, upstream's order across the
+   * three lists — and that what is dispatched is exactly campaign-service's wire shape.
+   */
+  const call = (phoneNumber = '+1 (415) 555-0100', countryCode = 'US') => ({ countryCode, phoneNumber });
+  const promotion = (promotionTarget = 'Conference passes', overrides: Record<string, unknown> = {}) => ({
+    promotionTarget,
+    discountPercent: 25,
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+  const priceRow = (header: string, overrides: Record<string, unknown> = {}) => ({
+    header,
+    description: 'Two days',
+    amount: 499,
+    currencyCode: 'USD',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+  const priceTable = (overrides: Record<string, unknown> = {}) => ({
+    type: 'EVENTS',
+    languageCode: 'en',
+    offerings: [priceRow('Standard'), priceRow('Student'), priceRow('Virtual')],
+    ...overrides,
+  });
+
+  it("dispatches all three lists under campaign-service's own keys, normalised the way upstream normalises them", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          callExtensions: [{ countryCode: ' us ', phoneNumber: ' +1 (415) 555-0100\u0085' }],
+          promotions: [
+            promotion(' Conference passes ', {
+              discountPercent: null,
+              discountAmount: 50,
+              currencyCode: 'usd',
+              promotionCode: '',
+              occasion: ' BLACK_FRIDAY ',
+              startDate: '2026-11-01',
+              endDate: '2026-11-30',
+            }),
+          ],
+          prices: [
+            priceTable({
+              priceQualifier: 'FROM',
+              offerings: [priceRow('Standard', { unit: 'PER_DAY', currencyCode: 'usd' }), priceRow('Student'), priceRow('Virtual')],
+            }),
+          ],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config['callExtensions']).toEqual([{ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' }]);
+    // Empty optionals and zero amounts OMITTED: upstream decodes an absent key to that same zero.
+    expect(config['promotions']).toEqual([
+      {
+        promotionTarget: 'Conference passes',
+        discountAmount: 50,
+        currencyCode: 'USD',
+        occasion: 'BLACK_FRIDAY',
+        startDate: '2026-11-01',
+        endDate: '2026-11-30',
+        finalUrl: 'https://events.example.org/register',
+      },
+    ]);
+    expect(config['prices']).toEqual([
+      {
+        type: 'EVENTS',
+        priceQualifier: 'FROM',
+        languageCode: 'en',
+        offerings: [
+          { header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD', unit: 'PER_DAY', finalUrl: 'https://events.example.org/register' },
+          { header: 'Student', description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: 'https://events.example.org/register' },
+          { header: 'Virtual', description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: 'https://events.example.org/register' },
+        ],
+      },
+    ]);
+  });
+
+  it('omits all three keys when the lists are empty, the absent-key route every earlier caller takes', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b2', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callExtensions: [], promotions: [], prices: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config).not.toHaveProperty('callExtensions');
+    expect(config).not.toHaveProperty('promotions');
+    expect(config).not.toHaveProperty('prices');
+  });
+
+  it.each([
+    ['callExtensions', 20, (i: number) => call(`+1 415 555 01${String(i).padStart(2, '0')}`), 'call extensions'],
+    ['promotions', 20, (i: number) => promotion(`Pass ${i}`), 'promotions'],
+    ['prices', 10, () => priceTable(), 'price extensions'],
+  ])('dispatches %s at the cap and refuses one more on the RAW count, before any entry is read', async (field, max, make, noun) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b3', error: null });
+    const atCap = Array.from({ length: max }, (_, i) => (make as (i: number) => unknown)(i));
+    await controller.createCampaign(buildReq(googleBody({ [field]: atCap }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(next).not.toHaveBeenCalled();
+
+    vi.mocked(next).mockClear();
+    createCampaigns.mockClear();
+    // The extra entry is a REPEAT of the first, so a guard that judged entries first would name the
+    // repeat; upstream compares `len()` before it reads one.
+    await controller.createCampaign(buildReq(googleBody({ [field]: [...atCap, atCap[0]] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(`at most ${max} ${noun}`);
+  });
+
+  it.each([
+    ['callExtensions', [call()], 'call extensions'],
+    ['promotions', [promotion()], 'promotions'],
+    ['prices', [priceTable()], 'price extensions'],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (field, list, noun) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], [field]: list }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
+  });
+
+  it.each([
+    ['call extensions that are not a list', { callExtensions: call() }, 'callExtensions'],
+    ['a call extension number that is not text', { callExtensions: [{ countryCode: 'US', phoneNumber: 4155550100 }] }, 'callExtensions'],
+    ['a promotion discount sent as text, which the Go decode refuses', { promotions: [promotion('Passes', { discountPercent: '25' })] }, 'promotions'],
+    ['a price table whose rows are not a list', { prices: [priceTable({ offerings: priceRow('A') })] }, 'prices'],
+    ['a price row amount sent as text', { prices: [priceTable({ offerings: [priceRow('A', { amount: '499' }), priceRow('B'), priceRow('C')] })] }, 'prices'],
+  ])('refuses %s by shape rather than coercing it', async (_label, overrides, field) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain('must be a list of objects');
+  });
+
+  it.each([
+    [
+      'a vanity number, numbered',
+      { callExtensions: [call(), call('1-800-FLOWERS')] },
+      'callExtensions',
+      'call extension 2: The phone number may contain only digits',
+    ],
+    ['a repeat that differs only in punctuation', { callExtensions: [call(), call('14155550100')] }, 'callExtensions', 'call extension 2: The number'],
+    ['a null entry, which the Go decode reads as blank', { callExtensions: [null] }, 'callExtensions', 'call extension 1: It has no country code'],
+    ['a promotion with both discounts', { promotions: [promotion('Passes', { discountAmount: 10, currencyCode: 'USD' })] }, 'promotions', 'exactly one'],
+    [
+      'a promotion target repeated in another case',
+      { promotions: [promotion('Passes'), promotion('PASSES')] },
+      'promotions',
+      'promotion 2: The promotion target',
+    ],
+    ['a two-row price table', { prices: [priceTable({ offerings: [priceRow('A'), priceRow('B')] })] }, 'prices', 'price extension 1: It has 2 rows'],
+    ['a price table with no language', { prices: [priceTable({ languageCode: '  ' })] }, 'prices', 'no language code'],
+  ])('names %s instead of letting Google refuse it opaquely', async (_label, overrides, field, expected) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(expected);
+    expect(refusalFrom().message).toContain('Fix it and create again.');
+  });
+
+  it.each([
+    ['the snippet guard before the call guard', { structuredSnippets: [{ header: '', values: [] }], callExtensions: [call('')] }, 'structuredSnippets'],
+    ['the call guard before the promotion guard', { callExtensions: [call('')], promotions: [promotion('')] }, 'callExtensions'],
+    ['the promotion guard before the price guard', { promotions: [promotion('')], prices: [priceTable({ type: '' })] }, 'promotions'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field) => {
+    // `validateAssetPlan` runs snippets, then calls, then promotions, then prices.
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(refusalFrom().field).toBe(field);
+  });
+
+  it('bounds the strings inside a price row before the normaliser walks them', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ prices: [priceTable({ offerings: [priceRow('A'.repeat(5000)), priceRow('B'), priceRow('C')] })] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('prices.offerings.header');
   });
 
   it.each([
@@ -6000,6 +7282,35 @@ describe('CampaignController.listBriefCampaigns', () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: false });
   });
 
+  /** The one per-caller capability: root only, and only where the campaign-service create path serves. */
+  it.each([
+    ['a root writer on the create path', true, [true, false], true],
+    ['a root campaign manager on the create path', true, [false, true], true],
+    ['a non-root caller on the create path', true, [false, false], false],
+  ])('answers googleAudienceSegmentsEnabled for %s', async (_label, createPath, [writer, manager], expected) => {
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: createPath, googleAudienceSegmentsEnabled: false });
+    // The create path is the three cutover flags, read here exactly as the create route reads them.
+    isServerFeatureEnabled.mockReturnValue(createPath as boolean);
+    vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(writer as boolean);
+    // Queued only when it will be asked: a root writer short-circuits, and a leftover queued answer
+    // would leak into the next test.
+    if (!writer) vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(manager as boolean);
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: expected }));
+  });
+
+  it('answers no without asking who the caller is when the create path does not serve', async () => {
+    listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: false, googleAudienceSegmentsEnabled: false });
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ googleAudienceSegmentsEnabled: false }));
+    expect(personaDetectionService.checkRootWriter).not.toHaveBeenCalled();
+  });
+
   it('passes both scopes through, trimmed', async () => {
     await controller.listBriefCampaigns(listReq({ project: '  tlf  ', brief_id: '  b-1  ' }), res, next);
 
@@ -6154,6 +7465,107 @@ describe('CampaignController.getBriefMetrics', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The single-campaign read: gated on campaign-service briefs (it is addressed by one), both ids
+ * checked as the UUIDs upstream declares, and `window` handled exactly as the brief-wide read does.
+ */
+describe('CampaignController.getCampaignMetrics', () => {
+  const CAMPAIGN_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const METRICS = {
+    campaign_id: CAMPAIGN_ID,
+    platform_campaign_id: '123',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockImplementation((flag: ServerFeatureFlag) => flag === ServerFeatureFlag.CampaignServiceBriefs);
+    controller = new CampaignController();
+  });
+
+  // `clearAllMocks` keeps implementations, so the flag stub is reset here rather than leaking into later suites.
+  afterEach(() => {
+    isServerFeatureEnabled.mockReset();
+  });
+
+  function metricsReq(query: Record<string, unknown>, campaignId: unknown = CAMPAIGN_ID): Request {
+    return { query, params: { campaignId }, path: `/api/campaigns/${String(campaignId)}/metrics` } as unknown as Request;
+  }
+
+  it('reads the campaign and passes a valid window through', async () => {
+    getCampaignMetrics.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID, window: 'last_7_days' }), res, next);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith({ ...METRICS, window: 'last_7_days' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /** Omitted, so campaign-service applies its per-platform default (7 days on X Ads). */
+  it('passes undefined when no window is given, rather than a default', async () => {
+    getCampaignMetrics.mockResolvedValue(METRICS);
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, undefined);
+  });
+
+  /** Dark like the adoptable-brief list: with campaign-service briefs off there is no brief to address. */
+  it('answers 404 without an upstream call while campaign-service briefs are off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+  });
+
+  it.each([
+    ['a campaign id that is not a UUID', { project: 'cncf', briefId: BRIEF_ID }, 'c-1'],
+    ['no briefId', { project: 'cncf' }, CAMPAIGN_ID],
+    ['a briefId that is not a UUID', { project: 'cncf', briefId: 'b-1' }, CAMPAIGN_ID],
+    ['a repeated briefId param', { project: 'cncf', briefId: [BRIEF_ID, BRIEF_ID] }, CAMPAIGN_ID],
+    ['no project', { briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['a blank project', { project: '   ', briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['an unrecognised window', { project: 'cncf', briefId: BRIEF_ID, window: 'last_90_days' }, CAMPAIGN_ID],
+    ['a repeated window param', { project: 'cncf', briefId: BRIEF_ID, window: ['today', 'today'] }, CAMPAIGN_ID],
+    ['an empty window param', { project: 'cncf', briefId: BRIEF_ID, window: '' }, CAMPAIGN_ID],
+  ])('refuses a request with %s', async (_label, query, campaignId) => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq(query, campaignId), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable, 503) reaches the error middleware as is. */
+  it('forwards an upstream refusal to next rather than answering with a body', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    getCampaignMetrics.mockRejectedValue(refusal);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(refusal);
   });
 });
 
@@ -7116,5 +8528,523 @@ describe('CampaignController HubSpot UTM', () => {
       expect(res.json).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(Error));
     });
+  });
+});
+
+/**
+ * `redditConfig.imageAssetId` (decision D3) is honoured only by campaign-service with URL signing
+ * configured, so it is refused — not dropped — unless the create cutover AND the Reddit-assets flag
+ * are on. Dropping it would create a campaign with no ad while the operator chose an image.
+ */
+describe('CampaignController.createCampaign Reddit uploaded image', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceRedditAssets ? assets : cutover));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards imageAssetId untouched when the cutover owns the create and the flag is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, imageAssetId: ASSET } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['imageAssetId']).toBe(ASSET);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Reddit-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying imageAssetId when %s, creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, imageAssetId: ASSET } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.imageAssetId',
+        message: 'uploaded Reddit images are not enabled on this deployment; supply an image URL instead',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+});
+
+/**
+ * `metaConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused — not
+ * dropped — unless the create cutover AND the Meta-assets flag are on, on the Reddit field's terms.
+ * A pasted `imageUrl` is not gated here: the form withholds it while `metaCreativeEnabled` is off.
+ */
+describe('CampaignController.createCampaign Meta uploaded image', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const metaConfig = (variants: Record<string, unknown>[]): Record<string, unknown> => ({ budgetUsd: 50, variants });
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaAssets ? assets : cutover));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards imageAssetId on every variant untouched when the cutover owns the create and the flag is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['meta-ads'],
+          metaConfig: metaConfig([
+            { primaryText: 'p', headline: 'h', imageAssetId: ASSET },
+            { primaryText: 'p2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['metaConfig'].variants.map((v) => v['imageAssetId'])).toEqual([ASSET, ASSET]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a pasted imageUrl whatever the Meta-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['meta-ads'], metaConfig: metaConfig([{ primaryText: 'p', headline: 'h', imageUrl: 'https://cdn.example.org/a.png' }]) },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['metaConfig'].variants[0]['imageUrl']).toBe('https://cdn.example.org/a.png');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Meta-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying a variant imageAssetId when %s, naming the variant and creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['meta-ads'],
+          metaConfig: metaConfig([
+            { primaryText: 'p', headline: 'h' },
+            { primaryText: 'p2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'metaConfig.variants[1].imageAssetId',
+        message: 'uploaded Meta images are not enabled on this deployment; supply an image URL instead',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+});
+
+/**
+ * A stored image in a Google creative image slot rides as `{ imageAssetId }` in the slot's own array
+ * (campaign-service's `googleAdsImageRef`), and is honoured only by campaign-service with the
+ * Google-assets flag on — so it is refused, not dropped, otherwise, on the Meta field's terms.
+ */
+describe('CampaignController.createCampaign Google stored images', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceGoogleAssets ? assets : cutover));
+  };
+
+  const body = (channel: string, key: string, creative: Record<string, unknown>): Record<string, unknown> => ({
+    platforms: ['google-ads'],
+    campaignTypes: [channel],
+    budgetUsd: 1000,
+    startDate: '2026-04-01',
+    endDate: '2026-04-30',
+    [key]: creative,
+  });
+
+  const sentCreative = (key: string): Record<string, unknown> =>
+    ((createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig'][key] ?? {}) as Record<string, unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it.each([
+    ['demand-gen', 'demandGenCreative', 'logoImages'],
+    ['performance-max', 'performanceMaxCreative', 'marketingImages'],
+    ['display', 'displayCreative', 'squareLogoImages'],
+  ])('forwards a %s asset ref as { imageAssetId } beside the pasted URLs, in order', async (channel, key, field) => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body(channel, key, { headlines: ['H1'], [field]: [' https://cdn.example.org/a.png ', { imageAssetId: ` ${ASSET} ` }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative(key)[field]).toEqual(['https://cdn.example.org/a.png', { imageAssetId: ASSET }]);
+  });
+
+  /**
+   * Shape-only, like the string entries: a blank id or an object naming none is dropped, and a
+   * `url` key is never forwarded — upstream refuses an entry carrying both a URL and an id, and this
+   * application sends URLs as bare strings.
+   */
+  it('drops a ref with a blank or missing id and never forwards a url key on an object', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        body('demand-gen', 'demandGenCreative', {
+          headlines: ['H1'],
+          logoImages: [{ imageAssetId: '  ' }, { url: 'https://cdn.example.org/x.png' }, { imageAssetId: ASSET, url: 'https://cdn.example.org/y.png' }, 7],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(sentCreative('demandGenCreative')['logoImages']).toEqual([{ imageAssetId: ASSET }]);
+  });
+
+  /** `youtubeVideoIds` is a list but not an image slot, so an object there is dropped as before. */
+  it('does not forward an asset ref in a list that is not an image slot', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('performance-max', 'performanceMaxCreative', { headlines: ['H1'], youtubeVideoIds: ['abc', { imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(sentCreative('performanceMaxCreative')['youtubeVideoIds']).toEqual(['abc']);
+  });
+
+  it('forwards pasted URLs whatever the Google-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('display', 'displayCreative', { headlines: ['H1'], logoImages: ['https://cdn.example.org/logo.png'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative('displayCreative')['logoImages']).toEqual(['https://cdn.example.org/logo.png']);
+  });
+
+  it.each([
+    ['the Google-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying a Google imageAssetId when %s, naming the entry and creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        body('performance-max', 'performanceMaxCreative', {
+          headlines: ['H1'],
+          marketingImages: ['https://cdn.example.org/a.png'],
+          logoImages: ['https://cdn.example.org/logo.png', { imageAssetId: ASSET }],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'performanceMaxCreative.logoImages[1].imageAssetId',
+        message: 'uploaded Google images are not enabled on this deployment; supply an image URL instead',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  /** An over-long id is the same unbounded string an over-long URL is, and is bounded the same way. */
+  it('bounds the length of an asset ref id like any other creative entry', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('demand-gen', 'demandGenCreative', { headlines: ['H1'], logoImages: [{ imageAssetId: 'a'.repeat(100_000) }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors'][0]['field']).toBe('demandGenCreative.logoImages');
+  });
+});
+
+/**
+ * `linkedInConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused —
+ * not dropped — unless the create cutover AND the LinkedIn-assets flag are on, on the Meta field's terms.
+ */
+describe('CampaignController.createCampaign LinkedIn uploaded image', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const linkedInConfig = (variants: Record<string, unknown>[]): Record<string, unknown> => ({ budgetUsd: 50, variants });
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets ? assets : cutover));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards imageAssetId on every variant untouched when the cutover owns the create and the flag is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['linkedin-ads'],
+          linkedInConfig: linkedInConfig([
+            { introText: 'i', headline: 'h', imageAssetId: ASSET },
+            { introText: 'i2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['linkedInConfig'].variants.map((v) => v['imageAssetId'])).toEqual([ASSET, ASSET]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards variants with no imageAssetId whatever the LinkedIn-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['linkedin-ads'], linkedInConfig: linkedInConfig([{ introText: 'i', headline: 'h' }]) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the LinkedIn-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying a variant imageAssetId when %s, naming the variant and creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['linkedin-ads'],
+          linkedInConfig: linkedInConfig([
+            { introText: 'i', headline: 'h' },
+            { introText: 'i2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'linkedInConfig.variants[1].imageAssetId',
+        message: 'uploaded LinkedIn images are not enabled on this deployment; remove the image',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+});
+
+/**
+ * `microsoftConfig.imageAssetId` is honoured only by campaign-service, so it is refused — not
+ * dropped — unless the create cutover AND the Microsoft-assets flag are on, on the Meta field's terms.
+ */
+describe('CampaignController.createCampaign Microsoft uploaded image', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const microsoftConfig = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    eventName: 'KubeCon',
+    eventSlug: 'kubecon',
+    registrationUrl: 'https://example.com',
+    budgetUsd: 300,
+    geoTargets: ['US'],
+    keywords: [{ text: 'kubernetes', matchType: 'Exact' }],
+    ...overrides,
+  });
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMicrosoftAssets ? assets : cutover));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards imageAssetId untouched when the cutover owns the create and the flag is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ imageAssetId: ASSET }) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['microsoftConfig']['imageAssetId']).toBe(ASSET);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a config with no imageAssetId whatever the Microsoft-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig() }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Microsoft-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying imageAssetId when %s, creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ imageAssetId: ASSET }) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'microsoftConfig.imageAssetId',
+        message: 'uploaded Microsoft images are not enabled on this deployment; remove the image',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
   });
 });

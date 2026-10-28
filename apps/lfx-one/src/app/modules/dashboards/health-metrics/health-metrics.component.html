@@ -1,18 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-6" data-testid="health-metrics-page">
+<div class="flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="health-metrics-page">
   @if (!hasFoundation() || !allCardsEmpty()) {
-    <!-- Header -->
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-xl font-semibold text-gray-900" data-testid="health-metrics-title">Health Metrics</h2>
-        @if (hasFoundation()) {
-          <p class="text-sm text-gray-500">Operational health metrics across your foundation.</p>
-        }
-      </div>
+    <lfx-page-header
+      title="Health Metrics"
+      [description]="hasFoundation() ? 'Operational health metrics across your foundation.' : null"
+      titleTestId="health-metrics-title">
       @if (hasFoundation()) {
-        <div class="flex items-center gap-4">
+        <div pageHeaderActions class="flex items-center gap-4">
           <span class="text-sm text-gray-500 whitespace-nowrap">{{ dateRangeLabel() }}</span>
           <div
             class="flex items-center gap-0.5 rounded-lg bg-gray-100 p-1"
@@ -38,7 +34,7 @@
           </div>
         </div>
       }
-    </div>
+    </lfx-page-header>
 
     <!-- Summary Metric Cards — hidden per #2167; data flow intentionally kept live for re-enable -->
     @if (hasFoundation()) {

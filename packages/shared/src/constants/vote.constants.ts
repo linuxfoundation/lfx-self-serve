@@ -47,3 +47,67 @@ export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
  * list merges the known-open status over stale index rows while the search index catches up.
  */
 export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;
+
+/**
+ * Re-fetch interval while a votes list shows a just-opened vote still waiting on its invitation count (GH-4078).
+ * Polling stops once the index reports the count or the RECENTLY_OPENED_VOTE_TTL_MS carrier expires.
+ */
+export const VOTE_INVITATION_COUNT_REFRESH_MS = 10 * 1000;
+
+/** Reminder reads/sends reject an inactive poll with this state-conflict code. */
+export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
+
+/** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
+export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
+
+/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
+export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
+
+/** No reminders were sent because at least one selected recipient is no longer eligible. */
+export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
+
+/** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
+export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
+
+/** The on-demand close summary (#3662) refuses a vote that has not ended yet with this state-conflict code. */
+export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
+
+/** The on-demand close summary (#3662) failed to send to every recipient; none were emailed. */
+export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
+
+/** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
+
+/** Encoded-length cap for the same title: it appears in both subject and body, and CJK/emoji expand ~3–9× under `encodeURIComponent`. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
+
+/** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
+export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Presenter view (#4140): live-count poll cadence while the tab is visible. */
+export const VOTE_PRESENTER_POLL_INTERVAL_MS = 5_000;
+
+/** Presenter view: first reconnect delay after a failed poll; doubles per consecutive failure up to the cap. */
+export const VOTE_PRESENTER_BACKOFF_BASE_MS = 5_000;
+
+/** Presenter view: ceiling for the reconnect backoff so a recovered network is noticed within half a minute. */
+export const VOTE_PRESENTER_BACKOFF_MAX_MS = 30_000;
+
+/** Presenter view: the one-second tick that refreshes the "Updated N seconds ago" label. */
+export const VOTE_PRESENTER_CLOCK_TICK_MS = 1_000;
+
+/** Presenter view and copy-slide PNG share one title cap so the two surfaces truncate identically (#4142, #4145). */
+export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
+
+/** Copy-slide PNG (#4145): fixed 16:9 export size so it drops into Google Slides / PowerPoint uncropped. */
+export const VOTE_SLIDE_WIDTH_PX = 1920;
+export const VOTE_SLIDE_HEIGHT_PX = 1080;
+
+/** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
+export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
+
+/** QR code quiet zone in modules; the spec asks for 4, 2 still scans reliably on a projector and keeps the code large. */
+export const VOTE_QR_QUIET_ZONE_MODULES = 2;
+
+/** How long Copy slide waits for the slide's QR to render before reporting a failed export. */
+export const VOTE_SLIDE_QR_READY_TIMEOUT_MS = 5000;

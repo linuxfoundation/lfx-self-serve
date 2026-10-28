@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { OrgRoiComponent } from './org-roi.component';
 
@@ -82,7 +83,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
     ],
   })
     .overrideComponent(OrgRoiComponent, {
-      set: { imports: [OrgLensEmptyStateComponent, EmptyStateComponent, SkeletonModule], schemas: [NO_ERRORS_SCHEMA] },
+      set: { imports: [OrgLensEmptyStateComponent, EmptyStateComponent, SkeletonModule, PageHeaderComponent], schemas: [NO_ERRORS_SCHEMA] },
     })
     .compileComponents();
 

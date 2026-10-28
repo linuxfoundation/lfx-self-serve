@@ -149,7 +149,7 @@
               iconPos="right"
               size="small"
               [loading]="submitting()"
-              [disabled]="submitting()"
+              [disabled]="memberSaveDisabled()"
               (onClick)="onDone()"
               data-testid="committee-manage-done-btn">
             </lfx-button>
@@ -161,7 +161,7 @@
               iconPos="right"
               size="small"
               [loading]="submitting()"
-              [disabled]="submitting()"
+              [disabled]="memberSaveDisabled()"
               (onClick)="onSubmitAll()"
               data-testid="committee-manage-update-btn">
             </lfx-button>

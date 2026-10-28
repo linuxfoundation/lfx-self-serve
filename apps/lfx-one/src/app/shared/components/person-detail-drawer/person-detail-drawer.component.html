@@ -38,26 +38,72 @@
           </span>
         }
         <span class="flex min-w-0 flex-col">
-          <span class="truncate text-lg font-semibold text-gray-900">{{ context.name }}</span>
+          <span class="flex min-w-0 items-center gap-2">
+            <span class="truncate text-lg font-semibold text-gray-900">{{ context.name }}</span>
+            @if (drawer.isFormer()) {
+              <span
+                class="inline-flex flex-shrink-0 items-center rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                data-testid="person-detail-drawer-former-badge">
+                Former employee
+              </span>
+            }
+          </span>
           @if (context.title) {
             <span class="truncate text-sm text-gray-500">{{ context.title }}</span>
           }
           @if (companyEmails().length) {
             <span class="mt-1 flex flex-col gap-0.5" data-testid="person-detail-drawer-email">
-              @for (companyEmail of companyEmails(); track companyEmail; let i = $index) {
-                <span class="truncate text-xs text-gray-500" [title]="companyEmail" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
-                  companyEmail
-                }}</span>
+              @for (companyEmail of companyEmails(); track companyEmail.email; let i = $index) {
+                <span class="flex min-w-0 items-center gap-1.5">
+                  @if (companyEmail.href) {
+                    <a
+                      class="truncate text-xs text-gray-500 hover:text-blue-700 hover:underline"
+                      [href]="companyEmail.href"
+                      [title]="companyEmail.email"
+                      [attr.data-testid]="'person-detail-drawer-email-' + i"
+                      >{{ companyEmail.email }}</a
+                    >
+                  } @else {
+                    <!-- Carries URI delimiters: shown and copyable, but never linked. -->
+                    <span class="truncate text-xs text-gray-500" [title]="companyEmail.email" [attr.data-testid]="'person-detail-drawer-email-' + i">{{
+                      companyEmail.email
+                    }}</span>
+                  }
+                  @if (companyEmail.isPrimary) {
+                    <span class="shrink-0 rounded bg-gray-100 px-1 text-[10px] font-medium text-gray-600" data-testid="person-detail-drawer-email-primary">
+                      Primary
+                    </span>
+                  }
+                  <button
+                    type="button"
+                    class="shrink-0 text-gray-500 hover:text-gray-700"
+                    [attr.aria-label]="'Copy ' + companyEmail.email"
+                    [attr.data-testid]="'person-detail-drawer-email-copy-' + i"
+                    (click)="onCopyEmail(companyEmail.email)">
+                    <i
+                      class="fa-light text-xs"
+                      [class.fa-copy]="copiedEmail() !== companyEmail.email"
+                      [class.fa-check]="copiedEmail() === companyEmail.email"
+                      aria-hidden="true"></i>
+                  </button>
+                </span>
               }
             </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-not-available">
+            <span class="sr-only" role="status" aria-live="polite">
+              @if (copiedEmail(); as copied) {
+                {{ copied }} copied
+              }
+            </span>
+          } @else if (drawer.emailsLoading()) {
+            <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
+          } @else if (companyEmailsFailed()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
+          } @else if (companyEmailsNotAvailable()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-not-available">
               Company emails aren't available from this view
             </span>
-          } @else if (companyEmailFeatureEnabled() && companyEmailsNoneOnRecord()) {
-            <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-none"> No company email on record </span>
+          } @else if (companyEmailsNoneOnRecord()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-none"> No company email on record </span>
           }
         </span>
       </div>
@@ -110,7 +156,7 @@
 
     <div class="mt-5" role="tabpanel" id="person-detail-drawer-tabpanel" tabindex="0" [attr.aria-labelledby]="'person-detail-drawer-tab-' + drawer.activeTab()">
       @if (drawer.activeTab() === 'governance') {
-        <!-- Governance renders from the opener's supplied seats (Board/Committee tabs) with no personKey
+        <!-- Seats supplied by the opener (People Board/Committee, Groups) render without waiting on the detail
              fetch; only show the fetch's loading/error when nothing has been supplied yet. -->
         @if (drawer.loading() && governanceSeats().length === 0) {
           <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-loading">
@@ -139,6 +185,35 @@
                   >
                 </span>
                 <span class="text-xs text-gray-500">{{ seat.foundationName ? seat.foundationName + ' · ' + seat.committeeName : seat.committeeName }}</span>
+              </li>
+            }
+          </ul>
+        }
+      } @else if (drawer.activeTab() === 'key-contacts') {
+        <!-- Roles supplied by the opener (the People Key Contacts tab groups them per person) render without
+             waiting on the roles fetch; only its own loading/error show, never the activity fetch's. -->
+        @if (drawer.keyContactsLoading()) {
+          <div class="flex flex-col gap-4 py-2" data-testid="person-detail-drawer-key-contacts-loading">
+            <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+            <div class="h-32 animate-pulse rounded-lg bg-gray-100"></div>
+          </div>
+        } @else if (drawer.keyContactsError()) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-error">
+            Couldn't load this person's key contact roles. Please try again.
+          </p>
+        } @else if (!drawer.keyContactsIdentified()) {
+          <!-- Never say "no roles" about someone the lookup could not identify in the first place. -->
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-unavailable">
+            Key contact roles aren't available for this person.
+          </p>
+        } @else if (keyContactRoles().length === 0) {
+          <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-key-contacts-empty">No key contact roles recorded.</p>
+        } @else {
+          <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200" data-testid="person-detail-drawer-key-contacts-list">
+            @for (row of keyContactRoles(); track row.contactUid) {
+              <li class="flex items-center justify-between gap-3 px-4 py-3">
+                <span class="whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium" [class]="row.pillClass">{{ row.role }}</span>
+                <span class="min-w-0 truncate text-xs text-gray-500" [title]="row.foundationLabel">{{ row.foundationLabel }}</span>
               </li>
             }
           </ul>
@@ -196,8 +271,22 @@
               <div class="flex flex-col gap-5">
                 <div class="grid grid-cols-2 gap-4">
                   <div class="rounded-lg border border-gray-200 bg-white p-4">
-                    <div class="text-2xl font-semibold leading-none text-gray-900">{{ codeTotals().commits | number }}</div>
-                    <div class="mt-1 text-xs text-gray-500">Commits</div>
+                    <div class="text-2xl font-semibold leading-none text-gray-900" data-testid="person-detail-drawer-code-commits">
+                      {{ codeTotals().commits | number }}
+                    </div>
+                    <div class="mt-1 flex items-center gap-1 text-xs text-gray-500" data-testid="person-detail-drawer-code-commits-label">
+                      Commits
+                      <button
+                        type="button"
+                        class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        aria-label="How commits are counted"
+                        [pTooltip]="commitsDefinition"
+                        tooltipPosition="top"
+                        tooltipEvent="both"
+                        data-testid="person-detail-drawer-code-commits-info">
+                        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                      </button>
+                    </div>
                   </div>
                   <div class="rounded-lg border border-gray-200 bg-white p-4">
                     <div class="text-2xl font-semibold leading-none text-gray-900">{{ codeTotals().projects | number }}</div>
@@ -207,7 +296,7 @@
 
                 <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
                   @for (project of detail.code; track project.projectId) {
-                    <li class="flex items-center justify-between gap-3 px-4 py-3">
+                    <li class="flex items-center justify-between gap-3 px-4 py-3" [attr.data-testid]="'person-detail-drawer-code-project-' + project.projectId">
                       <div class="flex min-w-0 flex-col">
                         <span class="flex items-center gap-2">
                           <span class="truncate text-sm font-medium text-gray-900">{{ project.projectName }}</span>
@@ -222,7 +311,11 @@
                           <span class="text-xs text-gray-500">Last activity {{ project.lastActivityDate | date: 'mediumDate' }}</span>
                         }
                       </div>
-                      <span class="whitespace-nowrap text-sm text-gray-700">{{ project.totalCommits | number }} commits</span>
+                      <span
+                        class="whitespace-nowrap text-sm text-gray-700"
+                        [attr.data-testid]="'person-detail-drawer-code-project-' + project.projectId + '-commits'"
+                        >{{ project.commits | number }} {{ project.commits === 1 ? commitUnit.one : commitUnit.other }}</span
+                      >
                     </li>
                   }
                 </ul>
@@ -231,8 +324,8 @@
           }
         }
       } @else {
-        <!-- Events/Training/Code need the personKey-keyed detail fetch; Board/Committee openers carry no
-             personKey, so only their Governance tab (rendered above from supplied seats) has data. -->
+        <!-- No detail: the opener carried neither a personKey nor a username that resolves to one roster
+             person (e.g. key contacts without an LF username). -->
         <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-detail-unavailable">
           Detailed activity isn't available for this person.
         </p>

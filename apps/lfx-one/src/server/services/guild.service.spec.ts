@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// `@lfx-one/shared/interfaces` provides types only here; mock it so the barrel's
-// Angular-tainted transitive imports never load (weekly-brief.service.spec.ts convention).
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
 
 import type { Request } from 'express';
 
@@ -66,8 +64,12 @@ describe('GuildService.getRawEventPayloads', () => {
 
       const payloads = await service.getRawEventPayloads(req, 'session-1');
 
-      expect(payloads).toHaveLength(1);
-      expect(payloads[0]).toContain('llm_done');
+      expect(payloads).toHaveLength(3);
+      expect(payloads.slice(0, 2).map((payload) => JSON.parse(payload))).toEqual([
+        { type: 'mktg_session_turn_started', created_at: '2026-01-01T00:00:00Z' },
+        { type: 'mktg_session_turn_started', created_at: '2026-01-01T00:01:00Z' },
+      ]);
+      expect(payloads[2]).toContain('llm_done');
       for (const payload of payloads) {
         expect(payload).not.toContain('brand_kit_result');
         expect(payload).not.toContain('user_message');
@@ -140,7 +142,8 @@ describe('GuildService.getRawEventPayloads', () => {
 
       const payloads = await service.getRawEventPayloads(req, 'session-1');
 
-      expect(payloads).toHaveLength(250); // filtered well under the cap
+      expect(payloads).toHaveLength(501); // content-free turns plus an explicit incomplete-page marker
+      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
       expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', expect.stringContaining('truncated'), { count: 500, limit: 500 });
     });
 
@@ -150,6 +153,88 @@ describe('GuildService.getRawEventPayloads', () => {
       await service.getRawEventPayloads(req, 'session-1');
 
       expect(logger.warning).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * `trigger_message` content is user-authored and unbounded, so the history
+ * parser must keep every legitimate payload shape and run in linear time
+ * (CWE-1333, linuxfoundation/lfx-self-serve-ops#53): the former ```json regex
+ * stalled the event loop for seconds on a few KB of unclosed whitespace.
+ */
+describe('GuildService.getHistory — trigger_message parsing', () => {
+  let service: GuildService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    service = new GuildService();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  /** Resolves the user-visible text of a single trigger_message with the given content. */
+  async function triggerText(content: unknown): Promise<string | undefined> {
+    fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'trigger_message', created_at: '2026-01-01T00:00:00Z', content }]));
+    const messages = await service.getHistory(req, 'session-1');
+    return messages[0]?.text;
+  }
+
+  describe('payload shapes', () => {
+    it('reads text from a fenced JSON block', async () => {
+      expect(await triggerText('```json\n{"text":"hi"}\n```')).toBe('hi');
+    });
+
+    it('unwraps double-serialized text inside a fenced block', async () => {
+      expect(await triggerText('```json\n{"text":"{\\"text\\":\\"inner\\"}"}\n```')).toBe('inner');
+    });
+
+    it('reads agent_input.text from raw JSON', async () => {
+      expect(await triggerText('{"agent_input":{"text":"ai"}}')).toBe('ai');
+    });
+
+    it('falls back to plain text', async () => {
+      expect(await triggerText('hello')).toBe('hello');
+    });
+
+    it('reads a fenced block from object-form content', async () => {
+      expect(await triggerText({ data: '```json {"text":"obj"} ```' })).toBe('obj');
+    });
+
+    it('closes the block at the first ``` after the fence, not a later one', async () => {
+      expect(await triggerText('```json {"text":"first"} ``` trailing ```')).toBe('first');
+    });
+
+    it('falls through to the plain-text fallback for an empty fenced block', async () => {
+      expect(await triggerText('```json```')).toBe('```json```');
+    });
+  });
+
+  describe('linear-time fence scan (ReDoS regression)', () => {
+    it('returns an unclosed fence followed by 1 MB of whitespace as plain text without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json' + ' '.repeat(1_000_000));
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('```json');
+      expect(elapsed).toBeLessThan(500);
+    });
+
+    it('parses a closed fence wrapping 1 MB of whitespace without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json {"text": "' + ' '.repeat(1_000_000) + 'x"} ```');
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('x');
+      expect(elapsed).toBeLessThan(500);
     });
   });
 });
@@ -189,13 +274,39 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     vi.clearAllMocks();
   });
 
-  it('passes the full owner~name agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
+  it('passes the full owner~name agent_id by default and keeps the routing mention on its own line', async () => {
     const sessionId = await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
 
     expect(sessionId).toBe('session-new');
     const body = sentBody();
     expect(body['agent_id']).toBe('owner~foundation-message');
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
+  });
+
+  it('puts the @handle mention on a line of its own when asked, so a coded agent finds its intake header line intact', async () => {
+    await service.createSession(req, { message: 'BATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X', handle: 'slides-export', mentionOnOwnLine: true });
+
+    const body = sentBody();
+    expect(body['agent_id']).toBe('owner~slides-export');
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@slides-export\nBATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X' });
+  });
+
+  it('retains explicit same-line opt-out for session creation', async () => {
+    await service.createSession(req, { message: 'INTAKE HEADER\nSynthetic body', handle: 'synthetic-agent', mentionOnOwnLine: false });
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: '@synthetic-agent INTAKE HEADER\nSynthetic body' });
+  });
+
+  it('uses the same own-line default for an answers follow-up, replacing a caller-supplied mention', async () => {
+    await service.sendFollowUp(req, 'session-new', { message: '@untrusted\nANSWERS HEADER\nSynthetic answer', handle: 'synthetic-agent' });
+    expect(sentBody()).toEqual({ mode: 'text', content: '@synthetic-agent\nANSWERS HEADER\nSynthetic answer' });
+  });
+
+  it.each(['createSession', 'sendFollowUp'] as const)('keeps %s mention-only routing free of a trailing separator', async (method) => {
+    if (method === 'createSession') await service.createSession(req, { message: '@untrusted  ', handle: 'synthetic-agent' });
+    else await service.sendFollowUp(req, 'session-new', { message: '@untrusted  ', handle: 'synthetic-agent' });
+    expect(sentBody()).toMatchObject(
+      method === 'createSession' ? { agent_input: { type: 'text', text: '@synthetic-agent' } } : { mode: 'text', content: '@synthetic-agent' }
+    );
   });
 
   it('drops the agent_id field (only) when GUILD_EXPLICIT_AGENT_ID=false', async () => {
@@ -205,7 +316,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
 
     const body = sentBody();
     expect('agent_id' in body).toBe(false);
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
   });
 
   it('sends a structured agent input verbatim with the owner~name agent_id (no mention can ride a typed form payload)', async () => {
@@ -239,6 +350,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     await service.createSession(req, { message: 'hello' });
 
     expect('agent_id' in sentBody()).toBe(false);
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: 'hello' });
   });
 });
 
@@ -294,6 +406,8 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
+    expect(() => service.preflight('synthetic_redraft')).toThrow('Guild API is not configured.');
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(service.createSession(req, { message: 'hi', handle: 'foundation-message' })).rejects.toMatchObject({
       code: 'guild_not_configured',
       message: 'Guild API is not configured. Missing environment variable: GUILD_API_KEY.',

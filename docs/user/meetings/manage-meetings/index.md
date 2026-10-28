@@ -12,7 +12,7 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View meetings
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. Your personal **My Meetings** view (Me lens) also shows meetings across your projects, and Edit/Delete still appear there for meetings you organize — that view just doesn't have a **Create Meeting** button.
+2. Switch to your **Project** or **Foundation** lens using the lens switcher, then select **Meetings** from the left navigation. Your personal **Meetings** view (Me lens) also shows meetings across your projects, and Edit/Delete still appear there for meetings you organize — that view just doesn't have a **Create Meeting** button.
 3. The dashboard lists meetings for your active project context, with **Upcoming** and **Past** tabs. If no meetings are scheduled, the Upcoming tab shows "No meetings yet / Schedule a meeting to get started."
 4. Each meeting you organize shows **Edit** and **Delete** icon buttons directly on its card in the list. You can also select a meeting to open its full detail view.
 
@@ -44,7 +44,14 @@ From a meeting card in the list, **Invite people** opens the guest list with the
 
 ## Manage meeting materials
 
-On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones. On a meeting card in the list, the same drawer opens from **Edit materials**. Upcoming materials belong to the whole series, so they appear on every occurrence of a recurring meeting.
+On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones. On a meeting card in the list, the same drawer opens from **Edit materials**.
+
+On a recurring meeting, materials can apply to **one occurrence** or to **all occurrences**:
+
+- Under **Applies to**, choose **This occurrence** (the date you are managing) or **All occurrences** before you add files or links. New materials default to all occurrences.
+- Each existing item shows a **This occurrence** or **All occurrences** label. Use **Limit to this occurrence** or **Apply to all occurrences** to change it, then **Save Changes**.
+- Materials for one occurrence appear only on that date's card and page, and only registrants of that date are notified of them. Materials for all occurrences appear on every date.
+- You can scope materials only to an upcoming occurrence that has not been cancelled. If an occurrence is rescheduled, its materials move with it.
 
 ## Delete a meeting
 

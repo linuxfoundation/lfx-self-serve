@@ -14,6 +14,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 
 - **[Frontend Overview](./frontend/README.md)** - Angular 20 architecture with zoneless change detection
 - **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 20 development patterns with signals
+- **[Project Marketing kit](./frontend/marketing-kit.md)** - Family catalog, document-state provenance, routed tabs and export integration slot
 - **[Component Architecture](./frontend/component-architecture.md)** - PrimeNG wrapper components and design patterns
 - **[Lens & Persona System](./frontend/lens-system.md)** - LensService, persona detection, ProjectContextService
 - **[Persona Detection Pipeline](./frontend/persona-detection.md)** - Upstream persona-service NATS contract, detection→persona mapping, caching, SSR hydration
@@ -22,9 +23,12 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Drawer Pattern](./frontend/drawer-pattern.md)** - Drawer components, lazy data, chart integration
 - **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
 - **[Gatewaze Embed Host](./frontend/gw-embed.md)** - Mounting the React embed, dual-router sync, style containment, session
+- **[Marketing OS AEO/GEO Audits](./frontend/mktg-aeo-geo.md)** - One-off intake, generating-document handoff and stored report presentation
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
 - **[Public Meeting Join](./frontend/public-meeting-join.md)** - Anonymous and authenticated join flows, access model, attachment gating
+- **[Vote Presenter View](./frontend/vote-presenter.md)** - Chrome-less presenter route, `vote#writer` gate, visibility-aware polling, secrecy rules
+- **[Member 360 Documents](./frontend/marketing-os-member-360.md)** - Form-only runs, live activity, typed rankings, tracker parsing and workbook export
 
 ### 🖥 Backend Architecture
 
@@ -49,6 +53,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Gatewaze Host Session](./backend/gw-host-session.md)** - Server-held Gatewaze session, id_token grant, key derivation, flag, BFF proxies and their authorization
 - **[LFX Insights API Tokens](./backend/insights-tokens.md)** - PAT service proxy, server-side LaunchDarkly access flag
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
+- **[LinkedIn Post Agent](./backend/mktg-linkedin-post.md)** - Per-user profile lifecycle, source ingestion, one-off documents and privacy boundaries
 
 ### 📦 Shared Package Architecture
 

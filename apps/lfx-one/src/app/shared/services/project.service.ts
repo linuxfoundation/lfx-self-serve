@@ -70,7 +70,8 @@ export class ProjectService {
   }
 
   /**
-   * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
+   * Fail-closed on error: emits `null` (grants nothing), which `WriterGrantsService` surfaces as a
+   * failed lookup the menu can offer to retry, rather than as "no writer grants". One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
    * set narrowed until the (much slower) deferred sweep eventually resolves it instead.
    *
@@ -82,13 +83,14 @@ export class ProjectService {
    * hang here would silently starve the sweep — the recovery path for a stalled fast path — for
    * the whole session.
    */
-  public getWriterSummary(): Observable<WriterSummary> {
+  public getWriterSummary(): Observable<WriterSummary | null> {
     return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
       retryTransientHttpError(),
       timeout(WRITER_SUMMARY_TIMEOUT_MS),
       catchError((error) => {
         console.error('Failed to fetch writer summary:', error);
-        return of({ hasWriterFoundation: false, hasWriterProject: false });
+        // null rather than two `false` grants, so the caller can tell "couldn't check" from "none".
+        return of(null);
       })
     );
   }

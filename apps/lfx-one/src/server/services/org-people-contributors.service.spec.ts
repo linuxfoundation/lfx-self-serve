@@ -14,6 +14,8 @@ const { execute, cacheValues } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
 }));
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute }) },
@@ -42,12 +44,15 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
-import type { CompactOrgContributorRowsCache } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
+import type { CompactOrgContributorRowsCache, ContributorPersonProjectRow, OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
-const ACCOUNT = '0014100000Te2ovAAB';
+const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
+const FILTERS: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS;
 
 let service: OrgPeopleContributorsService;
 
@@ -69,6 +74,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: 'CNCF',
         FOUNDATION_SLUG: 'cncf',
         COMMITS: 40,
+        MERGED_COMMITS: 15,
         CODE_ACTIVITIES: 120,
         LAST_ACTIVE_DATE: '2026-04-12',
         IS_DECLARED_MAINTAINER_FOR_PROJECT: true,
@@ -88,6 +94,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: null,
         FOUNDATION_SLUG: null,
         COMMITS: null,
+        MERGED_COMMITS: null,
         CODE_ACTIVITIES: null,
         LAST_ACTIVE_DATE: null,
         IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
@@ -107,6 +114,7 @@ function mockWarehouse(): void {
         FOUNDATION_NAME: 'CNCF',
         FOUNDATION_SLUG: 'cncf',
         COMMITS: 3,
+        MERGED_COMMITS: 1,
         CODE_ACTIVITIES: 9,
         LAST_ACTIVE_DATE: '2026-01-05',
         IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
@@ -132,10 +140,10 @@ afterEach(() => {
 
 describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
   it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
-    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getContributors(ACCOUNT, 'all');
+    const fromHit = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     // `toStrictEqual` distinguishes null from undefined from an absent key; the serialized
     // comparison additionally pins key order, which `buildResponse`'s object literals fix and a
@@ -150,10 +158,10 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // warehouse handed back, so only a read-back exercises the decoder at all. A decode that
     // dropped a dictionary column would silently relabel every project row with its id, and
     // quietly empty the foundation filter.
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
-    const { projects, projectOptions, foundationOptions } = await service.getContributors(ACCOUNT, 'all');
+    const { projects, projectOptions, foundationOptions } = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
@@ -167,6 +175,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
       foundationSlug: 'cncf',
       role: 'Maintainer',
       commits: 40,
+      codeActivities: 120,
       lastActiveTs: '2026-04-12',
     });
     expect(projects[1]?.projectName).toBe('project-two');
@@ -183,23 +192,28 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
     // missing data, so the guard has to reject the entry up front rather than serve a tab with
     // holes in it for the rest of the TTL.
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     stored.rows.r = stored.rows.r.map((row) => row.slice(0, -1));
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it('keys each time range separately so one window cannot serve another', async () => {
-    await service.getContributors(ACCOUNT, 'all');
-    await service.getContributors(ACCOUNT, '30d');
+  it('keys each time range and project scope separately, one entry serving every commit scope and metric', async () => {
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
+    await service.getContributors(ACCOUNT, '30d', FILTERS);
+    await service.getContributors(ACCOUNT, '30d', { ...FILTERS, projectScope: 'lf' });
+    // Commit scope and metric only pick counts after the read, so they reuse the entry.
+    await service.getContributors(ACCOUNT, '30d', { ...FILTERS, commitScope: 'merged' });
+    await service.getContributors(ACCOUNT, '30d', { ...FILTERS, metric: 'code' });
 
-    expect([...cacheValues.keys()]).toEqual([buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:all'), buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:30d')]);
+    expect([...cacheValues.keys()]).toEqual(['all:all', '30d:all', '30d:lf'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v4:${suffix}`)));
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   it.each([
@@ -213,14 +227,14 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
   ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
     // The decode resolves each reference without a fallback, so an unresolvable one would emit a
     // row with no dictionary fields at all. The guard has to reject the entry instead.
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     corrupt(stored);
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -230,9 +244,9 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // refetch on every request forever.
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
-    const fromHit = await service.getContributors(ACCOUNT, 'all');
+    const fromHit = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
@@ -246,7 +260,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
   ])('treats a stored entry whose required CDP_MEMBER_ID cell is %s as a miss', async (_label, corrupt) => {
     // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
     // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     const index = stored.rows.k.indexOf('CDP_MEMBER_ID');
@@ -254,7 +268,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
-    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
@@ -265,10 +279,10 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     const { rows } = (await execute()) as { rows: Record<string, unknown>[] };
     execute.mockReset();
     execute.mockResolvedValue({ rows: rows.map((row, index) => (index === 0 ? { ...row, CDP_MEMBER_ID: null } : row)) });
-    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getContributors(ACCOUNT, 'all');
+    const fromHit = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
     expect(fromHit).toStrictEqual(fromMiss);
@@ -295,6 +309,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
           FOUNDATION_NAME: null,
           FOUNDATION_SLUG: null,
           COMMITS: null,
+          MERGED_COMMITS: null,
           CODE_ACTIVITIES: null,
           LAST_ACTIVE_DATE: null,
           IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
@@ -302,10 +317,10 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
         },
       ],
     });
-    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
-    const fromHit = await service.getContributors(ACCOUNT, 'all');
+    const fromHit = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
     expect(fromHit).toStrictEqual(fromMiss);
@@ -315,10 +330,103 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.
     const legacy = [{ PERSON_KEY: 'stale', PROJECT_ID: 'stale-project' }];
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v4:all:all')!, JSON.stringify(legacy));
 
-    const response = await service.getContributors(ACCOUNT, 'all');
+    const response = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+  });
+});
+
+describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', () => {
+  function lastQuery(): string {
+    return execute.mock.calls.at(-1)![0] as string;
+  }
+
+  function projectRow(projectId: string, commits: number, codeActivities: number): ContributorPersonProjectRow {
+    return {
+      PERSON_KEY: 'person-one',
+      PROJECT_ID: projectId,
+      LFID: 'lfid-one',
+      LF_USERNAME: 'ada',
+      CDP_MEMBER_ID: 'cdp-1',
+      DISPLAY_NAME: 'Ada Lovelace',
+      TITLE: null,
+      PROJECT_NAME: projectId,
+      PROJECT_SLUG: null,
+      FOUNDATION_ID: null,
+      FOUNDATION_NAME: null,
+      FOUNDATION_SLUG: null,
+      COMMITS: commits,
+      MERGED_COMMITS: Math.floor(commits / 2),
+      CODE_ACTIVITIES: codeActivities,
+      LAST_ACTIVE_DATE: '2026-04-12',
+      IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
+      IS_DECLARED_MAINTAINER_FOR_ORG: false,
+    };
+  }
+
+  it.each([
+    ['all', null],
+    ['lf', 'AND is_lf_project = TRUE'],
+    ['non_lf', 'AND is_lf_project = FALSE'],
+  ] as const)('reads project scope %s with the matching LF predicate', async (projectScope, predicate) => {
+    await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope });
+
+    if (predicate) expect(lastQuery()).toContain(predicate);
+    else expect(lastQuery()).not.toMatch(/is_lf_project/);
+    expect(execute.mock.calls.at(-1)![1]).toEqual([ACCOUNT]);
+  });
+
+  it.each([
+    ['30d', 'AND activity_date >= DATEADD(day, -30, CURRENT_DATE())'],
+    ['90d', 'AND activity_date >= DATEADD(day, -90, CURRENT_DATE())'],
+    ['365d', 'AND activity_date >= DATEADD(day, -365, CURRENT_DATE())'],
+    ['730d', 'AND activity_date >= DATEADD(day, -730, CURRENT_DATE())'],
+  ] as const)('windows %s by days before today', async (timeRange, predicate) => {
+    await service.getContributors(ACCOUNT, timeRange, FILTERS);
+
+    expect(lastQuery()).toContain(predicate);
+    expect(lastQuery()).not.toMatch(/month/i);
+  });
+
+  it('reads all time without a date predicate', async () => {
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
+
+    expect(lastQuery()).not.toContain('activity_date >=');
+  });
+
+  it("reads authored and merged commits in one query and shows the commit scope's count", async () => {
+    await service.getContributors(ACCOUNT, '365d', FILTERS);
+    expect(lastQuery()).toContain('SUM(daily_commits) AS commits');
+    expect(lastQuery()).toContain('SUM(daily_merged_commits) AS merged_commits');
+
+    const authored = await service.getContributors(ACCOUNT, '365d', FILTERS);
+    const merged = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, commitScope: 'merged' });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(authored.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(40);
+    expect(merged.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(15);
+    expect(merged.projects.find((row) => row.projectId === 'project-one' && row.personKey === 'person-one')?.commits).toBe(15);
+  });
+
+  it.each(['lf', 'non_lf'] as const)('sums the per-scope commit credit for project scope %s', async (projectScope) => {
+    await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope });
+
+    expect(lastQuery()).toContain('SUM(daily_scope_commits) AS commits');
+    expect(lastQuery()).toContain('SUM(daily_scope_merged_commits) AS merged_commits');
+    expect(lastQuery()).not.toMatch(/SUM\(daily_commits\)|SUM\(daily_merged_commits\)/);
+  });
+
+  it('sends code activities on every row and picks the most active project by the metric', async () => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [projectRow('commit-heavy', 50, 60), projectRow('review-heavy', 5, 400)] });
+
+    const byCommits = await service.getContributors(ACCOUNT, '365d', FILTERS);
+    const byCode = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, metric: 'code' });
+
+    expect(byCommits.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'commit-heavy' });
+    expect(byCode.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'review-heavy' });
+    expect(byCode.projects.map((project) => project.codeActivities)).toEqual([60, 400]);
   });
 });

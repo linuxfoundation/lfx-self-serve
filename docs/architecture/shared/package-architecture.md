@@ -11,7 +11,8 @@ packages/shared/src/
 ├── interfaces/       # TypeScript interfaces (.interface.ts suffix, one domain per file)
 ├── constants/        # Design tokens, API config, domain constants (.constants.ts)
 ├── enums/            # Shared string enumerations (.enum.ts)
-├── utils/            # Pure utility functions, generic + domain-specific (.utils.ts / .util.ts)
+├── utils/            # Browser-safe utility functions, generic + domain-specific (.utils.ts / .util.ts)
+├── server/           # Server-only schema construction and form rendering; separate public entry point
 ├── validators/       # Angular reactive form validators (.validators.ts)
 └── index.ts          # Main barrel export
 ```
@@ -28,6 +29,9 @@ import { MeetingType, VoteStatus } from '@lfx-one/shared/enums';
 import { formatDate, stripHtml, isValidUrl } from '@lfx-one/shared/utils';
 import { futureDateTimeValidator, editModeDateTimeValidator } from '@lfx-one/shared/validators';
 
+// Express/server code only — never re-export this entry through the browser utils/root barrels.
+import { envelopeSchema, renderMember360FormMessage } from '@lfx-one/shared/server';
+
 // Deep imports into a specific file — use only when the category barrel doesn't
 // re-export the symbol you need:
 import { User } from '@lfx-one/shared/interfaces/auth.interface';
@@ -42,6 +46,8 @@ Both forms resolve via the `apps/lfx-one/tsconfig.json` `paths` mapping above, n
 `utils/form.utils.ts` and `utils/vote.utils.ts` both statically import `@angular/forms`, which pulls in `@angular/common`'s `PlatformLocation` and hits a JIT-compile path that throws when `@angular/compiler` isn't loaded. Angular's own build/dev-server pipeline always has the compiler available, so this is invisible from `apps/lfx-one/src/`. Playwright's plain Node/tsx runtime does not load the compiler, so importing anything from the `utils` barrel there — even a symbol that has nothing to do with forms — throws at import time.
 
 **Rule: code that runs outside Angular's own runtime (Playwright specs/helpers under `apps/lfx-one/e2e/`, standalone Node scripts, etc.) must deep-import the specific `.utils.ts` file it needs, not `@lfx-one/shared/utils`,** even when the barrel already re-exports the symbol — this is a second sanctioned case for deep imports, alongside "the barrel doesn't re-export it."
+
+`@lfx-one/shared/server` is the separate public entry point for Node schema consumers. It exports validation and neutral document/ranking helpers without loading the browser `utils` barrel. The root and browser category barrels must not re-export it.
 
 ## What Goes Where
 
@@ -81,7 +87,9 @@ Conventions:
 - File suffix: `.utils.ts` (or `.util.ts` for older single-purpose files).
 - Keep functions pure — no side effects, no I/O.
 - Security-sensitive utilities (URL validation, file type checking) should block dangerous inputs by default.
-- Keep runtime dependencies minimal. Currently `date-fns`, `date-fns-tz` and `sanitize-html`.
+- Keep runtime dependencies minimal. Currently `date-fns`, `date-fns-tz`, `sanitize-html`, and `zod`.
+  Member 360 uses `zod` only through `@lfx-one/shared/server` to mirror its upstream form and output schemas.
+  Inferred interfaces use type-only imports; browser utilities (including the ranking policy) do not construct or re-export those schemas.
   `sanitize-html` is the exception that proves the rule: HTML sanitization has to PARSE rather
   than pattern-match, and three hand-rolled scanners preceded it. A pattern matcher cannot see
   `<image>`, unquoted `background=`, spliced tags or a mismatched close tag, and tightening one
@@ -129,7 +137,7 @@ TypeScript targets ES2022 with strict mode and `moduleResolution: "bundler"`; se
 
 ## Dependencies
 
-- **Runtime** (within `packages/shared/`): `date-fns`, `date-fns-tz`, `sanitize-html` — the only runtime deps inside the shared package. Other repo-wide runtime deps live in the root `package.json`.
+- **Runtime** (within `packages/shared/`): `date-fns`, `date-fns-tz`, `sanitize-html`, `zod` — the runtime deps inside the shared package. Other repo-wide runtime deps live in the root `package.json`.
 - **Peer**: `@angular/core`, `@angular/forms`, `rxjs`, `@fullcalendar/core`, `chart.js`, `snowflake-sdk` — see `packages/shared/package.json` for the canonical list and version ranges.
 
 Keep runtime deps minimal. Prefer peer dependencies for framework-specific types so consumers control the version.

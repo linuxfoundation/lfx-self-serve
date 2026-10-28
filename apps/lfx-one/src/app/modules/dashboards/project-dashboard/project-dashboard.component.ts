@@ -13,6 +13,7 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { TagComponent } from '@components/tag/tag.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { DashboardSidebarComponent } from '../components/dashboard-sidebar/dashboard-sidebar.component';
@@ -32,6 +33,7 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
     DashboardCastDrawerHostComponent,
     TagComponent,
     FormationEntryCardComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './project-dashboard.component.html',
   styleUrl: './project-dashboard.component.scss',

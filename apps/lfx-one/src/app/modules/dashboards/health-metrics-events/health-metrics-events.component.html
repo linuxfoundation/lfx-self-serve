@@ -16,8 +16,7 @@
     [dataSections]="dataSections"
     [subNavItems]="subNavItems()"
     navLabel="Events sections"
-    testIdPrefix="events"
-    [crossReference]="crossReference">
+    testIdPrefix="events">
     <ng-template lfxHealthMetricsL2Section="kpi">
       <lfx-events-at-a-glance [glance]="glance()" [status]="glanceStatus()" (reading)="shell.sectionReading('kpi')" (settled)="shell.sectionSettled('kpi')" />
     </ng-template>
@@ -25,8 +24,7 @@
       <lfx-events-registration-forecast
         (countsChange)="forecastNote.set($event)"
         (reading)="shell.sectionReading('forecast')"
-        (settled)="shell.sectionSettled('forecast')"
-        (sectionPicked)="shell.scrollToSection($event)" />
+        (settled)="shell.sectionSettled('forecast')" />
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="past">
       <lfx-events-past-events

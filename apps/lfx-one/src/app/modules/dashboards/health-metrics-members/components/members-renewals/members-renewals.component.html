@@ -8,7 +8,12 @@
   } @else {
     <!-- The pills stay up on a failed read, so another window can still be picked. -->
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-renewals-controls">
-      <lfx-filter-pills [options]="windowOptions" [selectedFilter]="window()" (filterChange)="onWindowChange($event)" data-testid="members-renewals-window" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="windowOptions"
+        [selectedFilter]="window()"
+        (filterChange)="onWindowChange($event)"
+        data-testid="members-renewals-window" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-renewals-count">
         @if (loading() || loadFailed()) {
           &mdash;
@@ -20,6 +25,7 @@
 
     @if (loadFailed()) {
       <lfx-empty-state
+        variant="compact"
         icon="fa-light fa-triangle-exclamation"
         title="Renewals unavailable"
         subtitle="We could not load this foundation's upcoming renewals. Refresh the page to try again."
@@ -28,21 +34,26 @@
       <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="members-renewals-loading" aria-hidden="true" />
     } @else if (!loading() && noneDue()) {
       <lfx-empty-state
+        variant="compact"
         icon="fa-light fa-calendar-check"
         [title]="'No renewals ' + windowPhrase()"
         subtitle="No membership renews inside this window."
         data-testid="members-renewals-empty" />
     } @else {
-      <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-renewals-hero">
+      <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-renewals-hero">
         <div class="flex flex-col gap-2">
-          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="members-renewals-value">{{ summary().valueLabel }}</span>
-          <span class="text-[12.5px] text-gray-500">Value up for renewal</span>
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-renewals-value">{{
+            summary().valueLabel
+          }}</span>
+          <span class="text-[12px] text-gray-500">Value up for renewal</span>
         </div>
 
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-renewals-side">
           <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-400">Renewals due</dt>
-            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-renewals-due">{{ summary().renewalCountLabel }}</dd>
+            <dt class="text-[12px] text-gray-500">Renewals due</dt>
+            <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-renewals-due">
+              {{ summary().renewalCountLabel }}
+            </dd>
           </div>
         </dl>
       </div>
@@ -55,6 +66,8 @@
       }
 
       <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
         [value]="rowViews()"
         [loading]="loading()"
         [lazy]="true"
@@ -72,11 +85,10 @@
         data-testid="members-renewals-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Renewal date</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Due in</span></th>
-            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Dues</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
+            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Renewal date</span></th>
+            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Dues</span></th>
           </tr>
         </ng-template>
 
@@ -84,7 +96,7 @@
           <tr [attr.data-testid]="'members-renewals-row-' + view.accountId">
             <td>
               <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-name'">{{
+                <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-name'">{{
                   view.accountName
                 }}</span>
                 @if (view.hasRenewed) {
@@ -116,17 +128,12 @@
               >
             </td>
             <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-date'">{{
+              <span class="text-[13px] tabular-nums text-gray-700" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-date'">{{
                 view.renewalDateLabel
               }}</span>
             </td>
             <td class="text-right">
-              <span class="text-sm tabular-nums text-gray-500" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-days'">{{
-                view.daysUntilLabel
-              }}</span>
-            </td>
-            <td class="text-right">
-              <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-dues'">{{
+              <span class="text-[13px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-dues'">{{
                 view.duesLabel
               }}</span>
             </td>

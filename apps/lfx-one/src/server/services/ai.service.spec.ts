@@ -55,6 +55,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 import { AI_REQUEST_CONFIG } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { AI_ERROR_DETAIL_LIMIT } from '../helpers/ai-error.helper';
 import { AiService } from './ai.service';
 import { logger } from './logger.service';
 
@@ -526,5 +527,132 @@ describe('AiService.reconcileAttendees (GH-1672 / PCC-1452 port)', () => {
     const [, options] = fetchMock.mock.calls[0];
     const body = JSON.parse(options.body);
     expect(body.messages[1].content).toContain('zoom_display_name: "unknown"');
+  });
+});
+
+// Parity with the campaign brief path (#3996). `makeAiRequest` posts to the same LiteLLM proxy as
+// campaign-proxy.service.ts's aiChat/aiChatStream and had none of the three guards that path
+// gained: the error-body read could throw over the status it was reporting, the body was carried
+// uncapped, and the key was not stripped. These exercise all three through a production caller —
+// extractBriefActionItems — rather than calling the helper with a hand-built input, because what
+// is being proved is that the production call site passes the key and goes through the helper at
+// all.
+describe('AiService error bodies from the AI proxy (#3996 parity)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let service: AiService;
+  const originalEnv = { ...process.env };
+  const apiKey = 'sk-live-abc123';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: apiKey };
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    service = new AiService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  it('strips AI_API_KEY from an error body the proxy echoed back', async () => {
+    // A proxy is free to quote the request it rejected, Authorization header and all.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      text: async () => `{"error":"bad key","request":{"Authorization":"Bearer ${apiKey}"}}`,
+    } as unknown as Response);
+
+    const err = await service.extractBriefActionItems(req, { brief_text: 'brief' }).catch((e: Error) => e);
+
+    // The message is what reaches logger.warning in WeeklyBriefService — a log line is exactly
+    // where the standing rule says the key must never appear.
+    expect((err as Error).message).not.toContain(apiKey);
+    expect((err as Error).message).toContain('[redacted]');
+    expect((err as Error).message).toContain('401 Unauthorized');
+  });
+
+  it('bounds an oversized error body instead of putting a whole HTML page in one log line', async () => {
+    const page = 'x'.repeat(AI_ERROR_DETAIL_LIMIT + 2_000);
+    fetchMock.mockResolvedValue({ ok: false, status: 502, statusText: 'Bad Gateway', text: async () => page } as unknown as Response);
+
+    const err = await service.extractBriefActionItems(req, { brief_text: 'brief' }).catch((e: Error) => e);
+
+    expect((err as Error).message).toContain(`[truncated, ${page.length} chars]`);
+    expect((err as Error).message.length).toBeLessThan(page.length);
+  });
+
+  it('still reports the status when reading the error body itself fails', async () => {
+    // A torn connection on the error body previously threw over the top of the real failure,
+    // leaving the status — the one thing worth knowing — nowhere.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      text: async () => {
+        throw new Error('socket hang up');
+      },
+    } as unknown as Response);
+
+    const err = await service.extractBriefActionItems(req, { brief_text: 'brief' }).catch((e: Error) => e);
+
+    expect((err as Error).message).toContain('503 Service Unavailable');
+    expect((err as Error).message).not.toContain('socket hang up');
+  });
+});
+
+// The guard end to end: the model comes from `AI_MODEL` at runtime, so each case re-imports the
+// service after `vi.resetModules()` — the helper memoizes the model per process, and a fresh
+// module registry is a fresh process as far as that memo is concerned.
+describe('AiService request body per model family (#4460)', () => {
+  const originalEnv = { ...process.env };
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn().mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  async function sentBody(model: string | undefined): Promise<Record<string, unknown>> {
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    if (model === undefined) delete process.env['AI_MODEL'];
+    else process.env['AI_MODEL'] = model;
+    const { AiService: FreshAiService } = await import('./ai.service');
+    await new FreshAiService().extractBriefActionItems(req, { brief_text: 'The committee met.' });
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  }
+
+  it.each(['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'])('%s gets temperature', async (model) => {
+    const body = await sentBody(model);
+    expect(body['model']).toBe(model);
+    expect(body['temperature']).toBe(AI_REQUEST_CONFIG.TEMPERATURE);
+    expect(body).not.toHaveProperty('top_p');
+  });
+
+  it.each(['claude-opus-4-7', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'amazon-nova-pro'])(
+    '%s gets no sampling parameter',
+    async (model) => {
+      const body = await sentBody(model);
+      expect(body['model']).toBe(model);
+      expect(body).not.toHaveProperty('temperature');
+      expect(body).not.toHaveProperty('top_p');
+    }
+  );
+
+  it('falls back to the AI_MODEL constant when the env var is unset', async () => {
+    // This file mocks the constant to `mock-model`, a name the table does not know — so the
+    // fallback is visible and, by the same rule, is sent no temperature.
+    const body = await sentBody(undefined);
+    expect(body['model']).toBe('mock-model');
+    expect(body).not.toHaveProperty('temperature');
   });
 });

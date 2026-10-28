@@ -81,13 +81,25 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     row(
       'All',
       { ENROLLMENTS: 3850, CERTIFICATIONS: 620, REVENUE_USD: 100000.5 },
-      { ENROLLMENT_COUNT_CHANGE_PCT: 0.1, CERTIFICATIONS_CHANGE_PCT: null, REVENUE_CHANGE_PCT: -0.25 }
+      {
+        ENROLLMENT_COUNT_CHANGE_PCT: 0.1,
+        CERTIFICATIONS_CHANGE_PCT: null,
+        REVENUE_CHANGE_PCT: -0.25,
+        ENROLLMENT_GOAL: 4000,
+        ENROLLMENT_GOAL_PROGRESS_YTD: '0.9625',
+        REVENUE_GOAL_USD: 0,
+        REVENUE_GOAL_PROGRESS_YTD: null,
+      }
     ),
-    row('Certification Exam', { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 }, { SORT_RANK_COMPLETED_YEAR: 1 }),
+    row(
+      'Certification Exam',
+      { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 },
+      { SORT_RANK_COMPLETED_YEAR: 1, IS_LISTED_DELIVERY_TYPE: true }
+    ),
     row(
       'E-Learning',
       { ENROLLMENTS: 2900, CERTIFICATIONS: 0, REVENUE_USD: 0, SORT_RANK: 1 },
-      { SORT_RANK_COMPLETED_YEAR: 2, ENROLLMENTS_COMPLETED_YEAR: 4100 }
+      { SORT_RANK_COMPLETED_YEAR: 2, ENROLLMENTS_COMPLETED_YEAR: 4100, IS_LISTED_DELIVERY_TYPE: true }
     ),
   ];
 
@@ -120,7 +132,18 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd_${range}`);
       expect(sql).toContain(`sort_rank_${suffix} AS sort_rank_${range}`);
     }
-    for (const column of ['enrollment_count_change_pct', 'certifications_change_pct', 'revenue_change_pct']) expect(sql).toContain(column);
+    for (const column of [
+      'is_listed_delivery_type',
+      'is_listed_revenue_delivery_type',
+      'enrollment_count_change_pct',
+      'certifications_change_pct',
+      'revenue_change_pct',
+      'enrollment_goal',
+      'enrollment_goal_progress_ytd',
+      'revenue_goal_usd',
+      'revenue_goal_progress_ytd',
+    ])
+      expect(sql).toContain(column);
     expect(sql).not.toMatch(/prev_ytd|baseline/);
   });
 
@@ -149,8 +172,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000.5 },
       change: { enrollments: 0.1, certifications: null, revenueUsd: -0.25 },
       byType: [
-        { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
-        { deliveryType: 'Certification Exam', enrollments: 950, revenueUsd: null },
+        { deliveryType: 'E-Learning', isListed: true, isListedRevenue: false, enrollments: 2900, revenueUsd: 0 },
+        { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: false, enrollments: 950, revenueUsd: null },
       ],
     });
     expect(enrollment.trend).toEqual([
@@ -172,6 +195,43 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     expect(periods.COMPLETED_YEAR_3.change).toBeNull();
   });
 
+  // MicroCourse and Bundle count in the All row but are not listed; a missing flag reads as not listed.
+  it("reads the model's listed flag for each type", async () => {
+    mockReads(
+      [...summaryRows, row('MicroCourse', { ENROLLMENTS: 40, SORT_RANK: 3 }, { IS_LISTED_DELIVERY_TYPE: false }), row('Bundle', { ENROLLMENTS: 0 })],
+      []
+    );
+
+    const { periods } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(periods.YTD.byType.map((type) => [type.deliveryType, type.isListed])).toEqual([
+      ['E-Learning', true],
+      ['Certification Exam', true],
+      ['MicroCourse', false],
+      ['Bundle', false],
+    ]);
+  });
+
+  // Bundle is sold but not enrolled in, so only the revenue view lists it.
+  it("reads the model's revenue listed flag for each type", async () => {
+    mockReads([summaryRows[0], row('Bundle', { REVENUE_USD: 500, SORT_RANK: 1 }, { IS_LISTED_REVENUE_DELIVERY_TYPE: true }), summaryRows[2]], []);
+
+    const { periods } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(periods.YTD.byType.map((type) => [type.deliveryType, type.isListed, type.isListedRevenue])).toEqual([
+      ['Bundle', false, true],
+      ['E-Learning', true, false],
+    ]);
+  });
+
+  it('reads the goals off the All row, treating a zero goal as none', async () => {
+    mockReads(summaryRows, []);
+
+    const { goals } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(goals).toEqual({ enrollments: 4000, revenueUsd: null, enrollmentsProgressYtd: 0.9625, revenueProgressYtd: null });
+  });
+
   it('ranks a type without a rank last, by name', async () => {
     mockReads([summaryRows[0], row('Instructor Led', { ENROLLMENTS: 5 }), row('Bundle', { ENROLLMENTS: 0 }), summaryRows[2]], []);
 
@@ -187,6 +247,7 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
 
     expect(enrollment.measured).toBe(false);
     expect(enrollment.trend).toEqual([]);
+    expect(enrollment.goals.enrollments).toBeNull();
   });
 
   it('rejects when either read fails', async () => {
@@ -227,14 +288,16 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     ['COMPLETED_YEAR', 'last_completed_year'],
     ['COMPLETED_YEAR_2', 'prev_completed_year'],
     ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
-  ] as const)('scopes %s to courses with enrollments, ranked by that period', async (range, suffix) => {
+  ] as const)('scopes %s to every course ever enrolled in, ranked by that period', async (range, suffix) => {
     execute.mockResolvedValue({ rows: [] });
 
     await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, range });
 
     const [sql] = execute.mock.calls[0];
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES');
-    expect(sql).toContain(`AND enrollment_count_${suffix} > 0`);
+    expect(sql).toContain('AND has_enrollment_all_time');
+    expect(sql).not.toContain(`enrollment_count_${suffix} > 0`);
+    expect(sql).toContain('SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total');
     expect(sql).toContain('AND _key IS NOT NULL');
     expect(sql).toContain("AND NULLIF(TRIM(course_name), '') IS NOT NULL");
     expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);
@@ -309,6 +372,24 @@ describe('HealthMetricsTrainingService.getCourses', () => {
       totalRecords: 12,
       scopeTotal: 40,
     });
+  });
+
+  // MAX over no courses is NULL: a foundation never enrolled in reads as 0, the empty state, not as unmeasured.
+  it('reads a foundation with no course ever enrolled in as a zero scope', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
+
+    await expect(new HealthMetricsTrainingService().getCourses(req, QUERY)).resolves.toEqual({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('keeps the badge count off the page rows', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new HealthMetricsTrainingService().getCourses(req, QUERY);
+
+    const [sql] = execute.mock.calls[0];
+    const page = sql.slice(sql.indexOf('page AS'), sql.indexOf('SELECT totals.*')).replace(/--.*$/gm, '');
+    expect(page).not.toContain('scope_courses_count');
+    expect(page).not.toContain('SELECT *');
   });
 
   it('still reports the totals for a page past the end', async () => {

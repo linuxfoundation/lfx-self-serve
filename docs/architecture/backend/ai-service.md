@@ -2,14 +2,14 @@
 
 ## 🤖 Overview
 
-The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
+The LFX One AI Service provides AI-backed content generation using a **Claude** model through a **LiteLLM proxy** — whichever one `AI_MODEL` names (see [Model Configuration](#model-configuration)). It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
 
 ## 🏗 Architecture
 
 ### Service Architecture
 
 ```text
-Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude Sonnet 4
+Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude (AI_MODEL)
      ↓             ↓             ↓             ↓
    Angular      Express.js    Business     OpenAI-Compatible
    Service      Controller     Logic           Proxy
@@ -21,7 +21,7 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 - **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`
 - **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features directly; `weekly-brief.controller.ts` never calls `AiService` itself — `WeeklyBriefService.getActionItems` does, on its behalf; the campaigns flow consumes the same service
-- **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
+- **LiteLLM Proxy**: OpenAI-compatible proxy for Claude model access; it accepts only the short model names it publishes in its own `model_list`
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 
 ## 🔧 Implementation Details
@@ -32,8 +32,6 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 ```typescript
 export class AiService {
-  private readonly model = AI_MODEL;
-
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _aiProxyUrl: string | undefined;
@@ -210,13 +208,79 @@ router.post('/generate-agenda', async (req: Request, res: Response, next: NextFu
 # AI Service Configuration
 AI_PROXY_URL={{https://lite-llm-url}}/chat/completions
 AI_API_KEY=your-ai-api-key
+# Optional — unset or empty falls back to AI_MODEL in ai.constants.ts
+AI_MODEL=claude-sonnet-4-5
 ```
 
 ### Model Configuration
 
+The model is a deploy-time setting. `getAiModel()` (`server/helpers/ai-model.helper.ts`) reads the
+`AI_MODEL` env var once, trims it, and falls back to the `AI_MODEL` constant in `ai.constants.ts`
+when it is unset or empty. The chart sets `environment.AI_MODEL` to that same constant, so the key
+changes nothing on deploy; a model swap is then an argocd values change rather than a code change,
+a release and an image bump. `ai.service.ts` and `campaign-proxy.service.ts` both read the model
+from the helper, so the two cannot disagree. At startup the server logs one `ai_model_config` line
+with the model, whether it came from the env var or the default, and the sampling mode it resolved
+to — the model name only, never `AI_API_KEY` or `AI_PROXY_URL`.
+
+`AI_MODEL` must name a model the LiteLLM proxy actually publishes. The proxy's own `model_list`
+lives in `lfx-v2-argocd` at `values/global/lfit-litellm.yaml`, and every name it publishes is
+short — `claude-sonnet-5-5`, `claude-sonnet-4`, `amazon-nova-pro`. A provider-prefixed Bedrock id
+appears in that file only on the other side of the mapping, as the `litellm_params.model` each
+short name resolves to:
+
+```yaml
+- model_name: 'claude-sonnet-4-5' # what a caller sends
+  litellm_params:
+    model: 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0' # where it routes
+```
+
+Sending the routing destination asks the router for a model it publishes no deployment for, and
+that answers `429` rather than a `400` that would name the real problem — the failure mode in #4333,
+where every AI feature returned `AI streaming request failed (429)`. The startup log warns when the
+configured name is not lower-case letters, digits and hyphens, which catches both spellings of a
+Bedrock routing id; a well-formed name the proxy does not publish still passes, and only argocd's
+`model_list` can rule it out.
+
+Read the status code when generation fails: a `429` is the model name not matching anything the
+proxy serves (or a genuine rate limit), a `400` is the request body being rejected with auth fine,
+and a `401` is the key itself being refused. Neither the host nor the published name can be checked
+from this repo — both live in argocd — so the two have to move together; #4087 is the case where
+the host moved alone. `litellm.tools.lfx.dev` is the retired OCI instance from before that move: it
+routed on the bare inference-profile id and answered `401` to a prefixed name. Anything still
+pointing at that host is stale whichever model name it sends.
+
+A published name is necessary but not sufficient: the list spans two sampling contracts.
+Anthropic's [extended-thinking doc](https://platform.claude.com/docs/en/build-with-claude/thinking)
+lists Claude Opus 4.8 and Opus 4.7 alongside Sonnet 5.5, Sonnet 5 and Haiku 5.5 as returning a `400`
+on a non-default `temperature`, `top_p` or `top_k`, on every request, thinking or not. The proxy
+does not absorb that — `lfit-litellm.yaml`'s `litellm_settings` sets no `drop_params`, so the value
+reaches Bedrock as sent. So no send site sets `temperature` itself: all six spread
+`getAiSamplingParams()`, which looks the model up in `AI_SAMPLING_COMPATIBILITY` (first match wins):
+
+| Model family                                              | Sampling sent                              |
+| --------------------------------------------------------- | ------------------------------------------ |
+| Claude Sonnet 4/4.5/4.6, Opus 4/4.1/4.5/4.6, Haiku 4.5    | `temperature` (`AI_REQUEST_CONFIG`), alone |
+| Claude Opus 4.7 or later, any 5-series Claude model       | none                                       |
+| Anything else — a newer family, a non-Claude name, a typo | none                                       |
+
+The table fails safe: only an allowlist row grants `temperature`, so a model released after it was
+written loses nothing but the tuned temperature, where sending one would cost a `400` on every AI
+feature. `top_p` is never sent — the accepting 4.x families take `temperature` or `top_p` but not
+both, and only `temperature` has ever been tuned. `ai.constants.spec.ts` pins the table, including
+every family the doc names.
+
+`lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var, set in argocd, and builds
+its own request body with an unconditional `temperature` field (`internal/platform/llm/client.go`,
+no `omitempty`). The two services are not currently on the same name: argocd pins campaign-service
+to `claude-sonnet-5-5` (`values/global/lfx-v2-campaign-service.yaml`) while this repo defaults to
+`claude-sonnet-4-5`. By the paragraph above, that service's pairing is the one that returns `400`.
+Closing the gap is a change in that repo — a name that is neither Claude Opus 4.7 or later nor
+5-series, or dropping `temperature` from its request body — not one this repo can make.
+
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'claude-sonnet-4-5'; // default when the AI_MODEL env var is unset or empty
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
@@ -293,7 +357,7 @@ public async generateMeetingAgenda(request: GenerateAgendaRequest): Promise<Gene
     ],
     response_format: { /* JSON schema */ },
     max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-    temperature: AI_REQUEST_CONFIG.TEMPERATURE
+    ...getAiSamplingParams(), // { temperature } only for a family that accepts it
   };
 
   const response = await this.makeAiRequest(chatRequest);
@@ -388,7 +452,7 @@ app.get('/readyz', (req, res) => {
   const healthStatus = {
     ai_service: {
       configured: !!process.env['AI_PROXY_URL'] && !!process.env['AI_API_KEY'],
-      model: AI_MODEL,
+      model: getAiModel(),
     },
   };
   res.json(healthStatus);

@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
-import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
-import { SidebarComponent } from '@components/sidebar/sidebar.component';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
+import { NavbarComponent } from '@components/navbar/navbar.component';
 import { LensService } from '@services/lens.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { filter, map, startWith } from 'rxjs';
 
@@ -19,10 +20,9 @@ import { UserService } from '../../shared/services/user.service';
  *
  * Renders one of two side-rails depending on `UserService.authenticated`:
  *
- *   - Authenticated → mounts the slim rail (`LensSwitcherComponent` with
- *     `[showLensButtons]="false"` — lens switching now lives in the sidebar
- *     tabs) alongside the full lens-driven `<lfx-sidebar>` built by
- *     `SidebarNavService` (FR-009a). The previously-active lens tab stays
+ *   - Authenticated → mounts the lens-driven `<lfx-navbar>` (lens tabs,
+ *     context card, menu built by `SidebarNavService`, account/rail actions)
+ *     (FR-009a). The previously-active lens tab stays
  *     selected and no menu item is active on a `/docs` route, so the user
  *     can hop back to `/dashboard`, `/foundation`, etc. without leaving `/docs`.
  *   - Unauthenticated → mounts `DocsSidebarNavComponent` — the public
@@ -33,8 +33,8 @@ import { UserService } from '../../shared/services/user.service';
  * chrome swaps. Keeping the swap in one component avoids the routing
  * flicker that two parallel route trees would introduce (research R6).
  *
- * Note on chrome reuse: the authenticated shell reuses the same rail +
- * lens-driven sidebar as `MainLayoutComponent` (via `SidebarNavService`),
+ * Note on chrome reuse: the authenticated shell reuses the same lens-driven
+ * navbar as `MainLayoutComponent` (via `SidebarNavService`),
  * so the lens navigation stays consistent across the app. The sidebar's
  * role under `/docs` is to keep the selected lens visible and offer a way
  * back to it — no menu item is active on a `/docs` route.
@@ -42,18 +42,23 @@ import { UserService } from '../../shared/services/user.service';
 @Component({
   selector: 'lfx-docs-layout',
   standalone: true,
-  imports: [NgClass, RouterModule, LensSwitcherComponent, SidebarComponent, DocsSidebarNavComponent],
+  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, DocsSidebarNavComponent],
   templateUrl: './docs-layout.component.html',
   styleUrl: './docs-layout.component.scss',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class DocsLayoutComponent {
   protected readonly userService = inject(UserService);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  protected readonly navbarCollapse = inject(NavbarCollapseService);
 
   protected readonly isAuthenticated = computed(() => this.userService.authenticated());
+
+  /** Left gutter: the lens navbar's docked width (288px open, 56px on its rail), or the public docs rail's. */
+  protected readonly mainGutterClass = computed(() => {
+    return this.isAuthenticated() ? this.navbarCollapse.gutterClass() : 'lg:ml-16';
+  });
 
   // Shared lens nav — the previously-active lens tab stays selected in the docs shell (no menu item is active on a /docs route) so the user can return to their last lens.
   protected readonly activeLens = this.lensService.activeLens;

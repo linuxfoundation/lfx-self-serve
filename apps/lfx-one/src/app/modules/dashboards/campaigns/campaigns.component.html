@@ -381,6 +381,8 @@
           [active]="selectedEmailTab() === 'audience'"
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
+          [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
@@ -1729,8 +1731,9 @@
         @for (program of [selectedProgramType()]; track program) {
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
+            [savedBriefRefreshToken]="savedBriefRefreshToken()"
             (proceedToImplementation)="onProceedToImplementation($event)"
-            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
+            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
         }
       </div>
@@ -1758,9 +1761,19 @@
               [googleChannelsEnabled]="briefCampaignsGoogleChannelsEnabled()"
               [googleCreativeEnabled]="briefCampaignsGoogleCreativeEnabled()"
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
+              [redditAssetUploadEnabled]="briefCampaignsRedditAssetUploadEnabled()"
+              [metaCreativeEnabled]="briefCampaignsMetaCreativeEnabled()"
+              [metaAssetUploadEnabled]="briefCampaignsMetaAssetUploadEnabled()"
+              [googleAssetUploadEnabled]="briefCampaignsGoogleAssetUploadEnabled()"
+              [linkedInAssetUploadEnabled]="briefCampaignsLinkedInAssetUploadEnabled()"
+              [microsoftAssetUploadEnabled]="briefCampaignsMicrosoftAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
-              [biddingCapabilityRead]="briefCampaignsBiddingRead()"
-              (retryBiddingCapability)="retryBiddingCapability()"
+              [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
+              [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
+              [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
+              [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"
+              [createCapabilityRead]="briefCampaignsCapabilityRead()"
+              (retryCreateCapabilities)="retryCreateCapabilities()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>
@@ -1780,7 +1793,8 @@
               [statusToggleEnabled]="briefCampaignsToggleEnabled()"
               (retryCampaigns)="retryBriefCampaigns()"
               [projectSlug]="activeFoundationSlug()"
-              [briefId]="briefPersistence().briefId ?? ''" />
+              [briefId]="briefPersistence().briefId ?? ''"
+              [suggestedNegativeKeywords]="briefOutput()?.negativeKeywords ?? null" />
           </div>
         }
       }

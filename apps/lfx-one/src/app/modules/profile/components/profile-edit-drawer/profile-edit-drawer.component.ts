@@ -26,6 +26,7 @@ import { capCodePointEdit, codePointLength, markFormControlsAsTouched } from '@l
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
@@ -69,7 +70,7 @@ export class ProfileEditDrawerComponent {
   // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
   // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).
   // Read directly off UserService rather than threading it through an @Input, matching the
-  // established pattern (weekly-brief-card, lens-switcher). profile-panel receives it via
+  // established pattern (weekly-brief-card). profile-panel receives it via
   // @Input instead, since it's purely presentational and sourced from the parent's data.
   public readonly impersonating = this.userService.impersonating;
 
@@ -392,10 +393,11 @@ export class ProfileEditDrawerComponent {
           if (this.toastIfImpersonationReadOnly(error)) {
             return;
           }
+          // Surfaces the server's reason, e.g. a change blocked because the invite email couldn't be pinned.
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: 'Failed to update primary email. Please try again.',
+            detail: extractErrorMessage(error, 'Failed to update primary email. Please try again.'),
           });
         },
       });
