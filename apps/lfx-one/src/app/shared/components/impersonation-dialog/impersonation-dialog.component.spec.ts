@@ -4,30 +4,49 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import {
-  IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE,
-  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
-  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
-} from '@lfx-one/shared/constants';
-import { UserSearchOption } from '@lfx-one/shared/interfaces';
+import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import { ImpersonationSuggestion, RecentImpersonation, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
-import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { SearchService } from '@services/search.service';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { NEVER, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UserSearchComponent } from '@components/user-search/user-search.component';
-
 import { ImpersonationDialogComponent } from './impersonation-dialog.component';
+
+interface DialogHarness {
+  targetUserForm: { controls: { targetUser: { value: string; setValue: (value: unknown) => void } } };
+  suggestions: () => ImpersonationSuggestion[];
+  error: () => string;
+  submit: () => void;
+  onSearchComplete: (event: AutoCompleteCompleteEvent) => void;
+  onSuggestionSelected: (event: AutoCompleteSelectEvent) => void;
+}
+
+function directoryRow(overrides: Partial<UserSearchResult>): UserSearchResult {
+  return {
+    uid: 'uid-1',
+    email: 'jane.doe@example.com',
+    first_name: 'Jane',
+    last_name: 'Doe',
+    job_title: null,
+    organization: null,
+    type: 'committee_member',
+    username: 'jdoe',
+    ...overrides,
+  };
+}
 
 describe('ImpersonationDialogComponent', () => {
   let fixture: ComponentFixture<ImpersonationDialogComponent>;
   let startImpersonation: ReturnType<typeof vi.fn>;
+  let searchUsers: ReturnType<typeof vi.fn>;
+  let recents: RecentImpersonation[];
 
-  beforeEach(async () => {
-    startImpersonation = vi.fn();
+  async function createDialog(dialogData?: Record<string, unknown>): Promise<void> {
+    TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ImpersonationDialogComponent],
       providers: [
@@ -35,12 +54,13 @@ describe('ImpersonationDialogComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
-        { provide: DynamicDialogConfig, useValue: { closable: true } },
+        { provide: DynamicDialogConfig, useValue: { closable: true, data: dialogData } },
+        { provide: SearchService, useValue: { searchUsers } },
         {
           provide: ImpersonationService,
           useValue: {
             startImpersonation,
-            getRecentImpersonations: () => [],
+            getRecentImpersonations: () => recents,
             addRecentImpersonation: vi.fn(),
           },
         },
@@ -49,16 +69,23 @@ describe('ImpersonationDialogComponent', () => {
 
     fixture = TestBed.createComponent(ImpersonationDialogComponent);
     await fixture.whenStable();
+  }
+
+  function dialog(): DialogHarness {
+    return fixture.componentInstance as unknown as DialogHarness;
+  }
+
+  beforeEach(async () => {
+    startImpersonation = vi.fn();
+    searchUsers = vi.fn().mockReturnValue(of([]));
+    recents = [];
+    await createDialog();
   });
 
   async function submitAs(target: string, httpError: { error?: { error?: string; code?: string } }): Promise<void> {
     startImpersonation.mockReturnValueOnce(throwError(() => httpError));
-    const component = fixture.componentInstance as unknown as {
-      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
-      submit: () => void;
-    };
-    component.targetUserForm.controls.targetUser.setValue(target);
-    component.submit();
+    dialog().targetUserForm.controls.targetUser.setValue(target);
+    dialog().submit();
     await fixture.whenStable();
   }
 
@@ -95,12 +122,8 @@ describe('ImpersonationDialogComponent', () => {
     expect(status()?.textContent?.trim()).toBe('');
 
     startImpersonation.mockReturnValueOnce(NEVER);
-    const component = fixture.componentInstance as unknown as {
-      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
-      submit: () => void;
-    };
-    component.targetUserForm.controls.targetUser.setValue('jdoe');
-    component.submit();
+    dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+    dialog().submit();
     await fixture.whenStable();
 
     expect(status()?.textContent).toContain('Starting impersonation...');
@@ -111,172 +134,130 @@ describe('ImpersonationDialogComponent', () => {
     expect(config.closable).toBe(true);
 
     startImpersonation.mockReturnValueOnce(NEVER);
-    const component = fixture.componentInstance as unknown as {
-      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
-      submit: () => void;
-    };
-    component.targetUserForm.controls.targetUser.setValue('jdoe');
-    component.submit();
+    dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+    dialog().submit();
     await fixture.whenStable();
 
     expect(config.closable).toBe(false);
   });
 
-  it('renders the name search ahead of the exact email or username field', () => {
-    const search = fixture.nativeElement.querySelector('lfx-user-search');
-    expect(search).not.toBeNull();
-    expect(search.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe');
-    expect(fixture.nativeElement.querySelector('[data-test="impersonation-target-input"]')).not.toBeNull();
+  describe('single search field', () => {
+    it('renders one field for name, email, or username and no separate context selector', () => {
+      expect(fixture.nativeElement.querySelectorAll('lfx-autocomplete')).toHaveLength(1);
+      expect(fixture.nativeElement.querySelector('[data-test="impersonation-persona-select"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe, jdoe, or jdoe@example.com');
+    });
+
+    it('submits what was typed when nothing is picked', () => {
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().targetUserForm.controls.targetUser.setValue('  jdoe@example.com ');
+      dialog().submit();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe@example.com', false);
+    });
+
+    it('does not request impersonation with an empty field', () => {
+      dialog().submit();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    it('puts a picked person’s username in the field and submits it', () => {
+      const entry: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' };
+      dialog().onSuggestionSelected({ value: entry } as unknown as AutoCompleteSelectEvent);
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().submit();
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('clears an earlier error when a person is picked', async () => {
+      await submitAs('ghost', { error: { code: IMPERSONATION_TARGET_USER_NOT_FOUND_CODE } });
+      expect(dialog().error()).not.toBe('');
+
+      dialog().onSuggestionSelected({ value: { targetUser: 'jdoe', username: 'jdoe', email: 'j@example.com' } } as unknown as AutoCompleteSelectEvent);
+
+      expect(dialog().error()).toBe('');
+    });
   });
 
-  // The pick and clear tests below drive the real lfx-user-search child, so they fail if the
-  // template's bindings to it (form, outputs) are renamed or disconnected.
-  function dialog() {
-    return fixture.componentInstance as unknown as {
-      targetUserForm: { controls: { targetUser: { value: string; setValue: (value: string) => void } } };
-      submit: () => void;
-    };
-  }
+  describe('suggestions', () => {
+    const recent: RecentImpersonation = { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', name: 'Alex Smith', lastUsedAt: 1 };
 
-  function nameSearch(): UserSearchComponent {
-    return fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
-  }
+    async function search(query: string): Promise<ImpersonationSuggestion[]> {
+      dialog().onSearchComplete({ query } as AutoCompleteCompleteEvent);
+      await fixture.whenStable();
+      return dialog().suggestions();
+    }
 
-  function pick(overrides: Partial<UserSearchOption>): void {
-    const user: UserSearchOption = {
-      uid: 'uid-1',
-      email: 'jane.doe@example.com',
-      first_name: 'Jane',
-      last_name: 'Doe',
-      job_title: null,
-      organization: null,
-      type: 'committee_member',
-      username: null,
-      ...overrides,
-    };
-    nameSearch().onUserSelected({ value: user } as unknown as AutoCompleteSelectEvent);
-  }
+    beforeEach(async () => {
+      recents = [recent];
+      await createDialog();
+    });
 
-  function searchBoxValue(): string {
-    return (fixture.nativeElement.querySelector('lfx-user-search input') as HTMLInputElement).value;
-  }
+    it('offers the recents before anything is typed', () => {
+      expect(dialog().suggestions()).toEqual([recent]);
+    });
 
-  it('keeps the picked person’s name in the search box', async () => {
-    pick({ username: 'jdoe' });
-    await fixture.whenStable();
+    it('lists every recent for an empty query without searching the directory', async () => {
+      expect(await search('')).toEqual([recent]);
+      expect(searchUsers).not.toHaveBeenCalled();
+    });
 
-    expect(searchBoxValue()).toBe('Jane Doe');
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
-  });
+    it('only filters the recents for a single character', async () => {
+      expect(await search('z')).toEqual([]);
+      expect(await search('a')).toEqual([recent]);
+      expect(searchUsers).not.toHaveBeenCalled();
+    });
 
-  it('falls back to the username when the picked person has no name', async () => {
-    pick({ username: 'jdoe', first_name: '', last_name: '' });
-    await fixture.whenStable();
+    it('searches the directory as the admin once the query has two characters', async () => {
+      await search('ja');
 
-    expect(searchBoxValue()).toBe('jdoe');
-  });
+      expect(searchUsers).toHaveBeenCalledWith('ja', 'committee_member', true);
+    });
 
-  it('drops the shown name once the target is edited to someone else', async () => {
-    pick({ username: 'jdoe' });
-    await fixture.whenStable();
+    it('lists directory people with their username as the target and a composed name', async () => {
+      searchUsers.mockReturnValue(of([directoryRow({})]));
 
-    dialog().targetUserForm.controls.targetUser.setValue('asmith');
-    await fixture.whenStable();
+      expect(await search('jane')).toEqual([{ targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' }]);
+    });
 
-    expect(searchBoxValue()).toBe('');
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('asmith');
-  });
+    it('lists matching recents ahead of directory people and does not repeat a person', async () => {
+      searchUsers.mockReturnValue(
+        of([directoryRow({ username: 'jdoe' }), directoryRow({ uid: 'uid-2', username: 'ASmith', email: 'alex.smith@example.com' })])
+      );
 
-  it('puts the picked person’s username in the target and submits it', async () => {
-    pick({ username: 'jdoe' });
-    await fixture.whenStable();
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+      const suggestions = await search('al');
 
-    startImpersonation.mockReturnValueOnce(throwError(() => ({ error: { code: 'CTE_NATS_ERROR' } })));
-    dialog().submit();
-    expect(startImpersonation).toHaveBeenCalledWith('jdoe', null, false);
-  });
+      // The recent leads; its directory row (same username, different case) is not listed again.
+      expect(suggestions.map((s) => s.username)).toEqual(['asmith', 'jdoe']);
+    });
 
-  it('rejects a pick with no LF account without filling the target', async () => {
-    pick({ username: null });
-    await fixture.whenStable();
+    it('leaves out a directory person with no LF account', async () => {
+      searchUsers.mockReturnValue(
+        of([directoryRow({ username: null }), directoryRow({ uid: 'uid-2', username: '  ' }), directoryRow({ uid: 'uid-3', username: 'jdoe' })])
+      );
 
-    const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
-    expect(alert?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
-  });
+      expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
+    });
 
-  it('clears an earlier target and its shown name when a later pick is rejected', async () => {
-    pick({ username: 'jdoe' });
-    await fixture.whenStable();
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+    it('falls back to the recents when the directory search yields nothing', async () => {
+      searchUsers.mockReturnValue(of([]));
 
-    pick({ username: null, first_name: 'Sam', last_name: 'Roe' });
-    await fixture.whenStable();
-
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
-    expect(searchBoxValue()).toBe('');
-    expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
-
-    // Start can no longer act on the earlier person while the rejection is showing.
-    dialog().submit();
-    expect(startImpersonation).not.toHaveBeenCalled();
-  });
-
-  it('clears a previous rejection when a valid person is picked', async () => {
-    pick({ username: null });
-    await fixture.whenStable();
-    pick({ username: 'jdoe' });
-    await fixture.whenStable();
-
-    expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')).toBeNull();
-  });
-
-  it('keeps the target when the name search is cleared, and empties the shown name', async () => {
-    pick({ username: 'jdoe' });
-    nameSearch().onSearchClear();
-    await fixture.whenStable();
-
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
-    expect(searchBoxValue()).toBe('');
-  });
-
-  it('does not throw or request impersonation when the search is cleared with no target', async () => {
-    nameSearch().onSearchClear();
-    await fixture.whenStable();
-
-    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
-    expect(() => dialog().submit()).not.toThrow();
-    expect(startImpersonation).not.toHaveBeenCalled();
-  });
-
-  it('searches the directory as the target when starting from the navbar', () => {
-    expect(nameSearch().asImpersonator()).toBe(false);
+      expect(await search('al')).toEqual([recent]);
+    });
   });
 
   describe('when opened from the banner to switch users', () => {
-    it('searches the directory as the admin and starts the change as a switch', async () => {
-      TestBed.resetTestingModule();
-      startImpersonation = vi.fn().mockReturnValue(NEVER);
-      await TestBed.configureTestingModule({
-        imports: [ImpersonationDialogComponent],
-        providers: [
-          provideNoopAnimations(),
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
-          { provide: DynamicDialogConfig, useValue: { closable: true, data: { switching: true } } },
-          { provide: ImpersonationService, useValue: { startImpersonation, getRecentImpersonations: () => [], addRecentImpersonation: vi.fn() } },
-        ],
-      }).compileComponents();
-      fixture = TestBed.createComponent(ImpersonationDialogComponent);
-      await fixture.whenStable();
-
-      expect(nameSearch().asImpersonator()).toBe(true);
+    it('starts the change as a switch', async () => {
+      await createDialog({ switching: true });
+      startImpersonation.mockReturnValue(NEVER);
 
       dialog().targetUserForm.controls.targetUser.setValue('jdoe');
       dialog().submit();
-      expect(startImpersonation).toHaveBeenCalledWith('jdoe', null, true);
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', true);
     });
   });
 });
