@@ -1040,10 +1040,14 @@
         same withholding the payload makes, in the one place the operator can see it.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-callouts-section">
-          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-callout-add">
+        <div
+          class="rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-callouts-section"
+          role="group"
+          aria-labelledby="google-callouts-heading">
+          <p id="google-callouts-heading" class="mb-2 block text-xs font-medium text-gray-700">
             Google Callouts ({{ googleCallouts().length }}/{{ googleMaxCallouts }})
-          </label>
+          </p>
           <div class="flex flex-wrap items-center gap-2">
             @for (callout of googleCallouts(); track callout; let i = $index) {
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
@@ -1067,6 +1071,7 @@
               -->
               <input
                 id="google-callout-add"
+                aria-label="Callout text"
                 type="text"
                 placeholder="+ Add callout"
                 [value]="googleCalloutDraft()"
@@ -1116,10 +1121,14 @@
         required fields are filled, which no single input can express.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-sitelinks-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-sitelink-text">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-sitelinks-section"
+          role="group"
+          aria-labelledby="google-sitelinks-heading">
+          <p id="google-sitelinks-heading" class="block text-xs font-medium text-gray-700">
             Google Sitelinks ({{ googleSitelinks().length }}/{{ googleMaxSitelinks }})
-          </label>
+          </p>
           @if (googleSitelinks().length > 0) {
             <div class="flex flex-col gap-2">
               @for (sitelink of googleSitelinks(); track sitelink.text; let i = $index) {
@@ -1153,14 +1162,17 @@
               browser cap counts UTF-16 units, so it would clip an emoji-bearing label that Google
               would have accepted. The message lines below carry the feedback instead.
 
-              The section's `<label for>` names only the link-text box — the other three carry an
-              `aria-label`, because a placeholder is not an accessible name and disappears as soon
-              as the operator types. Each box points at its own message line with
-              `aria-describedby`, as the Meta pixel field does.
+              Every box, the link-text one included, carries its own `aria-label`, because a
+              placeholder is not an accessible name and disappears as soon as the operator types.
+              The section heading names the group (`aria-labelledby`), not the first box: bound to
+              it with `<label for>`, the heading and its entry count became that input's name (#3644).
+              Each box points at its own message line with `aria-describedby`, as the Meta pixel
+              field does.
             -->
             <div class="flex flex-col gap-2">
               <input
                 id="google-sitelink-text"
+                aria-label="Sitelink link text"
                 type="text"
                 placeholder="Link text"
                 [value]="googleSitelinkDraft().text"
@@ -1265,10 +1277,14 @@
         this is a sub-form with its own add button rather than an enter-to-add box.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-structured-snippets-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-snippet-header">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-structured-snippets-section"
+          role="group"
+          aria-labelledby="google-structured-snippets-heading">
+          <p id="google-structured-snippets-heading" class="block text-xs font-medium text-gray-700">
             Google Structured Snippets ({{ googleStructuredSnippets().length }}/{{ googleMaxStructuredSnippets }})
-          </label>
+          </p>
           @if (googleStructuredSnippets().length > 0) {
             <div class="flex flex-col gap-2">
               @for (snippet of googleStructuredSnippetRows(); track snippet.header; let i = $index) {
@@ -1299,12 +1315,14 @@
               rules before it counts runes, and a browser cap counts UTF-16 units. The message lines
               below carry the feedback instead.
 
-              The section's `<label for>` names the header box; the textarea carries an `aria-label`,
-              since its placeholder is neither an accessible name nor durable once typing starts.
+              The header box and the textarea each carry an `aria-label`, since a placeholder is
+              neither an accessible name nor durable once typing starts. The heading names the group,
+              as the sitelink section's does.
             -->
             <div class="flex flex-col gap-2">
               <input
                 id="google-snippet-header"
+                aria-label="Structured snippet header"
                 type="text"
                 placeholder="Header (e.g. Courses, Brands, Types)"
                 [value]="googleStructuredSnippetDraft().header"
@@ -1380,10 +1398,14 @@
         create would be refused for.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-call-extensions-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-call-country">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-call-extensions-section"
+          role="group"
+          aria-labelledby="google-call-extensions-heading">
+          <p id="google-call-extensions-heading" class="block text-xs font-medium text-gray-700">
             Google Call Extensions ({{ googleCallExtensions().length }}/{{ googleMaxCallExtensions }})
-          </label>
+          </p>
           @if (googleCallExtensions().length > 0) {
             <div class="flex flex-col gap-2">
               @for (call of googleCallExtensions(); track call.countryCode + call.phoneNumber; let i = $index) {
@@ -1411,6 +1433,7 @@
                 [form]="googleCallExtensionForm"
                 control="countryCode"
                 inputId="google-call-country"
+                ariaLabel="Call extension country code"
                 type="text"
                 size="small"
                 placeholder="Country code (e.g. US)"
@@ -1460,10 +1483,14 @@
         field is in use, the one case upstream reads it.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-promotions-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-promotion-target">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-promotions-section"
+          role="group"
+          aria-labelledby="google-promotions-heading">
+          <p id="google-promotions-heading" class="block text-xs font-medium text-gray-700">
             Google Promotions ({{ googlePromotions().length }}/{{ googleMaxPromotions }})
-          </label>
+          </p>
           @if (googlePromotions().length > 0) {
             <div class="flex flex-col gap-2">
               @for (promotion of googlePromotionRows(); track promotion.key; let i = $index) {
@@ -1495,6 +1522,7 @@
                 [form]="googlePromotionForm"
                 control="promotionTarget"
                 inputId="google-promotion-target"
+                ariaLabel="Promotion target"
                 type="text"
                 size="small"
                 placeholder="What is on sale (e.g. Conference passes)"
@@ -1689,10 +1717,14 @@
         currency box for the table, copied onto each row's `currencyCode` on the wire.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-prices-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-price-type">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-prices-section"
+          role="group"
+          aria-labelledby="google-prices-heading">
+          <p id="google-prices-heading" class="block text-xs font-medium text-gray-700">
             Google Price Extensions ({{ googlePrices().length }}/{{ googleMaxPrices }})
-          </label>
+          </p>
           @if (googlePrices().length > 0) {
             <div class="flex flex-col gap-2">
               @for (price of googlePriceRows(); track price.key; let i = $index) {
@@ -1724,6 +1756,7 @@
                   [form]="googlePriceForm"
                   control="type"
                   inputId="google-price-type"
+                  ariaLabel="Price type"
                   [options]="googlePriceTypeOptions"
                   size="small"
                   data-testid="implementation-google-price-type" />
