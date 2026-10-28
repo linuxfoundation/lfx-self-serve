@@ -8999,6 +8999,33 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(create.mock.calls[0][2]).toBe('new-cloud-native-2026-r2');
     });
 
+    it("stages a restarted series even when the original brief's single send is held unconfirmed", async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(['brief-primary']);
+      // The single Stage button lost its response on the ORIGINAL brief: held, and its
+      // "I have checked HubSpot" acknowledgment lives in the controls a restart hides.
+      const page = fixture.componentInstance as unknown as {
+        unresolvedStages: { set(v: ReadonlySet<string>): void };
+        stageScopeKey(project: string, briefId: string): string;
+        activeFoundationSlug(): string;
+        canStageSequence(): boolean;
+      };
+      page.unresolvedStages.set(new Set([page.stageScopeKey(page.activeFoundationSlug(), 'brief-primary')]));
+      seq().onStartSeriesOver();
+
+      persistBrief.mockImplementation(
+        (brief: CampaignBriefOutput) => of({ enabled: true, briefId: `new-${brief.eventDetails.slug}`, etag: '"1"', approved: true, created: true }) as never
+      );
+      await seq().onGenerateSurveySequence();
+
+      expect(page.canStageSequence(), "the old brief's hold blocked the new series").toBe(true);
+    });
+
     it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);

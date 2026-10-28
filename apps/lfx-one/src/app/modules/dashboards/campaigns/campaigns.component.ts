@@ -2244,8 +2244,10 @@ export class CampaignsComponent {
       // Nor while the audience is being replaced: `emailAudience()` still holds the old row.
       !this.emailAudienceWriteInFlight() &&
       // Nor over the single Stage button's own in-flight or unconfirmed create: send 1 is the same
-      // brief, so a series create beside it could clone a second draft.
-      !this.emailStagingHeld() &&
+      // brief, so a series create beside it could clone a second draft. A restarted series is
+      // written on NEW briefs, so a hold left on the original brief no longer applies to it (its
+      // acknowledgment lives in the single-send controls a restart hides).
+      (this.surveySeriesRestarted() || !this.emailStagingHeld()) &&
       // The WHOLE planned series: after a write that failed partway, the sends that did land stay
       // on screen for review, but staging them would ship a series without its later emails.
       this.surveySequenceComplete() &&
