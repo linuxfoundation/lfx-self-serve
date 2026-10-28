@@ -4939,7 +4939,9 @@ export class CampaignController {
    * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
    * cannot honour it (see `createCampaign`), else `null`.
    *
-   * Only a NON-EMPTY value counts: absent, `null` and an empty list ask for nothing, and the legacy
+   * The bidding plan and creative entries (`normalized`) count only when the cutover's own normalizers
+   * would send them (see the constant). For every other entry, only a NON-EMPTY value counts: absent,
+   * `null` and an empty list ask for nothing, and the legacy
    * creator serves those requests exactly as asked, so refusing one would be over-refusal. Any other
    * present value — a malformed non-list included — is a request for something the legacy creator
    * cannot do, and is named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
@@ -4952,9 +4954,17 @@ export class CampaignController {
     const platforms = Array.isArray(body?.platforms) && body.platforms.length > 0 ? body.platforms : ['google-ads'];
     if (!platforms.includes('google-ads')) return null;
     const raw = body as unknown as Record<string, unknown>;
+    // The keys the cutover would actually send for the `normalized` entries: its own bidding plan,
+    // and every channel's creative, so a creative left behind under an unselected channel is judged
+    // the way `unservedGoogleAssetField` judges it — present in the request, so asked for.
+    const sent: Record<string, unknown> = { ...this.googleBidding(body) };
+    for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
+      Object.assign(sent, this.googleCreative(body, channel));
+    }
     return (
-      GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find(({ field }) => {
-        const value = raw[field];
+      GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
+        if ('normalized' in entry) return entry.field in sent;
+        const value = raw[entry.field];
         return value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0);
       }) ?? null
     );
