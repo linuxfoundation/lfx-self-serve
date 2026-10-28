@@ -1205,7 +1205,8 @@ export class MeetingController {
 
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
-      registrant_count: registrantsUid.length,
+      // The body isn't validated yet, so a string or object must not be counted by its .length.
+      registrant_count: Array.isArray(registrantsUid) ? registrantsUid.length : 0,
       // Read from the header rather than re-serializing a body that hasn't been validated yet — same
       // field as the add and update batch endpoints.
       request_content_length: MeetingController.readContentLength(req),
@@ -1224,8 +1225,8 @@ export class MeetingController {
         return;
       }
 
-      // Check if the registrant UIDs are provided
-      if (!registrantsUid.length) {
+      // Check if the registrant UIDs are provided (non-array bodies are rejected by the next check)
+      if (Array.isArray(registrantsUid) && !registrantsUid.length) {
         const validationError = ServiceValidationError.forField('registrantUids', 'Empty registrant UIDs array', {
           operation: 'delete_meeting_registrants',
           service: 'meeting_controller',

@@ -11,6 +11,7 @@ describe('describeContributionsWindow', () => {
   const now = new Date('2026-10-21T23:26:00.000Z');
 
   it.each([
+    ['730d', 'from Oct 21, 2024 to Oct 21, 2026 (UTC)'],
     ['365d', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)'],
     ['90d', 'from Jul 23, 2026 to Oct 21, 2026 (UTC)'],
     ['30d', 'from Sep 21, 2026 to Oct 21, 2026 (UTC)'],

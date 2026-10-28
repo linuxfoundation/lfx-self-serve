@@ -34,6 +34,8 @@ const DETAILS = [
   row('day-31', '2026-09-26'),
   row('day-365', '2025-10-27'),
   row('day-366', '2025-10-26'),
+  row('day-730', '2024-10-27'),
+  row('day-731', '2024-10-26'),
   row('long-ago', '2019-05-01'),
   row('no-dates', null),
 ];
@@ -41,7 +43,7 @@ const DETAILS = [
 const ids = (range: Parameters<typeof filterEndedEventsInRange>[1]) => filterEndedEventsInRange(DETAILS, range, NOW).map((detail) => detail.eventId);
 
 describe('filterEndedEventsInRange', () => {
-  it.each(['30d', '90d', '365d', 'all'] as const)('never counts an event that has not ended for %s', (range) => {
+  it.each(['30d', '90d', '365d', '730d', 'all'] as const)('never counts an event that has not ended for %s', (range) => {
     expect(ids(range)).not.toContain('upcoming');
     expect(ids(range)).not.toContain('ends-today');
     expect(ids(range)).not.toContain('no-dates');
@@ -50,10 +52,11 @@ describe('filterEndedEventsInRange', () => {
   it('counts events that ended on or after the first day of a bounded range', () => {
     expect(ids('30d')).toEqual(['ended-yesterday', 'day-30']);
     expect(ids('365d')).toEqual(['ended-yesterday', 'day-30', 'day-31', 'day-365']);
+    expect(ids('730d')).toEqual(['ended-yesterday', 'day-30', 'day-31', 'day-365', 'day-366', 'day-730']);
   });
 
   it('counts every ended event for all time', () => {
-    expect(ids('all')).toEqual(['ended-yesterday', 'day-30', 'day-31', 'day-365', 'day-366', 'long-ago']);
+    expect(ids('all')).toEqual(['ended-yesterday', 'day-30', 'day-31', 'day-365', 'day-366', 'day-730', 'day-731', 'long-ago']);
   });
 
   // The warehouse flag is as old as the last build; a stale flag must not count an event that ends today.

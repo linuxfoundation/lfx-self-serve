@@ -2159,6 +2159,91 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * The Meta Instagram id and EU DSA disclosures (linuxfoundation/lfx-v2-campaign-service#414). With
+   * the capability on they reach campaign-service UNTOUCHED, which judges them and answers a missing
+   * or malformed one with a 400. With it off the request is refused rather than the keys dropped.
+   */
+  describe('meta instagram and dsa', () => {
+    const flagsWith = (metaDsa: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaInstagramDsa ? metaDsa : cutover));
+    };
+    const metaConfig = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+      budgetUsd: 250,
+      lifetimeBudget: false,
+      startDate: '2026-01-01',
+      endDate: '2026-02-01',
+      geoTargets: ['DE'],
+      variants: [{ primaryText: 'p', headline: 'h' }],
+      ...extra,
+    });
+    const identity = { instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF', dsaPayor: 'The Linux Foundation' };
+
+    it('forwards all three untouched when the capability is on', async () => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(identity) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent['instagramUserId']).toBe('17841400000000000');
+      expect(sent['dsaBeneficiary']).toBe('CNCF');
+      expect(sent['dsaPayor']).toBe('The Linux Foundation');
+    });
+
+    it.each([
+      ['the flag is off', false, true],
+      ['the create cutover is dark', true, false],
+    ])('refuses a request carrying them when %s, creating nothing', async (_label, metaDsaFlag, cutover) => {
+      flagsWith(metaDsaFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(identity) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'metaConfig.instagramUserId',
+          message:
+            'The Meta Instagram account and EU DSA fields are not enabled on this deployment; omit instagramUserId, dsaBeneficiary and dsaPayor from metaConfig',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it.each([
+      ['a payor alone', { dsaPayor: 'LF' }, 'metaConfig.dsaPayor'],
+      ['an explicit null beneficiary, rather than reading it as absent', { dsaBeneficiary: null }, 'metaConfig.dsaBeneficiary'],
+    ])('refuses %s while the capability is off, naming the field', async (_label, extra, field) => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig(extra) }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('lets a Meta request without them through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig: metaConfig() }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('instagramUserId');
+      expect(sent).not.toHaveProperty('dsaBeneficiary');
+      expect(sent['budget']).toBe(250);
+    });
+  });
+
+  /**
    * U+00A0 (NBSP) sits immediately above the C1 range, and Go reports `IsControl(U+00A0) == false`
    * — verified by running it — so it must still dispatch. Without this case the obvious "widen to
    * U+00FF" fix would look correct while silently refusing a keyword Microsoft accepts.
