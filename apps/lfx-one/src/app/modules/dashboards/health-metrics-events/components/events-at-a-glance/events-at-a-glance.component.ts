@@ -64,9 +64,10 @@ export class EventsAtAGlanceComponent {
   }
 }
 
-/** The period was never measured, or held no event, registration or upcoming event; the read zero-fills a quiet one. */
+/** The period was never measured, or none of its activity counts nor an upcoming event shows anything; a quiet one is zero-filled. */
 function isEmptyPeriod(glance: HealthMetricsEventsAtAGlance, range: HealthMetricsRange): boolean {
   const period = glance.periods.find((candidate) => candidate.range === range);
   const upcoming = range === 'YTD' ? glance.upcomingEvents : 0;
-  return !period || (!period.events && !period.pastEvents && !period.registrations && !upcoming);
+  const counts = period && [period.events, period.pastEvents, period.registrations, period.attendees, period.organizations, period.speakers, period.countries];
+  return !counts || (!upcoming && !counts.some(Boolean));
 }

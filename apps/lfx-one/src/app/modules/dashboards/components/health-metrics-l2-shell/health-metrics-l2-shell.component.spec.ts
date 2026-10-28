@@ -986,6 +986,18 @@ describe('HealthMetricsL2ShellComponent', () => {
       expect(query('test-blank')).toBeNull();
     });
 
+    it('keeps the tab while a read outside the listed data sections has data', async () => {
+      shell().sectionReading('alpha-extra', 'alpha');
+      child('alpha').settled.emit(true);
+      child('beta').settled.emit(true);
+      await flush();
+      expect(query('test-blank')).toBeNull();
+
+      shell().sectionSettled('alpha-extra', false, 'alpha');
+      await flush();
+      expect(query('test-blank')).toBeNull();
+    });
+
     it('empties a section only once every read rendering in it has settled empty', async () => {
       shell().sectionReading('alpha');
       shell().sectionReading('alpha-bridge', 'alpha');

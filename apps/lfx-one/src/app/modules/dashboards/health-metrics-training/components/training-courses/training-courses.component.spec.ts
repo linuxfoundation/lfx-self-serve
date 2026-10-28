@@ -242,6 +242,13 @@ describe('TrainingCoursesComponent', () => {
     expect(query('training-courses-table')).toBeNull();
   });
 
+  it('settles empty when the first unfiltered page holds courses from other years with nothing in this period', async () => {
+    await render(response({ rows: [course({ enrollments: 0, revenueUsd: null })], totalRecords: 1, scopeTotal: 1 }));
+
+    expect(verdicts).toEqual([true]);
+    expect(query('training-courses-table')).toBeNull();
+  });
+
   it('keeps the controls and the table, with a no-match row spanning every column, when a filter matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnType: 'certifications' });
     const cell = query('training-courses-no-match') as HTMLTableCellElement | null;

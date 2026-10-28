@@ -283,7 +283,9 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private initBlankView(): Signal<HealthMetricsL2BlankView | null> {
     return computed(() => {
       const readEmpty = this.readEmpty();
-      const verdicts = this.dataSections().map((key) => readEmpty.get(key));
+      // Every listed data section and any other read the shell has seen must report, so a read still loading is never hidden.
+      const keys = new Set([...this.dataSections(), ...this.readSections.keys(), ...readEmpty.keys()]);
+      const verdicts = [...keys].map((key) => readEmpty.get(key));
       if (verdicts.some((verdict) => verdict === undefined || verdict === false) || !verdicts.includes(true)) return null;
       return buildHealthMetricsL2BlankView(this.blank(), this.pastYear());
     });

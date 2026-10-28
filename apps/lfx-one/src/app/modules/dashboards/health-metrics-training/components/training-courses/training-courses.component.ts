@@ -91,9 +91,7 @@ export class TrainingCoursesComponent {
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   /** No course had a learner in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(
-    () => !this.loading() && !this.loadFailed() && (!this.scopeTotal() || (this.type() === 'all' && !this.search() && this.totalRecords() === 0))
-  );
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.query()));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
   protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
@@ -165,11 +163,8 @@ export class TrainingCoursesComponent {
 
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
-              // Held until a foundation is seen, so an unread section cannot release the shell's deep link. The scope counts every
-              // year, so the unfiltered period's own count decides.
-              if (foundationSeen) {
-                this.settled.emit(!this.loadFailed() && (!response.scopeTotal || (query.type === 'all' && !query.search && response.totalRecords === 0)));
-              }
+              // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response, query));
             })
           )
         )
@@ -230,4 +225,14 @@ export class TrainingCoursesComponent {
   private toType(id: string | null): HealthMetricsTrainingCoursesType {
     return HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
   }
+}
+
+/**
+ * Nothing ever enrolled, or the unfiltered first page holds no course with figures for the period. The scope and
+ * match counts span every year, but rows rank the period's figures first, so the top of the page decides.
+ */
+function isEmptyPeriod(response: HealthMetricsTrainingCourses, query: HealthMetricsTrainingCoursesQuery): boolean {
+  if (!response.scopeTotal) return true;
+  const unfiltered = query.type === 'all' && !query.search && query.offset === 0;
+  return unfiltered && !response.rows.some((row) => row.enrollments || row.revenueUsd);
 }

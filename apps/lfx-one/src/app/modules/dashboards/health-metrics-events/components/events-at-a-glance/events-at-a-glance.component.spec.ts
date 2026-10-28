@@ -145,12 +145,20 @@ describe('EventsAtAGlanceComponent', () => {
   });
 
   it('settles empty, with no body, for a zero-filled period with nothing upcoming', async () => {
-    const quiet = period({ events: 0, pastEvents: 0, registrations: 0 });
+    // The server zero-fills every count for a quiet period.
+    const quiet = period({ events: 0, pastEvents: 0, registrations: 0, attendees: 0, organizations: 0, speakers: 0, countries: 0 });
     await render('ready', glance({ periods: [quiet], upcomingEvents: 0 }));
 
     expect(verdicts).toEqual([true]);
     expect(query('events-at-a-glance-control')).toBeNull();
     expect(query('events-at-a-glance-headline')).toBeNull();
+  });
+
+  it('keeps the body for a period with no events counted but attendees measured', async () => {
+    await render('ready', glance({ periods: [period({ events: null, pastEvents: null, registrations: null, attendees: 120 })], upcomingEvents: 0 }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('events-at-a-glance-headline')).not.toBeNull();
   });
 
   it('keeps the body for a quiet year to date that has events upcoming', async () => {
