@@ -10,6 +10,26 @@ test.describe('Marketing kit home content', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
+  test('a started run replaces the asset badge with quiet writing progress', async ({ page }) => {
+    const listing = kitDocuments(false);
+    listing.runs = [
+      {
+        agentKey: 'foundation-message',
+        project: listing.project,
+        documentId: 'living',
+        runId: 'synthetic-run',
+        state: 'writing',
+        startedAt: '2026-10-28T12:00:00Z',
+      },
+    ];
+    await setupKit(page, { listing });
+    await openKit(page);
+    const row = page.getByTestId('mktg-kit-asset-messaging-framework');
+    await expect(row.getByTestId('mktg-kit-run-status')).toContainText('Writing…');
+    await expect(row.getByTestId('mktg-kit-run-status-link')).toHaveAttribute('href', /documents\/foundation-message\/living\?project=.*&run=synthetic-run$/);
+    await expect(page.getByTestId('mktg-kit-next-step-action')).toContainText('Create messaging framework');
+    await page.screenshot({ path: test.info().outputPath('kit-writing.png'), fullPage: true });
+  });
   test('Not run yet filters include never-run one-offs but not coming-soon assets', async ({ page }) => {
     await setupKit(page);
     await openKit(page);

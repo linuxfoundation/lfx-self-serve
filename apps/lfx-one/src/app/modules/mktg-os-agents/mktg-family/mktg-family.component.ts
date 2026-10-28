@@ -8,7 +8,13 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
 import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent, resolveMktgFamilyActions } from '@lfx-one/shared/utils';
+import {
+  isMktgKitFamilyLive,
+  mktgFamilyExportAgentKeys,
+  readMktgRebuildNavigationIntent,
+  resolveMktgFamilyActions,
+  resolveMktgFamilyRun,
+} from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -61,7 +67,14 @@ export class MktgFamilyComponent {
     if (header?.link) return { ...this.runQueryParams().plain, ...header.link.queryParams };
     return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
-  protected readonly rows = computed(() => Object.values(this.actions()?.rows ?? {}));
+  protected readonly rows = computed(() =>
+    Object.values(this.actions()?.rows ?? {}).map((entry) => {
+      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../'], entry.row.document);
+      const link = run?.link;
+      return { ...entry, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
+    })
+  );
+  protected readonly headerRun = this.initHeaderRun();
   /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
   protected readonly runQueryParams = computed(
     (): Record<'fresh' | 'plain', Record<string, string>> => ({
@@ -102,6 +115,19 @@ export class MktgFamilyComponent {
 
   protected rebuildStarted(): void {
     this.navigationIntent.set(null);
+  }
+
+  private initHeaderRun() {
+    return computed(() => {
+      if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
+      const rows = this.rows();
+      const newest = [...(this.kit.documents()?.runs ?? [])]
+        .filter((run) => run.state !== 'failed')
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .find((run) => rows.some((entry) => entry.run && entry.row.asset.agentKey === run.agentKey));
+      const entry = rows.find(({ row }) => row.asset.agentKey === newest?.agentKey);
+      return entry?.run ? { ...entry.run, caption: `${entry.row.asset.label} · ${entry.run.caption}` } : null;
+    });
   }
 
   private initActions() {
