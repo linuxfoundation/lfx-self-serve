@@ -24,17 +24,31 @@ import {
   MEMBER_360_TRACKER_TYPE_ERROR,
   MEMBER_360_TRACKER_FILENAME_ERROR,
   MEMBER_360_TRACKER_EXTENSION_REGEX,
+  MEMBER_360_RUN_CEILING_MS,
+  MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
+  MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { readMktgActiveRunConflict, mktgActiveRunConflictHeading, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { ConfirmationService, ConfirmEventType } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { Member360Envelope, Member360GenerateRequest, Member360TrackerUpload, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
+import {
+  Member360Envelope,
+  Member360GenerateRequest,
+  Member360TrackerUpload,
+  MktgDocumentListItem,
+  MktgPendingGeneration,
+  Member360Result,
+  MktgRunAnswer,
+} from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
+import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
-import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, EMPTY, expand, timer, finalize, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-member-360-run',
@@ -48,6 +62,8 @@ import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, t
     FileUploadComponent,
     MessageComponent,
     MktgBreadcrumbComponent,
+    MktgRunQuestionsComponent,
+    MktgRunActivityComponent,
   ],
   templateUrl: './member-360-run.component.html',
   styleUrl: './member-360-run.component.scss',
@@ -55,6 +71,7 @@ import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, t
 export class Member360RunComponent {
   private readonly chooser = viewChild(FileUploadComponent);
   private readonly api = inject(Member360Service);
+  private readonly attempts = inject(MktgRunAttemptService);
   private readonly documents = inject(MktgDocumentStoreService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -83,7 +100,31 @@ export class Member360RunComponent {
   protected readonly uploading = signal(false);
   protected readonly submitting = signal(false);
   private readonly historyRetry = signal(0);
+  private readonly accepted = signal<[string, MktgPendingGeneration | null]>(['', null]);
+  private readonly resultContext = signal<[MktgPendingGeneration | null, Member360Result | null]>([null, null]);
+  protected readonly answering = signal(false);
+  protected readonly stillRunning = signal(false);
+  protected readonly startedAt = signal(0);
+  protected readonly pollRetry = signal(0);
+  protected readonly pending = computed(() => {
+    const [subject, pending] = this.accepted();
+    return this.context.canWrite() && subject === this.users.user()?.sub && pending?.request.projectUid === this.context.activeContextUid() ? pending : null;
+  });
   protected readonly trackers = toSignal(this.form.controls.trackers.valueChanges, { initialValue: this.form.controls.trackers.value });
+  protected readonly result = computed(() => (this.resultContext()[0] === this.pending() ? this.resultContext()[1] : null));
+  protected readonly questions = computed(() => {
+    const result = this.result();
+    return result?.status === 'needs_input' && !!result.questionsId && result.questionsId !== this.pending()?.answeredQuestionsId
+      ? (result.questions ?? [])
+      : [];
+  });
+  protected readonly progressNote = computed(() => {
+    if (this.stillRunning()) return 'Still running — checking the same run less often.';
+    const turn = this.result();
+    if (turn?.status === 'needs_input' && (!turn.questionsId || !turn.questions?.length) && turn.questionsId !== this.pending()?.answeredQuestionsId)
+      return 'The questions are not available yet. Checking the same run again.';
+    return 'The document will open here when it is ready.';
+  });
   protected readonly latestPeriod = computed(() => this.latest()?.period.label.replace(/^(\d{4})-(Q[1-4])$/, '$2 $1') ?? '');
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
@@ -97,6 +138,7 @@ export class Member360RunComponent {
   public constructor() {
     this.destroyRef.onDestroy(() => this.uploadSequence++);
     if (isPlatformBrowser(this.platformId)) {
+      this.watchRun();
       this.scope$
         .pipe(
           distinctUntilChanged((a, b) => a.project === b.project && a.user === b.user && a.retry === b.retry),
@@ -104,6 +146,10 @@ export class Member360RunComponent {
             const scope = JSON.stringify([project, user]);
             if (scope !== this.lastScope) {
               this.confirmation.close();
+              const latest = this.attempts.latestPending(project, 'member-360');
+              const pending = latest ? this.attempts.load(project, 'member-360', latest.documentId) : null;
+              this.accepted.set([user, pending]);
+              this.startedAt.set(pending ? Date.parse(pending.updatedAt) : 0);
               this.form.controls.trackers.setValue([]);
               this.chooser()?.clear();
               this.error.set('');
@@ -158,7 +204,7 @@ export class Member360RunComponent {
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
-    if (!project || !this.context.canWrite() || this.submitting()) return;
+    if (!project || !this.context.canWrite() || this.submitting() || this.pending()) return;
     if (this.uploading()) {
       this.error.set('Wait for your trackers to finish parsing, then create Member 360.');
       return;
@@ -189,18 +235,18 @@ export class Member360RunComponent {
       this.submitting.set(true);
       this.api
         .generate(discard ? { ...body, discard } : body)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(take(1))
         .subscribe({
           next: (session) => {
-            if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
-            this.router.navigate(['../documents/member-360', session.documentId], {
-              relativeTo: this.route,
-              queryParams: { revision: null, generation: null, run: session.runId ?? null },
-              queryParamsHandling: 'merge',
-            });
+            if (!current()) return;
+            const pending = this.attempts.load(project, 'member-360', session.documentId);
+            this.submitting.set(false);
+            this.startedAt.set(Date.now());
+            this.accepted.set([user ?? '', pending]);
+            if (!pending) this.error.set('The run started, but its creator capability could not be restored. Open it from run history.');
           },
           error: (error: HttpErrorResponse) => {
-            if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
+            if (!current()) return;
             this.submitting.set(false);
             const conflict = error.status === 409 ? readMktgActiveRunConflict(error.error, 'member-360') : null;
             if (conflict) {
@@ -292,6 +338,76 @@ export class Member360RunComponent {
   protected remove(id: number): void {
     this.form.controls.trackers.setValue(this.trackers().filter((upload) => upload.id !== id));
   }
+  protected onAnswers(answers: MktgRunAnswer[]): void {
+    const pending = this.pending();
+    const questionsId = this.result()?.questionsId;
+    if (!pending || !questionsId || this.answering() || !this.context.canWrite()) return;
+    const subject = this.users.user()?.sub ?? '';
+    this.answering.set(true);
+    this.error.set('');
+    this.api
+      .answer(pending, questionsId, answers)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.answering.set(false))
+      )
+      .subscribe({
+        next: () => {
+          if (pending !== this.pending()) return;
+          this.accepted.set([subject, { ...pending, state: 'writing', answeredQuestionsId: questionsId }]);
+        },
+        error: (error: HttpErrorResponse) => {
+          if (pending !== this.pending()) return;
+          if (error.status === 409) this.pollRetry.update((value) => value + 1);
+          this.error.set(error.status === 409 ? 'The questions changed — refreshed.' : 'Your answers could not be sent. They are kept — try again.');
+        },
+      });
+  }
+
+  private watchRun(): void {
+    toObservable(computed(() => ({ pending: this.pending(), retry: this.pollRetry() })))
+      .pipe(
+        switchMap(({ pending }) => {
+          this.resultContext.set([null, null]);
+          this.stillRunning.set(false);
+          if (!pending?.attempt) return EMPTY;
+          const read = () =>
+            this.api.questions(pending).pipe(
+              tap(() => this.error.set('')),
+              catchError(() => {
+                this.error.set('The run could not be checked. Try again; no new run is started.');
+                return EMPTY;
+              })
+            );
+          return timer(MKTG_RUN_POLL.initialDelayMs).pipe(
+            switchMap(read),
+            expand((result) => {
+              const questions =
+                result.status === 'needs_input' && !!result.questionsId && result.questions?.length && result.questionsId !== pending.answeredQuestionsId;
+              if (questions || result.status === 'failed' || (result.status === 'ready' && (result.stored || result.persistence))) return EMPTY;
+              this.stillRunning.set(Date.now() - this.startedAt() >= MEMBER_360_RUN_CEILING_MS);
+              const delay = this.stillRunning() ? MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS : MKTG_RUN_POLL.intervalMs;
+              return timer(delay).pipe(switchMap(read));
+            }),
+            tap((result) => {
+              if (pending !== this.pending()) return;
+              this.resultContext.set([pending, result]);
+              if (result.status === 'failed' || (result.status === 'ready' && (result.stored || result.persistence))) {
+                this.attempts.clear(pending.request.projectUid, 'member-360', this.users.user()?.sub ?? '', pending.request.documentId);
+                void this.router.navigate(['../documents/member-360', pending.request.documentId], {
+                  relativeTo: this.route,
+                  queryParams: { revision: null, generation: null, run: pending.attempt?.runId ?? null },
+                  queryParamsHandling: 'merge',
+                });
+              }
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe();
+  }
+
   private initCompareOptions() {
     return computed(() => {
       const latest = this.latest();

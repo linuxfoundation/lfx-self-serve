@@ -14,8 +14,11 @@ import { Member360Service } from '@services/member-360.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { of, throwError, NEVER } from 'rxjs';
 import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
+import { MktgPendingGeneration, Member360Result } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Member360RunComponent } from './member-360-run.component';
@@ -32,7 +35,27 @@ describe('Member360RunComponent', () => {
     listDocuments: vi.fn<MktgDocumentStoreService['listDocuments']>(() => of({ project: 'sample-project', groups: [] })),
     getRevision: vi.fn(() => of(member360Revision())),
   };
+  const capability = (): MktgPendingGeneration => ({
+    request: {
+      projectUid: 'sample-project',
+      agentId: 'member-360',
+      intake: MKTG_AGENT_INTAKES['member-360'],
+      documentId: 'run-0123456789abcdef01234567',
+      answers: {},
+    },
+    state: 'writing',
+    updatedAt: new Date().toISOString(),
+    attempt: {
+      runId: 'b'.repeat(64),
+      documentId: 'run-0123456789abcdef01234567',
+      priorVersion: 0,
+      session: { agentId: 'member-360', sessionId: 'session-1', ownerToken: 'synthetic-token' },
+    },
+  });
+  const attempts = { load: vi.fn(), latestPending: vi.fn(), clear: vi.fn(), subject: () => 'synthetic-subject', save: vi.fn() };
   const run = {
+    questions: vi.fn<Member360Service['questions']>(() => NEVER),
+    answer: vi.fn<Member360Service['answer']>(() => of({ success: true })),
     generate: vi.fn<Member360Service['generate']>(() =>
       of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })
     ),
@@ -51,6 +74,12 @@ describe('Member360RunComponent', () => {
   beforeEach(async () => {
     context.canWrite.set(true);
     confirmation.confirm.mockClear();
+    attempts.load.mockReset().mockReturnValue(capability());
+    attempts.latestPending.mockReset().mockReturnValue(null);
+    attempts.clear.mockClear();
+    attempts.save.mockClear();
+    run.questions.mockReset().mockReturnValue(NEVER);
+    run.answer.mockReset().mockReturnValue(of({ success: true }));
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
     run.generate.mockReturnValue(of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' }));
     run.generate.mockClear();
@@ -62,13 +91,17 @@ describe('Member360RunComponent', () => {
         provideHttpClientTesting(),
         { provide: ConfirmationService, useValue: confirmation },
         { provide: Member360Service, useValue: run },
+        { provide: MktgRunAttemptService, useValue: attempts },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: context },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-subject' }) } },
       ],
     }).compileComponents();
   });
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).verify();
+    vi.useRealTimers();
+  });
   it.each(['open', 'discard'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
     await render();
     const conflict = {
@@ -93,6 +126,7 @@ describe('Member360RunComponent', () => {
       prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
       expect(run.generate).toHaveBeenCalledTimes(2);
       expect(run.generate).toHaveBeenNthCalledWith(2, { ...original, discard: conflict.activeRunId });
+      expect(navigate).not.toHaveBeenCalled();
     } else {
       prompt?.reject?.(ConfirmEventType.REJECT);
       expect(run.generate).toHaveBeenCalledOnce();
@@ -178,7 +212,7 @@ describe('Member360RunComponent', () => {
     button().click();
     fixture.detectChanges();
     expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
-    expect(navigate).toHaveBeenCalledOnce();
+    expect(navigate).not.toHaveBeenCalled();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
   it('keeps fixed context parents for a shared URL without copying revision, tab or stale project', async () => {
@@ -311,19 +345,26 @@ describe('Member360RunComponent', () => {
     expect(button()).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('You need write access');
   });
-  it('submits only the project identifier and form choices, then opens its document', async () => {
+  it('stays on the run page and opens its document only after stored readiness', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    run.questions.mockReturnValueOnce(of({ status: 'pending', activity: [] })).mockReturnValue(of({ status: 'ready', stored: true }));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await render();
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     await fixture.whenStable();
     expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(navigate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"]')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(navigate).toHaveBeenCalledWith(
       ['../documents/member-360', 'run-0123456789abcdef01234567'],
-      expect.objectContaining({ queryParams: { revision: null, generation: null, run: null }, queryParamsHandling: 'merge' })
+      expect.objectContaining({ queryParams: { revision: null, generation: null, run: 'b'.repeat(64) } })
     );
   });
-  it('keeps Generate alive after navigation without retaining a browser capability or navigating again', async () => {
+  it('keeps the accepted capability after navigation without polling or navigating again', async () => {
     TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
     const http = TestBed.inject(HttpTestingController);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -333,10 +374,68 @@ describe('Member360RunComponent', () => {
     const request = http.expectOne('/api/mktg-agents/member-360/generate');
     fixture.destroy();
     expect(request.cancelled).toBe(false);
-    request.flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' });
+    request.flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567', runId: 'b'.repeat(64) });
+    expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ state: 'writing' }), 'synthetic-subject');
     expect(sessionStorage.length).toBe(0);
     expect(navigate).not.toHaveBeenCalled();
     sessionStorage.clear();
+  });
+  it.each(['answer', 'send-error', 'empty', 'failed', 'poll-error'] as const)('handles the %s run state on this page', async (state) => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const questions: Member360Result = {
+      status: 'needs_input',
+      questionsId: 'c'.repeat(64),
+      questions: [
+        {
+          key: 'window',
+          label: 'Window',
+          question: 'Which window should this tracker cover?',
+          why: 'Missing date.',
+          suggestedAnswer: 'Use the current analysis window.',
+          basis: [],
+        },
+      ],
+    };
+    if (state === 'empty') questions.questions = [];
+    run.questions.mockReturnValue(of(state === 'failed' ? { status: 'failed', message: 'The agent ended without a report.' } : questions));
+    if (state === 'poll-error') run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    if (state === 'send-error') run.answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    if (state === 'answer' || state === 'send-error') {
+      expect(fixture.nativeElement.querySelector('[data-testid="member-360-questions"]').textContent).toContain('Member 360 needs your answers to finish.');
+      fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(run.answer).toHaveBeenCalledWith(expect.objectContaining({ attempt: capability().attempt }), 'c'.repeat(64), [
+        { key: 'window', text: 'Use the current analysis window.', origin: 'accepted' },
+      ]);
+      expect(!!fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBe(state === 'send-error');
+    } else {
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
+      if (state === 'failed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', capability().request.documentId], expect.anything());
+      if (state === 'empty') expect(fixture.nativeElement.textContent).toContain('The questions are not available yet.');
+      if (state === 'poll-error') expect(fixture.nativeElement.textContent).toContain('could not be checked');
+    }
+  });
+  it('restores this tab capability and slows polling past the ceiling without failing the run', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'writing' });
+    run.questions.mockReturnValue(of({ status: 'pending' }));
+    await render();
+    fixture.componentInstance['startedAt'].set(Date.now() - MEMBER_360_RUN_CEILING_MS);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Still running');
+    expect(run.generate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
+    expect(run.questions).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance['result']()?.status).toBe('pending');
   });
   it('reports a submission failure and allows retry', async () => {
     run.generate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));

@@ -167,7 +167,11 @@
             <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
           }
         } @else if (state === 'questions') {
-          @if (pausedWithoutAnswers()) {
+          @if (memberQuestionsCreator()) {
+            <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+              Member 360 needs your answers — continue from the Member 360 page in the tab where you started it.
+            </p>
+          } @else if (pausedWithoutAnswers()) {
             <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
               The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
             </p>

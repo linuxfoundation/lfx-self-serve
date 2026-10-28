@@ -21,6 +21,37 @@
       <p role="status">Checking project access…</p>
     } @else if (!context.canWrite()) {
       <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
+    } @else if (pending(); as pending) {
+      @if (questions().length) {
+        <section class="flex flex-col gap-3" data-testid="member-360-questions">
+          <h2 class="text-lg font-semibold">Member 360 needs your answers to finish.</h2>
+          <lfx-mktg-run-questions
+            [questions]="questions()"
+            [projectName]="context.activeContext()?.name ?? ''"
+            [busy]="answering()"
+            (answered)="onAnswers($event)" />
+        </section>
+      } @else {
+        <section class="flex flex-col gap-3 rounded-xl border border-gray-200 p-5" data-testid="member-360-generating">
+          @if (result()?.status === 'ready') {
+            <lfx-button label="Open document" [routerLink]="['../documents/member-360', pending.request.documentId]" [queryParams]="projectParams()" />
+          } @else if (result()?.status !== 'failed') {
+            <p role="status">{{ progressNote() }}</p>
+            <lfx-mktg-run-activity [activity]="result()?.activity ?? []" title="Working on Member 360" [startedAt]="startedAt()" [showQuestions]="false" />
+          } @else {
+            <lfx-button label="Open run details" [routerLink]="['../documents/member-360', pending.request.documentId]" [queryParams]="projectParams()" />
+          }
+        </section>
+      }
+      @if (error()) {
+        <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+        <lfx-button
+          label="Check again"
+          [text]="true"
+          [disabled]="answering()"
+          (onClick)="pollRetry.set(pollRetry() + 1)"
+          data-testid="member-360-check-again" />
+      }
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
         <!-- Exact px per Member360Run.dc.html: 10px gap and 10px/12px padding in the Project box, 13px hints. -->

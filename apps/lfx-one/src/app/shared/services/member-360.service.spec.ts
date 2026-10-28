@@ -4,6 +4,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
+import { UserService } from './user.service';
+import { MktgRunAttemptService } from './mktg-run-attempt.service';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Member360Service } from './member-360.service';
@@ -11,15 +14,18 @@ import { Member360Service } from './member-360.service';
 describe('Member360Service dedicated transports', () => {
   let api: Member360Service;
   let http: HttpTestingController;
+  const user = signal({ sub: 'synthetic-creator' });
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    user.set({ sub: 'synthetic-creator' });
+    localStorage.clear();
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: UserService, useValue: { user } }] });
     api = TestBed.inject(Member360Service);
     http = TestBed.inject(HttpTestingController);
     sessionStorage.clear();
   });
   afterEach(() => http.verify());
 
-  it('returns the accepted destination and durable run selector without storing a pending browser capability', () => {
+  it('retains the minimal creator capability without session storage or tracker prose', () => {
     const session = { sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567', runId: 'a'.repeat(64) };
     let received: unknown;
     api.generate({ project: 'sample-project' }).subscribe((result) => {
@@ -30,7 +36,36 @@ describe('Member360Service dedicated transports', () => {
     request.flush(session);
     expect(received).toEqual(session);
     expect(sessionStorage.length).toBe(0);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const pending = attempts.load('sample-project', 'member-360', session.documentId);
+    expect(pending?.attempt?.session.ownerToken).toBe('synthetic-token');
+    expect(pending?.request.answers).toEqual({});
+    user.set({ sub: 'another-creator' });
+    expect(attempts.load('sample-project', 'member-360', session.documentId)).toBeNull();
     http.expectNone('/api/mktg-agents/member-360/result');
+  });
+
+  it('adapts question keys to ids and keeps failure answers retryable on the same session', () => {
+    const session = { sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567', runId: 'a'.repeat(64) };
+    api.generate({ project: 'sample-project' }).subscribe();
+    http.expectOne('/api/mktg-agents/member-360/generate').flush(session);
+    const pending = TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId);
+    if (!pending) throw new Error('Missing fixture capability');
+    const answers = [{ key: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }];
+    api.answer(pending, 'b'.repeat(64), answers).subscribe({ error: () => undefined });
+    const failed = http.expectOne('/api/mktg-agents/member-360/answers');
+    expect(failed.request.body).toEqual({
+      project: 'sample-project',
+      sessionId: 'session-1',
+      ownerToken: 'synthetic-token',
+      questionsId: 'b'.repeat(64),
+      answers: [{ id: 'tracker-window', text: answers[0].text, origin: 'accepted' }],
+    });
+    failed.flush({}, { status: 503, statusText: 'Unavailable' });
+    expect(TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId)?.answeredQuestionsId).toBeUndefined();
+    api.answer(pending, 'b'.repeat(64), answers).subscribe();
+    http.expectOne('/api/mktg-agents/member-360/answers').flush({ success: true });
+    expect(TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId)?.answeredQuestionsId).toBe('b'.repeat(64));
   });
 
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
