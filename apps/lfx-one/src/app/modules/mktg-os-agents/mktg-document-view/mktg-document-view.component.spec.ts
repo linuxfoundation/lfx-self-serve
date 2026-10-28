@@ -3366,6 +3366,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
     expect(query('mktg-faq-view-unanswered-open')).toBeNull();
     expect(query('mktg-faq-view-tab-unanswered')?.textContent).toContain('Needs an answer (1)');
+    expect(query('mktg-faq-view-unanswered-callout')?.textContent).toContain('1 question needs an answer from your team.');
     expectContentColumn('mktg-faq-view');
   });
 });

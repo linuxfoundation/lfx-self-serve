@@ -30,6 +30,8 @@ export class MktgFieldCommentsComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly comments = inject(MktgDocumentCommentsService);
   public readonly field = input.required<string>();
+  public readonly openLabel = input('Comment');
+  public readonly alwaysVisible = input(false);
   private readonly draft = computed(() => this.comments.fieldDraft(this.field()));
   protected readonly form = computed(() => this.draft().form);
   protected readonly opened = computed(() => this.draft().opened());
