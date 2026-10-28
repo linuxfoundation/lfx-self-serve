@@ -485,7 +485,9 @@
                   </lfx-mktg-run-activity>
                 </div>
               } @else {
-                <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">Opening the asset page…</div>
+                <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">
+                  {{ hasAcknowledgement() ? 'Writing the asset…' : 'Getting started…' }}
+                </div>
                 <ng-container [ngTemplateOutlet]="leaveNote" />
               }
             }

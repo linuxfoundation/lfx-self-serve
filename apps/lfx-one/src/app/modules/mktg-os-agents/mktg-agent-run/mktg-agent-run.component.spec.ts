@@ -1406,6 +1406,20 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-error')?.textContent).toContain('Sign in');
     });
 
+    it('labels a no-feed accepted attempt as writing, never as premature asset navigation', async () => {
+      await configure('browser', target.agentId);
+      await fill();
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-running')?.textContent).toContain('Getting started');
+      progress.next({ type: 'submitted' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-running')?.textContent).toContain('Writing the asset');
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
+
     const accepted = () => {
       const request: MktgGenerateRequest = {
         agentId: target.agentId,
