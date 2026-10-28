@@ -38,6 +38,8 @@ export interface MktgDocumentRunStartOptions {
 export interface MktgActiveRunStartOptions {
   documentId?: string;
   discard?: unknown;
+  /** Slot owner for one-offs when the caller acts on another creator's record; defaults to the caller. */
+  creatorSubject?: string | null;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
