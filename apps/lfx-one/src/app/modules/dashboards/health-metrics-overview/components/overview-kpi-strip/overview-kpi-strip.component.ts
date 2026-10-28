@@ -35,21 +35,14 @@ export class OverviewKpiStripComponent {
     if (layout === 'stack') return 'minmax(0, 1fr)';
     return `repeat(${layout === 'grid' ? 2 : this.kpis().length}, minmax(0, 1fr))`;
   });
+  /** Dividers and padding per item: the design's left rule between columns, a top rule between stacked rows. */
+  protected readonly itemClasses = computed(() => {
+    const layout = this.layout();
+    return this.kpis().map((_, index) => itemClass(layout, index));
+  });
 
   public constructor() {
     afterNextRender(() => this.observeWidth());
-  }
-
-  /** Dividers and padding per layout: the design's left rule between columns, a top rule between stacked rows. */
-  protected itemClass(index: number): string {
-    switch (this.layout()) {
-      case 'stack':
-        return index === 0 ? 'pl-0' : 'border-t border-gray-200 pl-0';
-      case 'grid':
-        return [index % 2 === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]', index >= 2 ? 'border-t border-gray-200' : ''].join(' ');
-      default:
-        return index === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]';
-    }
   }
 
   private observeWidth(): void {
@@ -58,5 +51,16 @@ export class OverviewKpiStripComponent {
     const observer = new ResizeObserver(([entry]) => this.widthPx.set(entry.contentRect.width));
     observer.observe(this.host.nativeElement);
     this.destroyRef.onDestroy(() => observer.disconnect());
+  }
+}
+
+function itemClass(layout: HealthMetricsOverviewKpiStripLayout, index: number): string {
+  switch (layout) {
+    case 'stack':
+      return index === 0 ? 'pl-0' : 'border-t border-gray-200 pl-0';
+    case 'grid':
+      return [index % 2 === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]', index >= 2 ? 'border-t border-gray-200' : ''].join(' ');
+    default:
+      return index === 0 ? 'pl-0' : 'border-l border-gray-200 pl-[20px]';
   }
 }

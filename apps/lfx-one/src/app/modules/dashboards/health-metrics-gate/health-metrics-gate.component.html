@@ -69,9 +69,6 @@
         </div>
       </div>
 
-      <!-- Inside the sticky header on purpose, so the measured offset a tab's sub-nav pins below already
-           accounts for the bar. A hidden medium-weight copy reserves each label's width, so the active
-           weight never shifts its neighbours. -->
       <!-- The narrowest headers trade the tab bar for a dropdown. -->
       <div class="@[640px]/hmhead:hidden">
         <lfx-select
@@ -84,6 +81,9 @@
           styleClass="w-full !h-[36px] items-center !border-gray-200 [&_.p-select-label]:!text-[13px] [&_.p-select-label]:font-medium [&_.p-select-label]:text-gray-900"
           data-testid="health-metrics-tabs-select" />
       </div>
+      <!-- Inside the sticky header on purpose, so the measured offset a tab's sub-nav pins below already
+           accounts for the bar. A hidden medium-weight copy reserves each label's width, so the active
+           weight never shifts its neighbours. -->
       <nav
         class="hidden flex-wrap gap-x-[24px] border-b border-gray-200 @[640px]/hmhead:flex"
         aria-label="Health Metrics sections"

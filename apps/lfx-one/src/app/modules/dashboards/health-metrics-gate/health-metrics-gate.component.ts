@@ -4,14 +4,14 @@
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { filter } from 'rxjs';
 import { FormControl, FormGroup } from '@angular/forms';
-import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
+import { filter } from 'rxjs';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
@@ -115,10 +115,11 @@ export class HealthMetricsGateComponent {
     const control = this.tabForm.controls.tab;
     this.router.events
       .pipe(
-        filter((event) => event instanceof NavigationEnd),
+        // A cancelled or failed navigation leaves the route where it was, so the dropdown goes back with it.
+        filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
         takeUntilDestroyed()
       )
-      .subscribe((event) => control.setValue(this.activeTabKey(event.urlAfterRedirects), { emitEvent: false }));
+      .subscribe(() => control.setValue(this.activeTabKey(this.router.url), { emitEvent: false }));
     control.valueChanges.pipe(takeUntilDestroyed()).subscribe((key) => {
       const tab = this.tabs.find((candidate) => candidate.key === key);
       if (tab) void this.router.navigate(tab.route ? [this.basePath, tab.route] : [this.basePath], { queryParamsHandling: 'preserve' });
