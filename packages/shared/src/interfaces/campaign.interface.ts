@@ -1859,6 +1859,15 @@ export interface MetaAccountOption {
   label: string;
 }
 
+/**
+ * One Google Ads account the project's own connection can reach, as `GET /api/campaigns/google/accounts`
+ * answers it: the Meta/Reddit picker option shape. `key` is the upstream id verbatim (bare digits).
+ */
+export interface GoogleAdsAccountOption {
+  key: string;
+  label: string;
+}
+
 export interface MetaMonitorResponse {
   accountLabel: string;
   pulledAt: string;
@@ -3247,6 +3256,20 @@ export interface CampaignServiceConnection {
   account_id: string;
   has_credentials: boolean;
   status: 'active' | 'inactive' | 'error' | 'deleted';
+}
+
+/**
+ * One element of campaign-service's account discovery (`AccessibleAccount`). `id` is opaque and
+ * per-provider; `label` is optional on the wire.
+ */
+export interface CampaignServiceAccessibleAccount {
+  id: string;
+  label?: string;
+}
+
+/** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
+export interface CampaignServiceAccessibleAccounts {
+  accounts: CampaignServiceAccessibleAccount[];
 }
 
 // ---------------------------------------------------------------------------
