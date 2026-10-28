@@ -964,8 +964,9 @@ export class MktgAgentRunComponent {
     this.runFailed.set(false);
     this.errorText.set('');
     this.waitingQuestions.set(false);
-    this.waitingRun.set({ runId: conflict.activeRunId, state: conflict.state });
-    this.existingRun.set({ runId: conflict.activeRunId, state: conflict.state });
+    const activeRun = { runId: conflict.activeRunId, state: conflict.state, startedAt: conflict.startedAt };
+    this.waitingRun.set(activeRun);
+    this.existingRun.set(activeRun);
     const discard = () => {
       this.discardConfirmed = true;
       this.discardedRunId = conflict.activeRunId;

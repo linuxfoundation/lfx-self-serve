@@ -1066,7 +1066,14 @@ export class MktgDocumentRunService {
       operation: 'mktg_run_start',
       service: 'object_store',
       clientMessage,
-      details: { activeRunId: record.runId, state: record.state, agentKey: record.agentKey, documentId: record.documentId, startedBy },
+      details: {
+        activeRunId: record.runId,
+        state: record.state,
+        agentKey: record.agentKey,
+        documentId: record.documentId,
+        startedBy,
+        startedAt: record.startedAt,
+      },
     });
   }
 

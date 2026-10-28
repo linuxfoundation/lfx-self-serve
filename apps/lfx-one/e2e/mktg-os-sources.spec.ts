@@ -31,6 +31,7 @@ test.describe('Marketing OS new run Sources', () => {
               agentKey: 'brand-kit',
               documentId: 'living',
               startedBy: 'Synthetic writer',
+              startedAt: '2026-10-19T12:00:00.000Z',
             },
           });
         return route.fallback();

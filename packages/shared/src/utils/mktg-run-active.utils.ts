@@ -14,6 +14,8 @@ export function readMktgActiveRunConflict(value: unknown, agentId: string, docum
     !type ||
     body['code'] !== MKTG_RUN_ACTIVE ||
     typeof body['message'] !== 'string' ||
+    typeof body['startedAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(body['startedAt'])) ||
     typeof body['startedBy'] !== 'string' ||
     !body['startedBy'].trim() ||
     typeof body['activeRunId'] !== 'string' ||
@@ -29,6 +31,7 @@ export function readMktgActiveRunConflict(value: unknown, agentId: string, docum
     code: MKTG_RUN_ACTIVE,
     message: body['message'],
     startedBy: body['startedBy'],
+    startedAt: body['startedAt'],
     activeRunId: body['activeRunId'],
     state: body['state'],
     agentKey: type.agentKey,
