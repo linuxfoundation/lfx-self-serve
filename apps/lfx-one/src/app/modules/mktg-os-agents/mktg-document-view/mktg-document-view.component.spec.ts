@@ -3,7 +3,7 @@
 
 import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { computed, linkedSignal, PLATFORM_ID, signal } from '@angular/core';
+import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
@@ -1342,8 +1342,10 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-workbook-error')).toBeNull();
     });
     it('does not call browser APIs or fetch a workbook during SSR', () => {
-      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
       const fixture = TestBed.createComponent(MktgDocumentViewComponent);
+      // The shared setup has already injected Router; exercise this action's SSR guard
+      // without trying to override an instantiated TestBed provider.
+      Reflect.set(fixture.componentInstance, 'platformId', 'server');
       fixture.componentInstance['view'].set(storedMember());
       fixture.componentInstance['writer'].set(true);
       fixture.componentInstance['loading'].set(false);
