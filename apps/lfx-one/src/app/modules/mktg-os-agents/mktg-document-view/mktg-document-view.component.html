@@ -6,10 +6,10 @@
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-header">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
         <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
-          {{ isAeoDocument() ? 'AEO/GEO' : title() }}
+          {{ isAeoDocument() ? aeoHeaderTitle() : title() }}
         </h1>
         @if (header(); as meta) {
           @if (!isLinkedinDocument() && hasAssetMetadata()) {
@@ -18,6 +18,33 @@
         }
       </div>
       <div class="grow"></div>
+      @if (!loading() && hasAssetView() && proseView(); as current) {
+        <div class="ml-auto flex flex-wrap items-center justify-end gap-4" data-testid="mktg-document-view-title-actions">
+          @if (runAgainLink(); as link) {
+            <a
+              [routerLink]="link"
+              [queryParams]="runAgainParams()"
+              class="text-base font-medium text-blue-700 hover:text-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+              data-testid="mktg-document-view-run-again"
+              >Create a new version</a
+            >
+          }
+          <ng-container [ngTemplateOutlet]="frameworkView()?.titleActions() ?? brandKitView()?.titleActions() ?? null" />
+          @if (mayApprove()) {
+            <div class="flex flex-col gap-2">
+              <lfx-button
+                label="Approve"
+                [loading]="approvingId() === current.revision.id"
+                [disabled]="writePending()"
+                data-testid="mktg-document-view-approve"
+                (onClick)="onApprove()" />
+              @if (approvalError()) {
+                <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
+              }
+            </div>
+          }
+        </div>
+      }
       @if (linkedinContent(); as content) {
         @if (content.author; as author) {
           <span class="text-sm text-gray-500" data-testid="mktg-linkedin-document-author">
@@ -37,6 +64,9 @@
             }
           </span>
         }
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-linkedin-draft-another">
+          <button type="button" class="text-sm font-medium text-blue-700 hover:underline" (click)="onDraftAnother()">Draft another post</button>
+        </div>
       } @else if (view(); as current) {
         @if (!isLinkedinDocument() && !isAeoDocument() && !hasAssetView() && current.revision.format !== 'json') {
           <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
@@ -50,24 +80,44 @@
           </span>
         }
       }
-      @if (!loading() && view()?.member360; as envelope) {
-        <lfx-button
-          (onClick)="onDownloadWorkbook()"
-          [loading]="downloadingWorkbook()"
-          [disabled]="downloadingWorkbook() || !writer()"
-          label="Download Member360_{{ envelope.project }}_{{ envelope.period.label }}.xlsx"
-          [outlined]="true"
-          severity="secondary"
-          class="min-w-0 max-w-full"
-          styleClass="min-h-12 max-w-full whitespace-normal break-words"
-          data-testid="member-360-download" />
+      @if (isAeoDocument() && view()?.aeoGeoReport) {
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-aeo-report-actions">
+          <a
+            [routerLink]="['../../..', runAgent()?.id]"
+            [queryParams]="runAgainParams()"
+            queryParamsHandling="merge"
+            class="text-sm font-medium text-blue-700 hover:underline"
+            data-testid="mktg-document-view-run-again"
+            (click)="onRunAgain()"
+            >Audit again</a
+          >
+          <lfx-button label="Download PDF" icon="fa-light fa-file-pdf" (onClick)="onDownload()" data-testid="mktg-document-view-download" />
+        </div>
+      }
+      @if (memberResult(); as result) {
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="member-360-result-actions">
+          <a
+            [routerLink]="result.runRoute()"
+            [queryParams]="result.projectParams()"
+            class="text-sm font-medium text-blue-700 hover:underline"
+            data-testid="member-360-new-run"
+            >Create another Member 360</a
+          >
+          <lfx-button
+            label="Download workbook"
+            icon="fa-light fa-download"
+            [loading]="downloadingWorkbook()"
+            [disabled]="!writer()"
+            (onClick)="onDownloadWorkbook()"
+            data-testid="member-360-download" />
+        </div>
       }
     </div>
     @if (workbookError()) {
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
-    @if (runAgentId() && !hasAssetView()) {
+    @if (runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"
@@ -79,32 +129,61 @@
 
     <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
 
-    @if (runState(); as state) {
+    @if (!runFailed() && runState(); as state) {
       <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
+        @if (state !== 'failed' && view()?.revision) {
+          <p class="text-sm text-gray-500" data-testid="mktg-document-view-current-during-run">
+            Writing a new version — the current one stays below until it lands.
+          </p>
+        }
         <h2 class="text-lg font-semibold text-gray-900">{{ liveState() }}</h2>
         @if (selectedRun(); as run) {
           <p class="text-xs text-gray-500">Started {{ run.startedAt | date: 'd MMM y, HH:mm' }}</p>
         }
         @if (state === 'failed') {
-          <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
-            {{
-              selectedRun()?.state === 'failed'
-                ? 'A previous run did not finish. Retry polls it again; no new generation is started.'
-                : 'The run could not be confirmed. Your intake is kept; open the intake form to continue.'
-            }}
-          </p>
           @if (runFailure()) {
-            <p class="whitespace-pre-wrap text-sm text-gray-900" data-testid="mktg-document-view-failure-reply">{{ runFailure() }}</p>
+            <details class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2" data-testid="mktg-document-view-failure-details">
+              <summary class="flex min-w-0 cursor-pointer items-center gap-2 text-sm text-gray-600">
+                <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                <span class="shrink-0 font-semibold">Details</span>
+                <span class="min-w-0 flex-1 truncate font-mono text-xs text-gray-500">{{ runFailure() }}</span>
+              </summary>
+              <p
+                class="mt-2 whitespace-pre-wrap break-words font-mono text-xs text-gray-600"
+                [textContent]="runFailure()"
+                data-testid="mktg-document-view-failure-reply"></p>
+            </details>
           }
-          @if (selectedRun()?.state === 'failed') {
-            <lfx-button label="Retry" [loading]="retrying()" [disabled]="retrying()" (onClick)="onRetryRun()" data-testid="mktg-document-view-progress-retry" />
+          <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
+            @if (unconfirmedFailure()) {
+              The run could not be confirmed. Your intake is kept; open the intake form to continue.
+            } @else if (selectedRun()?.persistenceFailed) {
+              The result could not be saved. Check on it again checks the same session and retries saving; starts nothing new.
+            } @else {
+              Try again opens the run page with your sources kept, so you can start the {{ failureAssetLabel() }} over.
+            }
+          </p>
+          @if (errorText()) {
+            <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
           }
         } @else if (state === 'questions') {
-          <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+          @if (pausedWithoutAnswers()) {
+            <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+              The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
+            </p>
+            <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-paused-refresh" />
+          } @else {
+            <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+          }
         } @else {
           <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
-            <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
-            <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+            @if (runDocumentType()) {
+              <li>{{ state === 'storing' ? 'Written' : 'Writing…' }}</li>
+              <li>{{ state === 'storing' ? 'Saving…' : 'It will appear here when it is ready.' }}</li>
+            } @else {
+              <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
+              <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+            }
           </ol>
           @if (runRecorded()) {
             <p class="text-sm text-gray-500">You can leave this page. The run is recorded and will be checked when you return.</p>
@@ -112,8 +191,43 @@
             <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
           }
         }
-        @if (runAgentId() && (state === 'failed' || state === 'questions')) {
-          <lfx-button label="Open the intake form" [text]="true" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
+        @if (visibleRunActivity(); as activity) {
+          <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
+        }
+        @if (state === 'failed') {
+          <div class="flex flex-wrap items-center justify-between gap-4 pt-4" data-testid="mktg-document-view-failure-actions">
+            @if (selectedRun()?.state === 'failed') {
+              <div class="flex-1 text-sm text-gray-500">
+                <lfx-button
+                  label="Check on it again"
+                  [text]="!selectedRun()?.persistenceFailed"
+                  [loading]="retrying()"
+                  [disabled]="retrying()"
+                  (onClick)="onRetryRun()"
+                  data-testid="mktg-document-view-progress-retry" />
+                @if (selectedRun()?.persistenceFailed) {
+                  · retries saving the existing result; starts nothing new
+                } @else {
+                  · only if you think it is still running; starts nothing new
+                }
+              </div>
+            }
+            @if (runAgentId()) {
+              <lfx-button
+                class="ml-auto"
+                label="Try again"
+                [text]="!!selectedRun()?.persistenceFailed"
+                (onClick)="onOpenIntake()"
+                data-testid="mktg-document-view-intake-link" />
+            }
+          </div>
+        } @else if (runAgentId() && !pausedWithoutAnswers() && state === 'questions') {
+          <lfx-button
+            label="Open the intake form"
+            [text]="true"
+            [disabled]="waitingForQuestions()"
+            (onClick)="onOpenIntake()"
+            data-testid="mktg-document-view-intake-link" />
         }
       </section>
     }
@@ -132,7 +246,7 @@
     @if (restoreNotice()) {
       <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
     }
-    @if (errorText()) {
+    @if (errorText() && (runFailed() || runState() !== 'failed')) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
       @if (runFailed()) {
         <a
@@ -151,6 +265,12 @@
       } @else if (!isAeoDocument()) {
         <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
       }
+    }
+    @if (profileWarning()) {
+      <lfx-message
+        severity="warn"
+        text="Your post is saved, but your profile is not saved. Edit profile to save the settings explicitly when writes are available."
+        data-testid="mktg-linkedin-profile-warning" />
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
@@ -182,7 +302,7 @@
         @if (generating() && activity().length > 0) {
           <lfx-mktg-run-activity
             [activity]="activity()"
-            [startedAt]="activityStartedAt()"
+            [startedAt]="aeoActivityStartedAt()"
             [title]="'Auditing the site…'"
             [icon]="runAgent()?.icon ?? ''"
             [iconClass]="activityIconClass()"
@@ -215,7 +335,7 @@
             <div>
               <h2 class="text-2xl font-bold text-gray-900">{{ report.report?.headline ?? aeoTitle() }}</h2>
               <p class="text-sm text-gray-500" data-testid="mktg-document-view-audit-subline">
-                AEO/GEO audit — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
+                AEO/GEO report — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
                 @if (report.auditCounts; as counts) {
                   ·
                   @if (counts.keyPagesNamed === 0) {
@@ -227,24 +347,6 @@
                 }
                 · stored under AEO/GEO reports
               </p>
-            </div>
-            <div class="flex flex-wrap gap-3">
-              <a
-                [routerLink]="['../../..', runAgent()?.id]"
-                [queryParams]="runAgainParams()"
-                queryParamsHandling="merge"
-                class="inline-flex min-h-10 items-center rounded-lg border border-gray-300 px-4 font-semibold text-gray-700"
-                data-testid="mktg-document-view-run-again"
-                (click)="onRunAgain()"
-                >Run again</a
-              >
-              <button
-                type="button"
-                class="min-h-10 rounded-lg bg-blue-600 px-4 font-semibold text-white hover:bg-blue-700"
-                (click)="onDownload()"
-                data-testid="mktg-document-view-download">
-                Download PDF
-              </button>
             </div>
           </div>
           <ng-template #auditHero let-print="print">
@@ -285,7 +387,7 @@
           @if (report.report; as typed) {
             <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
           }
-          <p class="text-sm text-gray-500">Report · one-off document · never revised. Run again creates a separate report.</p>
+          <p class="text-sm text-gray-500">Report · one-off document · never revised. Audit again creates a separate report.</p>
         </section>
         <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. -->
         <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
@@ -306,31 +408,22 @@
 
     @if (loading() && !isAeoDocument()) {
       <div class="rounded-xl border border-gray-200 bg-white" data-testid="mktg-document-view-loading">
-        @if (generating()) {
-          <lfx-mktg-run-activity [activity]="runActivity()" [title]="generatingLabel()" [startedAt]="runStartedAt()" [showQuestions]="false" />
-          @if (needsInput()) {
-            <p class="px-6 pb-5 text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
-              The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
-            </p>
-          } @else {
-            <p class="px-6 pb-5 text-sm text-gray-500" role="status">This run will appear here when it is stored.</p>
-          }
-        } @else {
-          <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
-        }
+        <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
       </div>
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
           @if (content.source; as source) {
             <p class="min-w-0 grow break-words text-sm" data-testid="mktg-linkedin-document-source">
-              <span class="font-semibold">Drafted from</span> {{ source.label }} · {{ source.fetched ? 'fetched' : 'provided' }}
+              <span class="font-semibold">Drafted from</span> {{ source.label }}
+              @if (source.label !== 'pasted text') {
+                · {{ source.fetched ? 'fetched' : 'provided' }}
+              }
               @if (source.words) {
                 · {{ source.words }} words
               }
             </p>
           }
-          <lfx-button label="Draft another post" [text]="true" (onClick)="onDraftAnother()" data-testid="mktg-linkedin-draft-another" />
           <p class="text-sm text-gray-500">A new draft is a new run, stored under LinkedIn posts.</p>
           <div class="flex w-full flex-wrap items-center gap-3">
             <label for="linkedin-document-share-link" class="font-semibold">Link to share</label>
@@ -338,6 +431,7 @@
               [form]="linkForm"
               control="share_link"
               inputId="linkedin-document-share-link"
+              (keydown.enter)="$event.preventDefault(); onSaveLink()"
               type="url"
               [readonly]="!editingLink() || savingLink()"
               [maxlength]="maxShareLinkChars"
@@ -379,32 +473,6 @@
         }
       </article>
     } @else if (proseView(); as current) {
-      <ng-template #approveActions>
-        @if (runAgainLink(); as link) {
-          <a
-            [routerLink]="link"
-            [queryParams]="runAgainParams()"
-            class="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-            data-testid="mktg-document-view-run-again"
-            >Run again</a
-          >
-        }
-        @if (mayApprove()) {
-          <div class="flex flex-col gap-2">
-            <lfx-button
-              [label]="'Approve v' + current.revision.number"
-              severity="success"
-              size="small"
-              [loading]="approvingId() === current.revision.id"
-              [disabled]="writePending()"
-              data-testid="mktg-document-view-approve"
-              (onClick)="onApprove()" />
-            @if (approvalError()) {
-              <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
-            }
-          </div>
-        }
-      </ng-template>
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
         <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
@@ -494,9 +562,7 @@
               [exportLookupTarget]="exportLookupTarget()"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-framework">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-framework-view>
+              data-testid="mktg-document-view-framework" />
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
             <lfx-mktg-boilerplates-view
@@ -507,9 +573,7 @@
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-boilerplates">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-boilerplates-view>
+              data-testid="mktg-document-view-boilerplates" />
           } @else if (faq(); as faqAsset) {
             <lfx-mktg-faq-view
               class="block min-w-0"
@@ -518,9 +582,7 @@
               [version]="current.revision.number"
               [showMetadata]="false"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-faq">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-mktg-faq-view>
+              data-testid="mktg-document-view-faq" />
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view
@@ -537,9 +599,7 @@
               [exportLookupTarget]="exportLookupTarget()"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
-              data-testid="mktg-document-view-brand-kit">
-              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
-            </lfx-brand-kit-web-view>
+              data-testid="mktg-document-view-brand-kit" />
           } @else if (unsupportedAsset()) {
             <div data-testid="mktg-document-view-unsupported-asset">
               <lfx-message
@@ -577,68 +637,67 @@
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
-              @for (row of visibleRevisionRows(); track row.revision.id) {
+              @for (revision of visibleRevisionRows(); track revision.id) {
                 <li
                   class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
-                  [ngClass]="row.revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
-                  [attr.data-testid]="'mktg-document-view-revision-' + row.revision.number">
+                  [ngClass]="revision.id === current.revision.id && !isAeoDocument() ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [class.bg-gray-50]="isAeoDocument()"
+                  [attr.data-testid]="'mktg-document-view-revision-' + revision.number">
                   <div class="min-w-0 flex-1 break-words">
-                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + row.revision.number">
-                      <span class="font-mono" [textContent]="'v' + row.revision.number"></span>
-                      <span [textContent]="row.revision.approval ? ' · Approved' : ' · Draft'"></span>
-                      @if (row.revision.createdAt) {
-                        <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
+                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + revision.number">
+                      @if (isAeoDocument()) {
+                        <span>{{ revision.createdAt | date: 'd MMM y, HH:mm' }}</span>
+                      } @else {
+                        <span class="font-mono" [textContent]="'v' + revision.number"></span>
                       }
-                      @if (row.revision.latest) {
+                      <span [textContent]="revision.approval ? ' · Approved' : ' · Draft'"></span>
+                      @if (revision.createdAt && !isAeoDocument()) {
+                        <span [textContent]="' · ' + (revision.createdAt | date: 'd MMM')"></span>
+                      }
+                      @if (revision.latest) {
                         <span [textContent]="' · '"></span>
                         <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
                         <span
-                          class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
-                          [attr.data-testid]="'mktg-document-view-current-' + row.revision.number"
+                          class="inline-flex items-center rounded-full px-2 py-px text-[12px]"
+                          [ngClass]="isAeoDocument() ? 'bg-blue-100 font-semibold text-blue-700' : 'bg-blue-700 font-bold text-white'"
+                          [attr.data-testid]="'mktg-document-view-current-' + revision.number"
                           >Current</span
                         >
                       }
-                      <span [textContent]="' · ' + row.how + ' · ' + row.authorLabel"></span>
-                      @if (row.revision.approval; as approval) {
-                        <span [textContent]="' · approved by ' + (approval.approvedBy?.name || 'a project writer')"></span>
-                      }
                     </span>
-                    @if (row.revision.latest && current.current?.revisionId === row.revision.id) {
-                      @if (current.current; as selection) {
-                        <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'mktg-document-view-current-since-' + row.revision.number">
-                          <span [textContent]="'Current since ' + (selection.changedAt | date: 'd MMM y, HH:mm')"></span>
-                          <span [textContent]="' · ' + currentSelectorLabel()"></span>
-                        </p>
-                      }
-                    }
                   </div>
-                  @if (row.revision.id === current.revision.id) {
+                  @if (revision.id === current.revision.id) {
                     <span class="shrink-0 text-gray-500">here</span>
                   } @else {
                     <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
                     <span
                       class="flex w-16 shrink-0 flex-col items-end gap-1 text-right font-normal"
-                      [attr.data-testid]="'mktg-document-view-row-actions-' + row.revision.number">
+                      [attr.data-testid]="'mktg-document-view-row-actions-' + revision.number">
                       <a
                         [routerLink]="submittingGeneration() ? null : []"
                         [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
                         [attr.tabindex]="submittingGeneration() ? -1 : null"
-                        [queryParams]="{ revision: row.revision.id }"
+                        [queryParams]="{ revision: revision.id }"
                         queryParamsHandling="merge"
                         class="text-blue-600 hover:text-blue-800"
-                        [attr.aria-label]="'Open revision ' + row.revision.number"
-                        [attr.data-testid]="'mktg-document-view-open-' + row.revision.number"
+                        [attr.aria-label]="'Open revision ' + revision.number"
+                        [attr.data-testid]="'mktg-document-view-open-' + revision.number"
                         >Open</a
                       >
-                      @if (!row.revision.latest && current.type.kind === 'living') {
+                      @if (!revision.latest && current.type.kind === 'living') {
                         <button
                           type="button"
                           class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
                           [disabled]="writePending()"
-                          [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
-                          [attr.data-testid]="'mktg-document-view-restore-' + row.revision.number"
-                          (click)="onRestore(row.revision)">
-                          {{ restoringId() === row.revision.id ? 'Saving…' : 'Make current' }}
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [attr.data-testid]="'mktg-document-view-restore-' + revision.number"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          {{ restoringId() === revision.id ? 'Saving…' : 'Make current' }}
                         </button>
                       }
                     </span>
@@ -657,7 +716,7 @@
                 {{ showAllRevisions() ? 'Show fewer ▴' : 'Show all ' + revisionRows().length + ' ▾' }}
               </button>
             }
-            <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>
+            <p id="mktg-document-view-make-current-help" class="sr-only">{{ makeCurrentHint }}</p>
           </div>
 
           @if (current.type.agentKey === frameworkKey) {
@@ -676,12 +735,6 @@
               <dd>{{ current.type.agentName }}</dd>
               <dt class="text-gray-500">Stored</dt>
               <dd>{{ current.revision.createdAt | date: 'd MMM y, HH:mm' }}</dd>
-              <dt class="text-gray-500">Content hash</dt>
-              <dd class="relative font-mono" data-testid="mktg-document-view-hash">
-                <!-- The full hash is for screen readers; a title tooltip would be unreachable by keyboard on a <dd>. -->
-                <span aria-hidden="true">{{ shortHash() }}</span>
-                <span class="sr-only">{{ current.revision.contentSha256 }}</span>
-              </dd>
             </dl>
           </div>
         </section>

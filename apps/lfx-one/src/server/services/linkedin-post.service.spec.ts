@@ -6,10 +6,17 @@ import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinEnvelope, LinkedinSetup } from '@lfx-one/shared/interfaces';
-import { LINKEDIN_FINALIZE_TOOL } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_FINALIZE_TOOL,
+  MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS,
+  MKTG_ONE_OFF_STOPPED_MESSAGE,
+  MKTG_SESSION_EVENTS_TRUNCATED,
+  MKTG_SESSION_TURN_STARTED,
+} from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_ANSWERS } from '../../../../../packages/shared/src/constants/linkedin-post-questions.fixture';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
+import { MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS } from '../../../../../packages/shared/src/constants/mktg-one-off-terminal.fixture';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -182,6 +189,208 @@ describe('LinkedIn generation', () => {
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
   });
+  it('ends the recorded 12-event public-list refusal immediately from current root DONE and final plain .data, with no runtime_done', async () => {
+    mocks.events.mockResolvedValue(MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'synthetic-recorded-session', 'project-1');
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureText: 'SYNTHETIC final refusal: the request form could not be read.',
+      activity: expect.any(Array),
+    });
+    expect(result.failureText).not.toContain('SYNTHETIC event');
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.initialize).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('also supports a raw root runtime_done with its own text=%s and a preceding plain root message', async (doneText) => {
+    const text = 'SYNTHETIC final refusal: the request form could not be read.';
+    const task = { id: 'synthetic-root', entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' };
+    mocks.events.mockResolvedValue([
+      JSON.stringify({ type: MKTG_SESSION_TURN_STARTED }),
+      JSON.stringify({ type: 'agent_notification_message', task, content: { type: 'text', data: text } }),
+      JSON.stringify({ type: 'runtime_done', task, content: doneText ? { type: 'text', text } : {} }),
+    ]);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'synthetic-refusal-session', 'project-1');
+    expect(result).toMatchObject({ status: 'failed', failureText: text, activity: expect.any(Array) });
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.initialize).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('still accepts a valid envelope with terminal public metadata and runtime_done=%s', async (runtimeDone) => {
+    const events = [...MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS, finalized(fixture())];
+    if (runtimeDone)
+      events.push(
+        JSON.stringify({
+          type: 'runtime_done',
+          task: { entity_type: 'EntTaskAgent', parent_task_id: null },
+          content: { type: 'text', text: 'SYNTHETIC completed' },
+        })
+      );
+    mocks.events.mockResolvedValue(events);
+    expect((await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).status).toBe('ready');
+    expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an unfinished root model turn pending without using its body as final text', async () => {
+    mocks.events.mockResolvedValue([
+      JSON.stringify({
+        type: 'llm_done',
+        task: { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'RUNNING' },
+        content: { type: 'text', text: 'SYNTHETIC intermediate model turn' },
+      }),
+    ]);
+    expect(await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).toMatchObject({ status: 'pending' });
+  });
+
+  it('uses the newest root metadata even on a reasoning event, without exposing its body', async () => {
+    const task = { entity_type: 'EntTaskAgent', parent_task_id: null };
+    mocks.events.mockResolvedValue([
+      JSON.stringify({ type: 'agent_notification_message', task: { ...task, status: 'DONE' }, content: { type: 'text', data: 'SYNTHETIC earlier reply' } }),
+      JSON.stringify({
+        type: 'agent_notification_progress',
+        task: { ...task, status: 'RUNNING' },
+        content: { type: 'application/guild-reasoning-progress', text: 'SYNTHETIC private reasoning' },
+      }),
+    ]);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1');
+    expect(result.status).toBe('pending');
+    expect(result.failureText).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('SYNTHETIC private reasoning');
+  });
+
+  it.each(['agent_notification_message', 'runtime_done'])('ignores recorded parent_task child %s while the root is running', async (type) => {
+    const rootTask = { id: 'synthetic-root', entity_type: 'EntTaskAgent', parent_task_id: null, status: 'RUNNING' };
+    mocks.events.mockResolvedValue([
+      JSON.stringify({ type: MKTG_SESSION_TURN_STARTED }),
+      JSON.stringify({ type: 'agent_notification_progress', task: rootTask, content: {} }),
+      JSON.stringify({
+        type,
+        task: { entity_type: 'EntTaskAgent', parent_task: { id: 'synthetic-root' }, status: 'DONE' },
+        content: type === 'runtime_done' ? { type: 'text', text: 'SYNTHETIC child reply' } : { type: 'text', data: 'SYNTHETIC child reply' },
+      }),
+    ]);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1');
+    expect(result.status).toBe('pending');
+    expect(result.failureText).toBeUndefined();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it('accepts a current root bare-string refusal like the existing Guild readers', async () => {
+    mocks.events.mockResolvedValue([
+      JSON.stringify({ type: MKTG_SESSION_TURN_STARTED }),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        task: { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' },
+        content: 'SYNTHETIC bare-string refusal',
+      }),
+    ]);
+    expect(await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).toMatchObject({
+      status: 'failed',
+      failureText: 'SYNTHETIC bare-string refusal',
+    });
+  });
+
+  it.each([false, true])('keeps an open questions turn ahead of terminal public metadata and runtime_done=%s, matching Member 360', async (runtimeDone) => {
+    const events = [
+      ...MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+      JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: LINKEDIN_RECORDED_QUESTIONS } }),
+    ];
+    if (runtimeDone) events.push(JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null }, content: {} }));
+    mocks.events.mockResolvedValue(events);
+    expect((await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).status).toBe('questions');
+  });
+
+  it.each([{ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null }, content: {} }])(
+    'uses a safe shared fallback for terminal metadata without root text: $type',
+    async (event) => {
+      mocks.events.mockResolvedValue([JSON.stringify(event)]);
+      expect(await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).toMatchObject({
+        status: 'failed',
+        failureText: MKTG_ONE_OFF_STOPPED_MESSAGE,
+      });
+      expect(mocks.persist).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([false, true])('requires a current root reply before trusting post-marker DONE progress: reply=%s', async (hasReply) => {
+    const task = { entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' };
+    const events = [
+      ...MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+      JSON.stringify({ type: MKTG_SESSION_TURN_STARTED }),
+      JSON.stringify({ type: 'agent_notification_progress', task, content: {} }),
+    ];
+    if (hasReply) events.push(JSON.stringify({ type: 'agent_notification_message', task, content: { type: 'text', data: 'SYNTHETIC current refusal' } }));
+    mocks.events.mockResolvedValue(events);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1');
+    expect(result.status).toBe(hasReply ? 'failed' : 'pending');
+    expect(result.failureText).toBe(hasReply ? 'SYNTHETIC current refusal' : undefined);
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { type: 'session_status', session: { status: 'FAILED' }, content: { text: 'SYNTHETIC provider details' } },
+    { type: 'runtime_error', content: { message: 'SYNTHETIC provider details' } },
+  ])('leaves $type evidence pending for the recovery-aware Guild outcome adapter', async (event) => {
+    mocks.events.mockResolvedValue([JSON.stringify(event)]);
+    expect(await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).toMatchObject({ status: 'pending' });
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it('keeps a capped public event page pending even when its root status is DONE', async () => {
+    mocks.events.mockResolvedValue([...MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS, JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED })]);
+    expect((await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).status).toBe('pending');
+  });
+
+  it.each(['empty', 'running', 'refused'] as const)('uses only the newest turn after answers: %s', async (stage) => {
+    const events = [
+      JSON.stringify({
+        type: 'agent_notification_message',
+        task: { entity_type: 'EntTaskAgent', status: 'DONE' },
+        content: { type: 'text', data: LINKEDIN_RECORDED_QUESTIONS },
+      }),
+      JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent' }, content: { type: 'text', text: 'SYNTHETIC previous turn' } }),
+      JSON.stringify({ type: MKTG_SESSION_TURN_STARTED }),
+    ];
+    if (stage !== 'empty')
+      events.push(
+        JSON.stringify({
+          type: 'agent_notification_message',
+          task: { entity_type: 'EntTaskAgent', status: stage === 'refused' ? 'DONE' : 'RUNNING' },
+          content: { type: 'text', data: 'SYNTHETIC newest refusal' },
+        })
+      );
+    mocks.events.mockResolvedValue(events);
+    const result = await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1');
+    expect(result.status).toBe(stage === 'refused' ? 'failed' : 'pending');
+    if (stage === 'refused') expect(result.failureText).toBe('SYNTHETIC newest refusal');
+    else expect(result.failureText).toBeUndefined();
+  });
+
+  it('prefers runtime_done text over an earlier plain root message', async () => {
+    mocks.events.mockResolvedValue([
+      JSON.stringify({
+        type: 'agent_notification_message',
+        task: { entity_type: 'EntTaskAgent' },
+        content: { type: 'text', data: 'SYNTHETIC earlier root message' },
+      }),
+      JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent' }, content: { type: 'text', text: 'Final root reply' } }),
+    ]);
+    expect((await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).failureText).toBe('Final root reply');
+  });
+
+  it('bounds the final root reply using the common one-off failure limit', async () => {
+    mocks.events.mockResolvedValue([
+      JSON.stringify({
+        type: 'runtime_done',
+        task: { entity_type: 'EntTaskAgent' },
+        content: { type: 'text', text: 'x'.repeat(MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS + 1) },
+      }),
+    ]);
+    expect((await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1')).failureText).toHaveLength(
+      MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS
+    );
+  });
+
   it('stores a one-off document without profile fields and saves the returned first profile', async () => {
     const envelope = fixture();
     mocks.events.mockResolvedValue([finalized(envelope)]);
@@ -288,6 +497,23 @@ describe('LinkedIn generation', () => {
     expect(mocks.followUp).toHaveBeenCalledTimes(1);
     expect(mocks.createSession).not.toHaveBeenCalled();
     for (const state of [pending, questions, ready]) expect(JSON.stringify(state)).not.toContain('PRIVATE');
+  });
+
+  it('completes a saved run for its original creator without adopting the visiting reader identity', async () => {
+    mocks.events.mockResolvedValue([finalized(fixture())]);
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-visitor' } } });
+    await new LinkedinPostService({ creatorSubject: 'synthetic-creator' }, true).result(visitor, 'synthetic-creator', 'session-1', 'project-1');
+    expect(mocks.initialize).toHaveBeenCalledWith(visitor, 'synthetic-creator', 'session-1', expect.anything());
+    expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+
+  it('keeps an impersonated start from initializing a profile on a later non-impersonated completion', async () => {
+    mocks.events.mockResolvedValue([finalized(fixture())]);
+    const result = await new LinkedinPostService({ creatorSubject: 'synthetic-target' }, false).result(req, 'synthetic-target', 'session-1', 'project-1');
+    expect(result.status).toBe('ready');
+    expect(result.profileSaved).toBe(false);
+    expect(mocks.initialize).not.toHaveBeenCalled();
+    expect(mocks.persist).toHaveBeenCalledOnce();
   });
 
   it('does not overwrite an intervening profile edit on a repeated result poll', async () => {

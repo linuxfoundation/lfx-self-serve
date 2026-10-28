@@ -25,6 +25,8 @@ export class MktgFamilyDetailsComponent {
   protected readonly loading = signal(false);
   protected readonly failed = signal(false);
   protected readonly sources = signal<MktgKitSourcesView | null>(null);
+  protected readonly sourcesExpanded = signal(false);
+  protected readonly signOffExpanded = signal(false);
   private readonly reload = signal(0);
 
   public constructor() {
@@ -34,6 +36,8 @@ export class MktgFamilyDetailsComponent {
         .pipe(
           switchMap(({ family, project }) => {
             this.sources.set(null);
+            this.sourcesExpanded.set(false);
+            this.signOffExpanded.set(false);
             this.failed.set(false);
             this.loading.set(false);
             const document = family.rows.find((row) => row.asset.agentKey === MKTG_KIT_FRAMEWORK_KEY)?.document;

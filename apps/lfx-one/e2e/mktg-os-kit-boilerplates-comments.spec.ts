@@ -14,7 +14,9 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     const fixture = await setupStructuredComments(page, agentKey);
     await fixture.open();
     const panel = page.getByTestId('mktg-comments-panel');
-    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible();
+    await expect(panel.getByTestId('mktg-comments-empty')).toHaveText('No comments yet. To ask for a change, hover a field and choose Comment.');
+    await expect(panel.getByTestId('mktg-comments-send')).toHaveCount(0);
+    await expect(panel.getByTestId('mktg-comments-disabled-reason')).toHaveCount(0);
     const field = page.getByTestId(`mktg-field-comments-${fixture.key}`);
     await field.hover();
     await field.getByRole('button', { name: /^Comment on/ }).click();
@@ -33,7 +35,9 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
       // Even when the reader moves, the submitted Voice passage must be visible on landing.
       await page.getByTestId('brand-kit-web-view-tab-color').click();
     }
-    await panel.getByRole('button', { name: 'Send 1 open comment to the agent', exact: true }).click();
+    const send = panel.getByRole('button', { name: 'Send 1 open comment to the agent', exact: true });
+    await expect(send).toBeEnabled();
+    await send.click();
     await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
     expect(fixture.state.sends).toHaveLength(1);
     expect(fixture.state.sends[0]).toMatchObject({ project: ASSET_PROJECT.uid, revisionId: ASSET_REVISION, commentIds: ['synthetic-pinned-comment'] });
@@ -46,7 +50,9 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
       await expect(page.getByTestId('brand-kit-web-view-line')).toHaveText('Revised synthetic brand line.');
     } else await expect(page.getByTestId('mktg-boilerplates-view-text-1')).toHaveText('Revised synthetic boilerplate.');
     await expect(page.getByTestId('mktg-document-view-revision-label-2')).toContainText('Draft');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('Current since');
+    await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
+    await expect(page.getByTestId('mktg-document-view-current-since-1')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
     await expect(panel).toContainText('Shortened the selected passage.');
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-redraft.png`), fullPage: true });
   });

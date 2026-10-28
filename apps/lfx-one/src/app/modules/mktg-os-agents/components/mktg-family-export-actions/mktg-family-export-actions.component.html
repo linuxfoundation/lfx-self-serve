@@ -6,15 +6,12 @@
   aria-labelledby="family-export-title"
   data-testid="family-export-actions">
   <h2 id="family-export-title" class="text-base font-bold">Export the whole family</h2>
-  <p class="text-sm text-gray-500">
-    Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
-  </p>
-  <span
-    [pTooltip]="pdfDisabledReason()"
-    tooltipPosition="bottom"
-    tooltipEvent="both"
-    [attr.aria-label]="pdfDisabledReason() || null"
-    [attr.tabindex]="pdfDisabledReason() ? 0 : null">
+  @if (!target()) {
+    <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
+  } @else {
+    <p class="text-sm text-gray-500">
+      Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
+    </p>
     <lfx-button
       label="Download PDF"
       [disabled]="!canPrint()"
@@ -23,91 +20,86 @@
       [fluid]="true"
       data-testid="family-export-pdf"
       (onClick)="downloadPdf()" />
-  </span>
-  <span
-    [pTooltip]="exportDisabledReason()"
-    tooltipPosition="bottom"
-    tooltipEvent="both"
-    [attr.aria-label]="exportDisabledReason() || null"
-    [attr.tabindex]="exportDisabledReason() ? 0 : null">
     <lfx-button
       label="Export to Google Slides"
       [disabled]="!canExport()"
       [loading]="phase() === 'running'"
+      [outlined]="true"
       [fluid]="true"
       data-testid="family-export-slides"
       (onClick)="export()" />
-  </span>
-  @if (!writer()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
-  } @else if (!target()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
-  } @else if (checking()) {
-    <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
-  } @else if (lookupError()) {
-    <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />
-    <lfx-button label="Check again" [text]="true" size="small" data-testid="family-export-check-again" (onClick)="checkAgain()" />
-  } @else if (!lookup()?.currentMembers?.length) {
-    <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
-  }
-  <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
-    @switch (phase()) {
-      @case ('choosing') {
-        <p class="text-sm text-gray-700">
-          A deck already exists for this family. Update it in place (same link, same sharing), or create a new deck in Google Drive.
-        </p>
-        <lfx-button label="Update the existing deck" [disabled]="!canExport()" size="small" data-testid="family-export-update" (onClick)="choose('update')" />
-        <lfx-button
-          label="Create a new deck"
-          [disabled]="!canExport()"
-          [outlined]="true"
-          size="small"
-          data-testid="family-export-create"
-          (onClick)="choose('create')" />
-        <lfx-button label="Cancel" [text]="true" size="small" data-testid="family-export-cancel" (onClick)="cancel()" />
-      }
-      @case ('running') {
-        <p role="status" class="text-sm text-gray-700" data-testid="family-export-progress">
-          Exporting the family to Google Slides… This usually takes a minute or two.
-        </p>
-      }
-      @case ('done') {
-        <p class="text-sm font-semibold text-gray-900" data-testid="family-export-success">Your deck is ready</p>
-      }
-      @case ('failed') {
-        <p class="text-xs text-gray-500">Try exporting again. If the existing deck is unavailable, choose Create a new deck.</p>
-      }
+    @if (canExport() && !canPrint()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-pdf-reason">PDF is available once the messaging framework or the brand kit is approved.</p>
     }
-    @if (message()) {
-      <lfx-message severity="error" [text]="message()" data-testid="family-export-error" />
+    @if (!writer()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
+    } @else if (checking()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
+    } @else if (lookupError()) {
+      <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />
+      <lfx-button label="Check again" [text]="true" size="small" data-testid="family-export-check-again" (onClick)="checkAgain()" />
+    } @else if (!lookup()?.currentMembers?.length) {
+      <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
     }
-    @if (partialLink(); as link) {
-      <a [href]="link" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-700 underline" data-testid="family-export-partial"
-        >Open the incomplete deck (opens in a new tab)</a
-      >
-    }
-    @if (last(); as previous) {
-      <div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500" data-testid="family-export-last">
-        <a [href]="previous.link" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-700 underline" data-testid="family-export-last-link"
-          >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
-        >
-        <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from {{ memberVersions() }}</span>
-        @if (lookup()?.stale) {
-          <span class="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-700" data-testid="family-export-stale"
-            >Out of date: the family's approved assets have changed</span
-          >
+    <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
+      @switch (phase()) {
+        @case ('choosing') {
+          <p class="text-sm text-gray-700">
+            A deck already exists for this family. Update it in place (same link, same sharing), or create a new deck in Google Drive.
+          </p>
+          <lfx-button label="Update the existing deck" [disabled]="!canExport()" size="small" data-testid="family-export-update" (onClick)="choose('update')" />
+          <lfx-button
+            label="Create a new deck"
+            [disabled]="!canExport()"
+            [outlined]="true"
+            size="small"
+            data-testid="family-export-create"
+            (onClick)="choose('create')" />
+          <lfx-button label="Cancel" [text]="true" size="small" data-testid="family-export-cancel" (onClick)="cancel()" />
         }
-      </div>
+        @case ('running') {
+          <p role="status" class="text-sm text-gray-700" data-testid="family-export-progress">
+            Exporting the family to Google Slides… This usually takes a minute or two.
+          </p>
+        }
+        @case ('done') {
+          <p class="text-sm font-semibold text-gray-900" data-testid="family-export-success">Your deck is ready</p>
+        }
+        @case ('failed') {
+          <p class="text-xs text-gray-500">Try exporting again. If the existing deck is unavailable, choose Create a new deck.</p>
+        }
+      }
+      @if (message()) {
+        <lfx-message severity="error" [text]="message()" data-testid="family-export-error" />
+      }
+      @if (partialLink(); as link) {
+        <a [href]="link" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-700 underline" data-testid="family-export-partial"
+          >Open the incomplete deck (opens in a new tab)</a
+        >
+      }
+      @if (last(); as previous) {
+        <div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500" data-testid="family-export-last">
+          <a [href]="previous.link" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-700 underline" data-testid="family-export-last-link"
+            >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
+          >
+          <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from {{ memberVersions() }}</span>
+          @if (lookup()?.stale) {
+            <span class="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-700" data-testid="family-export-stale"
+              >Out of date: the family's approved assets have changed</span
+            >
+          }
+        </div>
+      }
+    </div>
+    @if (skipped()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-skipped">Not included (no approved current): {{ skipped() }}.</p>
     }
-  </div>
-  @if (skipped()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-skipped">Not included (no approved current): {{ skipped() }}.</p>
+    <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
+    <p class="text-xs text-gray-500">
+      Slides builds a native deck on the LF template in the Marketing OS folder on Drive. Drive access follows that folder's sharing; exporting does not grant
+      access.
+    </p>
   }
-  <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
-  <p class="text-xs text-gray-500">
-    Slides builds a native deck on the LF template in the Marketing OS folder on Drive. Drive access follows that folder's sharing; exporting does not grant
-    access.
-  </p>
 </section>
 <!-- Only existing print renderings, in exporter order; never a second on-screen asset view. -->
 <div [class]="printOnlyClass" data-testid="family-export-print-document">
