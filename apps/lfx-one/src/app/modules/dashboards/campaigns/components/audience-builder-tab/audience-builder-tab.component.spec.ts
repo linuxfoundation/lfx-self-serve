@@ -4334,14 +4334,16 @@ describe('AudienceBuilderTabComponent', () => {
       expect(tab.attachedMasterId(), 'a pending registrants exclusion read as already recorded').toBeNull();
     });
 
-    it('counts the standing list in place of the standard rows once it exists', async () => {
+    it('counts the standing list beside the standard rows once it exists', async () => {
       getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
       await discover();
       previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 5100, count: 5100, reason: '' }));
 
       click('campaigns-audience-suppression-count-run');
 
-      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: ['300'] });
+      // Both: the standing list can hold older standard lists, and a newly resolved row is only
+      // added to it by the next attach or compose.
+      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: ['300', '201'] });
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent).toContain('5,100');
     });
 
