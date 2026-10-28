@@ -29,11 +29,11 @@ Use the tabs above the list to filter by source:
 - **Meetings** — meeting attachments, recordings, transcripts, and summaries
 - **Mailing Lists** — artifacts from the project's mailing lists
 
-Each tab shows how many documents it would list for your current search. Use the search box to find documents by name. From the top level, search looks inside every folder, so you can find a document without knowing where it is stored. Inside a folder, search narrows that folder's contents.
+Each tab shows how many documents it would list for your current search. Tabs with no matches show no count. Use the search box to find documents by name, or by the group or meeting they belong to. From the top level, search looks inside every folder, so you can find a document without knowing where it is stored. Inside a folder, search narrows that folder's contents.
 
 ## Open folders
 
-Select a folder name to open it. A breadcrumb appears above the list; select **Documents** in the breadcrumb to return to the top level.
+Select a folder name to open it. A breadcrumb appears above the list; select **Documents** in the breadcrumb to return to the top level. If you are searching inside a folder, clear the search first to show the breadcrumb.
 
 ## Open a document
 
