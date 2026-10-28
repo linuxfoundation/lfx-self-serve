@@ -143,6 +143,21 @@ test.describe('Marketing OS new run Sources', () => {
     expect(sources.generated[1]['answers']).toEqual(sources.generated[0]['answers']);
     await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
   });
+  test('Drive and duplicate source warnings leave Start enabled', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    await sources.open();
+    await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+    const url = 'https://drive.google.com/drive/folders/synthetic';
+    await page.locator('[data-test="mktg-intake-website_url"]').fill(url);
+    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText("We can't open private Google Drive links or folders.");
+    const start = page.getByTestId('mktg-run-start').getByRole('button');
+    await expect(start).toBeEnabled();
+    await page.locator('[data-test="mktg-intake-brand_page_url"]').fill(url + '/?usp=sharing');
+    await expect(page.getByTestId('mktg-agent-run-link-warning-brand_page_url')).toContainText('This link is already added above.');
+    await expect(start).toBeEnabled();
+    expect(sources.generated).toHaveLength(0);
+    await page.screenshot({ path: test.info().outputPath('nonblocking-link-advice.png'), fullPage: true });
+  });
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
       const sources = await setupFreshSources(page);

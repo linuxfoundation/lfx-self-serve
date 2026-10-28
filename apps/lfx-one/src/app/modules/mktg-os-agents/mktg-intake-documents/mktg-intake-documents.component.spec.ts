@@ -56,6 +56,26 @@ describe('MktgIntakeDocumentsComponent', () => {
     expect(component['linkForm'].controls.url.value).toBe('');
   });
 
+  it('warns about Drive links and duplicates across fields/slots without blocking Add link', async () => {
+    const url = 'https://drive.google.com/drive/folders/synthetic';
+    fixture.componentRef.setInput('earlierUrls', [url]);
+    component['linkForm'].controls.url.setValue(url + '/?usp=sharing');
+    await fixture.whenStable();
+    expect(host().querySelector('[data-testid="mktg-intake-documents-link-warning"]')?.textContent).toContain('This link is already added above.');
+    expect(host().textContent).toContain("We can't open private Google Drive links or folders.");
+    expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-intake-documents-add-link"] button')?.disabled).toBe(false);
+    component['onAddLink']();
+    fixture.componentRef.setInput('earlierUrls', []);
+    component['linkForm'].controls.url.setValue(url);
+    component['onAddLink']();
+    await fixture.whenStable();
+    expect(component.documents()).toHaveLength(2);
+    expect(component['linkWarnings']()[component.documents()[0].id]).not.toContain('already added');
+    expect(component['linkWarnings']()[component.documents()[1].id]).toContain('This link is already added above.');
+    expect(host().querySelectorAll('[data-testid^="mktg-intake-documents-warning-"]')).toHaveLength(2);
+    expect(component['linkForm'].valid).toBe(true);
+  });
+
   it('refuses a link that is not https://', () => {
     component['linkForm'].controls.url.setValue('http://wiki.example.org/note');
 

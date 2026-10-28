@@ -39,7 +39,7 @@ import {
   MktgRunAnswer,
   MktgRunQuestion,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitRootPath, parseLinkedinContentSource } from '@lfx-one/shared/utils';
+import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitRootPath, parseLinkedinContentSource, mktgLinkWarnings } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -128,6 +128,8 @@ export class LinkedinPostRunComponent {
   protected readonly explicitProfileSave = signal(false);
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
   protected readonly pendingNotice = signal<ReturnType<MktgRunAttemptService['latestPending']>>(null);
+  private readonly contentUrl = toSignal(this.contentForm.controls.url.valueChanges, { initialValue: '' });
+  protected readonly linkWarning = computed(() => mktgLinkWarnings({ url: this.contentUrl() })['url']);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
   private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub, reload: this.reload() })));

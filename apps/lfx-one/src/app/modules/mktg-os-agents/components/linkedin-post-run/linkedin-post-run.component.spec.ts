@@ -595,6 +595,23 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance['explicitProfileSave']()).toBe(false);
   });
+  it('warns about the content Drive URL without disabling drafting', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
+    component['editing'].set(false);
+    component['source'].set('url');
+    component['contentForm'].controls.url.setValue('https://drive.google.com/drive/folders/synthetic');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(
+      "We can't open private Google Drive links or folders."
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+    expect(component['contentForm'].valid).toBe(true);
+    component['contentForm'].controls.url.setValue('https://project.example/article');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')).toBeNull();
+  });
 
   it('composes one breadcrumb with the main kit family route and catalog name', async () => {
     const fixture = await render();
