@@ -4,7 +4,7 @@ description: How to browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, manage, browse]
-last_updated: 2026-10-15
+last_updated: 2026-10-26
 intercom_collection: Documents
 ---
 
@@ -19,6 +19,8 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 5. Select a folder to open it, open a link, or download a file.
 
 Folders appear first in alphabetical order. Documents appear from most recent to oldest by the date shown, both at the root and inside folders. Search and source filters preserve this ordering. Documents without a valid date appear last.
+
+Meeting recordings, transcripts, and summaries are named after their meeting, so the meeting date is shown at the start of their name (for example, `Oct 14, 2026 – Weekly Sync`). This lets you tell the occurrences of a recurring meeting apart.
 
 ## Filter and search documents
 

@@ -4,7 +4,7 @@ description: How to view and manage project committees in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-10-20
+last_updated: 2026-10-26
 intercom_collection: Committees
 ---
 
@@ -25,6 +25,14 @@ The committee detail view (route: `/groups/:id`) shows:
 - Current members and their roles
 
 To link directly to a tab, append `?tab=members` to the group URL for the Members roster, or use `tab=votes`, `tab=meetings`, or `tab=documents` for those tabs. Missing or invalid tab values open Overview. A recognized tab that is not visible to you also falls back to Overview; deep links do not change your access to the group.
+
+### Group documents
+
+The group's **Documents** tab shows a count of the group's documents on the tab itself. The tab lists the group's folders, links, and files, plus documents from the group's meetings (attachments, recordings, transcripts, and summaries) and from its mailing lists.
+
+- Folders appear first in alphabetical order, then documents from most recent to oldest. Meeting recordings, transcripts, and summaries show the meeting date at the start of their name.
+- Use the source pills to narrow the list: **All**, **Links**, **Files**, **Meetings**, or **Mailing Lists**. Each pill shows how many documents match your current search. At the top level, choosing a pill other than **All**, or searching, lists matching documents from inside folders too.
+- If you can edit the group, **Upload Files**, **New Folder**, and **Add Link** appear on the tab.
 
 ## Edit a committee
 

@@ -4,7 +4,7 @@ description: How to join a project meeting via the public LFX meeting link.
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, public, attendee]
-last_updated: 2026-10-11
+last_updated: 2026-10-26
 intercom_collection: Meetings
 ---
 
@@ -26,7 +26,7 @@ If you open a meeting link and see the **Meeting Not Found** page, it's usually 
 
 ## Restricted meetings
 
-There's no passcode you enter manually, and no anonymous form to submit an email or username either. A **Restricted** meeting only shows full join details to people who are signed in and match an existing registrant record (by email), plus organizers and members of a committee linked to the meeting. If you land on the **Meeting Not Found** page for a Restricted meeting, ask the meeting organizer to add you as a registrant, then make sure you're signed in. Note that the organizer's name and contact link are only shown on the join page to signed-in visitors — if you're not signed in, sign in or ask whoever shared the link with you to reach the organizer on your behalf.
+There's no passcode you enter manually, and no anonymous form to submit an email or username either. A **Restricted** meeting only shows full join details to people who are signed in and match an existing registrant record, plus organizers and members of a committee linked to the meeting. You match if the registrant record uses your LF username, the email you signed in with, or any other verified email address on your LFX account; capitalization of the email doesn't matter. If the organizer invited an address you haven't added to your account, add and verify it under [Identities](../../account/identities/) and reload the meeting page. If you land on the **Meeting Not Found** page for a Restricted meeting, ask the meeting organizer to add you as a registrant, then make sure you're signed in. Note that the organizer's name and contact link are only shown on the join page to signed-in visitors — if you're not signed in, sign in or ask whoever shared the link with you to reach the organizer on your behalf.
 
 ## Register for a meeting
 
