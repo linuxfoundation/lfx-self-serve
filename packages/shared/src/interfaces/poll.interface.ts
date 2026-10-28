@@ -1009,13 +1009,18 @@ export interface PollCommentResult {
  * Results view model for a single comment response
  * @description PollCommentResponse with `comment_text` pre-split into paragraphs (blank-line
  * separated, single line breaks preserved within a paragraph) so the template can render
- * comment paragraphs directly. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
+ * comment paragraphs directly. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`) and,
+ * for the vote detail Overview preview, by `getRecentCommentResponses`.
  */
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
-  /** Position in the prompt's full response list, used as a privacy-safe identity across pages */
+  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
   position: number;
+  /** UI-only question text for answers flattened into the Overview preview. */
+  promptText?: string;
+  /** UI-only Overview key: prompt plus ballot ID, or prompt-local position when the response is text-only. */
+  previewKey?: string;
 }
 
 /**

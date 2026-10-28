@@ -90,7 +90,7 @@
                       </div>
                     </div>
                   </lfx-card>
-                  @if (firstComment(); as comment) {
+                  @if (recentComments().length > 0) {
                     <lfx-card data-testid="vote-detail-overview-comment">
                       <div class="flex flex-col gap-3">
                         <div class="flex items-center justify-between gap-3">
@@ -102,9 +102,21 @@
                             (onClick)="switchTab('comments')"
                             data-testid="vote-detail-overview-all-comments" />
                         </div>
-                        <blockquote class="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-700 whitespace-pre-line break-words">
-                          “{{ comment.comment_text }}”
-                        </blockquote>
+                        <!-- Same row, anonymity rules and ballot links as the Comments tab (#4448). -->
+                        <div class="flex flex-col gap-3">
+                          @for (response of recentComments(); track response.previewKey) {
+                            <div class="flex flex-col gap-2">
+                              @if (commentPromptCount() > 1) {
+                                <p class="text-sm font-medium text-slate-700" data-testid="vote-detail-overview-comment-question">{{ response.promptText }}</p>
+                              }
+                              <lfx-vote-comment-item
+                                [response]="response"
+                                [anonymous]="commentsAnonymous()"
+                                [showBallotLink]="showNamedBallotLinks()"
+                                (viewBallot)="onViewBallot($event)" />
+                            </div>
+                          }
+                        </div>
                       </div>
                     </lfx-card>
                   }
@@ -170,7 +182,7 @@
                         [commentResults]="commentResults()"
                         [(pageState)]="commentPaginatorState"
                         [showBallotLinks]="showNamedBallotLinks()"
-                        [anonymous]="isPseudoAnonymous() || audience() === 'voter'"
+                        [anonymous]="commentsAnonymous()"
                         [anonymousReason]="commentAnonymityReason()"
                         (viewBallot)="onViewBallot($event)" />
                     }
@@ -218,7 +230,7 @@
         <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
       } @else {
         @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
-          <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">You voted on this motion.</p>
+          <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">Your vote is included in these results.</p>
         }
         @if (isGenericPoll()) {
           @for (question of questionsWithResults(); track question.questionId; let idx = $index) {

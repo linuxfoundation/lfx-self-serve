@@ -57,7 +57,7 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
     expect(text('vote-detail-header-status')).toContain('Active');
     expect(text('vote-detail-header-group')).toContain('Synthetic Steering Committee');
-    expect(text('vote-detail-header-method')).toContain('Plurality Vote');
+    expect(text('vote-detail-header-method')).toContain('Plurality vote');
     expect(text('vote-detail-header-privacy')).toContain('Named ballot');
     expect(text('vote-detail-header-close-date')).toMatch(/^Closes /);
     expect(text('vote-detail-header-invited')).toBe('12 invited voters');
@@ -75,7 +75,7 @@ describe('VoteDetailHeaderComponent', () => {
   it('labels a majority vote as majority, not as a ranked method', () => {
     render({ vote: makeVote({ poll_type: PollType.MAJORITY }) });
 
-    expect(text('vote-detail-header-method')).toBe('Majority Vote');
+    expect(text('vote-detail-header-method')).toBe('Majority vote');
   });
 
   it('labels a pseudo-anonymous ended vote', () => {
