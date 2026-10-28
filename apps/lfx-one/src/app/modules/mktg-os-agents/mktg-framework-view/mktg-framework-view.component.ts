@@ -1,8 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  PLATFORM_ID,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -71,6 +84,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
   imports: [
     TooltipModule,
     NgClass,
+    NgTemplateOutlet,
     MktgAssetMetaComponent,
     MessageComponent,
     ButtonComponent,
@@ -101,6 +115,7 @@ export class MktgFrameworkViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
   public readonly kit = input<BrandKitRevision | null>(null);

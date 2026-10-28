@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  PLATFORM_ID,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { TooltipModule } from 'primeng/tooltip';
@@ -77,6 +90,7 @@ export class BrandKitWebViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   /** Only the selected stored document hosts comments; run previews and the printed book remain read-only. */
   public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
