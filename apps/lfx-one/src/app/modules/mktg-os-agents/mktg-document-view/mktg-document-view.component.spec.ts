@@ -1427,6 +1427,18 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
   });
 
+  it.each(['living', 'one-off'] as const)('announces a stored %s document in exactly one live-state region', async (kind) => {
+    const response = kind === 'living' ? revisionResponse(LATEST) : { ...member360Revision(), project: PROJECT.uid };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render(`/documents/${response.type.agentKey}/${response.documentId}`);
+    const regions = harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]');
+    expect(regions).toHaveLength(1);
+    expect(regions?.[0].getAttribute('role')).toBe('status');
+    expect(regions?.[0].getAttribute('aria-live')).toBe('polite');
+    expect(regions?.[0].textContent?.trim()).toBeTruthy();
+  });
+
   it.each(
     MKTG_DOCUMENT_TYPES.filter(
       (type) =>

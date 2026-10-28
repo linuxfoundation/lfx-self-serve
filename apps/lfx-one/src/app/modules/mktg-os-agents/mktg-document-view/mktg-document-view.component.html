@@ -130,7 +130,7 @@
       >
     }
 
-    @if (view() && !runState() && !loading()) {
+    @if (publicProgressPolling() && view() && !runState() && !loading()) {
       <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ readiness() }}</span>
     }
     @if (!isAeoDocument()) {
