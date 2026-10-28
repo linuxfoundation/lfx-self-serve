@@ -17,6 +17,7 @@ import {
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_CHAT_MESSAGE_MAX_CHARS,
+  MKTG_HISTORY_SUBJECT_PATTERN,
   MEMBER_360_CONTRACT_ID,
 } from '@lfx-one/shared/constants';
 import {
@@ -307,7 +308,12 @@ export class MktgAgentsController {
       // Project only the chat DTO: no upstream identity/contact records or extras.
       const redact = createMember360Redactor([...contacts, userId]);
       const response: MktgHistoryResponse = {
-        messages: messages.map(({ id, sender, text, timestamp }) => ({ id, sender, text: redact(text), timestamp })),
+        messages: messages.map(({ id, sender, text, timestamp }) => ({
+          id,
+          sender,
+          text: redact(text.replace(MKTG_HISTORY_SUBJECT_PATTERN, '[contact redacted]')),
+          timestamp,
+        })),
       };
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
       res.json(response);
@@ -1445,9 +1451,9 @@ export class MktgAgentsController {
    * its URL, each tagged press, deck, doc or plan — and the project's
    * messaging framework (required: the latest stored revision's JSON, which
    * must carry the framework itself, since the agent refuses a run without
-   * one). Every submission is a fresh draft — a redraft from comments and a
-   * check of a hand-edited version are later work, so a body with feedback or
-   * a prior version is refused rather than silently ignored. Returns the
+   * one). Every submission here is a fresh draft; comment redrafts use the
+   * Documents revise endpoint. Feedback or a prior version in this body is
+   * refused rather than silently ignored. Returns the
    * session id + creator-binding owner token for polling the result.
    */
   public async generateFaq(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -72,6 +72,17 @@ describe('MktgFieldCommentsComponent', () => {
     expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(button?.hasAttribute('aria-controls')).toBe(false);
   });
+  it('can show an always-visible Answer entry while keeping Comment hover-only by default', () => {
+    const button = () => element().querySelector('[data-testid="mktg-field-comment-open"]');
+    expect(button()?.parentElement?.classList.contains('[@media(hover:hover)]:opacity-0')).toBe(true);
+    expect(button()?.textContent?.trim()).toBe('Comment');
+    fixture.componentRef.setInput('openLabel', 'Answer');
+    fixture.componentRef.setInput('alwaysVisible', true);
+    fixture.detectChanges();
+    expect(button()?.parentElement?.classList.contains('[@media(hover:hover)]:opacity-0')).toBe(false);
+    expect(button()?.textContent?.trim()).toBe('Answer');
+    expect(button()?.querySelector('button')?.getAttribute('aria-label')).toBe('Answer Positioning');
+  });
   it('keeps failed/pending drafts across tab hosts and never resets newer edits on ACK', async () => {
     add.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     click('mktg-field-comment-open');

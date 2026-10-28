@@ -296,7 +296,7 @@ describe('MktgAgentsController', () => {
       {
         id: 'event-1',
         sender: 'agent',
-        text: 'Synthetic Staff: ask synthetic-contact via synthetic@example.test (auth0|user-1)',
+        text: 'Synthetic Staff: ask synthetic-contact via synthetic@example.test (auth0|user-1, oidc|other-subject)',
         timestamp: '10:00',
         rawContacts: [{ email: 'private-record@example.test', sub: 'auth0|private-record' }],
         subject: 'auth0|user-1',
@@ -311,11 +311,17 @@ describe('MktgAgentsController', () => {
     expect(next).not.toHaveBeenCalled();
     expect(json).toHaveBeenCalledWith({
       messages: [
-        { id: 'event-1', sender: 'agent', text: 'Synthetic Staff: ask [contact redacted] via [contact redacted] ([contact redacted])', timestamp: '10:00' },
+        {
+          id: 'event-1',
+          sender: 'agent',
+          text: 'Synthetic Staff: ask [contact redacted] via [contact redacted] ([contact redacted], [contact redacted])',
+          timestamp: '10:00',
+        },
       ],
     });
     expect(JSON.stringify(json.mock.calls)).not.toContain('private-record');
     expect(JSON.stringify(json.mock.calls)).not.toContain('auth0|');
+    expect(JSON.stringify(json.mock.calls)).not.toContain('other-subject');
   });
 
   describe('last intake GET', () => {
