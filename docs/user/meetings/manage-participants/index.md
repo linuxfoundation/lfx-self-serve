@@ -52,7 +52,7 @@ For a public meeting, **Registration on group removal** controls what happens to
 
 ## Choose who runs the meeting
 
-To let a guest run the meeting, mark them as a **Meeting Host** in the **Add guest** form. They show a **Host** label in the list. A Meeting Host can see the host key on the meeting's join page, but can't edit the meeting. See [Host Controls and the Host Key](../host-controls/).
+To let a guest run the meeting, mark them as a **Meeting Host** in the **Add guest** form, or select **Make host** on their row later. Select **Remove host** to take it away. They show a **Host** label in the list. A Meeting Host can see the host key on the meeting's join page, but can't edit the meeting. See [Host Controls and the Host Key](../host-controls/).
 
 Marking a guest as a host is separate from being an organizer. Only organizers can edit, cancel, or delete a meeting, and change who is invited.
 
