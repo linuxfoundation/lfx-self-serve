@@ -53,7 +53,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
 
@@ -11747,5 +11747,415 @@ describe('ImplementationTabComponent x create', () => {
     fill(fixture);
 
     expect(submitted(fixture)['twitterConfig']).not.toHaveProperty('bidding');
+  });
+});
+
+/**
+ * The Microsoft image extension: one upload, sent as `microsoftConfig.imageAssetId`. Offered on an
+ * explicit yes from `microsoftAssetUploadEnabled`, and checked against Microsoft's 76,800-byte limit,
+ * far below the shared upload cap, before anything is stored.
+ */
+describe('ImplementationTabComponent microsoft image extension', () => {
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let uploadCreativeAsset: ReturnType<typeof vi.fn>;
+  let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    selectedPlatforms: { set(v: string[]): void };
+    addMicrosoftKeyword(text: string): void;
+    microsoftImageAssetId: () => string;
+    microsoftImageUploadStatus: () => string;
+    canSubmit: () => boolean;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+  const q = (f: ComponentFixture<ImplementationTabComponent>, id: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const click = (f: ComponentFixture<ImplementationTabComponent>, id: string): void => {
+    (q(f, id)?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+  };
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['microsoft-ads'],
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  async function mount(
+    upload: boolean | null,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('microsoftAssetUploadEnabled', upload);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
+    f.componentRef.setInput('briefData', brief());
+    at(f).selectedPlatforms.set(['microsoft-ads']);
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  /** Picks the file and lets the pixel-size read (a promise) settle before the upload starts. */
+  async function choose(f: ComponentFixture<ImplementationTabComponent>, file: File): Promise<void> {
+    const input = q(f, 'implementation-microsoft-image-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+    await new Promise((resolve) => setTimeout(resolve));
+    f.detectChanges();
+  }
+
+  const png = (size = 16): File => new File([new Uint8Array(size)], 'promo.png', { type: 'image/png' });
+
+  async function uploadedDraft(): Promise<CampaignImplementationDraft> {
+    const first = await mount(true);
+    await choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    first.fixture.destroy();
+    return draft;
+  }
+
+  function fillForm(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.addMicrosoftKeyword('service mesh');
+    f.detectChanges();
+  }
+
+  function submitConfig(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+    fillForm(f);
+    at(f).submit();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0]['microsoftConfig'] as Record<string, unknown>;
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
+    cancelCreativeAssetUpload = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            uploadCreativeAsset,
+            resumeCreativeAssetUpload,
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload,
+            getLinkedInAccounts: () => of([]),
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it.each([
+    ['unanswered', null],
+    ['off', false],
+  ])('renders no upload while the Microsoft upload capability is %s, and sends no imageAssetId', async (_label, upload) => {
+    const f = (await mount(upload)).fixture;
+
+    expect(q(f, 'implementation-microsoft-image-file')).toBeNull();
+    expect('imageAssetId' in submitConfig(f)).toBe(false);
+  });
+
+  it('uploads the chosen image for the saved brief and sends its asset id on microsoftConfig', async () => {
+    const f = (await mount(true)).fixture;
+    const file = png();
+    await choose(f, file);
+
+    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'microsoft');
+    expect(at(f).microsoftImageAssetId()).toBe(ASSET_ID);
+    expect(q(f, 'implementation-microsoft-image-status')?.textContent).toContain('Uploaded: promo.png');
+    expect(submitConfig(f)['imageAssetId']).toBe(ASSET_ID);
+  });
+
+  it('refuses a file that is not a PNG or JPEG before any upload', async () => {
+    const f = (await mount(true)).fixture;
+    await choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    expect(at(f).microsoftImageUploadStatus()).toBe('error');
+  });
+
+  it("refuses an image over Microsoft's 76,800-byte limit before any upload, with a message naming the limit", async () => {
+    const f = (await mount(true)).fixture;
+    await choose(f, png(76_801));
+
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    expect(at(f).microsoftImageUploadStatus()).toBe('error');
+    expect(q(f, 'implementation-microsoft-image-error')?.textContent).toContain('76,800 bytes');
+  });
+
+  it.each([
+    ['an oversized image', () => png(76_801)],
+    ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+  ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
+    const first = await mount(true);
+    fillForm(first.fixture);
+    await choose(first.fixture, png());
+    await choose(first.fixture, file());
+
+    expect(q(first.fixture, 'implementation-microsoft-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(first.fixture).canSubmit()).toBe(false);
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    expect(draft.microsoftImageUploadFailedBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+
+    const second = (await mount(true, draft)).fixture;
+    expect(q(second, 'implementation-microsoft-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(second).canSubmit()).toBe(false);
+  });
+
+  it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const f = (await mount(true)).fixture;
+    await choose(f, png());
+
+    expect(q(f, 'implementation-microsoft-image-error')?.textContent).toContain('remove the image to continue without it');
+  });
+
+  describe('pixel bounds', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const stubSize = (width: number, height: number): void => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width, height, close: vi.fn() }));
+    };
+
+    it.each([
+      [10, 10],
+      [39, 20],
+      [40, 19],
+      [2593, 2048],
+      [2592, 2049],
+    ])('refuses a %ix%i image before any upload, and blocks Create', async (width, height) => {
+      stubSize(width, height);
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      await choose(f, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(q(f, 'implementation-microsoft-image-error')?.textContent).toContain(`this one is ${width}x${height}`);
+      expect(q(f, 'implementation-microsoft-image-asset-block-uploadFailed')).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
+    it.each([
+      [40, 20],
+      [2592, 2048],
+    ])('uploads a %ix%i image', async (width, height) => {
+      stubSize(width, height);
+      const f = (await mount(true)).fixture;
+      await choose(f, png());
+
+      expect(uploadCreativeAsset).toHaveBeenCalled();
+    });
+
+    it('reads the encoded frame, not the EXIF-rotated one', async () => {
+      stubSize(400, 200);
+      const f = (await mount(true)).fixture;
+      await choose(f, png());
+
+      expect(createImageBitmap).toHaveBeenCalledWith(expect.any(File), { imageOrientation: 'none' });
+    });
+
+    it('leaves an image whose size cannot be read to campaign-service, and uploads it', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('cannot decode')));
+      const f = (await mount(true)).fixture;
+      await choose(f, png());
+
+      expect(uploadCreativeAsset).toHaveBeenCalled();
+    });
+
+    it('saves the pick before the size read, so a tab switch during it restores a blocked draft, not an empty one', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => undefined)));
+      const first = await mount(true);
+      const input = q(first.fixture, 'implementation-microsoft-image-file') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { configurable: true, value: [png()] });
+      input.dispatchEvent(new Event('change'));
+      first.fixture.detectChanges();
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.microsoftImageUploadPendingName).toBe('promo.png');
+      first.fixture.destroy();
+
+      const second = (await mount(true, draft)).fixture;
+      fillForm(second);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(q(second, 'implementation-microsoft-image-asset-block-uploadFailed')?.textContent).toContain('was interrupted');
+      expect(at(second).canSubmit()).toBe(false);
+    });
+
+    it('blocks Create when the capability turns unknown during the size read', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => undefined)));
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      const input = q(f, 'implementation-microsoft-image-file') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { configurable: true, value: [png()] });
+      input.dispatchEvent(new Event('change'));
+      f.componentRef.setInput('microsoftAssetUploadEnabled', null);
+      f.componentRef.setInput('createCapabilityRead', 'failed');
+      f.detectChanges();
+
+      expect(q(f, 'implementation-microsoft-image-asset-block-failed')).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
+    it('holds Create while the size is read, and a removal during the read cancels the upload', async () => {
+      let resolveSize: (size: { width: number; height: number; close(): void }) => void = () => undefined;
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise((resolve) => (resolveSize = resolve))));
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      const input = q(f, 'implementation-microsoft-image-file') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { configurable: true, value: [png()] });
+      input.dispatchEvent(new Event('change'));
+      f.detectChanges();
+
+      expect(q(f, 'implementation-microsoft-image-status')?.textContent).toContain('Checking image');
+      expect(at(f).canSubmit()).toBe(false);
+
+      click(f, 'implementation-microsoft-image-cancel');
+      resolveSize({ width: 400, height: 200, close: vi.fn() });
+      await new Promise((resolve) => setTimeout(resolve));
+      f.detectChanges();
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).canSubmit()).toBe(true);
+    });
+  });
+
+  it.each([
+    ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
+    ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
+  ])('disables the picker while the brief %s', async (_label, persistence) => {
+    const f = (await mount(true)).fixture;
+    f.componentRef.setInput('briefPersistence', persistence);
+    f.detectChanges();
+
+    expect((q(f, 'implementation-microsoft-image-file') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('uploads an image of exactly 76,800 bytes', async () => {
+    const f = (await mount(true)).fixture;
+    await choose(f, png(76_800));
+
+    expect(uploadCreativeAsset).toHaveBeenCalled();
+    expect(at(f).microsoftImageAssetId()).toBe(ASSET_ID);
+  });
+
+  it('holds Create while the upload is in flight, and Cancel aborts the Microsoft upload only', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    fillForm(f);
+    expect(at(f).canSubmit()).toBe(true);
+
+    await choose(f, png());
+    expect(at(f).microsoftImageUploadStatus()).toBe('uploading');
+    expect(at(f).canSubmit()).toBe(false);
+
+    click(f, 'implementation-microsoft-image-cancel');
+    expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('microsoft');
+    expect(at(f).microsoftImageUploadStatus()).toBe('idle');
+    expect(at(f).canSubmit()).toBe(true);
+  });
+
+  it('removes an uploaded image, after which the config goes out without it', async () => {
+    const f = (await mount(true)).fixture;
+    await choose(f, png());
+    click(f, 'implementation-microsoft-image-remove');
+
+    expect(at(f).microsoftImageAssetId()).toBe('');
+    expect('imageAssetId' in submitConfig(f)).toBe(false);
+  });
+
+  it('carries the upload in the draft, and a remount resumes an upload still in flight', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    await choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    expect(draft.microsoftImageUploadPendingName).toBe('promo.png');
+    expect(draft.microsoftImageUploadPendingBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+    const second = await mount(true, draft);
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('microsoft', BRIEF_ID);
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    second.fixture.detectChanges();
+    expect(at(second.fixture).microsoftImageAssetId()).toBe(ASSET_ID);
+    expect(second.latest()?.microsoftImageAssetId).toBe(ASSET_ID);
+  });
+
+  it('restores a finished upload from the draft and sends it', async () => {
+    const draft = await uploadedDraft();
+    const f = (await mount(true, draft)).fixture;
+
+    expect(submitConfig(f)['imageAssetId']).toBe(ASSET_ID);
+  });
+
+  it.each([
+    ['off', false, 'ready', 'unsupported'],
+    ['unanswered, with the read failed', null, 'failed', 'failed'],
+    ['unanswered, with the read pending', null, 'pending', 'pending'],
+  ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
+    const draft = await uploadedDraft();
+    const f = (await mount(upload, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', read);
+    fillForm(f);
+
+    expect(q(f, `implementation-microsoft-image-asset-block-${kind}`)).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    click(f, 'implementation-microsoft-image-asset-block-remove');
+    expect(q(f, `implementation-microsoft-image-asset-block-${kind}`)).toBeNull();
+    expect(at(f).canSubmit()).toBe(true);
+    expect('imageAssetId' in submitConfig(f)).toBe(false);
+  });
+
+  it('never sends an upload made for another brief, and says so', async () => {
+    const draft = { ...(await uploadedDraft()), microsoftImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
+    const f = (await mount(true, draft)).fixture;
+    fillForm(f);
+
+    expect(q(f, 'implementation-microsoft-image-asset-block-otherBrief')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+  });
+
+  it('keeps Create blocked after a failed upload, until the operator removes it', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
+    const f = (await mount(true)).fixture;
+    fillForm(f);
+    await choose(f, png());
+
+    expect(q(f, 'implementation-microsoft-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    click(f, 'implementation-microsoft-image-asset-block-remove');
+    expect(q(f, 'implementation-microsoft-image-asset-block-uploadFailed')).toBeNull();
+    expect(at(f).canSubmit()).toBe(true);
   });
 });

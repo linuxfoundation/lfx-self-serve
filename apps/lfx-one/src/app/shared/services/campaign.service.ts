@@ -319,8 +319,8 @@ export class CampaignService {
   }
 
   /**
-   * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn, X or
-   * Google create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn,
+   * Google, Microsoft or X create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
    * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
    * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
    * `createCampaign`, because they are path segments upstream.

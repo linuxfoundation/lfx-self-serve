@@ -223,6 +223,7 @@ import {
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
   canUseMetaCreativeAssets,
+  canUseMicrosoftCreativeAssets,
   canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
@@ -877,6 +878,17 @@ export class CampaignController {
       if (unservedLinkedInAssetField !== null) {
         next(
           ServiceValidationError.forField(unservedLinkedInAssetField, 'uploaded LinkedIn images are not enabled on this deployment; remove the image', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Microsoft image, likewise.
+      if (this.unservedMicrosoftAssetField(body)) {
+        next(
+          ServiceValidationError.forField('microsoftConfig.imageAssetId', 'uploaded Microsoft images are not enabled on this deployment; remove the image', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -2493,8 +2505,8 @@ export class CampaignController {
    * the image was stored and 200 when an identical one already was (the id is usable either way).
    *
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
-   * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets` and `canCreateTwitter` (the tweet image) —
-   * nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
+   * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
+   * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
    * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
    * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
    * the length is re-checked here so a direct caller of this method gets the same answer.
@@ -2517,6 +2529,7 @@ export class CampaignController {
       !canUseGoogleCreativeAssets() &&
       !canUseMetaCreativeAssets() &&
       !canUseLinkedInCreativeAssets() &&
+      !canUseMicrosoftCreativeAssets() &&
       !canCreateTwitter()
     ) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
@@ -4750,6 +4763,16 @@ export class CampaignController {
     if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
     const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
     return index === -1 ? null : `linkedInConfig.variants[${index}].imageAssetId`;
+  }
+
+  /**
+   * Whether `microsoftConfig.imageAssetId` is present while this deployment cannot honour it. `in`,
+   * as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   */
+  private unservedMicrosoftAssetField(body: CampaignCreateRequest): boolean {
+    if (canUseMicrosoftCreativeAssets()) return false;
+    const config: unknown = body?.microsoftConfig;
+    return config !== null && typeof config === 'object' && 'imageAssetId' in config;
   }
 
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
