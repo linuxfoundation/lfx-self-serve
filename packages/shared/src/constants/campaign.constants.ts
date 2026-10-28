@@ -3461,6 +3461,13 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
 export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
 
 /**
+ * An edition's year: a 19xx/20xx run of exactly four digits bounded by NON-digits, campaign-service's
+ * `RegistrantsEditionOK` rule. A word boundary missed "Summit2026", hiding its registrants row and
+ * appending a second year to the name. No `g` flag, so `test`/`exec` carry no state between calls.
+ */
+export const AUDIENCE_EDITION_YEAR_PATTERN = /(?<!\d)(?:19|20)\d{2}(?!\d)/;
+
+/**
  * The longest explicit custom list name campaign-service accepts: HubSpot's list-search limit. A
  * longer one is a 400, never cut, so the builder and the BFF hold to it too.
  */

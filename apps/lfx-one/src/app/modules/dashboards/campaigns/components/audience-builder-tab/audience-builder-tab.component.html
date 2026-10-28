@@ -70,8 +70,8 @@
         @if (pendingStartOver() === 'draft') {
           <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-draft">
             <p class="text-xs text-gray-800">
-              The lists discovered below are for a different event page. Drafting from this one starts over: the discovered lists, your selection and the
-              suppression ticks are cleared, so one event drives the draft, the registrants suppression and QA.
+              The lists selected below are for a different event page. Drafting from this one starts over: the discovered or drafted lists, your selection and
+              the suppression ticks are cleared, so one event drives the draft, the registrants suppression and QA.
             </p>
             <div class="flex flex-wrap gap-2">
               <button
@@ -401,7 +401,7 @@
         <div class="flex flex-col gap-0.5">
           <dt class="text-xs text-gray-500">Exclusions</dt>
           <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-excluded">
-            {{ suppressionLoading() ? '—' : summary().excluded }}
+            {{ suppressionLoading() ? '—' : composeExcludeCount() }}
           </dd>
         </div>
         <div class="flex flex-col gap-0.5">
@@ -545,6 +545,16 @@
         [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)"
         (toggleStandard)="onToggleStandardSuppression($event)" />
+      @if (suppressionFailed() && !suppressionLoading()) {
+        <button
+          type="button"
+          (click)="onRetrySuppression()"
+          class="inline-flex w-fit items-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-800 hover:bg-red-50"
+          data-testid="campaigns-audience-suppression-retry">
+          <i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>
+          Reload suppression lists
+        </button>
+      }
       @if (excludeIds().length > 0) {
         <div class="flex flex-wrap items-center gap-2 text-xs" data-testid="campaigns-audience-suppression-count">
           <button
@@ -572,6 +582,11 @@
             </span>
             @if (!count.exact && count.reason) {
               <span class="text-gray-500">— {{ count.reason }}</span>
+            }
+            @if (suppressionCountOmitsRegistrants()) {
+              <span class="text-gray-500" data-testid="campaigns-audience-suppression-count-omits-registrants"
+                >— not counting the current-registrants list, which is created when you attach or compose</span
+              >
             }
           }
           @if (suppressionCountError(); as message) {
@@ -612,8 +627,9 @@
           [attachedListId]="attachedListId()"
           [attachedMasterId]="attachedMasterId()"
           [attachedExclusionIds]="recordedExclusions()"
+          [standingExpansion]="standingExpansion()"
           [attachedIncludeIds]="attachedIncludeIds()"
-          [pendingExclusionIds]="excludeIds()"
+          [pendingExclusionIds]="comparableExcludeIds()"
           (addList)="onAddListBrief($event)"
           (excludeList)="onExcludeList($event)"
           (addMasterList)="onAddMasterList($event)"
@@ -627,7 +643,7 @@
             aria-labelledby="audience-reuse-attach-confirm-title"
             data-testid="campaigns-audience-reuse-attach-confirming">
             <p id="audience-reuse-attach-confirm-title" class="text-xs font-medium text-gray-900">
-              Using {{ pending.label }} for this email also creates {{ writeCreatesText() }} in HubSpot. Continue?
+              Using {{ pending.label }} for this email also creates {{ pending.creates }} in HubSpot. Continue?
             </p>
             <p class="text-xs text-gray-700">Later emails reuse these lists by name rather than creating them again.</p>
             <div class="flex flex-wrap gap-2">
@@ -954,14 +970,14 @@
             <button
               type="button"
               (click)="composeOpen.set(!composeOpen())"
-              [attr.aria-expanded]="composeOpen() || composeAttempted()"
+              [attr.aria-expanded]="composeOpen()"
               aria-controls="audience-compose-options"
               class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900"
               data-testid="campaigns-audience-compose-toggle">
-              <i [class]="composeOpen() || composeAttempted() ? 'fa-light fa-chevron-down' : 'fa-light fa-chevron-right'" aria-hidden="true"></i>
+              <i [class]="composeOpen() ? 'fa-light fa-chevron-down' : 'fa-light fa-chevron-right'" aria-hidden="true"></i>
               Or combine them into one HubSpot master list
             </button>
-            <div id="audience-compose-options" class="flex flex-col gap-2" [class.hidden]="!composeOpen() && !composeAttempted()">
+            <div id="audience-compose-options" class="flex flex-col gap-2" [class.hidden]="!composeOpen()">
               <label class="flex flex-col gap-1 text-xs text-gray-700">
                 Master list name (optional)
                 <input
@@ -1238,10 +1254,10 @@
   @if (showSelection()) {
     <lfx-audience-summary-bar
       [included]="summary().included"
-      [excluded]="suppressionLoading() ? null : summary().excluded"
+      [excluded]="suppressionLoading() ? null : composeExcludeCount()"
       [reachText]="summary().reachText"
       [reachLabel]="summary().reachLabel"
-      [attached]="!!attachedListId()"
+      [attached]="selectionAttached()"
       (review)="onGoToStep('compose')" />
   }
 </div>

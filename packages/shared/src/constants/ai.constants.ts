@@ -177,13 +177,33 @@ Respond with a JSON object matching the provided schema exactly. Do not include 
 /**
  * AI model configuration
  *
- * Carries the `bedrock/` provider prefix because the v2 LiteLLM instances
- * (`litellm.*.v2.cluster.linuxfound.info`) route on the prefixed name, while the retired OCI
- * instance (`litellm.tools.lfx.dev`) routed on the bare inference profile id and answered
- * `401` to the prefixed one. The two names are not interchangeable, so the host and the name
- * have to move together — see #4087, where the host moved alone and every AI call failed.
+ * Must be one of the short names the LiteLLM proxy publishes in its own `model_list`
+ * (`lfx-v2-argocd`, `values/global/lfit-litellm.yaml`) — never a provider-prefixed Bedrock id.
+ * The prefixed ids appear in that file only as `litellm_params.model`, the destination each
+ * short name resolves to; sending one asks the router for a model it publishes no deployment
+ * for, which answers `429` rather than a `400` that would name the real problem.
+ *
+ * The published list also spans two sampling contracts, and only one of them matches the request
+ * body built below. Every call site sends `AI_REQUEST_CONFIG.TEMPERATURE`, and on Claude Sonnet 5
+ * and later "Setting `temperature`, `top_p`, or `top_k` returns a `400` error" (Anthropic's model
+ * reference, e.g. platform.claude.com/docs/en/models/sonnet-5-5/overview). The proxy does not
+ * shield us from that: `lfit-litellm.yaml`'s `litellm_settings` sets no `drop_params`, so the
+ * value reaches Bedrock as sent. So any 5-series-or-later Claude name here — `claude-sonnet-5*`,
+ * `claude-opus-5*`, `claude-haiku-5*`, the set `ai.constants.spec.ts` rejects — trades #4333's
+ * `429` for a `400` on every AI feature. Moving to one means dropping `temperature` from all six
+ * send sites first — see `ai.constants.spec.ts`, which pins the two constants together.
+ *
+ * The host and the name have to move together, and neither can be checked from this repo alone:
+ * `AI_PROXY_URL` and the proxy's model list both live in argocd. See #4333, where the name was a
+ * routing destination rather than a published name, and #4087 before it, where the host moved
+ * alone. `lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var and builds its own
+ * request body with an unconditional `temperature` (`internal/platform/llm/client.go`, no
+ * `omitempty`). The two are not currently in step: argocd pins that service to `claude-sonnet-5-5`
+ * (`values/global/lfx-v2-campaign-service.yaml`), which is the 5-series-plus-`temperature` pairing
+ * this comment warns about. Closing that gap means moving that service off a 5-series name or
+ * dropping `temperature` there, neither of which this repo can do.
  */
-export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'claude-sonnet-4-5';
 
 /**
  * AI request configuration

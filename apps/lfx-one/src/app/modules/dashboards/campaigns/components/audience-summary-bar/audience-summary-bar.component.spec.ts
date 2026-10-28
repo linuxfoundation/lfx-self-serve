@@ -51,6 +51,13 @@ describe('AudienceSummaryBarComponent', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('—');
   });
 
+  it('is sticky on its host, so it can follow the viewport through the whole tab', () => {
+    render();
+
+    expect((fixture.nativeElement as HTMLElement).classList.contains('sticky')).toBe(true);
+    expect((fixture.nativeElement as HTMLElement).classList.contains('bottom-0')).toBe(true);
+  });
+
   it('says the audience is attached instead of offering review', () => {
     const host = render({ attached: true });
 

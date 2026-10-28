@@ -6176,6 +6176,17 @@ export interface AudiencePendingReuseAttach {
   id: string;
   /** What the operator is attaching, for the confirmation. */
   label: string;
+  /** The lists this attach would create, as one phrase: it can differ from the step-6 attach's. */
+  creates: string;
+}
+
+/**
+ * The project's standing standard list and the standard rows it stands for, so a past send that
+ * excluded the standing list is compared with a recorded audience in the same terms.
+ */
+export interface AudienceStandingExpansion {
+  listId: string;
+  rowIds: readonly string[];
 }
 
 /** An action that starts the Audience tab over and so waits for the operator to confirm it. */

@@ -94,7 +94,12 @@ export class AudienceCustomBuilderComponent {
   /** At most 200 characters: HubSpot's list-search limit, which upstream refuses past rather than cuts. */
   protected readonly nameControl = new FormControl('', { nonNullable: true, validators: [Validators.maxLength(AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH)] });
   protected readonly nameMaxLength = AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH;
-  private readonly nameValue = toSignal(this.nameControl.valueChanges, { initialValue: '' });
+  /**
+   * The name as a signal, written on EVERY change: typing feeds it from valueChanges, and the silent
+   * writes (a preview's name, start over) go through `setName`. Fed from valueChanges alone it kept
+   * a stale over-long name after start over, holding Create on an empty field.
+   */
+  private readonly nameValue = signal('');
   /** An explicit name over the limit is a 400 upstream, so create waits until it fits. */
   protected readonly nameTooLong = computed(() => this.nameValue().trim().length > AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH);
   protected readonly form = new FormGroup({
@@ -191,6 +196,7 @@ export class AudienceCustomBuilderComponent {
   }
 
   public constructor() {
+    this.nameControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.nameValue.set(value));
     // Any edit makes the preview describe criteria that no longer exist, so it is dropped — a
     // Create must always follow a preview of exactly what will be created.
     // The list name is not a criterion, so editing it keeps the preview (and the create state it holds).
@@ -308,7 +314,7 @@ export class AudienceCustomBuilderComponent {
           this.form.controls.educationTopicProperty.setValue(preview.criteria.educationTopicProperty ?? '', { emitEvent: false });
           this.previewing.set(false);
           if (!this.nameControl.value) {
-            this.nameControl.setValue(preview.name, { emitEvent: false });
+            this.setName(preview.name);
           }
         },
         error: (err: HttpErrorResponse) => {
@@ -370,7 +376,7 @@ export class AudienceCustomBuilderComponent {
   protected onStartOver(): void {
     this.seq++;
     this.requestControl.setValue('');
-    this.nameControl.setValue('', { emitEvent: false });
+    this.setName('');
     this.resetCriteria({});
     this.editing.set(false);
     this.questions.set([]);
@@ -453,6 +459,12 @@ export class AudienceCustomBuilderComponent {
    * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
    * is how a duplicate gets created later.
    */
+  /** Writes the name without emitting (it is not a criterion), keeping `nameValue` in step. */
+  private setName(name: string): void {
+    this.nameControl.setValue(name, { emitEvent: false });
+    this.nameValue.set(name);
+  }
+
   private onContextReset(): void {
     const stranded = this.creating() ? this.nameControl.value.trim() || this.preview()?.name || 'the custom list' : null;
     this.onStartOver();
