@@ -7360,6 +7360,21 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(find('implementation-google-price-row-remove-0')).not.toBeNull();
   });
 
+  it('offers the decimal keypad on every amount box', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePromotionForm'].controls.eligibilityKind.setValue('ordersOver');
+    fixture.detectChanges();
+
+    for (const testId of [
+      'implementation-google-promotion-discount',
+      'implementation-google-promotion-orders-over',
+      'implementation-google-price-row-amount-0',
+    ]) {
+      expect(field(testId)?.getAttribute('inputmode')).toBe('decimal');
+    }
+    expect(field('implementation-google-promotion-target')?.hasAttribute('inputmode')).toBe(false);
+  });
+
   it('builds a price table through the sub-form, row by row', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googlePriceForm'].controls.type.setValue('SERVICES');
