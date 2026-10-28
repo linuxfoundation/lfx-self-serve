@@ -350,20 +350,15 @@ export function isSurveyOpenForFollowUp(survey: Survey): boolean {
 }
 
 /**
- * Resolve how a resync started from a project is scoped, so it never reaches another project's committee.
- * @description Whole survey when every committee belongs to the project; that project's single committee
- * when the survey spans several projects (a multi-foundation board survey); null when it can't be scoped
- * to one committee, in which case the resync is not offered.
+ * Resolve the committees a resync started from a project covers, so it never reaches another project's committee.
+ * @description Always the active project's committees by UID, never "the whole survey": the drawer's
+ * survey detail is project-filtered and can't show every committee the survey was sent to.
  * @param survey - The survey
  * @param projectUid - The active project
- * @returns The scope, or null when no safe scope exists
+ * @returns The scope, or null when the project has no committee on the survey (resync not offered)
  */
 export function getSurveyResyncScope(survey: Survey, projectUid: string | null | undefined): SurveyResyncScope | null {
-  const committees = survey.committees ?? [];
-  if (!projectUid || committees.length === 0) return null;
-
-  const inProject = committees.filter((c) => c.project_uid === projectUid);
-  if (inProject.length === committees.length) return {};
-  if (inProject.length === 1) return { committeeUid: inProject[0].committee_uid };
-  return null;
+  if (!projectUid) return null;
+  const committeeUids = (survey.committees ?? []).filter((c) => c.project_uid === projectUid && !!c.committee_uid).map((c) => c.committee_uid);
+  return committeeUids.length > 0 ? { committeeUids } : null;
 }

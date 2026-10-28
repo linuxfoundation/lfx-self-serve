@@ -12,7 +12,7 @@ import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { finalize, take } from 'rxjs';
+import { concat, finalize, forkJoin, map, toArray } from 'rxjs';
 
 /**
  * Resyncs an open survey's recipient list (#4340): previews the committee members who joined
@@ -33,7 +33,7 @@ export class SurveyResyncDialogComponent {
 
   // === Constants ===
   private readonly surveyUid: string = this.config.data!.survey.uid;
-  private readonly committeeUid: string | undefined = this.config.data!.committeeUid;
+  private readonly committeeUids: string[] = this.config.data!.committeeUids;
   protected readonly skeletonRows = [0, 1, 2];
 
   // === Writable Signals ===
@@ -41,6 +41,8 @@ export class SurveyResyncDialogComponent {
   protected readonly loading = signal(true);
   protected readonly loadError = signal<string | null>(null);
   protected readonly sending = signal(false);
+  /** Committees whose preview found someone missing; only these are resynced. */
+  private readonly committeesToSend = signal<string[]>([]);
 
   public constructor() {
     lockDynamicDialogWhile(this.sending);
@@ -60,11 +62,11 @@ export class SurveyResyncDialogComponent {
     if (this.recipients().length === 0 || this.sending()) return;
 
     this.sending.set(true);
-    this.surveyService
-      .resyncRecipients(this.surveyUid, this.committeeUid)
+    // One committee at a time: the server authorizes each committee on its own.
+    concat(...this.committeesToSend().map((committeeUid) => this.surveyService.resyncRecipients(this.surveyUid, committeeUid)))
       .pipe(
         // An initiated write must finish even if navigation destroys this dialog.
-        take(1),
+        toArray(),
         finalize(() => this.sending.set(false))
       )
       .subscribe({
@@ -92,16 +94,25 @@ export class SurveyResyncDialogComponent {
   private loadPreview(): void {
     this.loading.set(true);
     this.loadError.set(null);
-    this.surveyService
-      .getResyncPreview(this.surveyUid, this.committeeUid)
+    forkJoin(
+      this.committeeUids.map((committeeUid) =>
+        this.surveyService.getResyncPreview(this.surveyUid, committeeUid).pipe(map((preview) => ({ committeeUid, recipients: preview.affected_recipients })))
+      )
+    )
       .pipe(
         finalize(() => this.loading.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: (preview) => this.recipients.set(preview.affected_recipients),
+        next: (previews) => {
+          // A person on two of this project's committees is listed once.
+          const byUser = new Map(previews.flatMap((p) => p.recipients).map((r) => [r.user_id, r]));
+          this.recipients.set([...byUser.values()]);
+          this.committeesToSend.set(previews.filter((p) => p.recipients.length > 0).map((p) => p.committeeUid));
+        },
         error: (error: unknown) => {
           this.recipients.set([]);
+          this.committeesToSend.set([]);
           this.loadError.set(this.errorMessage(error, 'load'));
         },
       });

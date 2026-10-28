@@ -17,7 +17,7 @@ const PREVIEW: SurveyResyncPreview = {
   affected_committees: [],
 };
 
-async function mount(preview$: Observable<SurveyResyncPreview> = of(PREVIEW)) {
+async function mount(preview$: Observable<SurveyResyncPreview> = of(PREVIEW), committeeUids: string[] = ['c-1']) {
   TestBed.resetTestingModule();
   const getResyncPreview = vi.fn().mockReturnValue(preview$);
   const resyncRecipients = vi.fn().mockReturnValue(of(undefined));
@@ -27,7 +27,7 @@ async function mount(preview$: Observable<SurveyResyncPreview> = of(PREVIEW)) {
     imports: [SurveyResyncDialogComponent],
     providers: [
       { provide: DynamicDialogRef, useValue: { close } },
-      { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUid: 'c-1' }, closable: true } },
+      { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUids }, closable: true } },
       { provide: SurveyService, useValue: { getResyncPreview, resyncRecipients } },
       { provide: MessageService, useValue: { add } },
     ],
@@ -67,5 +67,36 @@ describe('SurveyResyncDialogComponent', () => {
     fixture.detectChanges();
 
     expect(byTestId(fixture, 'survey-resync-dialog-error')?.textContent).toContain("don't have permission");
+  });
+
+  it("previews each of the project's committees, lists a shared member once, and resyncs only committees with someone missing", async () => {
+    TestBed.resetTestingModule();
+    const empty: SurveyResyncPreview = { affected_recipients: [], affected_committees: [] };
+    const previews: Record<string, SurveyResyncPreview> = { 'c-1': PREVIEW, 'c-2': PREVIEW, 'c-3': empty };
+    const getResyncPreview = vi.fn((_uid: string, committeeUid: string) => of(previews[committeeUid]));
+    const resyncRecipients = vi.fn().mockReturnValue(of(undefined));
+    const close = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [SurveyResyncDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUids: ['c-1', 'c-2', 'c-3'] } } },
+        { provide: SurveyService, useValue: { getResyncPreview, resyncRecipients } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    const fixture = TestBed.createComponent(SurveyResyncDialogComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+
+    expect(component['recipients']()).toHaveLength(1);
+    component['send']();
+
+    expect(resyncRecipients.mock.calls).toEqual([
+      ['s-1', 'c-1'],
+      ['s-1', 'c-2'],
+    ]);
+    expect(close).toHaveBeenCalledWith(true);
   });
 });

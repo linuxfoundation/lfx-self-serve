@@ -690,14 +690,15 @@ export interface SurveyReminderDialogData {
  */
 export interface SurveyResyncDialogData {
   survey: Survey;
-  /** Limits the resync to one committee (this project's board on a multi-foundation survey) */
-  committeeUid?: string;
+  /** The active project's committees on this survey; each is previewed and resynced on its own */
+  committeeUids: string[];
 }
 
 /**
  * Which committees a resync from the active project may touch
- * @description `committeeUid` undefined means the whole survey (every committee is in this project).
+ * @description Always explicit: the drawer's survey detail is project-filtered, so it can't prove it
+ * holds every committee on the survey, and a whole-survey resync is never sent from the UI.
  */
 export interface SurveyResyncScope {
-  committeeUid?: string;
+  committeeUids: string[];
 }

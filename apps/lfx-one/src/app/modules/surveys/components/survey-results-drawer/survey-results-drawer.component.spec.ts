@@ -114,13 +114,13 @@ describe('SurveyResultsDrawerComponent', () => {
   it('refetches the survey detail with the new project scope when the project changes', async () => {
     const { fixture, getSurvey, getAllSurveyResponses, activeContext } = await mount(true);
     current = fixture;
-    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1');
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1', { skipCache: false });
 
     activeContext.set({ uid: 'p-2' });
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2');
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2', { skipCache: false });
     expect(getAllSurveyResponses).toHaveBeenLastCalledWith('s-1', 'p-2');
   });
 
@@ -137,7 +137,7 @@ describe('SurveyResultsDrawerComponent', () => {
 
     const manager = await mount(true, of(ROWS), open);
     current = manager.fixture;
-    expect(manager.component['resyncScope']()).toEqual({ committeeUid: 'c-1' });
+    expect(manager.component['resyncScope']()).toEqual({ committeeUids: ['c-1'] });
 
     const viewer = await mount(false, of(ROWS), open);
     current = viewer.fixture;
