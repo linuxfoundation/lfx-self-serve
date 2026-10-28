@@ -547,9 +547,15 @@ describe('Member 360 entitlement and generation', () => {
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
 
-  it('maps needs-input to questions without a failure or private question text', () => {
+  it('maps a needs-input result without questions without echoing its message', () => {
+    // This fixture has no structured questions; creator-gated question results
+    // may include questions/questionsId when the questions feature is present.
     const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
-    expect(mapped).toEqual({ status: 'questions', activity: [], persistence: undefined, failureText: undefined, failureReason: undefined });
+    expect(mapped).toMatchObject({ status: 'questions', activity: [] });
+    expect(mapped.questions).toBeUndefined();
+    expect(mapped.questionsId).toBeUndefined();
+    expect(mapped.failureText).toBeUndefined();
+    expect(mapped).not.toHaveProperty('message');
     expect(JSON.stringify(mapped)).not.toContain('Private question text');
   });
 
