@@ -260,6 +260,25 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('discarded');
   });
 
+  it.each(['discarded', 'superseded'] as const)('returns %s closure only for a matching selected detail and keeps it out of listings', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    if (state === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    else Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+    expect(stored().metadata['closed-at']).toBe(new Date().toISOString());
+    flows.result.mockClear();
+    flows.author.mockClear();
+    const result = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(result).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state, closedAt: new Date().toISOString() }] });
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+    await expect(service.readClosedProgress(req, project, 'faq', 'other-document', hash(session))).rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(service.readClosedProgress(req, project, types[0].agentKey, 'living', '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+    delete stored().metadata['closed-at'];
+    expect(await service.readClosedProgress(req, project, types[0].agentKey, 'living', hash(session))).not.toHaveProperty('closedAt');
+  });
+
   it('settles an active comment redraft before closing its discarded run', async () => {
     await service.start(req, project, types[0].agentKey, session, 1, 'send-one');
     const context = { project, agentKey: types[0].agentKey, requestId: 'send-one' };
@@ -963,6 +982,9 @@ describe('MktgDocumentRunService core', () => {
         expect.objectContaining({ status: 'failed', failureText: 'A newer run superseded this send.' })
       );
       expect(stored().metadata['state']).toBe('superseded');
+      const closedAt = Date.parse(stored().metadata['closed-at']);
+      expect(closedAt).toBeGreaterThanOrEqual(Date.parse(stored('synthetic-second-session').metadata['started-at']));
+      expect(closedAt).toBeLessThanOrEqual(Date.now());
     });
   });
   it('releases a bound send when the authoritative Run writing deadline expires without resubmitting', async () => {

@@ -73,7 +73,7 @@ export interface MktgSessionOutcome {
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'questions' | 'storing' | 'failed';
 
-/** Server-only terminal markers; closed runs are not reconciled or listed. */
+/** Stored states include completion; closed runs are not reconciled or listed. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
@@ -89,7 +89,10 @@ export interface MktgDocumentRunProgress {
   documentId: string;
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
-  state: MktgDocumentRunState;
+  /** Closed states appear only on a selected-run detail, never in listings. */
+  state: Exclude<MktgStoredDocumentRunState, 'completed'>;
+  /** Recorded closure time; absent on legacy closed records. */
+  closedAt?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
@@ -135,6 +138,8 @@ export interface MktgStartedRunRecord {
   /** Private bounded ACK ledger; overflow rejects a new turn rather than forgetting accepted ones. */
   acceptedAttemptIds?: string[];
   state: MktgStoredDocumentRunState;
+  /** Timestamp recorded when discarded or superseded; absent on legacy records. */
+  closedAt?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */

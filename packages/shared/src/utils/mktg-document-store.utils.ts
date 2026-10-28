@@ -169,14 +169,16 @@ export function findMktgRunIntake(key: string, includeOneOff = false) {
     : undefined;
 }
 
-/** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
+/** Explicit public projection: no session capabilities, subjects or private coverage. Closed markers opt in only for selected details. */
 export function mktgRunProgress(
   run: MktgStartedRunRecord,
   fullReply = run.failureText,
   activity?: MktgRunActivity[],
-  readerSubject?: string
+  readerSubject?: string,
+  includeClosed = false
 ): MktgDocumentRunProgress | null {
-  if (run.state === 'completed' || run.state === 'superseded' || run.state === 'discarded') {
+  const closed = run.state === 'superseded' || run.state === 'discarded';
+  if (run.state === 'completed' || (closed && !includeClosed)) {
     return null;
   }
   // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
@@ -189,7 +191,8 @@ export function mktgRunProgress(
     documentId: run.documentId,
     startedAt: run.startedAt,
     state: run.state,
-    ...(activity && { activity }),
+    ...(closed && run.closedAt && Number.isFinite(Date.parse(run.closedAt)) && { closedAt: run.closedAt }),
+    ...(!closed && activity && { activity }),
     ...(run.state === 'failed' && failureText !== undefined && { failureText }),
     ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
     ...(run.state === 'failed' && (run.persistRetries ?? 0) >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS && { persistenceFailed: true }),

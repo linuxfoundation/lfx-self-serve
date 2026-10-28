@@ -1458,6 +1458,57 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-current-during-run')).toBeNull();
   });
 
+  it.each(['discarded', 'superseded'] as const)('explains a %s selected run instead of a blank page, with no active controls or polling', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const closedAt = '2026-10-19T13:00:00Z';
+    const run = { ...started(state), closedAt };
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [run, { ...started('writing'), runId: 'c'.repeat(64) }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'brand-kit', 'living', false, undefined, false, run.runId);
+    const message = query('mktg-document-view-closed-message')?.textContent?.trim();
+    if (state === 'discarded') {
+      expect(message).toContain('This run was discarded at');
+      expect(message).toContain('19 Oct 2026');
+      expect(message).toContain('; a newer run was started.');
+    } else expect(message).toBe('A newer run replaced this one.');
+    const link = query('mktg-document-view-newer-run');
+    expect(link?.textContent?.trim()).toBe('Open the newer run');
+    expect(link?.getAttribute('href')).toContain('/documents?project=');
+    for (const id of [
+      'mktg-document-view-run',
+      'mktg-document-view-run-steps',
+      'mktg-run-activity-steps',
+      'mktg-document-view-progress-retry',
+      'mktg-document-view-intake-link',
+    ])
+      expect(query(id)).toBeNull();
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.getDocument).toHaveBeenCalledTimes(reads);
+    expect(store.retryRun).not.toHaveBeenCalled();
+  });
+
+  it('settles an already open run page when the next timer read reports discard', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = started('writing');
+    store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [], runs: [run] }));
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...run, state: 'discarded' }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(query('mktg-document-view-run-steps')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', true, undefined, false, run.runId);
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    expect(query('mktg-document-view-progress-retry')).toBeNull();
+  });
+
+  it('does not invent a closure time or person for a legacy discarded run', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [started('discarded')] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded; a newer run was started.');
+  });
+
   it('keeps a Started run with no stored revision in the generating state', async () => {
     const runId = 'b'.repeat(64);
     store.getDocument.mockReturnValue(
@@ -1898,7 +1949,7 @@ describe('MktgDocumentViewComponent', () => {
         expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
         expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
         expect(query('mktg-document-view-failure-actions')?.textContent).toContain('only if you think it is still running; starts nothing new');
-        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64));
+        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64), false, 'b'.repeat(64));
         store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
         query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
         await settle();
