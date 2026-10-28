@@ -833,7 +833,8 @@ export class AudienceBuilderTabComponent {
       return set.size === b.size && [...set].every((id) => b.has(id));
     };
     const included = new Set(this.inclusion().keys());
-    const excluded = new Set(this.excludeIds());
+    // As `attachedMasterId` compares: a registrants list still to be created is a change too.
+    const excluded = new Set(this.comparableExcludeIds());
     const attached = this.attachResult();
     if (attached !== null && attached.master.listId === listId) {
       return same(this.attachedIncludeIds(), included) && same(this.attachedExclusions(), excluded);

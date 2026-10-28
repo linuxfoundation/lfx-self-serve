@@ -4469,6 +4469,22 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'an edited selection read as attached').not.toBeNull();
     });
 
+    it('stops reading as attached when a registrants list still to be created is ticked after the attach', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-suppression-grid-toggle-current_registrants');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'fixture precondition').toBeNull();
+
+      click('audience-suppression-grid-toggle-current_registrants');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]')).not.toBeNull();
+    });
+
     it('withdraws an open confirmation when the email it was opened for changes', async () => {
       await discover('brief-1');
       click('audience-card-grid-toggle-101');
