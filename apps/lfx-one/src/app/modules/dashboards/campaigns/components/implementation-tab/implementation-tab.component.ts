@@ -946,6 +946,8 @@ export class ImplementationTabComponent implements OnInit {
     ['linkedin-image-file-hint', 'linkedin-image-file-status', ...(this.linkedInImageUploadStatus() === 'error' ? ['linkedin-image-file-error'] : [])].join(' ')
   );
   private linkedInImageUploadSub: Subscription | null = null;
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.

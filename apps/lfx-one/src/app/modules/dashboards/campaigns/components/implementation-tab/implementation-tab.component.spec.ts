@@ -9915,6 +9915,17 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     );
   });
 
+  it.each([
+    ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
+    ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
+  ])('disables the picker while the brief %s', async (_label, persistence) => {
+    const f = (await mount(true)).fixture;
+    f.componentRef.setInput('briefPersistence', persistence);
+    f.detectChanges();
+
+    expect((q(f, 'implementation-linkedin-image-file') as HTMLInputElement).disabled).toBe(true);
+  });
+
   it('uploads an image of exactly 5,000,000 bytes', async () => {
     const f = (await mount(true)).fixture;
     choose(f, png(5_000_000));
