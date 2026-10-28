@@ -76,7 +76,7 @@
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
             [busy]="answering()"
-            [allowNonAnswers]="true"
+            [allowNoneFor]="noneAllowedQuestionIds"
             (answered)="onAnswers($event)" />
         </div>
       } @else if (writer() && editing()) {

@@ -15,6 +15,7 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
   };
 });
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
   history: vi.fn(),
@@ -120,6 +121,30 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
 
+  it('refuses a non-answer with the plain 400 before sending or resuming', async () => {
+    const next = vi.fn();
+    const res = response();
+    await new LinkedinPostController().answer(
+      request({
+        sessionId: 'session-one',
+        ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+        project: 'project-one',
+        questionsId: 'a'.repeat(64),
+        answers: [{ key: 'role', text: 'TBD', origin: 'requester' }],
+      }),
+      res,
+      next
+    );
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 400,
+        validationErrors: [{ code: 'FIELD_VALIDATION_ERROR', field: 'answers', message: MKTG_ANSWERS_INCOMPLETE_MESSAGE }],
+      })
+    );
+    expect(mocks.answer).not.toHaveBeenCalled();
+    expect(mocks.resume).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
   it('binds gap answers to the owner and writer grant, validates ids, and continues the same session', async () => {
     const body = {
       sessionId: 'session-one',

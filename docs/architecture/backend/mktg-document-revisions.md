@@ -296,6 +296,18 @@ not absence. A failed post-start snapshot write warns without rejecting the
 already accepted Generate, avoiding a retry that could create a second session.
 There is no historical backfill, new source-file store or attachment-reuse claim.
 
+## Answers validation
+
+The shared `mktgAnswerProblem` guard rejects blank text and the existing non-answer tokens for
+kit and LinkedIn answer transports. Only LinkedIn's stable `avoid` question accepts literal
+`none`; its client applies the exemption to that question, not the whole route. Validators
+retain their origin/id/uniqueness and length limits; invalid answers return a plain 400 before
+sending or resuming a session. AEO/GEO retains its explicitly approved non-empty compatibility
+policy until the agent supplies a stable exclusion-question id; empty/whitespace answers fail.
+Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.
+The current main run record does not store asked questions, so complete-turn coverage for kit,
+LinkedIn and AEO/GEO is a follow-on once that server-side evidence is available, not inferred here.
+
 ## Durable started runs
 
 Starts use the same private purpose, at

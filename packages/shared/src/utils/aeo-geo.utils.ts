@@ -508,7 +508,7 @@ export function latestAeoGeoFinalText(payloads: string[]): string | null {
 }
 
 export function isAeoGeoAnswers(value: unknown): value is AeoGeoAnswer[] {
-  if (!Array.isArray(value) || value.length > 6) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 6) {
     return false;
   }
   const ids = new Set<string>();
@@ -521,6 +521,7 @@ export function isAeoGeoAnswers(value: unknown): value is AeoGeoAnswer[] {
       !AEO_GEO_QUESTION_ID_PATTERN.test(a['id']) ||
       ids.has(a['id']) ||
       typeof a['text'] !== 'string' ||
+      !a['text'].trim() ||
       a['text'].length > 10_000 ||
       !AEO_GEO_ANSWER_ORIGINS.some((origin) => origin === a['origin'])
     ) {

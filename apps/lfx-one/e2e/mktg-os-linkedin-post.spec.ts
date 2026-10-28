@@ -410,11 +410,24 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
     await page.screenshot({ path: info.outputPath('recorded2-questions.png'), fullPage: true });
+    const answerBox = page.getByTestId('mktg-run-questions').locator('textarea');
+    const suggestion = await answerBox.inputValue();
+    await answerBox.fill('skip');
+    await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toBeVisible();
+    expect(generates).toBe(1);
+    await answerBox.fill(suggestion);
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await answerBox.fill('None'); // Only the stable avoid question accepts literal none.
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session-1', questionsId: 'a'.repeat(64) });
+    expect((await send).postDataJSON()).toMatchObject({
+      sessionId: 'synthetic-session-1',
+      questionsId: 'a'.repeat(64),
+      answers: expect.arrayContaining([{ key: 'avoid', text: 'None', origin: expect.any(String) }]),
+    });
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
     expect(generates).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-questions')).toHaveCount(0);

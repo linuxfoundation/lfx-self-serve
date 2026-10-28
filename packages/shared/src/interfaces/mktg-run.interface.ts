@@ -663,6 +663,11 @@ export interface MktgRunQuestion {
   basis: string[];
 }
 
+/** Caller-resolved policy for a particular asked question, never a route-wide opt-out. */
+export interface MktgAnswerProblemOptions {
+  allowNone?: boolean;
+}
+
 /** One answer to a {@link MktgRunQuestion}. */
 export interface MktgRunAnswer {
   /** The question's key. */
