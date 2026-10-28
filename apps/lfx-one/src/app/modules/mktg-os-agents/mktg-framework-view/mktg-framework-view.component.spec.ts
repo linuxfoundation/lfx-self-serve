@@ -529,13 +529,14 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Montserrat');
   });
 
-  it('opens Sources from the reviewer note and focuses its panel start', async () => {
+  it('opens Sources from its tab without the duplicate reviewer-note link', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     await fixture.whenStable();
     document.body.appendChild(element());
 
-    query('mktg-framework-view-notes-sources')?.click();
+    expect(query('mktg-framework-view-notes-sources')).toBeNull();
+    query('mktg-framework-view-tab-sources')?.click();
     await fixture.whenStable();
     expect(query('mktg-framework-view-panel-sources')).not.toBeNull();
     expect(document.activeElement).toBe(query('mktg-framework-view-panel-sources'));

@@ -46,12 +46,19 @@ count alone is never approval or staleness. See [downstream rebuild](../backend/
 Current prefers the store's valid `currentRevisionNumber`; older listings fall back to the
 sequence in the selected `latestRevisionId`, **never `revisionCount`**. Its date is `updatedAt`. Non-sequence legacy ids show no invented
 version. A valid approved-current seam supplies the approved revision number; the only
-listing date remains `updatedAt` until an approved-current date is exposed. Run assets instead show current-local-calendar-month counts from `createdAt`, and
-the Family Current cell shows the run date, not a revision version.
+listing date remains `updatedAt` until an approved-current date is exposed. One-off assets use
+`createdAt`: never run means **Not run yet** (`missing`); a run in the current UTC calendar month
+shows **N this month**; an earlier run shows **Last run d MMM**. The newest run is selected by
+`createdAt` without mutating listing order. Counts, the en-GB last-run label and the Family
+Current cell all use UTC, including month boundaries; Current shows the run date, never a
+revision version. Unknown historical dates remain unknown (**Last run —**). A registered
+type with an unavailable agent reads **Coming soon**, not Not run yet.
 
 State filters read `?state=` (All by default), retaining all family cards. A user filter click
-pushes a history entry, so browser Back restores the previous filter. Count-only
-runs appear under All, not workflow-state chips. `summarizeMktgKit` centralizes provisional
+pushes a history entry, so browser Back restores the previous filter. Never-run one-offs join
+Not run yet. Already-run one-offs appear under All only (decided by the operator, 23 Oct:
+they have no approval workflow), never Approved/Draft/Needs rebuild. Kit cards consume the shared Family rule's
+row states and labels without adding buttons or changing the board's card layout. `summarizeMktgKit` centralizes provisional
 formulas: In the kit counts **Approved only**, Core floor counts families with at least one
 approved asset out of the catalog length, and Kit level is Core only once every store-backed
 Positioning asset is approved; otherwise an em dash. With no approvals the tiles show 0 assets,
@@ -79,27 +86,49 @@ disabled; design examples never override the catalog.
 ## Family and exports
 
 The Family page links the real asset view `documents/:agentKey/:documentId`, preserving
-lens/project context. The first declared agent is runnable only with an active catalog entry;
-unregistered agents keep a disabled button with catalog-independent pending copy from the
-family constants. Member 360 explains that its page is on its way, without a disabled tooltip;
-its button automatically enables once an active catalog entry lands. Family Run action
-wording uses the matching asset's board `runName` (or row label), not the catalog's agent
-name; header pending copy remains a fallback. Catalog identity still controls routing and
-availability. Row headings and the Agents grid's catalog names are not renamed.
-Every available living row offers Run for its active, non-excluded catalog agent with a
-registered intake, whether Missing, Draft, Approved or Needs rebuild. Coming-soon and one-off
-rows do not gain this action. Required approved-document dependencies still disable row actions
-with the same reason as the run page. The header keeps its state-driven priority: Rebuild what
-is stale, otherwise Run next agent for the first missing asset, otherwise the lead agent.
-Adding built-row actions does not change which missing asset the header selects.
-Living header/row Run and asset Run again open `?mode=new`,
-clearing old questions/generation/revision/run selectors; the Sources page still waits for
-explicit Start. This per-row action is a provisional addition: the Family board depicts only
-the header framework Run. Dedicated one-off routing/availability and breadcrumbs stay unchanged.
+lens/project context. `resolveMktgFamilyActions` is the pure shared policy for Family header,
+row actions and Kit card row data. Availability requires an active, non-excluded catalog
+agent with a registered intake; unavailable rows read Coming soon and offer no Run action.
+`mktgFamilyRowAction(row, ctx)` is the **one place to flip** the row rule. Available,
+not-built rows offer a quiet **Create X** link in the same place; copy comes from `runName`
+or the asset label. Required non-optional approved JSON dependencies and missing write
+access disable that row action with its reason in plain inline text, not tooltip-only.
+Optional dependencies never block. Existing living and one-off assets have no row action:
+open the document, where Run again or Draft another remains the natural entry.
+
+One solid, never-disabled header names the next step: **Update <n> assets** (singular
+**Update <runName>**) for stale Positioning assets; otherwise the first available not-built
+asset gives **Review and approve the <document>** linking to its missing approval, or
+**Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
+(singular **Review the draft**) links to the first draft in family order. One-off families
+always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
+No header renders while loading, after a failed read, without write access (including
+403), or for an unavailable agent. The service still distinguishes access denial from
+read failure; loading status remains mounted. Accessible names equal the primary label.
+
+All enabled header and row Create/review actions are real anchors; rebuild and Export the kit are local buttons. Native Cmd/Ctrl-click opens a new
+tab without navigating the original family. Replacement query params preserve the selected
+project and drop stale questions/generation/revision/run selectors. Living actions use
+`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
+null: its run page's window/compare/tracker inputs are not registered as a last-intake
+allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
+follow-up. Document Run again retains `mode=new` through the shared
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. LinkedIn's Document's
+**Draft another post** unconditionally chooses that fresh mode to restore previous source
+inputs; it never inherits entry intent from the current URL. The dedicated source form restores
+writer-gated last text/URL and share-link scalars before any run navigation, preserving
+explicit blanks; files require reattachment and oversized pasted text requires re-entry.
+The source form does not resume a run on load: the Document receiver owns accepted-run
+progress and cross-browser recovery. Immediately before accepted-start navigation pushes
+the Document, entry-only `mode=new` is consumed with a replacement URL update so Back
+does not restore fresh mode; Document completion/redraft navigations also explicitly clear mode. New generation still requires explicit Draft.
+Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
+scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
-questions answered in place on the same session. Other families retain Coming soon.
+questions answered in place on the same session. Other families do not mount a rebuild panel.
 The framework Asset view's Downstream action enters that flow through one-shot router
 navigation state, never a URL write command. See [the API and sequencing contract](../backend/mktg-rebuild.md).
 
@@ -109,15 +138,17 @@ PDF composes the approved framework print and kit book; boilerplates/FAQ are
 provisionally omitted with an explicit note because they have no print rendering.
 Slides exports the supported approved family assets and branding, offers Update or
 Create for an existing deck, shows progress and a dated revision-linked last export,
-and marks changed approved member sets stale. Readers see disabled actions and the
-write-access note. A failed last-export lookup blocks creation until retried rather
+and marks changed approved member sets stale. Families without an export target render only
+the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
+Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
+Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
 than guessing that no deck exists. Lookup starts independently of document-list loading;
 the slot stays available after a listing error/403. Browser family and document clients
 share one polling deadline/attempt/error policy. The family BFF and record model are
 documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
 
-`lfx-mktg-family-details` adds the board's static Approve explainer and Family-only source
-read. It reads only the framework row's latest document revision via the existing endpoint,
+`lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
+read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
 then renders the validated `sidecar.report.sources_read` / `sources_failed`
 (name/reason) as the board's sentences. Missing documents/reports omit the source block;
 loading and failure/retry are explicit, never a fabricated list. Project/family switches

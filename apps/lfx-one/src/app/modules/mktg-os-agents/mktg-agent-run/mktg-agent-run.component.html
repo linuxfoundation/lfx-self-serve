@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<p-confirmdialog defaultFocus="reject" />
+
 @if (agent && intake && intake.oneOffDocument) {
   @switch (intake.agentId) {
     @case (linkedinIntake.agentId) {
@@ -15,7 +17,7 @@
 }
 @if (agent && intake && !intake.oneOffDocument) {
   <div [ngClass]="pageClass" data-testid="mktg-agent-run-page">
-    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id }" class="mb-4 block" />
+    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-gray-200">
@@ -24,7 +26,7 @@
             <i [class]="agent.icon" aria-hidden="true"></i>
           </span>
           <div class="flex flex-col min-w-0">
-            <span class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ agent.name }}</span>
+            <span class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ assetName }}</span>
             <span class="text-xs text-gray-400 truncate">{{ agentTagline }}</span>
           </div>
         </div>
@@ -32,6 +34,27 @@
 
       <!-- Body -->
       <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
+        @if (hasWaitingNotice()) {
+          <section class="m-6 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="mktg-run-waiting-notice">
+            @if (hasWaitingNotice()) {
+              <p class="text-sm font-medium text-gray-900">{{ waitingRunMessage() }}</p>
+              <div class="flex flex-wrap items-center gap-4">
+                @if (waitingQuestions()) {
+                  <lfx-button label="Continue" (onClick)="onContinueWaiting()" data-testid="mktg-run-waiting-continue" />
+                } @else {
+                  <lfx-button label="Open it" [routerLink]="waitingRunLink()" [queryParams]="waitingRunParams()" data-testid="mktg-run-waiting-open" />
+                }
+                <button
+                  type="button"
+                  class="text-sm font-medium text-blue-700 hover:underline"
+                  (click)="onStartOverWaiting()"
+                  data-testid="mktg-run-waiting-start-over">
+                  Start over
+                </button>
+              </div>
+            }
+          </section>
+        }
         @if (errorText()) {
           <div class="w-full px-6 lg:px-10 pt-6">
             <lfx-message severity="error" [text]="errorText()" data-testid="mktg-agent-run-error" />
@@ -74,30 +97,14 @@
           }
         </ng-template>
 
-        @if (freshMode()) {
+        @if (freshMode() && phase() === 'form' && !hasWaitingNotice()) {
           <section
             class="m-6 flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5"
             aria-labelledby="run-sources-title"
             data-testid="mktg-run-sources">
-            <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-col gap-1">
               <h2 id="run-sources-title" class="text-base font-semibold text-gray-900">Sources</h2>
-              @if (phase() === 'form') {
-                <div class="flex flex-wrap gap-2">
-                  <lfx-button
-                    label="Edit"
-                    [outlined]="true"
-                    size="small"
-                    [disabled]="sourcesLoading() || sourcesDenied()"
-                    [ariaExpanded]="sourcesEditing()"
-                    ariaControls="mktg-run-intake-form"
-                    (onClick)="onEditSources()"
-                    data-testid="mktg-run-sources-edit" />
-                  @if (sourcesEditing()) {
-                    <lfx-button label="Done" [text]="true" (onClick)="onDoneSources()" data-testid="mktg-run-sources-done" />
-                  }
-                  <lfx-button label="Start" [disabled]="submitDisabled()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
-                </div>
-              }
+              <p class="text-sm text-gray-500" data-testid="mktg-run-sources-hint">{{ sourcesHint }}</p>
             </div>
             @if (sourcesLoading()) {
               <p role="status" class="text-sm text-gray-500" data-testid="mktg-run-sources-loading">Loading last run inputs…</p>
@@ -123,12 +130,15 @@
                   }
                 </dl>
               }
+              @if (missingFiles()) {
+                <p class="text-sm text-gray-600" data-testid="mktg-run-missing-files-note">{{ missingFilesNote() }}</p>
+              }
               <div class="flex flex-wrap gap-2" data-testid="mktg-run-source-files">
                 @for (document of documents(); track document.id) {
-                  <span class="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs">Attached in this visit: {{ document.title }}</span>
+                  <span class="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs">Added just now: {{ document.title }}</span>
                 }
                 @for (logo of logoFiles(); track logo.id) {
-                  <span class="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs">Attached in this visit: {{ logo.file.name }}</span>
+                  <span class="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs">Added just now: {{ logo.file.name }}</span>
                 }
                 @if (missingDocuments()) {
                   <lfx-button
@@ -148,12 +158,37 @@
                     (onClick)="onEditSources('#mktg-run-logos')"
                     data-testid="mktg-run-reattach-logos" />
                 }
+                @if (phase() === 'form' && missingFiles()) {
+                  <lfx-button
+                    [label]="missingFiles() === 1 ? 'Continue without it' : 'Continue without them'"
+                    [text]="true"
+                    (onClick)="onDropPriorFiles()"
+                    data-testid="mktg-run-drop-missing" />
+                }
               </div>
-              @if (phase() === 'form' && (missingDocuments() || missingLogos())) {
-                <p class="text-xs text-gray-500">Previous files are not stored. Edit to re-attach them, or explicitly continue without those sources.</p>
-                <lfx-button label="Continue without missing sources" [text]="true" (onClick)="onDropPriorFiles()" data-testid="mktg-run-drop-missing" />
-              }
             }
+            <div class="flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 pt-4">
+              <div class="flex items-center gap-2">
+                <lfx-button
+                  label="Edit sources"
+                  icon="fa-light fa-pen"
+                  [text]="true"
+                  [disabled]="sourcesLoading() || sourcesDenied()"
+                  [ariaExpanded]="sourcesEditing()"
+                  ariaControls="mktg-run-intake-form"
+                  (onClick)="onEditSources()"
+                  data-testid="mktg-run-sources-edit" />
+                @if (sourcesEditing()) {
+                  <lfx-button label="Done" [text]="true" (onClick)="onDoneSources()" data-testid="mktg-run-sources-done" />
+                }
+              </div>
+              <div class="ml-auto flex flex-wrap items-center justify-end gap-3">
+                @if (submitReason()) {
+                  <span class="text-xs text-gray-500" data-testid="mktg-run-start-reason">{{ submitReason() }}</span>
+                }
+                <lfx-button [label]="submitLabel()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
+              </div>
+            </div>
           </section>
         }
 
@@ -299,7 +334,7 @@
                     @if (field.missingPrefillHint && missingPrefillHintKeys()[field.key]) {
                       <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
                     }
-                    <!-- Blocking: submission stays disabled until the value can actually do what the field is for. -->
+                    <!-- A blocked submission explains what the field needs without fading the primary action. -->
                     @if (fieldFormatErrors()[field.key]; as formatError) {
                       <span
                         class="flex items-start gap-1.5 text-xs text-red-600"
@@ -394,20 +429,30 @@
                 }
 
                 @if (!freshMode()) {
-                  <div class="flex items-center gap-3 mt-2">
-                    <lfx-button
-                      type="submit"
-                      [label]="submitLabel()"
-                      icon="fa-light fa-sparkles"
-                      [disabled]="submitDisabled()"
-                      data-testid="mktg-agent-run-submit-button" />
+                  <div class="flex flex-wrap items-center justify-end gap-3 mt-2">
                     <span class="text-xs text-gray-400">{{ requiredNote }}</span>
+                    @if (submitReason()) {
+                      <span class="text-xs text-gray-500">{{ submitReason() }}</span>
+                    }
+                    <lfx-button type="submit" [label]="submitLabel()" icon="fa-light fa-sparkles" data-testid="mktg-agent-run-submit-button" />
                   </div>
                 }
               </form>
             }
 
             @case ('running') {
+              <ng-template #leaveNote>
+                @if (hasAcknowledgement()) {
+                  <p
+                    class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
+                    data-testid="mktg-agent-run-leave-note">
+                    <i class="fa-light fa-clock" aria-hidden="true"></i>
+                    You can leave this page — the agent keeps working.
+                  </p>
+                } @else {
+                  <p class="text-sm text-gray-500" data-testid="mktg-agent-run-starting-note">Starting the agent — stay on this page for a few seconds.</p>
+                }
+              </ng-template>
               @if (intake.liveActivity) {
                 <!-- What the agent is doing, step by step, as it happens: the feed alone in the page frame, as on the asset view (hand test, 18 Oct). -->
                 <div data-testid="mktg-agent-run-live">
@@ -416,15 +461,21 @@
                     [title]="activityTitle()"
                     [startedAt]="activityStartedAt()"
                     [icon]="agent.icon"
-                    [iconClass]="agentIconClass" />
+                    [iconClass]="agentIconClass">
+                    <ng-container run-status-note [ngTemplateOutlet]="leaveNote" />
+                  </lfx-mktg-run-activity>
                 </div>
               } @else {
                 <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">Opening the asset page…</div>
+                <ng-container [ngTemplateOutlet]="leaveNote" />
               }
             }
 
             @case ('questions') {
               <div data-testid="mktg-agent-run-questions">
+                <p class="px-6 pt-4 text-xs text-gray-500" data-testid="mktg-run-questions-return-note">
+                  Stay on this page to answer. If you leave, come back through Documents › Started runs › Answer the questions.
+                </p>
                 <lfx-mktg-run-questions
                   [questions]="pendingQuestions()"
                   [projectName]="projectName()"

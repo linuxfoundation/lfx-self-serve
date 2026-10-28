@@ -60,6 +60,7 @@ describe('Family export slot', () => {
     const { fixture, root, button } = await setup();
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, false);
     expect(root.textContent).toContain('Boilerplates and FAQ do not have print layouts yet');
+    for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
     button('slides')?.click();
     await fixture.whenStable();
     expect(api.run).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, 'create');
@@ -112,15 +113,69 @@ describe('Family export slot', () => {
   it('shows approval-empty and reader-disabled states without calling the exporter', async () => {
     api.last.mockReturnValue(of({ ...lookup(), currentMembers: [] }));
     const { fixture, root, button } = await setup();
-    expect(root.textContent).toContain('Approve a revision first');
+    expect(root.textContent).toContain('Available once the framework is approved: PDF and Slides use the approved current.');
     expect(button('pdf')?.disabled).toBe(true);
     writer.set(false);
     await fixture.whenStable();
     expect(root.textContent).toContain('You need write access');
     expect(button('slides')?.disabled).toBe(true);
+    expect(root.querySelector('[role="note"]')).toBeNull();
+    expect(root.querySelector('[pTooltip]')).toBeNull();
     expect(api.run).not.toHaveBeenCalled();
   });
 
+  it('scrolls to the slot and focuses Download PDF when lookup finishes, without starting an export', async () => {
+    const pending = new Subject<MktgFamilyExportLastResponse>();
+    api.last.mockReturnValue(pending);
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    expect(root.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
+    expect(focus).not.toHaveBeenCalled();
+    pending.next(lookup());
+    await fixture.whenStable();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(api.run).not.toHaveBeenCalled();
+    expect(api.printView).not.toHaveBeenCalled();
+    expect(print.print).not.toHaveBeenCalled();
+  });
+
+  it('focuses an already printable PDF on request without a reason line', async () => {
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')).toBeNull();
+  });
+  it('expires a focus request when lookup settles without a printable asset and explains the PDF requirement', async () => {
+    const pending = new Subject<MktgFamilyExportLastResponse>();
+    api.last.mockReturnValue(pending);
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    pending.next({ ...lookup(), currentMembers: [familyExportMember({ agentKey: 'boilerplates' })] });
+    await fixture.whenStable();
+    expect(fixture.componentInstance['focusRequested']()).toBe(false);
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')?.textContent).toBe(
+      'PDF is available once the messaging framework or the brand kit is approved.'
+    );
+    pending.next(lookup());
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')).toBeNull();
+    expect(focus).not.toHaveBeenCalled();
+  });
   it('shows failures and allows another export without leaving a spinner', async () => {
     const { fixture, root, button } = await setup();
     button('slides')?.click();
@@ -187,6 +242,20 @@ describe('Family export slot', () => {
     expect(print.print).not.toHaveBeenCalled();
   });
 
+  it('unsupported families show the title and one line, without buttons, PDF or Drive notes', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('familyId', 'social-community');
+    await fixture.whenStable();
+    expect(root.querySelector('h2')?.textContent).toBe('Export the whole family');
+    expect(root.querySelector('[data-testid="family-export-unsupported"]')?.textContent).toBe('This family has no assets supported by the exporter yet.');
+    expect(root.querySelectorAll('section p')).toHaveLength(1);
+    expect(root.querySelector('lfx-button')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-note"]')).toBeNull();
+    expect(root.textContent).not.toContain('Drive');
+    writer.set(false);
+    await fixture.whenStable();
+    expect(root.querySelectorAll('section p')).toHaveLength(1);
+  });
   it('does not call browser or API operations during SSR', async () => {
     TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
     const { button } = await setup();

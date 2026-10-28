@@ -64,14 +64,18 @@ describe('MktgKitService project-scoped reads', () => {
     TestBed.tick();
     reads[0].error(new HttpErrorResponse({ status: 500 }));
     expect(kit.error()).toContain('could not be loaded');
+    expect(kit.accessDenied()).toBe(false);
     expect(kit.documents()).toBeNull();
     kit.retry();
     TestBed.tick();
     expect(kit.error()).toBe('');
     reads[1].error(new HttpErrorResponse({ status: 403 }));
     expect(kit.error()).toContain('write access');
+    expect(kit.accessDenied()).toBe(true);
+    expect(kit.families()).toEqual([]);
     kit.retry();
     TestBed.tick();
+    expect(kit.accessDenied()).toBe(false);
     reads[2].next(empty('one'));
     expect(kit.error()).toBe('');
     expect(kit.summary().inKit).toBe(0);
