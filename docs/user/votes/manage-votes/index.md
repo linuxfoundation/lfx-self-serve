@@ -3,8 +3,8 @@ title: Manage Votes
 description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-18
+tags: [votes, manage, polls, results, reminders, mailing-list, summary]
+last_updated: 2026-10-25
 intercom_collection: Votes
 ---
 
@@ -26,6 +26,21 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View results
 
 Select a poll to view its current results and status.
+
+## Send a results summary
+
+Email the results of an ended poll to every invited voter. Only users who can manage the poll, such as project or group writers, see this option, and only on ended polls.
+
+1. Open the votes dashboard, or the **Votes** tab of a group.
+2. Find an ended poll and select the **More** (⋮) menu on its row.
+3. Select **Send summary**.
+4. Confirm by selecting **Send**. This can't be undone.
+
+The summary email contains overall results only: how many people were invited, how many voted, how many abstained, and the vote count and percentage for each choice. It never shows how any individual voted, so you can send it for pseudo-anonymous polls too.
+
+When sending finishes, LFX shows how many voters received the summary. If some emails couldn't be delivered, it also shows how many failed. If the poll hasn't closed yet, LFX tells you so and nothing is sent.
+
+**Send summary** doesn't appear on draft or active polls.
 
 ## Send a reminder
 
