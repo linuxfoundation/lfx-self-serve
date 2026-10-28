@@ -8,7 +8,7 @@ import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
-import { MktgKitFamilyView } from '@lfx-one/shared/interfaces';
+import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgKitComponent } from './mktg-kit.component';
 
@@ -16,14 +16,14 @@ describe('Marketing kit home', () => {
   const families = signal<MktgKitFamilyView[]>([]);
   const loading = signal(false);
   const error = signal('');
-  const documents = signal<unknown>(null);
+  const documents = signal<MktgDocumentsResponse | null>(null);
   const context = signal({ uid: 'synthetic', slug: 'synthetic' });
   beforeEach(() => {
     context.set({ uid: 'synthetic', slug: 'synthetic' });
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
     error.set('');
-    documents.set({});
+    documents.set({ project: 'synthetic', groups: [] });
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
       providers: [provideRouter([]), { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true) } }],
@@ -58,6 +58,32 @@ describe('Marketing kit home', () => {
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
     expect(navigate).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['foundation-message', 'writing', 'Writing…', 'Open'],
+    ['foundation-message', 'storing', 'Writing…', 'Open'],
+    ['foundation-message', 'questions', 'Waiting for your answers', 'Answer the questions'],
+    ['member-360', 'questions', 'Paused', 'Answer the questions'],
+    ['foundation-message', 'failed', 'Not run yet', null],
+  ] as const)('shows %s %s without changing Next step', async (agentKey, state, status, label) => {
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [{ agentKey, state, project: 'synthetic', documentId: 'living', runId: 'synthetic-run', startedAt: '2026-10-28T12:00:00Z' }],
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const row = root.querySelector(`[data-testid="mktg-kit-asset-${agentKey === 'foundation-message' ? 'messaging-framework' : agentKey}"]`);
+    expect(row?.textContent).toContain(status);
+    const link = row?.querySelector('a');
+    expect(link?.textContent ?? null).toBe(label);
+    if (label) {
+      const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
+      const target = state === 'questions' ? runTarget : 'documents/foundation-message/living';
+      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (state === 'questions' ? '' : '&run=synthetic-run'));
+    }
+    expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
   });
   it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);

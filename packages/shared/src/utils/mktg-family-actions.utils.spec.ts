@@ -14,6 +14,7 @@ import {
   mktgRunModeFor,
   resolveMktgFamilyActions,
   resolveMktgFamilyNextStep,
+  resolveMktgFamilyRun,
 } from './mktg-family-actions.utils';
 
 const context: MktgFamilyActionContext = { loaded: true, canWrite: true, approvedFramework: false };
@@ -43,6 +44,32 @@ function built(view: MktgKitFamilyView): MktgKitFamilyView {
 }
 
 describe('One rule for every family action', () => {
+  it('overlays only known active runs, selects the newest and keeps scoped destinations in one place', () => {
+    const run = {
+      agentKey: 'foundation-message' as const,
+      state: 'writing' as const,
+      project: 'synthetic',
+      documentId: 'living',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    expect(resolveMktgFamilyRun(run.agentKey)).toBeNull();
+    expect(resolveMktgFamilyRun(run.agentKey, [{ ...run, state: 'failed' }])).toBeNull();
+    expect(resolveMktgFamilyRun('brand-kit', [run])).toBeNull();
+    expect(
+      resolveMktgFamilyRun(run.agentKey, [run, { ...run, state: 'storing', runId: 'newer', startedAt: '2026-10-28T13:00:00Z' }], ['../../'])
+    ).toMatchObject({
+      caption: 'Writing…',
+      label: 'Open',
+      link: { commands: ['../../', 'documents', run.agentKey, 'living'], queryParams: { run: 'newer' } },
+    });
+    expect(resolveMktgFamilyRun(run.agentKey, [{ ...run, state: 'questions' }])).toMatchObject({
+      caption: 'Waiting for your answers',
+      label: 'Answer the questions',
+      link: { commands: ['foundation-setup'], queryParams: {} },
+    });
+    expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Paused');
+  });
   it('every available never-run row has Create X; required approved documents disable it with the reason', () => {
     const result = resolveMktgFamilyActions(family(), context);
     expect(result.rows['messaging-framework'].action).toMatchObject({ kind: 'run', label: 'Create messaging framework', mode: 'new', blockedReason: '' });

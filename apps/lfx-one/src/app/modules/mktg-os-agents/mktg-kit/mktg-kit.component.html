@@ -136,8 +136,20 @@
           }
           @for (row of card.rows; track row.asset.id) {
             <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-sm" [attr.data-testid]="'mktg-kit-asset-' + row.asset.id">
-              <span>{{ row.asset.label }}</span
-              ><lfx-mktg-kit-status [row]="row" />
+              <span>{{ row.asset.label }}</span>
+              @if (row.run?.link; as link) {
+                <span class="relative z-10 flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
+                  <span>{{ row.run?.caption }}</span>
+                  <a
+                    class="text-blue-700 hover:underline"
+                    [routerLink]="link.commands"
+                    [queryParams]="{ project: kit.projectQueryParams().project, run: link.queryParams['run'] }"
+                    >{{ row.run?.label }}</a
+                  >
+                </span>
+              } @else {
+                <lfx-mktg-kit-status [row]="row" />
+              }
             </div>
           } @empty {
             @if (card.live && selectedFilter() !== 'all') {
