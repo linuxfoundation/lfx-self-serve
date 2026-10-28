@@ -72,8 +72,11 @@ export class EventsRegistrationForecastComponent {
 
   /** The sub-nav note ("N will miss goal"); empty while a read is pending or failed. */
   public readonly countsChange = output<string>();
-  /** Fires once the event list settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the section settles, `true` when the foundation has no upcoming event; its height changes, moving
+   * every anchor below. A closed period gives no verdict, so its own note stands and the tab can go blank without it.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -93,6 +96,8 @@ export class EventsRegistrationForecastComponent {
   }));
   /** The model is a snapshot of now, so a completed year has nothing left to forecast. */
   protected readonly closedPeriod = computed(() => this.chrome.selectedRange() !== 'YTD');
+  /** No upcoming event to forecast; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.closedPeriod() && !this.loading() && !this.loadFailed() && this.response().events.length === 0);
   protected readonly response: Signal<HealthMetricsEventsForecast> = this.initResponse();
 
   protected readonly closedTitle = computed(() => `${getYearForRange(this.chrome.selectedRange())} is a closed period`);
@@ -274,7 +279,7 @@ export class EventsRegistrationForecastComponent {
               this.loading.set(!foundationSeen);
               this.countsChange.emit(this.loadFailed() ? '' : buildHealthMetricsEventsForecastNote(response.events));
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(closed ? null : !this.loadFailed() && response.events.length === 0);
             })
           )
         )

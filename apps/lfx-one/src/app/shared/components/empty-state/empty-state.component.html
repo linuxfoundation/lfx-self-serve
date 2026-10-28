@@ -3,13 +3,13 @@
 
 @if (variant() === 'compact') {
   <!-- Pixel sizes follow the Health Metrics design; the 14px root makes the rem scale undershoot them. -->
-  <div class="flex min-h-[180px] flex-col items-center justify-center gap-[8px] px-[16px] pb-[8px] pt-[12px] text-center" data-testid="empty-state-compact">
-    <span class="flex h-[44px] w-[44px] items-center justify-center rounded-full bg-gray-50" aria-hidden="true">
-      <i [class]="icon() + ' text-[18px] text-gray-400'"></i>
+  <div class="flex min-h-[200px] flex-col items-center justify-center gap-[6px] px-[16px] py-[8px] text-center" data-testid="empty-state-compact">
+    <span class="mb-[4px] flex h-[44px] w-[44px] items-center justify-center rounded-[12px] border border-gray-200 bg-white shadow-sm" aria-hidden="true">
+      <i [class]="icon() + ' text-[18px] text-gray-600'"></i>
     </span>
-    <h3 class="m-0 text-[14px] font-medium text-gray-900">{{ title() }}</h3>
+    <h3 class="m-0 text-[14px] font-semibold text-gray-900">{{ title() }}</h3>
     @if (subtitle()) {
-      <p class="m-0 max-w-[420px] text-[13px] leading-normal text-gray-500">{{ subtitle() }}</p>
+      <p class="m-0 max-w-[420px] text-pretty text-[13px] leading-[1.5] text-gray-500">{{ subtitle() }}</p>
     }
     <ng-container [ngTemplateOutlet]="projected" />
   </div>
