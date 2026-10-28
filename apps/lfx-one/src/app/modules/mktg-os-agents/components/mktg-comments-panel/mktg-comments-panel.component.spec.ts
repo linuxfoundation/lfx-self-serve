@@ -35,8 +35,8 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
-    expect(send()?.disabled).toBe(true);
-    expect(send()?.textContent).toContain('Send comments to the agent');
+    expect(send()).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')).toBeNull();
     const live = el.querySelector('[data-testid="mktg-comments-run-message"]');
     expect(live?.getAttribute('aria-live')).toBe('polite');
     expect(live?.textContent).toBe('');
@@ -97,14 +97,13 @@ describe('MktgCommentsPanelComponent', () => {
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
     const reason = () => el.querySelector('[data-testid="mktg-comments-disabled-reason"]');
-    expect(reason()?.textContent).toContain('Loading comments…');
-    expect(send()?.textContent).toContain('Send comments to the agent');
-    expect(send()?.getAttribute('aria-describedby')).toBe(reason()?.id);
+    expect(send()).toBeNull();
+    expect(reason()).toBeNull();
     loadError.set('Synthetic failure');
     loaded.set(true);
     await fixture.whenStable();
-    expect(send()?.textContent).not.toMatch(/\d/);
-    expect(send()?.disabled).toBe(true);
+    expect(send()).toBeNull();
+    expect(reason()).toBeNull();
     loadError.set('');
     rows.set([]);
     await fixture.whenStable();
@@ -178,7 +177,7 @@ describe('MktgCommentsPanelComponent', () => {
   });
 
   it('gives concurrent panels distinct declaratively-bound description idrefs without DOM effects', async () => {
-    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub()] });
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture()]) })] });
     const first = TestBed.createComponent(MktgCommentsPanelComponent);
     const second = TestBed.createComponent(MktgCommentsPanelComponent);
     for (const fixture of [first, second]) fixture.componentRef.setInput('scope', mktgCommentScopeFixture());

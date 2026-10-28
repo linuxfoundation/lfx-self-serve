@@ -13,6 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   LINKEDIN_ABOUT_FIELDS,
+  LINKEDIN_INTAKE_LABEL,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SOURCE_LINK_HINT,
@@ -94,6 +95,7 @@ export class LinkedinPostRunComponent {
     url: new FormControl('', { nonNullable: true }),
     share_link: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(LINKEDIN_SHARE_LINK_MAX_CHARS)] }),
   });
+  protected readonly intakeLabel = LINKEDIN_INTAKE_LABEL;
   protected readonly aboutFields = LINKEDIN_ABOUT_FIELDS;
   protected readonly voiceFields = LINKEDIN_VOICE_FIELDS;
   protected readonly sources = LINKEDIN_CONTENT_SOURCES;
