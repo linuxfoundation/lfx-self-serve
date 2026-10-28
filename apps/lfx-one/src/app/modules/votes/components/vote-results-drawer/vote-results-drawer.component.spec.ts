@@ -9,6 +9,7 @@ import { provideRouter } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import { MyVoteResponse, PollCommentResponse, PollQuestionResult, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +34,7 @@ async function setupDrawer(vote: Vote, myResponse: Observable<MyVoteResponse | n
   };
   await TestBed.configureTestingModule({
     imports: [VoteResultsDrawerComponent],
-    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
   }).compileComponents();
   fixture = TestBed.createComponent(VoteResultsDrawerComponent);
   fixture.componentRef.setInput('voteId', vote.uid);
@@ -132,7 +133,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -163,7 +164,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -197,7 +198,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -230,7 +231,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
 
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     const httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
@@ -271,7 +272,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -304,7 +305,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', vote.uid);
@@ -341,7 +342,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', voteA.uid);
@@ -377,7 +378,7 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     };
     await TestBed.configureTestingModule({
       imports: [VoteResultsDrawerComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+      providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteResultsDrawerComponent);
     fixture.componentRef.setInput('voteId', voteA.uid);
@@ -476,7 +477,7 @@ async function setupResultsDrawer(
   };
   await TestBed.configureTestingModule({
     imports: [VoteResultsDrawerComponent],
-    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    providers: [provideNoopAnimations(), provideRouter([]), MessageService, { provide: VoteService, useValue: service }],
   }).compileComponents();
   fixture = TestBed.createComponent(VoteResultsDrawerComponent);
   fixture.componentRef.setInput('voteId', vote.uid);
@@ -885,10 +886,34 @@ describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => 
     const service = await setupDrawer(makeVote(status, 'vote-1', true), of(null), 'creator');
     expect(service.getVote).toHaveBeenCalledWith('vote-1', expect.objectContaining({ includeWriter: true }));
 
-    const present = document.querySelector<HTMLAnchorElement>('[data-testid="vote-results-drawer-present"]');
-    expect(present?.getAttribute('href')).toBe('/votes/vote-1/present');
-    expect(present?.getAttribute('target')).toBe('_blank');
+    expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+  });
+
+  it('sits Present and Copy slide on the meta row and opens the presenter in a new tab', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'creator');
+    const row = document.querySelector('[data-testid="vote-results-drawer-meta-row"]');
+    expect(row?.querySelector('[data-testid="vote-results-drawer-present"]')).toBeTruthy();
+    expect(row?.querySelector('[data-testid="vote-results-drawer-copy-slide"]')).toBeTruthy();
+
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    document.querySelector<HTMLElement>('[data-testid="vote-results-drawer-present"] button')?.click();
+    expect(open).toHaveBeenCalledWith('/votes/vote-1/present', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('reports the slide export through the app toast, not inline text', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'creator');
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+    document.querySelector<HTMLElement>('[data-testid="vote-results-drawer-copy-slide"] button')?.click();
+    await vi.waitFor(() =>
+      expect(add).toHaveBeenCalledWith(
+        expect.objectContaining({ summary: expect.stringMatching(/^(Slide copied|Slide downloaded|Couldn't create the slide image)$/) })
+      )
+    );
+
+    expect(document.querySelector('[data-testid="vote-results-drawer-copy-slide-status"]')).toBeNull();
   });
 
   it.each([undefined, false])('hides both from a creator-audience viewer who is not a writer (writer: %s)', async (writer) => {

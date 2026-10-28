@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { exportVoteSlide, voteSlideFileName } from './vote-slide.util';
+import { exportVoteSlide, voteSlideFileName, voteSlideToast } from './vote-slide.util';
 
 describe('voteSlideFileName', () => {
   it('slugs the vote title and appends -vote-slide', () => {
@@ -57,5 +57,15 @@ describe('exportVoteSlide', () => {
     toBlob.mockRejectedValue(new Error('boom'));
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     expect(await exportVoteSlide(el, 'x', toBlob)).toBe('failed');
+  });
+});
+
+describe('voteSlideToast', () => {
+  it.each([
+    ['copied', 'success', 'Slide copied'],
+    ['downloaded', 'info', 'Slide downloaded'],
+    ['failed', 'error', "Couldn't create the slide image"],
+  ] as const)('maps %s to a %s toast', (result, severity, summary) => {
+    expect(voteSlideToast(result)).toMatchObject({ severity, summary });
   });
 });

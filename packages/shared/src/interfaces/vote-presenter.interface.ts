@@ -32,3 +32,25 @@ export type VoteSlideExportResult = 'copied' | 'downloaded' | 'failed';
 
 /** Turns the slide element into a PNG blob; injectable so tests need not run html-to-image in jsdom. */
 export type VoteSlideRenderer = (element: HTMLElement) => Promise<Blob | null>;
+
+/** The big count on the open state, split so the number can be set at display size. */
+export interface VotePresenterCountParts {
+  value: string;
+  rest: string;
+}
+
+/** One option row of the result tally. */
+export interface VotePresenterTallyRow {
+  id: string;
+  text: string;
+  count: number;
+  percent: number;
+  barClass: string;
+}
+
+/** One question's tally on the result state. */
+export interface VotePresenterTallyQuestion {
+  questionId: string;
+  question: string;
+  rows: VotePresenterTallyRow[];
+}

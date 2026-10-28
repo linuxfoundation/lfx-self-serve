@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, ElementRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
+import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import {
   VOTE_PRESENTER_BACKOFF_BASE_MS,
   VOTE_PRESENTER_BACKOFF_MAX_MS,
@@ -14,7 +15,16 @@ import {
   VOTE_PRESENTER_POLL_INTERVAL_MS,
 } from '@lfx-one/shared/constants';
 import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
-import { RankedQuestionView, VotePresenterPhase, VotePresenterSnapshot, VoteResultsQuestion, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import {
+  RankedQuestionView,
+  VotePresenterCountParts,
+  VotePresenterPhase,
+  VotePresenterTallyQuestion,
+  VotePresenterSnapshot,
+  VoteResultsOption,
+  VoteResultsQuestion,
+  VoteResultsResponse,
+} from '@lfx-one/shared/interfaces';
 import {
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
@@ -26,18 +36,19 @@ import {
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
-import type { VoteSlideExportResult } from '@lfx-one/shared/interfaces';
-import { exportVoteSlide, voteSlideFileName } from '@shared/utils/vote-slide.util';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap, timer } from 'rxjs';
 
-import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
-import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
-import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
-import { VoteSlideComponent } from '../components/vote-slide/vote-slide.component';
+
+/** Tally bar colour: the winner is emerald, a tie amber, everything else the neutral blue. Never inferred from option text. */
+function tallyBarClass(option: VoteResultsOption): string {
+  if (option.isWinner) return 'bg-emerald-500';
+  if (option.isTied) return 'bg-amber-400';
+  return 'bg-blue-400';
+}
 
 /**
  * Chrome-less presenter view for a live vote (#4140). Route: /votes/:id/present (top-level, outside MainLayout).
@@ -48,17 +59,7 @@ import { VoteSlideComponent } from '../components/vote-slide/vote-slide.componen
  */
 @Component({
   selector: 'lfx-vote-presenter',
-  imports: [
-    ButtonComponent,
-    DatePipe,
-    TooltipModule,
-    VoteAbstainResultComponent,
-    VoteOptionResultsComponent,
-    VoteParticipationCardComponent,
-    VoteQrComponent,
-    VoteRankedQuestionResultsComponent,
-    VoteSlideComponent,
-  ],
+  imports: [ButtonComponent, CardComponent, DatePipe, NgTemplateOutlet, TooltipModule, VoteQrComponent, VoteRankedQuestionResultsComponent],
   templateUrl: './vote-presenter.component.html',
   host: { '(document:keydown.escape)': 'exit()' },
 })
@@ -86,8 +87,6 @@ export class VotePresenterComponent {
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
   private readonly retryTick = signal(0);
-  protected readonly slideState = signal<VoteSlideExportResult | 'busy' | null>(null);
-  private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
 
   // === Computed Signals ===
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
@@ -106,7 +105,7 @@ export class VotePresenterComponent {
     const vote = this.vote();
     return vote ? computeVoteRowParticipation(vote) : null;
   });
-  protected readonly countText = this.initCountText();
+  protected readonly countParts = this.initCountParts();
   protected readonly title = computed(() => truncateVoteTitle(this.vote()?.name ?? ''));
   protected readonly titleTruncated = computed(() => this.title() !== (this.vote()?.name ?? '').trim());
   protected readonly voteLink = computed(() => toAbsoluteUrl(votePermalinkPath(this.voteId() ?? ''), this.isBrowser));
@@ -124,6 +123,29 @@ export class VotePresenterComponent {
   protected readonly stats = computed(() => computeVoteParticipationStats(this.results()));
   protected readonly questions: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.results(), true));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.results()));
+  /** Option rows for the Closed artboard's tally bars; the bar colour follows the result (winner, tie, other). */
+  protected readonly tally: Signal<VotePresenterTallyQuestion[]> = computed(() =>
+    this.questions().map((q) => ({
+      questionId: q.questionId,
+      question: q.question,
+      rows: q.options.map((o) => ({
+        id: o.choiceId,
+        text: o.text,
+        count: o.voteCount,
+        percent: o.percentage,
+        barClass: tallyBarClass(o),
+      })),
+    }))
+  );
+  protected readonly didNotVote = computed(() => Math.max(0, this.stats().eligibleVoters - this.stats().totalResponses));
+  protected readonly ballotLabel = computed(() => (this.vote()?.pseudo_anonymity ? 'Secret' : 'Not secret'));
+  /** Header pill: when the open vote closes, or when the ended vote did. */
+  protected readonly statusPill = computed(() => {
+    const vote = this.vote();
+    if (!vote) return '';
+    if (vote.status === PollStatus.ENDED) return `Vote ended · ${formatDate(this.closedAt() ?? vote.end_time, 'MMM d, h:mm a', this.locale)}`;
+    return `Vote open · closes ${formatDate(vote.end_time, 'MMM d, h:mm a', this.locale)}`;
+  });
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -160,15 +182,6 @@ export class VotePresenterComponent {
       this.copied.set(false);
       this.copyFailed.set(true);
     }
-  }
-
-  /** Exports the static slide (#4145): PNG to the clipboard where the browser allows, else a download. */
-  protected async copySlide(): Promise<void> {
-    const element = this.slideRef()?.nativeElement;
-    const name = this.vote()?.name;
-    if (!element || !name || this.slideState() === 'busy') return;
-    this.slideState.set('busy');
-    this.slideState.set(await exportVoteSlide(element, voteSlideFileName(name)));
   }
 
   // === Private Initializers ===
@@ -230,17 +243,17 @@ export class VotePresenterComponent {
     });
   }
 
-  private initCountText(): Signal<string> {
+  private initCountParts(): Signal<VotePresenterCountParts> {
     return computed(() => {
       const p = this.participation();
-      if (!p) return '';
+      if (!p) return { value: '', rest: '' };
       switch (p.state) {
         case VoteRowParticipationState.PROGRESS:
-          return `${p.responses} of ${p.invited} voters have cast`;
+          return { value: String(p.responses), rest: `of ${p.invited} voters have cast` };
         case VoteRowParticipationState.COUNT_ONLY:
-          return `${p.responses} voters have cast`;
+          return { value: String(p.responses), rest: 'voters have cast' };
         default:
-          return 'Count unavailable';
+          return { value: '', rest: 'Count unavailable' };
       }
     });
   }

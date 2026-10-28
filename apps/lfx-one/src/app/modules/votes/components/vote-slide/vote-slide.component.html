@@ -1,23 +1,27 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col justify-between bg-white text-slate-900 p-24 box-border" [style.width.px]="width" [style.height.px]="height" data-testid="vote-slide">
-  <div class="flex items-center gap-4 self-start">
-    <img src="/images/lfx-one-logo.svg" alt="LFX" class="h-14 w-auto" />
-    <p class="text-3xl font-semibold text-slate-600">Board vote · LFX Self Serve</p>
-  </div>
-
-  <div class="flex items-center justify-between gap-24">
-    <div class="flex flex-col gap-10 min-w-0">
-      <h1 class="text-7xl font-semibold leading-tight break-words">{{ displayTitle() }}</h1>
-      <p class="text-4xl text-slate-600">Scan the code or open the link to cast your ballot. Voting closes when the chair calls it.</p>
-      <div class="flex flex-col gap-2">
-        <p class="text-2xl uppercase tracking-wide text-slate-500">Vote link</p>
-        <p class="text-4xl font-semibold break-all text-blue-700">{{ link() }}</p>
-      </div>
+<!-- Fixed 1920×1080 artboard (Slide.dc.html). Sizes are exact [Npx]: the slide is a picture, so it must not follow the 14px html root. -->
+<div
+  class="flex items-center gap-[96px] bg-white text-gray-900 px-[120px] py-[96px] box-border"
+  [style.width.px]="width"
+  [style.height.px]="height"
+  data-testid="vote-slide">
+  <div class="flex flex-1 min-w-0 flex-col gap-[36px]">
+    <div class="flex items-center gap-[14px]">
+      <img src="/images/logo_lfx.svg" alt="LFX" class="h-[36px] w-auto" />
+      <p class="m-0 text-[20px] font-bold text-gray-600">Board vote · LFX</p>
     </div>
-    <lfx-vote-qr [value]="link()" [label]="'QR code for ' + link()" class="shrink-0 w-[520px]" />
+    <h1 class="m-0 text-[64px] font-extrabold leading-[1.1] break-words">{{ displayTitle() }}</h1>
+    <p class="m-0 text-[28px] leading-[1.4] text-gray-600">Scan the code or open the link to vote.</p>
+    <div class="flex flex-col gap-2 pt-3">
+      <p class="m-0 text-[18px] font-semibold uppercase tracking-widest text-gray-500">Vote link</p>
+      <p class="m-0 text-[44px] font-extrabold break-all text-blue-700">{{ link() }}</p>
+    </div>
   </div>
 
-  <p class="text-3xl text-slate-500">Only eligible voters can cast. Sign in with your LF account.</p>
+  <div class="flex w-[620px] shrink-0 flex-col items-center gap-6 rounded-[28px] border-2 border-gray-200 p-[48px] box-border">
+    <lfx-vote-qr [value]="link()" [label]="'QR code for ' + link()" class="w-[520px]" />
+    <p class="m-0 text-center text-[18px] text-gray-500">Only eligible voters can cast. Sign in with your LF account.</p>
+  </div>
 </div>

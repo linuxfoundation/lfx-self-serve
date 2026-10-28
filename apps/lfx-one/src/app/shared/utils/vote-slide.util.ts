@@ -4,6 +4,7 @@
 import { VOTE_SLIDE_HEIGHT_PX, VOTE_SLIDE_WIDTH_PX } from '@lfx-one/shared/constants';
 import type { VoteSlideExportResult, VoteSlideRenderer } from '@lfx-one/shared/interfaces';
 import { slugify } from '@lfx-one/shared/utils';
+import type { ToastMessageOptions } from 'primeng/api';
 
 async function renderSlideToBlob(element: HTMLElement): Promise<Blob | null> {
   const { toBlob } = await import('html-to-image');
@@ -14,6 +15,18 @@ async function renderSlideToBlob(element: HTMLElement): Promise<Blob | null> {
 /** `<vote-slug>-vote-slide` — the download name without extension. */
 export function voteSlideFileName(voteName: string): string {
   return `${slugify(voteName) || 'vote'}-vote-slide`;
+}
+
+/** App-toast message for an export result — the slide export never reports inline. */
+export function voteSlideToast(result: VoteSlideExportResult): ToastMessageOptions {
+  switch (result) {
+    case 'copied':
+      return { severity: 'success', summary: 'Slide copied', detail: 'Paste it into Slides or PowerPoint.' };
+    case 'downloaded':
+      return { severity: 'info', summary: 'Slide downloaded', detail: "Your browser couldn't copy the image, so it was saved as a file." };
+    default:
+      return { severity: 'error', summary: "Couldn't create the slide image", detail: 'Please try again.' };
+  }
 }
 
 /**

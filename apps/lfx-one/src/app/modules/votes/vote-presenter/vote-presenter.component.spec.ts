@@ -186,13 +186,19 @@ describe('VotePresenterComponent', () => {
     expect(has('vote-presenter-error')).toBe(true);
   });
 
-  it('uses the handoff copy: secrecy line, eligibility line, and Copy slide in the footer', async () => {
+  it('uses the handoff copy and a one-row footer: Updated on the left, Exit and the disabled Close on the right', async () => {
     fetchVote.mockReturnValue(of(baseVote({ pseudo_anonymity: true, description: '<p>Resolved: approve it.</p>' })));
     await mount();
     expect(text('vote-presenter-secrecy')).toBe('Ballots are secret. Results show after the vote closes.');
     expect(text('vote-presenter-share')).toContain('Sign in with your LF account. Only eligible voters can cast.');
     expect(text('vote-presenter-question')).toBe('Resolved: approve it.');
-    expect(fixture.nativeElement.querySelector('[data-testid="vote-presenter-footer"] [data-testid="vote-presenter-copy-slide"]')).toBeTruthy();
+    const footer = fixture.nativeElement.querySelector('[data-testid="vote-presenter-footer"]');
+    expect(footer.querySelector('[data-testid="vote-presenter-updated"]')).toBeTruthy();
+    expect(footer.querySelector('[data-testid="vote-presenter-exit"]')).toBeTruthy();
+    expect(footer.querySelector('[data-testid="vote-presenter-close"]')).toBeTruthy();
+    expect(footer.querySelector('[data-testid="vote-presenter-copy-slide"]')).toBeNull();
+    expect(text('vote-presenter-context')).toBe('LFX');
+    expect(text('vote-presenter-status')).toContain('Vote open · closes');
   });
 
   it('Retry from the error state restarts polling', async () => {

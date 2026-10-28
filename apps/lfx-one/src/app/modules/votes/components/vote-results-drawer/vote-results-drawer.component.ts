@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,12 +32,12 @@ import {
   mergeCommentResults,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
-import type { VoteSlideExportResult } from '@lfx-one/shared/interfaces';
-import { exportVoteSlide, voteSlideFileName } from '@shared/utils/vote-slide.util';
+import { exportVoteSlide, voteSlideFileName, voteSlideToast } from '@shared/utils/vote-slide.util';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -77,6 +77,8 @@ export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
+  private readonly messageService = inject(MessageService);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -153,7 +155,7 @@ export class VoteResultsDrawerComponent {
   });
   protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
   protected readonly isBrowserRender = isPlatformBrowser(this.platformId);
-  protected readonly slideState = signal<VoteSlideExportResult | 'busy' | null>(null);
+  protected readonly slideBusy = signal<boolean>(false);
   private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
   protected readonly presenterPath: Signal<string> = computed(() => votePresenterPath(this.vote()?.uid ?? ''));
 
@@ -166,9 +168,16 @@ export class VoteResultsDrawerComponent {
   protected async copySlide(): Promise<void> {
     const element = this.slideRef()?.nativeElement;
     const name = this.vote()?.name;
-    if (!element || !name || this.slideState() === 'busy') return;
-    this.slideState.set('busy');
-    this.slideState.set(await exportVoteSlide(element, voteSlideFileName(name)));
+    if (!element || !name || this.slideBusy()) return;
+    this.slideBusy.set(true);
+    const result = await exportVoteSlide(element, voteSlideFileName(name));
+    this.slideBusy.set(false);
+    this.messageService.add(voteSlideToast(result));
+  }
+
+  /** Opens the chrome-less presenter in a new tab; votePresenterGuard (vote#writer) is the real gate. */
+  protected present(): void {
+    this.document.defaultView?.open(this.presenterPath(), '_blank', 'noopener,noreferrer');
   }
 
   protected onClose(): void {
