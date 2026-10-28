@@ -113,18 +113,43 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
     expect(nonMembers.rows[0].pctLabel).toBe('<1%');
   });
 
+  /** Each segment's start on the ring and its drawn length. */
+  function spans(donut: { dashArray: string; dashOffset: string }[]): { start: number; length: number }[] {
+    return donut.map((segment) => ({ start: Math.abs(Number(segment.dashOffset)), length: Number(segment.dashArray.split(' ')[0]) }));
+  }
+
+  /** Every segment ends at least 2px before the next one starts, and the last one ends before the ring closes. */
+  function expectNoOverlap(drawn: { start: number; length: number }[]): void {
+    drawn.forEach((span, index) => {
+      const next = drawn[index + 1]?.start ?? 2 * Math.PI * 36;
+      expect(span.start + span.length + 2).toBeLessThanOrEqual(next + 0.01);
+    });
+  }
+
   it('draws every level on the 36px ring, 2px short of the next, giving a zero share its own visible 1.5px sliver', () => {
     const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
-    const circumference = 2 * Math.PI * 36;
-    const shared = circumference - 3.5;
-    // Each segment's start on the ring and its drawn length; the zero Low level must not sit under another segment.
-    const spans = donut.map((segment) => ({ start: 0 - Number(segment.dashOffset) + 0, length: Number(segment.dashArray.split(' ')[0]) }));
+    const shared = 2 * Math.PI * 36 - 3.5;
+    const drawn = spans(donut);
 
     expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium', 'low']);
-    expect(spans[0]).toEqual({ start: 0, length: Number(((64 / 228) * shared - 2).toFixed(2)) });
-    expect(spans[2].length).toBe(1.5);
-    expect(spans[2].start).toBeGreaterThanOrEqual(spans[1].start + spans[1].length);
-    expect(spans[2].start + spans[2].length).toBeLessThan(circumference);
+    expect(drawn[0]).toEqual({ start: 0, length: Number(((64 / 228) * shared - 2).toFixed(2)) });
+    expect(drawn[2].length).toBe(1.5);
+    expectNoOverlap(drawn);
+  });
+
+  it('gives a tiny non-zero share a full sliver and gap, so the next segment never paints over it', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 1, mediumCount: 998, lowCount: 1, highPct: null, mediumPct: null, lowPct: null } };
+    const drawn = spans(buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves[0].donut);
+
+    expect(drawn.map((span) => span.length)).toEqual([1.5, expect.any(Number), 1.5]);
+    expectNoOverlap(drawn);
+  });
+
+  it('leaves an unmeasured level off the ring', () => {
+    const partial = { ...period, memberEngagement: { highCount: 100, mediumCount: null, lowCount: null, highPct: null, mediumPct: null, lowPct: null } };
+    const { donut } = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(partial) }, 'YTD').halves[0];
+
+    expect(donut.map((segment) => segment.key)).toEqual(['high']);
   });
 
   it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {

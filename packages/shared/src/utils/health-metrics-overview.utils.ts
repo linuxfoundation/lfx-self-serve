@@ -536,13 +536,19 @@ function buildOrgsHalf(
   const total = levels.reduce((sum, level) => sum + (level.count ?? 0), 0);
   const circumference = 2 * Math.PI * 36;
   const donut: HealthMetricsOverviewDonutSegmentView[] = [];
-  // A zero share keeps its own 1.5px sliver and 2px gap; the other levels split the rest of the ring by share.
-  const zeroSlot = 1.5 + 2;
-  const shared = circumference - zeroSlot * levels.filter((level) => !level.count).length;
+  // A measured level too small for a 1.5px sliver plus its 2px gap gets exactly that slot, so nothing paints over it;
+  // the larger levels split the rest of the ring by share. An unmeasured level is not drawn.
+  const minSlot = 1.5 + 2;
+  const measured = total > 0 ? levels.filter((level) => level.count !== null) : [];
+  const isSmall = (count: number): boolean => (count / total) * circumference < minSlot;
+  const small = measured.filter((level) => isSmall(level.count ?? 0)).length;
+  const largeTotal = measured.reduce((sum, level) => sum + (isSmall(level.count ?? 0) ? 0 : (level.count ?? 0)), 0);
+  const shared = circumference - minSlot * small;
   let offset = 0;
 
-  for (const level of total > 0 ? levels : []) {
-    const slot = level.count ? (level.count / total) * shared : zeroSlot;
+  for (const level of measured) {
+    const count = level.count ?? 0;
+    const slot = isSmall(count) ? minSlot : (count / largeTotal) * shared;
     donut.push({
       key: level.key,
       stroke: level.stroke,
