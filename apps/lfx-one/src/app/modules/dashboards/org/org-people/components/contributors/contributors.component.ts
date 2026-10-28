@@ -9,6 +9,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_ALL_FOUNDATIONS_LABEL,
+  ORG_ANY_PROJECT_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_METRIC_LABEL,
   ORG_CODE_MEASURE_OPTIONS,
@@ -16,6 +18,7 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -79,6 +82,7 @@ export class ContributorsComponent {
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
@@ -275,11 +279,14 @@ export class ContributorsComponent {
   }
 
   private initFoundationOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
   private initProjectOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Projects', value: '' }, ...this.response().projectOptions.map((p) => ({ label: p.projectName, value: p.projectId }))];
+    return [{ label: ORG_ANY_PROJECT_LABEL, value: '' }, ...this.response().projectOptions.map((p) => ({ label: p.projectName, value: p.projectId }))];
   }
 
   private initFilteredContributors(): OrgContributorRow[] {
@@ -377,7 +384,7 @@ export class ContributorsComponent {
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
     const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
-    // A project scope changes who the BFF returns, so an empty LF or non-LF result is a filtered result, not an empty org.
+    // A project scope other than the default changes who the BFF returns, so an empty result under it is a filtered result, not an empty org.
     const hasProjectScope = this.commitFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope;
     return hasSearch || hasFoundation || hasProject || hasTimeFilter || hasProjectScope;
   }

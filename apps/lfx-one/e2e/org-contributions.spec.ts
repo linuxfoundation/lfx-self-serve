@@ -98,9 +98,10 @@ const BASE_RESPONSE: OrgContributionsResponse = {
       commitUrl: null,
     },
   ],
+  foundationOptions: [{ foundationId: 'fdn-cncf', foundationName: 'CNCF' }],
   projectOptions: [
-    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, parentSlug: null },
-    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, parentSlug: null },
+    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, foundationId: 'fdn-cncf' },
+    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, foundationId: 'fdn-cncf' },
   ],
   employeeOptions: [{ id: 'emp-ana', displayName: 'Ana Ramirez', commits: 1240 }],
   totalRecords: 2,

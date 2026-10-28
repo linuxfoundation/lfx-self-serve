@@ -84,7 +84,8 @@ function buildRosterReq(query: Record<string, string>): Request {
 }
 
 const EMPTY_ROSTER = { accountId: ORG_UID, rows: [], stats: { activeInOss: 0 }, foundations: [] };
-const DEFAULT_FILTERS = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
+// A request without the commit filters reads LF projects (lfx-self-serve#4160), commits on any branch.
+const DEFAULT_FILTERS = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
 
 describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)', () => {
   const controller = new OrgLensPeopleController();
@@ -172,10 +173,16 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked);
   });
 
-  it('defaults missing params on the Contributors read', async () => {
+  it('defaults missing params on the Contributors read to LF projects', async () => {
     await controller.getContributors(buildRosterReq({}), buildRes(), vi.fn());
 
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
+  });
+
+  it('reads projectScope=all as every project', async () => {
+    await controller.getContributors(buildRosterReq({ projectScope: 'all' }), buildRes(), vi.fn());
+
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', { ...DEFAULT_FILTERS, projectScope: 'all' });
   });
 
   it.each([

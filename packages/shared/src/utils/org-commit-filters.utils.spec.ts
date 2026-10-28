@@ -8,6 +8,7 @@ import {
   DEFAULT_ORG_COMMIT_FILTERS,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_OPTIONS,
+  ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
 import type { OrgCommitFilters } from '../interfaces';
 import {
@@ -27,7 +28,7 @@ describe('Org Lens code-count dropdown', () => {
       { label: 'Only main branch commits', value: 'merged' },
       { label: 'All code contributions', value: 'code' },
     ]);
-    expect(orgCommitFiltersFor({ projectScope: 'all', metric: DEFAULT_ORG_CODE_MEASURE })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
+    expect(orgCommitFiltersFor({ projectScope: 'lf', metric: DEFAULT_ORG_CODE_MEASURE })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
   it('defines each option for its tooltip', () => {
@@ -65,8 +66,8 @@ describe('Org Lens code-count dropdown', () => {
 
   it('writes the option to ?metric=, drops defaults and always drops ?commitScope=', () => {
     expect(orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS)).toEqual({ projectScope: null, commitScope: null, metric: null });
-    expect(orgCommitFiltersUrlParams({ projectScope: 'lf', commitScope: 'merged', metric: 'commits' })).toEqual({
-      projectScope: 'lf',
+    expect(orgCommitFiltersUrlParams({ projectScope: 'all', commitScope: 'merged', metric: 'commits' })).toEqual({
+      projectScope: 'all',
       commitScope: null,
       metric: 'merged',
     });
@@ -81,5 +82,35 @@ describe('Org Lens code-count dropdown', () => {
     expect(matches(merged, { commitScope: 'merged' })).toBe(false);
     expect(matches(DEFAULT_ORG_COMMIT_FILTERS, { metric: 'commits' })).toBe(false);
     expect(matches(DEFAULT_ORG_COMMIT_FILTERS, {})).toBe(true);
+    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, { projectScope: 'all' })).toBe(true);
+    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, {})).toBe(false);
+  });
+});
+
+// lfx-self-serve#4160 — LF projects by default, so every view counts what the Overview counts; LF and non-LF projects (what Insights counts) is explicit.
+describe('Org Lens project scope', () => {
+  it('offers LF projects first, as the default, then LF and non-LF projects and Non-LF projects', () => {
+    expect(ORG_PROJECT_SCOPE_OPTIONS).toEqual([
+      { label: 'LF projects', value: 'lf' },
+      { label: 'LF and non-LF projects', value: 'all' },
+      { label: 'Non-LF projects', value: 'non_lf' },
+    ]);
+    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('lf');
+  });
+
+  it('reads a link without projectScope, or with an unknown one, as LF projects', () => {
+    expect(read({}).projectScope).toBe('lf');
+    expect(read({ metric: 'code' })).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    expect(read({ projectScope: 'everything' }).projectScope).toBe('lf');
+  });
+
+  it('round-trips ?projectScope=all through the URL and drops the LF default', () => {
+    const all = read({ projectScope: 'all' });
+
+    expect(all).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'commits' });
+    const params = orgCommitFiltersUrlParams(all);
+    expect(params).toEqual({ projectScope: 'all', commitScope: null, metric: null });
+    expect(readOrgCommitFilters((name) => params[name])).toEqual(all);
+    expect(orgCommitFiltersUrlParams({ ...all, projectScope: 'lf' }).projectScope).toBeNull();
   });
 });

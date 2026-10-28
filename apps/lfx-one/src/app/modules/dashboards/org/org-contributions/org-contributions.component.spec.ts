@@ -133,7 +133,7 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('offers one code-count dropdown, Commits by default, and sends the default BFF params', async () => {
+  it('offers one code-count dropdown, Commits by default, LF projects first and by default, and sends the default BFF params', async () => {
     const { fixture, getContributions } = await render(null);
     const { controls } = fixture.componentInstance['filterForm'];
 
@@ -142,9 +142,36 @@ describe('OrgContributionsComponent', () => {
       'Only main branch commits',
       'All code contributions',
     ]);
+    expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
+      'LF projects',
+      'LF and non-LF projects',
+      'Non-LF projects',
+    ]);
     expect(controls.metric.value).toBe('commits');
+    expect(controls.projectScope.value).toBe('lf');
     expect('commitScope' in controls).toBe(false);
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'commits' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
+  });
+
+  // lfx-self-serve#4160 — LF projects is the default, so it stays out of the URL; LF and non-LF projects (the Insights comparison) is written.
+  it('opens ?projectScope=all on every project and keeps it in the URL, then drops it again for LF projects', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'all' } });
+    const { projectScope } = fixture.componentInstance['filterForm'].controls;
+
+    expect(projectScope.value).toBe('all');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all' }));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF and non-LF projects, ');
+
+    projectScope.setValue('lf');
+    // Past the form's 250ms debounce.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: null }) }));
+    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF projects, ');
   });
 
   it.each([
@@ -174,14 +201,14 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['metricDefinition']()).toBe(tooltip);
   });
 
-  it('reads an unknown metric as Commits and drops it from the URL on load', async () => {
-    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'lf', metric: 'bogus' } });
+  it('reads an unknown metric as Commits and drops it from the URL on load, keeping ?projectScope=all', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'all', metric: 'bogus' } });
 
     expect(fixture.componentInstance['filterForm'].controls.metric.value).toBe('commits');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'commits' }));
     expect(navigate).toHaveBeenCalledWith(
       [],
-      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'lf', commitScope: null, metric: null }), replaceUrl: true })
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'all', commitScope: null, metric: null }), replaceUrl: true })
     );
   });
 
@@ -214,7 +241,7 @@ describe('OrgContributionsComponent', () => {
 
   it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
     const { fixture, navigate, getContributions } = await render(null, {
-      queryParams: { view: 'commits', q: 'kube', range: '90d', projectScope: 'lf', metric: 'code', projects: 'alpha', employees: 'e-1' },
+      queryParams: { view: 'commits', q: 'kube', range: '90d', projectScope: 'all', metric: 'code', foundation: 'f-cncf', projects: 'alpha', employees: 'e-1' },
     });
     const el = fixture.nativeElement as HTMLElement;
     const clear = (): HTMLButtonElement | null => el.querySelector('[data-testid="org-contributions-filter-bar-clear-filters"]');
@@ -229,9 +256,10 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['filterForm'].getRawValue()).toEqual({
       search: '',
       dateRange: '365d',
+      foundation: '',
       projects: [],
       employees: [],
-      projectScope: 'all',
+      projectScope: 'lf',
       metric: 'commits',
     });
     expect(getContributions).toHaveBeenLastCalledWith(
@@ -240,9 +268,10 @@ describe('OrgContributionsComponent', () => {
         view: 'commits',
         search: '',
         dateRange: '365d',
+        foundation: '',
         projects: [],
         employees: [],
-        projectScope: 'all',
+        projectScope: 'lf',
         commitScope: 'all',
         metric: 'commits',
       })
@@ -257,6 +286,7 @@ describe('OrgContributionsComponent', () => {
           projectScope: null,
           commitScope: null,
           metric: null,
+          foundation: null,
           projects: null,
           employees: null,
         }),
@@ -330,8 +360,8 @@ describe('OrgContributionsComponent', () => {
       ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
       accountId: 'org-uid-1',
       projectOptions: [
-        { slug: 'one', projectId: 'p-1', name: 'One', commits: 1, parentSlug: null },
-        { slug: 'many', projectId: 'p-2', name: 'Many', commits: 25, parentSlug: null },
+        { slug: 'one', projectId: 'p-1', name: 'One', commits: 1, foundationId: null },
+        { slug: 'many', projectId: 'p-2', name: 'Many', commits: 25, foundationId: null },
       ],
       employeeOptions: [
         { id: 'e-1', displayName: 'Ada', commits: 1 },
@@ -342,6 +372,76 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['projectOptions']().map((option) => option.sublabel)).toEqual([expected.one, expected.other]);
     expect(fixture.componentInstance['employeeOptions']().map((option) => option.sublabel)).toEqual([expected.one, expected.other]);
+  });
+
+  // lfx-self-serve#4559 — a Foundation filter that means what it means on People → Contributors.
+  it('opens ?foundation= into the Foundation dropdown and request, writes a new pick and drops it when cleared', async () => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [
+        { foundationId: 'f-cncf', foundationName: 'CNCF' },
+        { foundationId: 'f-lfai', foundationName: 'LF AI & Data' },
+      ],
+    };
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { foundation: 'f-cncf' }, response });
+    const { foundation } = fixture.componentInstance['filterForm'].controls;
+    const settle = async () => {
+      // Past the form's 250ms debounce.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    expect(foundation.value).toBe('f-cncf');
+    expect(fixture.componentInstance['foundationOptions']()).toEqual([
+      { label: 'All Foundations', value: '' },
+      { label: 'CNCF', value: 'f-cncf' },
+      { label: 'LF AI & Data', value: 'f-lfai' },
+    ]);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-cncf' }));
+    expect(navigate).not.toHaveBeenCalled();
+
+    foundation.setValue('f-lfai');
+    await settle();
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-lfai' }) }));
+
+    foundation.setValue('');
+    await settle();
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: null }) }));
+  });
+
+  it('rewrites an untrimmed ?foundation= on load', async () => {
+    const { fixture, navigate } = await render(null, { queryParams: { foundation: ' f-cncf ' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f-cncf');
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-cncf' }), replaceUrl: true }));
+  });
+
+  it('drops the selected projects outside a newly picked foundation, and keeps them all for All Foundations', async () => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [
+        { foundationId: 'f-cncf', foundationName: 'CNCF' },
+        { foundationId: 'f-lfai', foundationName: 'LF AI & Data' },
+      ],
+      projectOptions: [
+        { slug: 'k8s', projectId: 'p-k8s', name: 'Kubernetes', commits: 5, foundationId: 'f-cncf' },
+        { slug: 'onnx', projectId: 'p-onnx', name: 'ONNX', commits: 3, foundationId: 'f-lfai' },
+        { slug: 'solo', projectId: 'p-solo', name: 'Solo', commits: 1, foundationId: null },
+      ],
+    };
+    const { fixture } = await render(null, { queryParams: { projects: 'k8s,p-onnx,solo' }, response });
+    const { foundation, projects } = fixture.componentInstance['filterForm'].controls;
+
+    foundation.setValue('');
+    expect(projects.value).toEqual(['k8s', 'p-onnx', 'solo']);
+
+    foundation.setValue('f-lfai');
+    expect(projects.value).toEqual(['p-onnx']);
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {

@@ -12,12 +12,25 @@ import type {
   OrgCountUnit,
 } from '../interfaces';
 
-/** Project-scope dropdown options, default first (lfx-self-serve#4322). Also the BFF's allow-list for `projectScope`. */
+/**
+ * Project-type dropdown options, default first (lfx-self-serve#4322, #4160, #4559). Also the BFF's allow-list for
+ * `projectScope`. LF projects is the default, so every Org Lens view counts the same projects as the Overview; LF and
+ * non-LF projects is what LFX Insights counts, the option to pick when comparing with it.
+ */
 export const ORG_PROJECT_SCOPE_OPTIONS: readonly OrgProjectScopeOption[] = [
-  { label: 'All projects', value: 'all' },
   { label: 'LF projects', value: 'lf' },
+  { label: 'LF and non-LF projects', value: 'all' },
   { label: 'Non-LF projects', value: 'non_lf' },
 ] as const;
+
+/** Accessible name of the project-type dropdown on Code Contributions, People → Contributors and People → All Employees (lfx-self-serve#4559). */
+export const ORG_PROJECT_SCOPE_LABEL = 'Project type';
+
+/** Empty choice of the Foundation dropdown on Code Contributions and the People tabs. */
+export const ORG_ALL_FOUNDATIONS_LABEL = 'All Foundations';
+
+/** Empty choice of the Project filter on Code Contributions and People → Contributors (lfx-self-serve#4559). */
+export const ORG_ANY_PROJECT_LABEL = 'Any project';
 
 /** The BFF's allow-list for `commitScope`, default first. The UI picks it through {@link ORG_CODE_MEASURE_OPTIONS}. */
 export const ORG_COMMIT_SCOPE_OPTIONS: readonly OrgCommitScopeOption[] = [
@@ -31,8 +44,17 @@ export const ORG_CODE_METRIC_OPTIONS: readonly OrgCodeMetricOption[] = [
   { label: 'All code contributions', value: 'code' },
 ] as const;
 
-/** Filter defaults — they reproduce LFX Insights. The URL drops a param while it holds its default. */
-export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
+/**
+ * Filter defaults: LF projects (lfx-self-serve#4160), commits on any branch. The URL drops a param while it holds its
+ * default, so `?projectScope=all` (what LFX Insights counts) is written and a link without `projectScope` opens LF projects.
+ */
+export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+
+/**
+ * Filters the unranged people roster (assignment pickers, Org Lens Access, Key Contacts) is computed with: every
+ * project, so it never follows the page default scope.
+ */
+export const ORG_UNRANGED_ROSTER_FILTERS: Readonly<OrgCommitFilters> = { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' };
 
 /** The one code-count dropdown on Code Contributions, People → Contributors and People → All Employees, default first. */
 export const ORG_CODE_MEASURE_OPTIONS: readonly OrgCodeMeasureOption[] = [
@@ -63,11 +85,8 @@ export const ORG_CODE_METRIC_UNIT: Readonly<Record<OrgCodeMetric, OrgCountUnit>>
   code: { one: 'contribution', other: 'contributions' },
 };
 
-/** All Employees code tile label per metric: people with at least one commit, or with any code contribution. */
-export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL: Readonly<Record<OrgCodeMetric, string>> = {
-  commits: 'Committers',
-  code: 'Code Contributors',
-};
+/** All Employees code tile label: people with any code contribution, whichever code-count option is picked (lfx-self-serve#4160). */
+export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL = 'Code Contributors';
 
 /** Note on the All Employees code tile while only current employees are shown (lfx-self-serve#4160). */
 export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =

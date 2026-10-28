@@ -6,6 +6,7 @@ import type {
   ContributionsCommitRow,
   ContributionsCommitSortColumn,
   ContributionsEmployeeOptionRow,
+  ContributionsFoundationOptionRow,
   ContributionsKpiRow,
   ContributionsProjectOptionRow,
   ContributionsRaw,
@@ -30,11 +31,13 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 const PLATINUM_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_CONTRIBUTIONS';
+const CODE_ACTIVITY_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY';
 
 /**
  * Code Contributions page data access (LFXV2-1894). Commits (metric `commits`, and the Commits feed under either
  * metric) read `ORG_CODE_CONTRIBUTIONS`, one row per authored commit SHA; metric `code` reads the KPI strip,
- * Repositories table and filter-option counts from `ORG_CODE_ACTIVITY_DAILY`.
+ * Repositories table and filter-option counts from `ORG_CODE_ACTIVITY_DAILY`. The Foundation and Project filters
+ * match `foundation_id` and the project exactly, as People → Contributors does (lfx-self-serve#4559).
  */
 export class OrgContributionsService {
   private readonly snowflakeService: SnowflakeService;
@@ -49,10 +52,10 @@ export class OrgContributionsService {
       return emptyResponse(accountId, query.dateRange);
     }
 
-    // `v3`: the commit reads window on calendar days, like the code reads and the People models (lfx-self-serve#4164).
+    // `v4`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559).
     const raw = await withOrgCache(
       accountId,
-      `contributions:v3:${contributionsSignature(query)}`,
+      `contributions:v4:${contributionsSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributionsRaw(accountId, query),
       isContributionsRaw
@@ -70,6 +73,7 @@ export class OrgContributionsService {
       kpis,
       repositories,
       commits,
+      foundationOptions: raw.foundationOptionRows.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
       projectOptions: raw.projectOptionRows.map(mapProjectOption),
       employeeOptions: raw.employeeOptionRows.map(mapEmployeeOption),
       totalRecords,
@@ -85,7 +89,7 @@ export class OrgContributionsService {
     const repoPagination = viewAwarePagination(query, 'repositories');
     const commitPagination = viewAwarePagination(query, 'commits');
 
-    const [kpiResult, repoResult, commitResult, projectResult, employeeResult] = await Promise.all([
+    const [kpiResult, repoResult, commitResult, foundationResult, projectResult, employeeResult] = await Promise.all([
       codeScope
         ? this.fetchCodeKpis(accountId, codeScope, buildCodeKpiSearchFilter(query))
         : this.fetchKpis(accountId, commitScope, buildKpiSearchFilter(query)),
@@ -94,6 +98,7 @@ export class OrgContributionsService {
         : this.fetchRepositories(accountId, commitScope, repoSearch, query, repoPagination),
       // The Commits feed lists commits under either metric.
       this.fetchCommits(accountId, commitScope, commitSearch, query, commitPagination),
+      this.fetchFoundationOptionRows(accountId, codeScope ? CODE_ACTIVITY_TABLE : PLATINUM_TABLE, codeScope ?? commitScope),
       codeScope ? this.fetchCodeProjectOptionRows(accountId, codeScope) : this.fetchProjectOptionRows(accountId, commitScope),
       codeScope ? this.fetchCodeEmployeeOptionRows(accountId, codeScope) : this.fetchEmployeeOptionRows(accountId, commitScope),
     ]);
@@ -102,6 +107,7 @@ export class OrgContributionsService {
       kpiRows: kpiResult.rows,
       repoRows: repoResult.rows,
       commitRows: commitResult.rows,
+      foundationOptionRows: foundationResult.rows,
       projectOptionRows: projectResult.rows,
       employeeOptionRows: employeeResult.rows,
     };
@@ -117,6 +123,7 @@ export class OrgContributionsService {
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         ${scope.projectPredicate}
         ${scope.employeePredicate}
         ${kpiSearch.predicate}
@@ -131,10 +138,11 @@ export class OrgContributionsService {
         COUNT(DISTINCT COALESCE(project_id, project_slug, project_name)) AS PROJECTS_WITH_ACTIVITY,
         COUNT(DISTINCT repository_url) AS REPOSITORIES,
         COALESCE(SUM(code_activities), 0) AS COMMITS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
+      FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         ${scope.projectPredicate}
         ${scope.employeePredicate}
         ${kpiSearch.predicate}
@@ -170,6 +178,7 @@ export class OrgContributionsService {
         WHERE account_id = ?
           ${scope.datePredicate}
           ${scope.scopePredicate}
+          ${scope.foundationPredicate}
           ${scope.projectPredicate}
           ${scope.employeePredicate}
           ${repoSearch.predicate}
@@ -212,7 +221,7 @@ export class OrgContributionsService {
     const sql = `
       WITH repo_first AS (
         SELECT repository_url, MIN(activity_date) AS first_commit_ts
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
+        FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
         GROUP BY repository_url
       ),
@@ -227,10 +236,11 @@ export class OrgContributionsService {
           ANY_VALUE(source) AS source,
           SUM(code_activities) AS commits,
           MAX(activity_date) AS last_commit_ts
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
+        FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
           ${scope.datePredicate}
           ${scope.scopePredicate}
+          ${scope.foundationPredicate}
           ${scope.projectPredicate}
           ${scope.employeePredicate}
           ${repoSearch.predicate}
@@ -285,6 +295,7 @@ export class OrgContributionsService {
         WHERE account_id = ?
           ${scope.datePredicate}
           ${scope.scopePredicate}
+          ${scope.foundationPredicate}
           ${scope.projectPredicate}
           ${scope.employeePredicate}
           ${commitSearch.predicate}
@@ -310,24 +321,46 @@ export class OrgContributionsService {
     return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds]);
   }
 
-  /** Options follow the window and project/commit scope, not the project/employee selections themselves. */
+  /**
+   * Foundations in the window and project type. Never narrowed by the foundation, project or employee picks, so the
+   * dropdown always offers every foundation to switch to.
+   */
+  private async fetchFoundationOptionRows(accountId: string, table: string, scope: ScopeFilters): Promise<{ rows: ContributionsFoundationOptionRow[] }> {
+    const sql = `
+      SELECT
+        foundation_id,
+        ANY_VALUE(foundation_name) AS foundation_name
+      FROM ${table}
+      WHERE account_id = ?
+        ${scope.datePredicate}
+        ${scope.scopePredicate}
+        AND foundation_id IS NOT NULL
+        AND foundation_name IS NOT NULL
+      GROUP BY foundation_id
+      ORDER BY foundation_name ASC
+    `;
+    return this.snowflakeService.execute<ContributionsFoundationOptionRow>(sql, [accountId]);
+  }
+
+  /** Options follow the window, project/commit scope and picked foundation, not the project/employee selections themselves. */
   private async fetchProjectOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsProjectOptionRow[] }> {
     const sql = `
       SELECT
         project_id,
         ANY_VALUE(project_slug) AS project_slug,
         ANY_VALUE(project_name) AS project_name,
-        ANY_VALUE(parent_slug) AS parent_slug,
+        ANY_VALUE(foundation_id) AS foundation_id,
         COUNT(DISTINCT commit_id) AS commits
       FROM ${PLATINUM_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         AND project_id IS NOT NULL
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId, ...scope.foundationBinds]);
   }
 
   private async fetchCodeProjectOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsProjectOptionRow[] }> {
@@ -336,17 +369,18 @@ export class OrgContributionsService {
         project_id,
         ANY_VALUE(project_slug) AS project_slug,
         ANY_VALUE(project_name) AS project_name,
-        ANY_VALUE(parent_slug) AS parent_slug,
+        ANY_VALUE(foundation_id) AS foundation_id,
         SUM(code_activities) AS commits
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
+      FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         AND project_id IS NOT NULL
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId, ...scope.foundationBinds]);
   }
 
   private async fetchEmployeeOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
@@ -359,29 +393,31 @@ export class OrgContributionsService {
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         AND member_id IS NOT NULL
       GROUP BY member_id
       ORDER BY commits DESC, member_display_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds]);
   }
 
-  /** Metric `code`: each member's code-contribution activities in the window and project scope. */
+  /** Metric `code`: each member's code-contribution activities in the window, project scope and picked foundation. */
   private async fetchCodeEmployeeOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
     const sql = `
       SELECT
         member_id,
         ANY_VALUE(member_display_name) AS member_display_name,
         SUM(code_activities) AS commits
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY
+      FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
+        ${scope.foundationPredicate}
         AND member_id IS NOT NULL
       GROUP BY member_id
       ORDER BY commits DESC, member_display_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds]);
   }
 }
 
@@ -389,8 +425,12 @@ interface ScopeFilters {
   datePredicate: string;
   /** Project scope (and, on commit reads, commit scope) — allow-listed values, inlined. */
   scopePredicate: string;
+  foundationPredicate: string;
+  /** The foundation predicate's binds alone, for the option reads that skip the project and employee picks. */
+  foundationBinds: string[];
   projectPredicate: string;
   employeePredicate: string;
+  /** Foundation, project and employee binds, in the order their predicates appear. */
   binds: string[];
 }
 
@@ -416,23 +456,22 @@ function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsVie
 
 /** Filters over `ORG_CODE_CONTRIBUTIONS` (one row per authored commit SHA). */
 function buildCommitScopeFilters(query: OrgContributionsQuery): ScopeFilters {
-  const binds: string[] = [];
-  const datePredicate = dateRangePredicate(query.dateRange);
   const mergedPredicate = query.commitScope === 'merged' ? 'AND is_merged = TRUE' : '';
-  const scopePredicate = `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`.trim();
-  const projectPredicate = projectFilterPredicate(query.projects, binds);
-  const employeePredicate = employeeFilterPredicate(query.employees, binds);
-  return { datePredicate, scopePredicate, projectPredicate, employeePredicate, binds };
+  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`.trim());
 }
 
-/** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project and member columns; commit scope has no meaning for code activity. */
+/** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project, foundation and member columns; commit scope has no meaning for code activity. */
 function buildCodeScopeFilters(query: OrgContributionsQuery): ScopeFilters {
-  const binds: string[] = [];
-  const datePredicate = activityDatePredicate(query.dateRange);
-  const scopePredicate = orgProjectScopePredicate(query.projectScope);
+  return buildScopeFilters(query, activityDatePredicate(query.dateRange), orgProjectScopePredicate(query.projectScope));
+}
+
+function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, scopePredicate: string): ScopeFilters {
+  const foundationBinds: string[] = query.foundation ? [query.foundation] : [];
+  const foundationPredicate = query.foundation ? 'AND foundation_id = ?' : '';
+  const binds: string[] = [...foundationBinds];
   const projectPredicate = projectFilterPredicate(query.projects, binds);
   const employeePredicate = employeeFilterPredicate(query.employees, binds);
-  return { datePredicate, scopePredicate, projectPredicate, employeePredicate, binds };
+  return { datePredicate, scopePredicate, foundationPredicate, foundationBinds, projectPredicate, employeePredicate, binds };
 }
 
 function buildKpiSearchFilter(query: OrgContributionsQuery): SearchFilter {
@@ -483,16 +522,15 @@ function activityDatePredicate(dateRange: OrgLensTimeRange): string {
   return dateRange === 'all' ? '' : `AND activity_date >= DATEADD(day, -${orgLensTimeRangeDays(dateRange)}, CURRENT_DATE())`;
 }
 
+/** A pick matches that project only, by slug or (for older links) id; never its sub-projects (lfx-self-serve#4559). */
 function projectFilterPredicate(projects: string[], binds: string[]): string {
   if (!projects.length) {
     return '';
   }
   const placeholders = projects.map(() => '?').join(', ');
-  // project_slug / parent_slug / project_id each get the same binds, in order.
-  for (let i = 0; i < 3; i += 1) {
-    binds.push(...projects);
-  }
-  return `AND (project_slug IN (${placeholders}) OR parent_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
+  // project_slug / project_id each get the same binds, in order.
+  binds.push(...projects, ...projects);
+  return `AND (project_slug IN (${placeholders}) OR project_id IN (${placeholders}))`;
 }
 
 function employeeFilterPredicate(employees: string[], binds: string[]): string {
@@ -544,7 +582,7 @@ function mapProjectOption(row: ContributionsProjectOptionRow): OrgContributionPr
     projectId: row.PROJECT_ID,
     name: row.PROJECT_NAME ?? row.PROJECT_ID,
     commits: row.COMMITS ?? 0,
-    parentSlug: row.PARENT_SLUG,
+    foundationId: row.FOUNDATION_ID,
   };
 }
 
@@ -574,6 +612,7 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     query.commitDir,
     query.page,
     query.size,
+    query.foundation,
     [...query.projects].sort().join(','),
     [...query.employees].sort().join(','),
   ];
@@ -581,13 +620,14 @@ function contributionsSignature(query: OrgContributionsQuery): string {
 }
 
 function isContributionsRaw(value: unknown): boolean {
-  const v = value as { kpiRows?: unknown; repoRows?: unknown; commitRows?: unknown; projectOptionRows?: unknown; employeeOptionRows?: unknown } | null;
+  const v = value as Partial<Record<keyof ContributionsRaw, unknown>> | null;
   return (
     !!v &&
     isRowArray(v.kpiRows, 'PROJECTS_WITH_ACTIVITY', 'REPOSITORIES', 'COMMITS') &&
     isRowArray(v.repoRows, 'REPOSITORY_URL') &&
     isRowArray(v.commitRows, 'COMMIT_ID') &&
-    isRowArray(v.projectOptionRows, 'PROJECT_ID') &&
+    isRowArray(v.foundationOptionRows, 'FOUNDATION_ID', 'FOUNDATION_NAME') &&
+    isRowArray(v.projectOptionRows, 'PROJECT_ID', 'FOUNDATION_ID') &&
     isRowArray(v.employeeOptionRows, 'MEMBER_ID')
   );
 }
@@ -657,6 +697,7 @@ function emptyResponse(accountId: string, dateRange: OrgLensTimeRange): OrgContr
     kpis: { projectsWithActivity: 0, repositories: 0, commits: 0 },
     repositories: [],
     commits: [],
+    foundationOptions: [],
     projectOptions: [],
     employeeOptions: [],
     totalRecords: 0,

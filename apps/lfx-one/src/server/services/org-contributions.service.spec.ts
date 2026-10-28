@@ -47,7 +47,8 @@ function callSelecting(marker: string): { sql: string; binds: unknown[] } {
 const kpiCall = () => callSelecting('PROJECTS_WITH_ACTIVITY');
 const repoCall = () => callSelecting('repository_path,');
 const feedCall = () => callSelecting('commit_message,');
-const projectOptionCall = () => callSelecting('AS parent_slug');
+const foundationOptionCall = () => callSelecting('GROUP BY foundation_id');
+const projectOptionCall = () => callSelecting('GROUP BY project_id');
 const employeeOptionCall = () => callSelecting('ANY_VALUE(member_display_name)');
 
 let service: OrgContributionsService;
@@ -67,7 +68,7 @@ describe('OrgContributionsService — commit filters', () => {
   ] as const)('projectScope=%s narrows every commit read', async (projectScope, predicate) => {
     await service.getContributions(ACCOUNT, query({ projectScope }));
 
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of calls()) {
       if (predicate) {
         expect(sql).toContain(predicate);
@@ -83,7 +84,7 @@ describe('OrgContributionsService — commit filters', () => {
 
     execute.mockClear();
     await service.getContributions(ACCOUNT, query({ commitScope: 'merged' }));
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of calls()) {
       expect(sql).toContain('is_merged = TRUE');
     }
@@ -103,7 +104,7 @@ describe('OrgContributionsService — range window', () => {
   it('windows the default Past 365 days as 365 calendar days, on every commit read', async () => {
     await service.getContributions(ACCOUNT, query());
 
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of calls()) {
       expect(sql).toContain('activity_ts::date >= DATEADD(day, -365, CURRENT_DATE())');
       expect(sql).not.toContain('CURRENT_TIMESTAMP');
@@ -144,12 +145,14 @@ describe('OrgContributionsService — metric=code', () => {
   it('reads KPI, repositories and options from the daily code-activity table; the feed stays on commits', async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'code', projectScope: 'lf', commitScope: 'merged' }));
 
-    for (const call of [kpiCall(), repoCall(), projectOptionCall(), employeeOptionCall()]) {
+    for (const call of [kpiCall(), repoCall(), foundationOptionCall(), projectOptionCall(), employeeOptionCall()]) {
       expect(call.sql).toContain(CODE_TABLE);
-      expect(call.sql).toContain('code_activities');
       expect(call.sql).toContain('is_lf_project = TRUE');
       // Commit scope has no meaning for code activity.
       expect(call.sql).not.toContain('is_merged');
+    }
+    for (const call of [kpiCall(), repoCall(), projectOptionCall(), employeeOptionCall()]) {
+      expect(call.sql).toContain('code_activities');
     }
     expect(kpiCall().sql).toContain(`FROM ANALYTICS.PLATINUM_LFX_ONE.${CODE_TABLE}`);
 
@@ -187,12 +190,15 @@ describe('OrgContributionsService — metric=code', () => {
 });
 
 describe('OrgContributionsService — binds', () => {
-  it.each(['commits', 'code'] as const)('binds one value per placeholder with projects, employees and search (metric=%s)', async (metric) => {
+  it.each(['commits', 'code'] as const)('binds one value per placeholder with foundation, projects, employees and search (metric=%s)', async (metric) => {
     for (const view of ['repositories', 'commits'] as const) {
       execute.mockClear();
-      await service.getContributions(ACCOUNT, query({ metric, view, projects: ['cncf', 'k8s'], employees: ['m-1', 'm-2', 'm-3'], search: 'api' }));
+      await service.getContributions(
+        ACCOUNT,
+        query({ metric, view, foundation: 'f-cncf', projects: ['cncf', 'k8s'], employees: ['m-1', 'm-2', 'm-3'], search: 'api' })
+      );
 
-      expect(execute).toHaveBeenCalledTimes(5);
+      expect(execute).toHaveBeenCalledTimes(6);
       for (const { sql, binds } of calls()) {
         expect(binds).toHaveLength((sql.match(/\?/g) ?? []).length);
       }
@@ -202,27 +208,102 @@ describe('OrgContributionsService — binds', () => {
   it("filters code activity on the daily table's own project and member columns, with no commits-table subquery", async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'code', projects: ['cncf'], employees: ['m-1'], search: 'api' }));
 
-    expect(kpiCall().sql).toContain('parent_slug IN (?)');
+    expect(kpiCall().sql).toContain('project_slug IN (?) OR project_id IN (?)');
     expect(kpiCall().sql).toContain('member_id IN (?)');
-    for (const call of [kpiCall(), repoCall(), projectOptionCall(), employeeOptionCall()]) {
+    for (const call of [kpiCall(), repoCall(), foundationOptionCall(), projectOptionCall(), employeeOptionCall()]) {
       expect(call.sql).not.toContain(COMMITS_TABLE);
     }
-    expect(kpiCall().binds).toEqual([ACCOUNT, 'cncf', 'cncf', 'cncf', 'm-1', '%api%']);
+    expect(kpiCall().binds).toEqual([ACCOUNT, 'cncf', 'cncf', 'm-1', '%api%']);
     // The lifetime first-activity CTE takes its own account bind.
-    expect(repoCall().binds).toEqual([ACCOUNT, ACCOUNT, 'cncf', 'cncf', 'cncf', 'm-1', '%api%']);
+    expect(repoCall().binds).toEqual([ACCOUNT, ACCOUNT, 'cncf', 'cncf', 'm-1', '%api%']);
+  });
+});
+
+// lfx-self-serve#4559 — the Project and Foundation filters mean what they mean on People → Contributors.
+describe('OrgContributionsService — exact project and foundation filters', () => {
+  it.each(['commits', 'code'] as const)(
+    'matches a picked project by slug or id only, so a parent no longer pulls in its sub-projects (metric=%s)',
+    async (metric) => {
+      await service.getContributions(ACCOUNT, query({ metric, projects: ['cncf'] }));
+
+      for (const call of [kpiCall(), repoCall(), feedCall()]) {
+        expect(call.sql).toContain('AND (project_slug IN (?) OR project_id IN (?))');
+        expect(call.sql).not.toContain('parent_slug');
+      }
+    }
+  );
+
+  it.each(['commits', 'code'] as const)(
+    'adds foundation_id = ? to every scoped read, bound before the project and employee picks (metric=%s)',
+    async (metric) => {
+      await service.getContributions(ACCOUNT, query({ metric, foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] }));
+
+      for (const call of [kpiCall(), repoCall(), feedCall(), projectOptionCall(), employeeOptionCall()]) {
+        expect(call.sql).toContain('AND foundation_id = ?');
+      }
+      expect(kpiCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
+      expect(feedCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
+      // Options skip the project and employee picks, but project and employee options narrow to the foundation.
+      expect(projectOptionCall().binds).toEqual([ACCOUNT, 'f-cncf']);
+      expect(employeeOptionCall().binds).toEqual([ACCOUNT, 'f-cncf']);
+    }
+  );
+
+  it.each(['commits', 'code'] as const)('builds foundation options from the window and project type alone, whatever is picked (metric=%s)', async (metric) => {
+    await service.getContributions(ACCOUNT, query({ metric, projectScope: 'lf', foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] }));
+
+    const { sql, binds } = foundationOptionCall();
+    expect(sql).toContain('is_lf_project = TRUE');
+    expect(sql).not.toContain('foundation_id = ?');
+    expect(sql).not.toContain('project_slug IN');
+    expect(sql).not.toContain('member_id IN');
+    expect(binds).toEqual([ACCOUNT]);
+  });
+
+  it('leaves the foundation out of every read when none is picked', async () => {
+    await service.getContributions(ACCOUNT, query());
+
+    for (const { sql } of calls()) {
+      expect(sql).not.toContain('foundation_id = ?');
+    }
+  });
+
+  it('returns foundation options and each project option with its foundation', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('GROUP BY foundation_id')) {
+        return { rows: [{ FOUNDATION_ID: 'f-cncf', FOUNDATION_NAME: 'CNCF' }] };
+      }
+      if (sql.includes('GROUP BY project_id')) {
+        return { rows: [{ PROJECT_ID: 'p-k8s', PROJECT_SLUG: 'k8s', PROJECT_NAME: 'Kubernetes', FOUNDATION_ID: 'f-cncf', COMMITS: 4 }] };
+      }
+      return { rows: [] };
+    });
+
+    const response = await service.getContributions(ACCOUNT, query());
+
+    expect(response.foundationOptions).toEqual([{ foundationId: 'f-cncf', foundationName: 'CNCF' }]);
+    expect(response.projectOptions).toEqual([{ slug: 'k8s', projectId: 'p-k8s', name: 'Kubernetes', commits: 4, foundationId: 'f-cncf' }]);
   });
 });
 
 describe('OrgContributionsService — cache key', () => {
-  it('is versioned and differs per projectScope, commitScope and metric', async () => {
-    const variants: Partial<OrgContributionsQuery>[] = [{}, { projectScope: 'lf' }, { projectScope: 'non_lf' }, { commitScope: 'merged' }, { metric: 'code' }];
+  it('is versioned and differs per projectScope, commitScope, metric and foundation', async () => {
+    const variants: Partial<OrgContributionsQuery>[] = [
+      {},
+      { projectScope: 'all' },
+      { projectScope: 'non_lf' },
+      { commitScope: 'merged' },
+      { metric: 'code' },
+      { foundation: 'f-cncf' },
+      { foundation: 'f-lfai' },
+    ];
     for (const overrides of variants) {
       await service.getContributions(ACCOUNT, query(overrides));
     }
     const keys = withOrgCache.mock.calls.map((call) => call[1] as string);
 
     for (const key of keys) {
-      expect(key).toMatch(/^contributions:v3:[0-9a-f]{64}$/);
+      expect(key).toMatch(/^contributions:v4:[0-9a-f]{64}$/);
     }
     expect(new Set(keys).size).toBe(keys.length);
   });

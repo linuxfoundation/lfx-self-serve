@@ -57,7 +57,7 @@
         size="small"
         [options]="projectScopeOptions"
         styleClass="w-full"
-        ariaLabel="Filter by projects"
+        [ariaLabel]="projectScopeLabel"
         dataTest="org-people-contributors-project-scope-filter" />
     </div>
     <div class="w-full md:w-52">
@@ -157,7 +157,8 @@
             <p class="text-sm text-gray-700">No contributors match the current filters.</p>
             <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
           } @else {
-            <p class="text-sm text-gray-700">No contributors found for this organization.</p>
+            <p class="text-sm text-gray-700">No contributors found for this organization in LF projects.</p>
+            <p class="text-xs text-gray-500">Choose LF and non-LF projects to include contributions outside LF projects.</p>
           }
         </div>
       } @else {

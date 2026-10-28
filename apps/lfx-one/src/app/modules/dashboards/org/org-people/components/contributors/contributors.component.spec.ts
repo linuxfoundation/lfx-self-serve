@@ -113,14 +113,22 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     getContributors = vi.fn(() => of(contributorsResponse()));
   });
 
-  it('offers one code-count dropdown, Commits by default', async () => {
+  it('offers one code-count dropdown, Commits by default, and LF projects first and by default', async () => {
     await mount();
 
     const options = (fixture.componentInstance as unknown as { metricOptions: { label: string }[] }).metricOptions;
     expect(options.map((option) => option.label)).toEqual(['All commits', 'Only main branch commits', 'All code contributions']);
+    expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
+      'LF projects',
+      'LF and non-LF projects',
+      'Non-LF projects',
+    ]);
+    expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
+    expect(fixture.componentInstance['projectOptions']()[0]).toEqual({ label: 'Any project', value: '' });
     expect(form().controls['metric'].value).toBe('commits');
+    expect(form().controls['projectScope'].value).toBe('lf');
     expect(form().contains('commitScope')).toBe(false);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
   });
 
   it.each([
@@ -171,6 +179,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(url).not.toContain('commitScope=');
 
     form().patchValue({ projectScope: 'all', metric: 'commits' });
+    await settle();
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' });
+    url = TestBed.inject(Router).url;
+    expect(url).toContain('projectScope=all');
+    expect(url).not.toContain('metric=');
+
+    form().patchValue({ projectScope: 'lf' });
     await settle();
 
     url = TestBed.inject(Router).url;
@@ -229,7 +245,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
   it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
     const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-contributors-clear-filters"]');
-    await mount('/?tab=contributors&range=90d&projectScope=lf&metric=code');
+    await mount('/?tab=contributors&range=90d&projectScope=all&metric=code');
     form().controls['search'].setValue('ada');
     // Past the filter bar's 150ms debounce.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -240,7 +256,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     await new Promise((resolve) => setTimeout(resolve, 200));
     await settle();
 
-    expect(form().getRawValue()).toEqual({ search: '', foundation: '', project: '', timeRange: '365d', projectScope: 'all', metric: 'commits' });
+    expect(form().getRawValue()).toEqual({ search: '', foundation: '', project: '', timeRange: '365d', projectScope: 'lf', metric: 'commits' });
     // The range and the commit filters reset together, so one read starts, not one per changed value.
     expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
@@ -253,18 +269,18 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     const instance = fixture.componentInstance;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
 
-    await TestBed.inject(Router).navigateByUrl('/?tab=contributors&projectScope=lf&metric=code');
+    await TestBed.inject(Router).navigateByUrl('/?tab=contributors&projectScope=all&metric=code');
     await settle();
 
     expect(fixture.componentInstance).toBe(instance);
-    expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', metric: 'code' });
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    expect(form().getRawValue()).toMatchObject({ projectScope: 'all', metric: 'code' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'all', commitScope: 'all', metric: 'code' });
     expect(text('org-people-contributors-count-header')).toBe('Code contributions');
 
     await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
     await settle();
 
-    expect(form().getRawValue()).toMatchObject({ projectScope: 'all', metric: 'commits' });
+    expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', metric: 'commits' });
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
     expect(navigate).not.toHaveBeenCalled();
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
@@ -313,13 +329,22 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(form().getRawValue()).toMatchObject({ project: 'k8s' });
   });
 
-  it('reads an empty LF-only result as filtered, not as an org with no contributors', async () => {
+  it('reads an empty non-LF result as filtered, not as an org with no contributors', async () => {
     getContributors = vi.fn((_orgUid: string, _timeRange: OrgLensTimeRange, filters: OrgCommitFilters) =>
-      of(filters.projectScope === 'lf' ? { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG } : contributorsResponse())
+      of(filters.projectScope === 'non_lf' ? { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG } : contributorsResponse())
     );
-    await mount('/?projectScope=lf');
+    await mount('/?projectScope=non_lf');
 
     expect(text('org-people-contributors-empty')).toContain('No contributors match the current filters.');
+  });
+
+  // lfx-self-serve#4160 — the default is LF projects, so an empty default view names it and points at LF and non-LF projects.
+  it('names LF projects when the default view is empty', async () => {
+    getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
+    await mount();
+
+    expect(text('org-people-contributors-empty')).toContain('No contributors found for this organization in LF projects.');
+    expect(text('org-people-contributors-empty')).toContain('Choose LF and non-LF projects');
   });
 });
 

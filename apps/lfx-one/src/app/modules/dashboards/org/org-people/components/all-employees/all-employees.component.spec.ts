@@ -1033,18 +1033,24 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     const component = (): { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] } =>
       fixture.componentInstance as unknown as { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] };
     const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
-    const picked: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+    const picked: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'code' };
 
-    it('offers one code-count dropdown, Commits by default', async () => {
+    it('offers one code-count dropdown, Commits by default, and LF projects first and by default', async () => {
       await mount('browser');
 
       expect(component().metricOptions.map((option) => option.label)).toEqual(['All commits', 'Only main branch commits', 'All code contributions']);
+      expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
+        'LF projects',
+        'LF and non-LF projects',
+        'Non-LF projects',
+      ]);
+      expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
       expect(el().querySelector('[data-testid="org-people-all-employees-commit-scope-filter"]')).toBeNull();
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS);
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
     });
 
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
-      await mount('browser', '/?employment=all&projectScope=lf&metric=code');
+      await mount('browser', '/?employment=all&projectScope=all&metric=code');
 
       expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', picked);
       expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', picked);
@@ -1102,6 +1108,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ projectScope: 'all' });
       await settle();
 
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'all' });
+      expect(TestBed.inject(Router).url).toContain('projectScope=all');
+
+      component().onFiltersChange({ projectScope: 'lf' });
+      await settle();
+
       expect(TestBed.inject(Router).url).not.toContain('projectScope=');
     });
 
@@ -1133,7 +1145,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
-      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=lf&metric=code');
+      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=all&metric=code');
       const state = fixture.componentInstance as unknown as {
         filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
         searchTerm(): string;
@@ -1174,7 +1186,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(clear()).toBeNull();
     });
 
-    it('labels the count column, its badges, the code tile and the activity option after the metric', async () => {
+    it('labels the count column, its badges and the activity option after the metric, and the code tile Code Contributors throughout', async () => {
       getFormerEmployees.mockImplementation(() => of(response([], 0)));
       await mount('browser');
       snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 3 })], 1));
@@ -1182,7 +1194,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(text('org-people-all-employees-code-header')).toBe('Commits');
-      expect(text('org-people-all-employees-stat-code-label')).toBe('Committers');
+      expect(text('org-people-all-employees-stat-code-label')).toBe('Code Contributors');
       expect(el().querySelector('[data-testid="org-people-all-employees-rows"]')?.textContent).toContain('3 commits');
       const tooltip = (): unknown =>
         fixture.debugElement.query(By.css('[data-testid="org-people-all-employees-code-header-info"]')).injector.get(Tooltip).content;
@@ -1197,6 +1209,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(text('org-people-all-employees-code-header')).toBe('Commits');
+      expect(text('org-people-all-employees-stat-code-label')).toBe('Code Contributors');
       expect(tooltip()).toBe(ORG_MAIN_BRANCH_COMMITS_DEFINITION);
 
       snowflake$ = new Subject();
@@ -1215,7 +1228,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activityOptions.find((option) => option.value === 'code')?.label).toBe('Code contributions');
     });
 
-    it('keeps the active tile across every code-count option while the code tile follows the option', async () => {
+    // lfx-self-serve#4160 — the code tile counts Code Contributors whatever the option; only the table's count follows it.
+    it('keeps the active and code tiles across every code-count option, counting a reviewer without commits', async () => {
       const tile = (name: string): string => el().querySelector(`[data-testid="org-people-all-employees-stat-${name}"] div`)?.textContent?.trim() ?? '';
       // Each option's picked count; the code activities stay the same whatever is picked.
       const picked = { commits: [2, 0, 1], merged: [1, 0, 0], code: [6, 3, 2] } as const;
@@ -1236,12 +1250,9 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       await mount('browser', '/?employment=all');
       await answer(picked.commits);
-      expect([tile('active'), tile('code')]).toEqual(['3', '2']);
+      expect([tile('active'), tile('code')]).toEqual(['3', '3']);
 
-      for (const [metric, expectedCode] of [
-        ['merged', '1'],
-        ['code', '3'],
-      ] as const) {
+      for (const metric of ['merged', 'code'] as const) {
         snowflake$ = new Subject();
         live$ = new Subject();
         former$ = new Subject();
@@ -1249,7 +1260,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         await settle();
         await answer(picked[metric]);
 
-        expect([tile('active'), tile('code')]).toEqual(['3', expectedCode]);
+        expect([tile('active'), tile('code')]).toEqual(['3', '3']);
       }
     });
   });

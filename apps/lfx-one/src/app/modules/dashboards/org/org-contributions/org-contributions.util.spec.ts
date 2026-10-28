@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
 import type { OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
 import { describeContributionsCaption, describeContributionsWindow, describeContributorsTooltip } from './org-contributions.util';
@@ -29,13 +30,16 @@ describe('describeContributionsWindow', () => {
 
 describe('describeContributionsCaption', () => {
   const window = 'from Oct 21, 2025 to Oct 21, 2026 (UTC)';
-  const caption = (filters: Partial<OrgCommitFilters>) =>
-    describeContributionsCaption({ projectScope: 'all', commitScope: 'all', metric: 'commits', ...filters }, 'Acme', window);
+  const caption = (filters: Partial<OrgCommitFilters>) => describeContributionsCaption({ ...DEFAULT_ORG_COMMIT_FILTERS, ...filters }, 'Acme', window);
 
-  it('describes commits on any branch by default', () => {
+  it('describes commits on any branch in LF projects by default', () => {
     expect(caption({})).toBe(
-      'Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged), counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
+      'Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
     );
+  });
+
+  it('names LF and non-LF projects, the scope Insights counts', () => {
+    expect(caption({ projectScope: 'all' })).toContain('not yet merged) in LF and non-LF projects, counted once each,');
   });
 
   it('describes only main branch commits in LF projects', () => {
@@ -49,7 +53,7 @@ describe('describeContributionsCaption', () => {
   });
 
   it.each([
-    ['all', ''],
+    ['all', ' in LF and non-LF projects'],
     ['lf', ' in LF projects'],
     ['non_lf', ' outside LF projects'],
   ] as const)('describes code contributions with projectScope=%s, ignoring the commit scope', (projectScope, phrase) => {
@@ -68,9 +72,9 @@ describe('describeContributorsTooltip', () => {
     );
   });
 
-  it('adds no scope phrase for every project', () => {
+  it('names LF and non-LF projects', () => {
     expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)')).toContain(
-      'credited to Acme, from Oct 21, 2025 to Oct 21, 2026 (UTC).'
+      'credited to Acme in LF and non-LF projects, from Oct 21, 2025 to Oct 21, 2026 (UTC).'
     );
   });
 });

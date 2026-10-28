@@ -97,6 +97,21 @@ describe('OrgLensContributionsController filter lists', () => {
     expect(next).not.toHaveBeenCalled();
     expect(getContributions.mock.calls[0][1]).toMatchObject({ projects: ['same-project', 'other'] });
   });
+
+  // lfx-self-serve#4559 — one foundation id, matched exactly as on People → Contributors.
+  it.each([
+    [{ foundation: ' f-cncf ' }, 'f-cncf'],
+    [{}, ''],
+    [{ foundation: '' }, ''],
+    [{ foundation: ['f-cncf', 'f-lfai'] }, ''],
+  ])('reads foundation from %o as %j', async (params, expected) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq(params), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ foundation: expected });
+  });
 });
 
 describe('OrgLensContributionsController commit filters', () => {
@@ -107,23 +122,26 @@ describe('OrgLensContributionsController commit filters', () => {
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
-  it('passes the defaults to the service when the params are missing', async () => {
+  it('passes the defaults to the service when the params are missing: LF projects (lfx-self-serve#4160)', async () => {
     const next = vi.fn();
 
     await controller.getContributions(buildReq({}), buildRes(), next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'all', commitScope: 'all', metric: 'commits' });
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'lf', commitScope: 'all', metric: 'commits' });
   });
 
-  it('passes valid values through', async () => {
-    const next = vi.fn();
+  it.each([[{ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }], [{ projectScope: 'all', commitScope: 'all', metric: 'commits' }]])(
+    'passes valid values through: %o',
+    async (query) => {
+      const next = vi.fn();
 
-    await controller.getContributions(buildReq({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }), buildRes(), next);
+      await controller.getContributions(buildReq(query), buildRes(), next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' });
-  });
+      expect(next).not.toHaveBeenCalled();
+      expect(getContributions.mock.calls[0][1]).toMatchObject(query);
+    }
+  );
 
   it.each([
     ['projectScope', 'foundation'],

@@ -3,6 +3,7 @@
 
 import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgContributorFoundationOption } from './org-people-contributors.interface';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Source of truth is LFX Insights
 // (CrowdSource pipeline ingesting GitHub / GitLab / Gerrit). All shapes here are
@@ -47,15 +48,15 @@ export interface OrgContributionRepoRow {
   lastCommitTs: string | null;
 }
 
-/** Project filter option — hierarchical (a parent foundation carries `parentSlug = null`; children point back). */
+/** Project filter option. A pick matches that project only, never its sub-projects (lfx-self-serve#4559). */
 export interface OrgContributionProjectOption {
   slug: string;
   projectId: string;
   name: string;
-  /** Per-project commit count shown as rich subtext in the select. Scaffold returns lifetime demo counts; the data pass scopes this to the active filters. */
+  /** Per-project count in the window and project type, shown as rich subtext in the select. */
   commits: number;
-  /** Parent foundation slug, or null for a top-level foundation. */
-  parentSlug: string | null;
+  /** Foundation the project rolls up to (same id as People → Contributors), or null when it has none. */
+  foundationId: string | null;
 }
 
 /** Employee filter option. Per spec the real list is scoped to employees with >= 1 commit in the current Project + Date-Range scope; the demo scaffold returns the full employee catalog (scoping lands in the data pass). */
@@ -98,6 +99,9 @@ export interface OrgContributionsResponse {
   repositories: OrgContributionRepoRow[];
   /** Org-wide recent-commits activity feed (most recent first). */
   commits: OrgContributionCommitRow[];
+  /** Foundations the org was active in over the window and project type; never narrowed by the foundation or project picks. */
+  foundationOptions: OrgContributorFoundationOption[];
+  /** Projects in the window and project type, narrowed to the picked foundation. */
   projectOptions: OrgContributionProjectOption[];
   employeeOptions: OrgContributionEmployeeOption[];
   /** Repositories rows matching the active filters — drives the Repositories pager + tab count. */
@@ -113,7 +117,9 @@ export interface OrgContributionsQuery extends OrgCommitFilters {
   dateRange: OrgLensTimeRange;
   /** Free-text search. On the Repositories tab it scopes the Repository path; on the Commits feed it scopes message/project/committer/username. */
   search: string;
-  /** Selected project slugs. */
+  /** Selected foundation id (exact `foundation_id`, as on People → Contributors); empty for any foundation. */
+  foundation: string;
+  /** Selected project slugs (or project ids); each matches that project exactly. */
   projects: string[];
   /** Selected employee ids (Crowd.dev member_id values). */
   employees: string[];

@@ -54,6 +54,7 @@ export class OrgLensContributionsController {
         project_scope: query.projectScope,
         commit_scope: query.commitScope,
         metric: query.metric,
+        foundation_id: query.foundation || null,
         project_count: query.projects.length,
         employee_count: query.employees.length,
         page: query.page,
@@ -96,6 +97,8 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',
+    // One foundation id, matched exactly like People → Contributors; empty is any foundation.
+    foundation: getStringQueryParam(req, 'foundation')?.trim() ?? '',
     projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
     employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
     sort,
