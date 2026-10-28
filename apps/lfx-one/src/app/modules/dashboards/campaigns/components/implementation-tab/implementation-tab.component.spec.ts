@@ -10235,6 +10235,39 @@ describe('ImplementationTabComponent microsoft image extension', () => {
       expect(uploadCreativeAsset).toHaveBeenCalled();
     });
 
+    it('saves the pick before the size read, so a tab switch during it restores a blocked draft, not an empty one', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => undefined)));
+      const first = await mount(true);
+      const input = q(first.fixture, 'implementation-microsoft-image-file') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { configurable: true, value: [png()] });
+      input.dispatchEvent(new Event('change'));
+      first.fixture.detectChanges();
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.microsoftImageUploadPendingName).toBe('promo.png');
+      first.fixture.destroy();
+
+      const second = (await mount(true, draft)).fixture;
+      fillForm(second);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(q(second, 'implementation-microsoft-image-asset-block-uploadFailed')?.textContent).toContain('was interrupted');
+      expect(at(second).canSubmit()).toBe(false);
+    });
+
+    it('blocks Create when the capability turns unknown during the size read', async () => {
+      vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise(() => undefined)));
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      const input = q(f, 'implementation-microsoft-image-file') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { configurable: true, value: [png()] });
+      input.dispatchEvent(new Event('change'));
+      f.componentRef.setInput('microsoftAssetUploadEnabled', null);
+      f.componentRef.setInput('createCapabilityRead', 'failed');
+      f.detectChanges();
+
+      expect(q(f, 'implementation-microsoft-image-asset-block-failed')).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
     it('holds Create while the size is read, and a removal during the read cancels the upload', async () => {
       let resolveSize: (size: { width: number; height: number; close(): void }) => void = () => undefined;
       vi.stubGlobal('createImageBitmap', vi.fn().mockReturnValue(new Promise((resolve) => (resolveSize = resolve))));

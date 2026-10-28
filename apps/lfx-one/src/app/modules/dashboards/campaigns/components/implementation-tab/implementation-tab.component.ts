@@ -124,7 +124,7 @@ import {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { filter, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { filter, from, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -964,8 +964,6 @@ export class ImplementationTabComponent implements OnInit {
   private microsoftImageUploadSub: Subscription | null = null;
   /** Whether the picked Microsoft image's pixel size is being read, which holds Create like an upload does. */
   protected readonly microsoftImageChecking = signal(false);
-  /** Bumped by every pick and every clear, so a size read that finishes after either is ignored. */
-  private microsoftImagePick = 0;
   /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
   protected readonly microsoftImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
@@ -2106,7 +2104,9 @@ export class ImplementationTabComponent implements OnInit {
   );
   /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
   private readonly microsoftAssetWithheld = computed(
-    () => (this.microsoftImageAssetForThisBrief() || this.microsoftImageUploadStatus() === 'uploading') && !this.microsoftAssetUploadAvailable()
+    () =>
+      (this.microsoftImageAssetForThisBrief() || this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking()) &&
+      !this.microsoftAssetUploadAvailable()
   );
   protected readonly microsoftImageAssetBlockMessage = computed(() => this.microsoftImageAssetBlock()?.message ?? '');
   protected readonly microsoftImageUploadStatusMessage = computed(() => {
@@ -2901,23 +2901,33 @@ export class ImplementationTabComponent implements OnInit {
     // The pixel bounds are read from the image itself, which is asynchronous. A size that cannot be
     // read (no decoder in this browser, or an image it cannot decode) is left to campaign-service,
     // which checks the same bounds before anything is created.
-    const pick = ++this.microsoftImagePick;
+    //
+    // The pick is recorded as pending, and told to the parent, BEFORE the read: a tab switch during
+    // it destroys this component, and the remount then finds no upload to resume and raises the
+    // interrupted-upload block rather than restoring an empty selection. The read rides the upload
+    // subscription, so a clear or the component's destruction drops its answer.
     this.microsoftImageChecking.set(true);
-    void this.readImageSize(file).then((size) => {
-      if (pick !== this.microsoftImagePick) return;
-      this.microsoftImageChecking.set(false);
-      const bounds = MICROSOFT_IMAGE_PIXEL_BOUNDS;
-      if (size && (size.width < bounds.minWidth || size.height < bounds.minHeight || size.width > bounds.maxWidth || size.height > bounds.maxHeight)) {
-        this.failMicrosoftImageUpload(
-          `Microsoft Advertising accepts images from ${bounds.minWidth}x${bounds.minHeight} to ${bounds.maxWidth}x${bounds.maxHeight} pixels; this one is ${size.width}x${size.height}.`,
-          briefId
-        );
+    this.microsoftImageUploadPendingName.set(file.name);
+    this.microsoftImageUploadPendingBriefId.set(briefId);
+    this.emitDraft();
+    this.microsoftImageUploadSub = from(this.readImageSize(file))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((size) => {
+        this.microsoftImageChecking.set(false);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        const bounds = MICROSOFT_IMAGE_PIXEL_BOUNDS;
+        if (size && (size.width < bounds.minWidth || size.height < bounds.minHeight || size.width > bounds.maxWidth || size.height > bounds.maxHeight)) {
+          this.failMicrosoftImageUpload(
+            `Microsoft Advertising accepts images from ${bounds.minWidth}x${bounds.minHeight} to ${bounds.maxWidth}x${bounds.maxHeight} pixels; this one is ${size.width}x${size.height}.`,
+            briefId
+          );
+          this.emitDraft();
+          return;
+        }
+        this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
         this.emitDraft();
-        return;
-      }
-      this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
-      this.emitDraft();
-    });
+      });
   }
 
   /** Forget the uploaded Microsoft image (the stored asset stays upstream, unused). */
@@ -4211,7 +4221,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private clearMicrosoftImageAsset(): void {
-    this.microsoftImagePick++;
     this.microsoftImageChecking.set(false);
     this.microsoftImageUploadSub?.unsubscribe();
     this.microsoftImageUploadSub = null;
