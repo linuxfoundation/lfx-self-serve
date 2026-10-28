@@ -275,7 +275,7 @@ export enum ServerFeatureFlag {
    * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
    * controls are hidden, Create is blocked while a stored image is still held, and the create route
    * refuses a request carrying a Google `imageAssetId` rather than dropping it; the upload route
-   * still admits an upload on either sibling flag's authority. It does NOT gate the brief's asset
+   * still admits an upload on any other asset flag's authority. It does NOT gate the brief's asset
    * list, get, plan and delete routes: those are addressed by a campaign-service brief and gate on
    * `CampaignServiceBriefs` like every other brief route, so a deployment running Reddit uploads
    * alone can still read and prune the same library. The pasted image URL is unaffected either way.
@@ -304,6 +304,26 @@ export enum ServerFeatureFlag {
    * above.
    */
   CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
+
+  /**
+   * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
+   * `linkedInConfig.variants[].imageAssetId` (the same image on every variant).
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
+   * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
+   * URN as each dark post's article thumbnail (`internal/dispatch/linkedin_creative.go`,
+   * `resolveLinkedInImages`). What it says is that the DEPLOYED campaign-service resolves LinkedIn
+   * asset ids, which every release from v1.0.21 does. Its own flag so LinkedIn uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.linkedInAssetUploadEnabled`) needs both. With it off the LinkedIn upload
+   * control is hidden and the create route refuses a request carrying a LinkedIn `imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the

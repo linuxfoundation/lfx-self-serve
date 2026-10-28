@@ -658,6 +658,22 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS:
     value: "true"
 
+  # Offers a PNG/JPEG image upload in the LinkedIn section of the create flow, sent as
+  # `linkedInConfig.variants[].imageAssetId` (the same image on every variant), which becomes each
+  # dark post's article thumbnail. LinkedIn takes no image URL, so this is its only image control.
+  #
+  # A CAPABILITY flag like META_ASSETS: no URL signing is involved, because LinkedIn's dispatch path
+  # reads the stored bytes and uploads them through LinkedIn's Images API. What it says is that the
+  # DEPLOYED campaign-service resolves LinkedIn asset ids, which every release from v1.0.21 does. It
+  # also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator reads no
+  # `imageAssetId`.
+  #
+  # ON in this chart, like META_ASSETS, because nothing has to be configured on campaign-service
+  # first. Off, the LinkedIn upload control is hidden and a create request carrying a LinkedIn
+  # `imageAssetId` is refused with a 400 rather than dropped. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
+    value: "true"
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.

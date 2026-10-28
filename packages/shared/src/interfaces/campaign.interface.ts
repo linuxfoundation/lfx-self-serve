@@ -107,11 +107,11 @@ export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 /**
  * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
- * upload per owner, so a Meta pick never cancels or takes over a Reddit one, or the reverse.
+ * upload per owner, so a pick on one platform never cancels or takes over another's.
  * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
  * upload still running in another, as a second Meta pick replaces the first.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'google';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -1103,6 +1103,17 @@ export interface CampaignImplementationDraft {
   metaImageUploadFailedMessage?: string;
   metaImageUploadFailedBriefId?: string;
   /**
+   * The LinkedIn ad image, an upload only (LinkedIn has no image-URL path), on the Meta upload
+   * fields' terms above. Round-trips regardless of `linkedInAssetUploadEnabled`.
+   */
+  linkedInImageAssetId?: string;
+  linkedInImageAssetName?: string;
+  linkedInImageAssetBriefId?: string;
+  linkedInImageUploadPendingName?: string;
+  linkedInImageUploadPendingBriefId?: string;
+  linkedInImageUploadFailedMessage?: string;
+  linkedInImageUploadFailedBriefId?: string;
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1359,7 +1370,15 @@ export interface LinkedInGeoTarget {
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
+  /** An existing `urn:li:image` used verbatim as the dark post's thumbnail. Never sent with `imageAssetId`. */
   imageUrn?: string;
+  /**
+   * A creative asset uploaded to the brief, which campaign-service uploads through LinkedIn's Images
+   * API at dispatch and uses as the dark post's article thumbnail. Mutually exclusive with
+   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sets the same
+   * asset on every variant.
+   */
+  imageAssetId?: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -5061,6 +5080,17 @@ export interface CampaignListResult {
    */
   metaAssetUploadEnabled: boolean;
   /**
+   * Whether the LinkedIn section may offer an image UPLOAD, sent as
+   * `LinkedInCreativeVariant.imageAssetId` on every variant.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: LinkedIn's dispatch path uploads the stored bytes through the Images API. There is no
+   * pasted-URL alternative, so there is no LinkedIn `…CreativeEnabled` to pair it with. Modelled on
+   * the client like the capabilities above.
+   */
+  linkedInAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -5332,6 +5362,12 @@ export interface CampaignMetaImageAssetBlock {
  */
 export interface CampaignGoogleImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed' | 'missing' | 'misfit';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s LinkedIn sibling, with the same kinds. */
+export interface CampaignLinkedInImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
 
