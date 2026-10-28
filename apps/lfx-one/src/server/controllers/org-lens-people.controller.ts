@@ -2,14 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  DEFAULT_ORG_EMPLOYMENT,
   EMAIL_REGEX,
+  ORG_EMPLOYMENT_OPTIONS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGES,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
   PERSON_KEY_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
+import type { OrgEmploymentFilter, OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
+import {
+  isFilterSafeIdentifier,
+  isFilterSafeUsername,
+  isOrgLensTimeRange,
+  normalizeLegacyOrgLensTimeRange,
+  parseOrgEmploymentFilter,
+  parseOrgProjectScope,
+} from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -526,7 +535,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|730d|all[&projectScope][&commitScope][&metric] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874). */
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|730d|all[&projectScope][&commitScope][&metric][&employment=current|former|all] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874); `employment` omitted ⇒ everyone (lfx-self-serve#4627). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_contributors';
@@ -535,15 +544,17 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, operation);
       const timeRange = parsePeopleTimeRange(getStringQueryParam(req, 'timeRange'), 'timeRange', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const filters = parseOrgCommitFilters(req, operation);
+      const employment = parseContributorsEmployment(getStringQueryParam(req, 'employment'), operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: timeRange,
         project_scope: filters.projectScope,
         commit_scope: filters.commitScope,
         metric: filters.metric,
+        employment,
       });
 
-      const response = await this.contributorsService.getContributors(orgUid, timeRange, filters);
+      const response = await this.contributorsService.getContributors(orgUid, timeRange, filters, employment);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -628,4 +639,22 @@ function parsePeopleTimeRange(raw: string | undefined, field: string, operation:
     throw ServiceValidationError.forField(field, `Invalid ${field} value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
   return range;
+}
+
+/** Validate the Contributors `employment` query param: missing → everyone; an unknown value → 400 (mirrors {@link parseOrgCommitFilters}). */
+function parseContributorsEmployment(raw: string | undefined, operation: string): OrgEmploymentFilter {
+  if (!raw) {
+    return DEFAULT_ORG_EMPLOYMENT;
+  }
+  const employment = parseOrgEmploymentFilter(raw);
+  if (employment === null) {
+    throw ServiceValidationError.forField(
+      'employment',
+      `Invalid employment value. Allowed: ${ORG_EMPLOYMENT_OPTIONS.map((option) => option.value).join(', ')}`,
+      {
+        operation,
+      }
+    );
+  }
+  return employment;
 }

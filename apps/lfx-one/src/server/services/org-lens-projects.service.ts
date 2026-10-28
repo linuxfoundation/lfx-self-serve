@@ -437,6 +437,7 @@ export class OrgLensProjectsService {
         orgName: orgName || 'Your organization',
         dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
         projects: [...projectRows.map((row) => this.mapProject(row, peopleRows, maintainerRows ?? [])), ...noActivityProjects],
+        ...(maintainerRows === null ? { maintainerRolesUnavailable: true as const } : {}),
       },
       noActivityDegraded,
       rolesMissing: maintainerRows === null,

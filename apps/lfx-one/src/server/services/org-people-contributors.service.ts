@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_EMPLOYMENT,
+  EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_CONTRIBUTOR_PROJECT_COLUMNS,
+  ORG_CONTRIBUTOR_ROW_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
@@ -14,6 +20,7 @@ import type {
   OrgContributorRow,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
+  OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
@@ -30,6 +37,7 @@ import {
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -47,16 +55,26 @@ export class OrgPeopleContributorsService {
    * person-grain with argmax-most-active-project. `commits` follows the commit scope; `codeActivities` is always
    * sent so the tab can switch metric; the most-active project follows the metric. Maintainer badges and the
    * Maintainer roles tile come from the account's roles overlapping the same window and scope (lfx-self-serve#4482).
+   * `employment` (lfx-self-serve#4627) keeps the people whose ORG_PEOPLE_ALL_RANGES row for the window and scope
+   * classifies them current or former — the list, the Contributors tile and the Projects/Foundations stats and options
+   * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
+   * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
+   * roles. `all` (the default) reads no classification and filters nothing.
    */
-  public async getContributors(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgContributorsResponse> {
+  public async getContributors(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT
+  ): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
     // `people-contributors:v5:{timeRange}:{projectScope}` (lfx-self-serve#4482): the rows no longer carry the
-    // declared-maintainer flags, so a `v4` entry must miss. The commit scope and metric only pick counts after the
-    // read, so they share the entry.
-    const [rows, roles] = await Promise.all([
+    // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric and employment only pick after
+    // the read, so they share the entry.
+    const [rows, roles, employmentKeys] = await Promise.all([
       withOrgCompactCache(
         accountId,
         `people-contributors:v5:${timeRange}:${filters.projectScope}`,
@@ -73,8 +91,10 @@ export class OrgPeopleContributorsService {
         // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored.
         (value) => value !== null
       ),
+      readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
     ]);
-    return buildResponse(accountId, timeRange, filters, rows, roles);
+    const keptRows = employmentKeys === null ? rows : rows.filter((row) => employmentKeys.has(row.PERSON_KEY));
+    return buildResponse(accountId, timeRange, filters, keptRows, roles);
   }
 
   /**

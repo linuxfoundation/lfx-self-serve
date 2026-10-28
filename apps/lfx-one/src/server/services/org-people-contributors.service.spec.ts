@@ -49,6 +49,7 @@ import type {
   ContributorPersonProjectRow,
   OrgCommitFilters,
   OrgContributorMaintainerRoleRow,
+  OrgPersonEmploymentRow,
 } from '@lfx-one/shared/interfaces';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -530,5 +531,129 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
     await service.getContributors(ACCOUNT, '365d', FILTERS);
 
     expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(2);
+  });
+});
+
+describe('OrgPeopleContributorsService employment filter (lfx-self-serve#4627)', () => {
+  const EMPLOYMENT_KEY = buildOrgCacheKey(ACCOUNT, 'people-employment:v1:365d:all')!;
+
+  /** A code contributor the roster has no row for in the window and scope — neither current nor former. */
+  const UNCLASSIFIED_ROW = {
+    ...CONTRIBUTOR_ROWS[2],
+    PERSON_KEY: 'person-three',
+    CDP_MEMBER_ID: 'cdp-3',
+    PROJECT_ID: 'project-three',
+    PROJECT_NAME: 'Rails',
+    FOUNDATION_ID: null,
+    FOUNDATION_NAME: null,
+    FOUNDATION_SLUG: null,
+  };
+
+  /** person-one is a current employee, person-two a former one; person-three has no roster row. */
+  const EMPLOYMENT_ROWS: OrgPersonEmploymentRow[] = [
+    { PERSON_KEY: 'person-one', EMPLOYMENT: 'current' },
+    { PERSON_KEY: 'person-two', EMPLOYMENT: 'former' },
+  ];
+
+  // The roster read answers EMPLOYMENT_ROWS, the roles read ROLE_ROWS and the rows read every contributor.
+  beforeEach(() => {
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('ORG_PEOPLE_ALL_RANGES')) return { rows: EMPLOYMENT_ROWS };
+      return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : [...CONTRIBUTOR_ROWS, UNCLASSIFIED_ROW] };
+    });
+  });
+
+  it("classifies people by their roster row for the request's range and project scope, binding account, range and scope", async () => {
+    await service.getContributors(ACCOUNT, '90d', { ...FILTERS, projectScope: 'lf' }, 'current');
+
+    const reads = readsOf('ORG_PEOPLE_ALL_RANGES');
+    expect(reads).toHaveLength(1);
+    const [sql, binds] = reads[0];
+    expect(sql).toContain("SELECT DISTINCT PERSON_KEY, IFF(IS_FORMER, 'former', 'current') AS EMPLOYMENT");
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES');
+    expect(sql).toContain('WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ?');
+    expect(binds).toEqual([ACCOUNT, '90d', 'lf']);
+  });
+
+  it('lists only current employees for current: the list, the Contributors tile and the project and foundation stats follow', async () => {
+    const response = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+
+    expect(response.contributors.map((row) => [row.personKey, row.role])).toEqual([['person-one', 'Maintainer']]);
+    expect(response.projects.map((row) => [row.personKey, row.projectId])).toEqual([
+      ['person-one', 'project-one'],
+      ['person-one', 'project-two'],
+    ]);
+    expect(response.stats).toEqual({ maintainerRoles: 4, contributors: 1, projects: 2, foundations: 1 });
+  });
+
+  it('lists only former employees for former, with the project and foundation options they contributed to', async () => {
+    const response = await service.getContributors(ACCOUNT, '365d', FILTERS, 'former');
+
+    expect(response.contributors.map((row) => [row.personKey, row.role])).toEqual([['person-two', 'Contributor']]);
+    expect(response.projects.map((row) => [row.personKey, row.projectId])).toEqual([['person-two', 'project-one']]);
+    expect(response.projectOptions.map((option) => option.projectId)).toEqual(['project-one']);
+    expect(response.foundationOptions).toEqual([{ foundationId: 'foundation-one', foundationName: 'CNCF' }]);
+    expect(response.stats).toEqual({ maintainerRoles: 4, contributors: 1, projects: 1, foundations: 1 });
+  });
+
+  it('lists a contributor with no roster row only under all, neither current nor former', async () => {
+    const current = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+    const former = await service.getContributors(ACCOUNT, '365d', FILTERS, 'former');
+    const all = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all');
+
+    expect(current.contributors.map((row) => row.personKey)).not.toContain('person-three');
+    expect(former.contributors.map((row) => row.personKey)).not.toContain('person-three');
+    expect(all.contributors.map((row) => row.personKey)).toEqual(['person-one', 'person-two', 'person-three']);
+    expect(all.stats).toMatchObject({ contributors: 3, projects: 3 });
+  });
+
+  it('keeps the Maintainer roles tile the same whatever the employment pick', async () => {
+    const all = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all');
+    const current = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+    const former = await service.getContributors(ACCOUNT, '365d', FILTERS, 'former');
+
+    expect([all, current, former].map((response) => response.stats.maintainerRoles)).toEqual([4, 4, 4]);
+  });
+
+  it('reads no classification for all and answers exactly as without the filter', async () => {
+    const withoutFilter = await service.getContributors(ACCOUNT, '365d', FILTERS);
+    const all = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all');
+
+    expect(all).toEqual(withoutFilter);
+    expect(readsOf('ORG_PEOPLE_ALL_RANGES')).toHaveLength(0);
+    expect(cacheValues.has(EMPLOYMENT_KEY)).toBe(false);
+  });
+
+  it('caches the classification under its own key and shares it, the rows and the roles between current and former', async () => {
+    await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+    const former = await service.getContributors(ACCOUNT, '365d', FILTERS, 'former');
+
+    expect(cacheValues.has(EMPLOYMENT_KEY)).toBe(true);
+    expect(readsOf('ORG_PEOPLE_ALL_RANGES')).toHaveLength(1);
+    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(1);
+    expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(1);
+    expect(former.contributors.map((row) => row.personKey)).toEqual(['person-two']);
+  });
+
+  it('treats a stored classification that is not a list of classified person keys as a miss', async () => {
+    cacheValues.set(EMPLOYMENT_KEY, JSON.stringify([{ PERSON_KEY: 'person-two', EMPLOYMENT: true }]));
+
+    const response = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+
+    expect(readsOf('ORG_PEOPLE_ALL_RANGES')).toHaveLength(1);
+    expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one']);
+  });
+
+  it('keeps the Maintainer roles tile unavailable when the roles table is missing', async () => {
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return { rows: sql?.includes('ORG_PEOPLE_ALL_RANGES') ? EMPLOYMENT_ROWS : CONTRIBUTOR_ROWS };
+    });
+
+    const { stats } = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
+
+    expect(stats).toMatchObject({ maintainerRoles: null, contributors: 1 });
   });
 });

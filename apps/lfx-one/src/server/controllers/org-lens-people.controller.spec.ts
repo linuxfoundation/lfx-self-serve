@@ -36,6 +36,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-employment.utils')),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
@@ -123,7 +124,7 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all', DEFAULT_FILTERS);
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '90d', DEFAULT_FILTERS);
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS);
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all');
   });
 
   it('reads the legacy 12mo, still sent by tabs opened before the new ranges, as 365d', async () => {
@@ -133,7 +134,7 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', DEFAULT_FILTERS);
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'all');
   });
 
   it('rejects an unknown range with a 400 before any read', async () => {
@@ -173,19 +174,37 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', picked);
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', picked);
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', picked);
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked, 'all');
   });
 
-  it('defaults missing params on the Contributors read to LF projects', async () => {
+  it('defaults missing params on the Contributors read to LF projects and everyone, former employees included', async () => {
     await controller.getContributors(buildRosterReq({}), buildRes(), vi.fn());
 
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'all');
   });
 
   it('reads projectScope=all as every project', async () => {
     await controller.getContributors(buildRosterReq({ projectScope: 'all' }), buildRes(), vi.fn());
 
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', { ...DEFAULT_FILTERS, projectScope: 'all' });
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', { ...DEFAULT_FILTERS, projectScope: 'all' }, 'all');
+  });
+
+  // lfx-self-serve#4627
+  it.each(['current', 'former', 'all'])('forwards employment=%s to the Contributors read', async (employment) => {
+    await controller.getContributors(buildRosterReq({ timeRange: '90d', employment }), buildRes(), vi.fn());
+
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', DEFAULT_FILTERS, employment);
+  });
+
+  it.each(['Current', 'everyone', 'ex'])('rejects employment=%s with a 400 naming the field before any read', async (employment) => {
+    const next = vi.fn();
+
+    await controller.getContributors(buildRosterReq({ employment }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    expect((next.mock.calls[0][0] as Error).message).toContain('employment');
+    expect(getContributors).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -116,7 +116,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     await service.getFoundationProjects('acc-1', 'cncf');
     await service.getFoundationProjects('acc-1', 'lf-edge');
 
-    expect(cacheKeys).toEqual(['memberships-projects:v2:cncf', 'memberships-projects:v2:lf-edge']);
+    expect(cacheKeys).toEqual(['memberships-projects:v3:cncf', 'memberships-projects:v3:lf-edge']);
   });
 
   it('returns an empty envelope rather than failing when the org has no projects for the foundation', async () => {

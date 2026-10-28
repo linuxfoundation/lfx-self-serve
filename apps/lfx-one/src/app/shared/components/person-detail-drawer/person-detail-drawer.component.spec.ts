@@ -528,6 +528,30 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
   });
 
+  it.each([
+    { flagged: true, shown: true },
+    { flagged: false, shown: false },
+  ])('notes maintainer roles as unavailable on the Code tab only when the detail flags it (flagged: $flagged)', async ({ flagged, shown }) => {
+    drawer.open(person);
+    await render();
+    const code = [
+      {
+        projectId: 'project-1',
+        projectName: 'project-1',
+        foundationId: 'foundation-1',
+        foundationName: 'Foundation One',
+        commits: 1,
+        lastActivityDate: null,
+        isMaintainer: false,
+      },
+    ];
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code, totalCommits: 1, ...(flagged ? { maintainerRolesUnavailable: true as const } : {}) });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-maintainer-unavailable') !== null).toBe(shown);
+  });
+
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {
     drawer.open(person);
     await render();

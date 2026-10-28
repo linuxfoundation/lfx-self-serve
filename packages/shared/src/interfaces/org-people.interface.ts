@@ -31,6 +31,9 @@ export type OrgAllEmployeeActivityFilter = 'all' | 'governance' | 'code' | 'even
 /** Which employees the All Employees table shows (lfx-self-serve#4311). `former` reads the former-employees roster; `all` shows both. */
 export type OrgAllEmployeeEmploymentFilter = 'current' | 'former' | 'all';
 
+/** Which employees a People tab shows — the All Employees employment filter, shared by every tab that offers it (Contributors: lfx-self-serve#4627). */
+export type OrgEmploymentFilter = OrgAllEmployeeEmploymentFilter;
+
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 
@@ -63,6 +66,9 @@ export interface OrgAllEmployeeEmploymentOption {
   label: string;
   value: OrgAllEmployeeEmploymentFilter;
 }
+
+/** Dropdown option for any People tab's employment filter. */
+export type OrgEmploymentOption = OrgAllEmployeeEmploymentOption;
 
 /** One row in the All Employees table. */
 export interface OrgAllEmployeeRow {

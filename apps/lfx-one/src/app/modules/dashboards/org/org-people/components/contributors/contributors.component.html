@@ -70,6 +70,16 @@
         ariaLabel="Count all commits, only main branch commits or all code contributions"
         dataTest="org-people-contributors-metric-filter" />
     </div>
+    <div class="w-full md:w-48">
+      <lfx-select
+        [form]="filterForm"
+        control="employment"
+        size="small"
+        [options]="employmentOptions"
+        styleClass="w-full"
+        [ariaLabel]="employmentLabel"
+        dataTest="org-people-contributors-employment-filter" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"
@@ -271,7 +281,14 @@
                   </button>
                 </td>
                 <td class="px-4 py-3 align-middle">
-                  @if (row.role === 'Maintainer') {
+                  @if (maintainerRolesUnavailable()) {
+                    <span
+                      class="text-xs text-gray-400"
+                      title="Maintainer data is currently unavailable"
+                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-role-unavailable'"
+                      >&mdash;</span
+                    >
+                  } @else if (row.role === 'Maintainer') {
                     <span
                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                       Maintainer
@@ -327,7 +344,14 @@
                                   }
                                 </td>
                                 <td class="px-3 py-2.5">
-                                  @if (sub.role === 'Maintainer') {
+                                  @if (maintainerRolesUnavailable()) {
+                                    <span
+                                      class="text-gray-400"
+                                      title="Maintainer data is currently unavailable"
+                                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-' + sub.projectId + '-role-unavailable'"
+                                      >&mdash;</span
+                                    >
+                                  } @else if (sub.role === 'Maintainer') {
                                     <span
                                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                       Maintainer

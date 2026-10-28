@@ -132,7 +132,14 @@
                     <td class="px-3 py-2 font-medium text-gray-800">{{ row.projectName }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
                     <td class="px-3 py-2">
-                      @if (row.isMaintainer) {
+                      @if (detail()?.maintainerRolesUnavailable) {
+                        <span
+                          class="text-gray-500"
+                          title="Maintainer data is currently unavailable"
+                          data-testid="org-people-all-employees-detail-role-unavailable"
+                          >—</span
+                        >
+                      } @else if (row.isMaintainer) {
                         <span
                           class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                           Maintainer

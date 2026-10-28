@@ -80,6 +80,26 @@
         ariaLabel="Filter by access type"
         data-testid="org-access-type-filter" />
     </div>
+    <div class="w-full md:w-52">
+      <p-select
+        [options]="employmentOptions"
+        [ngModel]="employment()"
+        (ngModelChange)="onEmploymentChange($event)"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="w-full"
+        [ariaLabel]="employmentLabel"
+        data-testid="org-access-employment-filter" />
+    </div>
+    @if (isFiltering()) {
+      <button
+        type="button"
+        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+        data-testid="org-access-clear-filters"
+        (click)="clearFilters()">
+        Clear filters
+      </button>
+    }
   </div>
 
   @if (fetchError()) {
@@ -139,7 +159,7 @@
           <i class="fa-light fa-shield-halved text-2xl text-gray-300" aria-hidden="true"></i>
           @if (isFiltering()) {
             <p class="text-sm text-gray-700">No users match the current search or filter.</p>
-            <p class="text-xs text-gray-500">Try clearing the search or changing the type filter.</p>
+            <p class="text-xs text-gray-500">Try clearing the search or changing the filters.</p>
           } @else {
             <p class="text-sm text-gray-700">No one has elevated Org Lens access for this organization yet.</p>
           }

@@ -608,6 +608,7 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
   it('lists the maintainer roles overlapping the past 2 years per project, matched on the lowercased Insights slug', async () => {
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
+    expect(response.maintainerRolesUnavailable).toBeUndefined();
     expect(response.projects.map((project) => project.maintainers)).toEqual([
       [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }],
       [{ id: 'm-2', name: 'Unknown maintainer', avatarUrl: 'https://avatars.example.com/m-2.png' }],
@@ -635,7 +636,7 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
     expect(binds).toEqual([ACCOUNT_ID, 'k8s', 730]);
   });
 
-  it('serves the projects with empty maintainer lists, and stores nothing, when the roles table is missing', async () => {
+  it('flags maintainer roles as unavailable, and stores nothing, when the roles table is missing', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('ORG_MAINTAINER_ROLES')) {
         throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
@@ -646,6 +647,7 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
+    expect(response.maintainerRolesUnavailable).toBe(true);
     expect(response.projects.map((project) => project.maintainers)).toEqual([[]]);
     expect(cacheValues.size).toBe(0);
   });

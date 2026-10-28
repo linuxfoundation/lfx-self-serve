@@ -40,6 +40,7 @@ import { createHash } from 'crypto';
 import { Request } from 'express';
 
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
@@ -308,13 +309,7 @@ export class OrgLensPeopleService {
    * `PROJECT_SCOPE = 'all'`), cached per account. A warehouse error rejects, so callers decide how to degrade.
    */
   public async getFormerUsernames(accountId: string): Promise<string[]> {
-    return withOrgCache(
-      accountId,
-      'people-former-usernames:v1',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFormerUsernames(accountId),
-      isStringArray
-    );
+    return readOrgFormerUsernames(this.snowflakeService, accountId);
   }
 
   /**
@@ -492,17 +487,6 @@ export class OrgLensPeopleService {
       return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: [] }, labelsFailed: true };
     }
     return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: foundationResult.value.rows }, labelsFailed: false };
-  }
-
-  private async fetchFormerUsernames(accountId: string): Promise<string[]> {
-    const query = `
-      SELECT DISTINCT LOWER(TRIM(LF_USERNAME)) AS LF_USERNAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = 'all' AND PROJECT_SCOPE = 'all' AND IS_FORMER = TRUE
-        AND NULLIF(TRIM(LF_USERNAME), '') IS NOT NULL
-    `;
-    const result = await this.snowflakeService.execute<{ LF_USERNAME: string }>(query, [accountId]);
-    return result.rows.map((row) => row.LF_USERNAME);
   }
 
   /**
@@ -1059,10 +1043,6 @@ function isFormerEmployeesRaw(value: unknown): boolean {
 
 function isFormerCheck(value: unknown): boolean {
   return !!value && typeof value === 'object' && 'isFormer' in value && typeof value.isFormer === 'boolean' && 'failed' in value && value.failed === false;
-}
-
-function isStringArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */

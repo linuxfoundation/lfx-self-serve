@@ -209,12 +209,13 @@ export class OrgLensMembershipsService {
    * Unknown org/foundation pairs return an empty envelope, never a 404.
    */
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
-    // `v2`: per-project maintainers are now LF maintainer roles over the past 365 days (lfx-self-serve#4482).
+    // `v3`: a null MAINTAINER_ROLES now means "roles unavailable", not "no roles", so `v2` entries must miss.
+    // (`v2`: per-project maintainers became LF maintainer roles over the past 365 days, lfx-self-serve#4482.)
     // Set by the fetcher, read by `storable`: rows without their roles (table missing) are served, never stored.
     let rolesMissing = false;
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:v2:${foundationId}`,
+      `memberships-projects:v3:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFoundationProjectRows(accountId, foundationId);

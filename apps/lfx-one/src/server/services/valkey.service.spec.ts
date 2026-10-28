@@ -485,7 +485,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       'people-detail-roles:v1:person-one:365d',
       'maintainer-roles:v1',
       'foundations:v2',
-      'memberships-projects:v2:cncf',
+      'memberships-projects:v3:cncf',
       'people-trainees:v2',
       'people-trainees:v3:all',
     ]) {

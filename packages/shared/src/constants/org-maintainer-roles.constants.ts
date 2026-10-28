@@ -12,9 +12,9 @@ export const ORG_MAINTAINER_ROLES_LABEL = 'Maintainer roles';
 /** Label where the count covers LF projects only (Overview Foundations & Projects, Memberships projects drawer). */
 export const ORG_LF_MAINTAINER_ROLES_LABEL = 'LF maintainer roles';
 
-/** The counting rule, for tiles and cards that follow a selected range. */
+/** The counting rule for People → Contributors' tile, which follows the range but not the Employment filter (lfx-self-serve#4627). */
 export const ORG_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment filter.";
 
 /** The counting rule for the Overview card: LF projects, past 365 days. */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION =
