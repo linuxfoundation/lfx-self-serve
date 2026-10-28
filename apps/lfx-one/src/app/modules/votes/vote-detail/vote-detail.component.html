@@ -298,6 +298,11 @@
 
     <!-- Voter panels when results aren't shown. -->
     <ng-template #voterStatePanel>
+      @if (impersonating()) {
+        <p class="text-sm text-gray-700" role="note" data-testid="vote-detail-impersonation-notice">
+          {{ voterState() === 'submitted' && ballotPrivacyRestricted() ? impersonationPrivateNotice : impersonationReadOnlyNotice }}
+        </p>
+      }
       @if (myResponseError()) {
         <lfx-card data-testid="vote-detail-voter-my-response-error">
           <div class="flex flex-col items-center gap-2 py-8 text-center">
@@ -338,6 +343,17 @@
                   <span class="text-sm font-semibold text-emerald-900">Your vote has been recorded</span>
                 }
               </div>
+              @if (ballotPrivacyRestricted()) {
+                <!-- No ballot read, and no fabricated empty ballot, during private Admin Mode inspection. -->
+              } @else if (myBallotLoading()) {
+                <div class="w-full" role="status" aria-label="Loading your ballot" data-testid="vote-detail-my-ballot-loading">
+                  <p-skeleton width="100%" height="8rem" />
+                </div>
+              } @else if (myBallot(); as ballot) {
+                <lfx-vote-my-ballot [vote]="voteData" [ballot]="ballot" data-testid="vote-detail-my-ballot" class="w-full text-left" />
+              } @else if (myBallotError()) {
+                <p class="text-sm text-red-600" data-testid="vote-detail-my-ballot-error">Couldn't load your ballot.</p>
+              }
             } @else {
               <p class="text-sm text-gray-600 max-w-sm" data-testid="vote-detail-voter-not-voted">
                 You haven't responded to this vote yet. Totals and comments stay hidden until the vote closes.

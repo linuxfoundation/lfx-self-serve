@@ -36,6 +36,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesQuickFilter,
   PollAnswer,
@@ -48,6 +49,7 @@ import type {
   UserChoice,
   Vote,
   VoteBallotQuestionView,
+  VoteCastFormPrefill,
   VoteFormValue,
   VoteParticipationStats,
   VoteParticipationStatusCounts,
@@ -78,6 +80,14 @@ export function isVoteClosingSoon(vote: Vote, nowMs: number): boolean {
  */
 export function isVoteAwaitingMyBallot(vote: Vote): boolean {
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+}
+
+/**
+ * True when My Votes can show the viewer's recorded ballot in a read-only drawer: active and already responded (#4331).
+ * My Votes opens the cast drawer in read-only review mode for these rows instead of navigating to the vote page.
+ */
+export function isVoteBallotReviewable(vote: Vote): boolean {
+  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.RESPONDED;
 }
 
 /** Matches the personal summary's status/response semantics at a shared time snapshot. */
@@ -1090,7 +1100,7 @@ export function countVoteVotersByStatus(rows: readonly Pick<VoteVoterRowView, 's
  * Selected choices missing from the vote's questions are still shown, so a renamed or removed choice never hides part
  * of the ballot.
  */
-export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, voter: VoteVoter): VoteBallotQuestionView[] {
+export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, voter: Pick<VoteVoter, 'poll_answers'>): VoteBallotQuestionView[] {
   const ranked = isRankedPollType(vote.poll_type);
   const answersById = new Map((voter.poll_answers ?? []).map((answer) => [answer.question_id, answer]));
 
@@ -1125,4 +1135,35 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
         : [],
     };
   });
+}
+
+/**
+ * Turns the caller's current ballot into cast-drawer form values (#4331)
+ * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
+ * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
+ */
+export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {
+  const ranked = isRankedPollType(vote.poll_type);
+  const answersById = new Map(ballot.poll_answers.map((answer) => [answer.question_id, answer]));
+  const answers: Record<string, string | string[]> = {};
+
+  for (const question of vote.poll_questions ?? []) {
+    const answer = answersById.get(question.question_id);
+    if (!answer) continue;
+    const picked = answerChoices(vote, answer).map((choice) => choice.choice_id);
+
+    if (ranked || question.type === 'multiple_choice') {
+      answers[question.question_id] = picked;
+    } else if (picked.length) {
+      answers[question.question_id] = picked[0];
+    }
+  }
+
+  const comments: Record<string, string> = {};
+  for (const response of ballot.comment_responses) {
+    comments[response.prompt_id] = response.comment_text;
+  }
+
+  return { answers, abstain: ballot.abstained, comments };
 }

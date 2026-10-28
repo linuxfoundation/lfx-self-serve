@@ -191,11 +191,13 @@ describe('VoteBallotDialogComponent', () => {
     expect(byTestId(fixture, 'vote-ballot-dialog-comment-__proto__')).toBeNull();
   });
 
-  it('notes that an open vote shows the current ballot', () => {
+  it('notes that submitted ballots are final even while the vote is open', () => {
     const { fixture } = mount({ ...BASE_VOTE, status: PollStatus.ACTIVE }, [voter()]);
     current = fixture;
 
-    expect(byTestId(fixture, 'vote-ballot-dialog-active-notice')!.textContent).toContain("This is the voter's current ballot.");
+    expect(byTestId(fixture, 'vote-ballot-dialog-active-notice')!.textContent).toContain(
+      "This is the voter's submitted ballot. Submitted ballots cannot be changed."
+    );
   });
 
   it('steps through the ballots within bounds', () => {

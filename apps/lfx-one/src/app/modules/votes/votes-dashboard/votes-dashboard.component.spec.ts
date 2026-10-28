@@ -29,6 +29,7 @@ import { VotesDashboardComponent } from './votes-dashboard.component';
 class StubVoteCastDrawerComponent {
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
+  public readonly readOnly = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
 }
@@ -1050,14 +1051,57 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('soon');
       expect(drawer()?.listVote()?.uid).toBe('soon');
+      expect(drawer()?.readOnly()).toBe(false);
     });
 
-    it('opens the vote page for an active vote the viewer already voted on', async () => {
+    it('opens the cast drawer in read-only review mode for an active vote the viewer already voted on (#4331)', async () => {
       table.viewVote.emit('responded');
       await settle();
 
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'responded']);
-      expect(drawer()?.visible()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.readOnly()).toBe(true);
+    });
+
+    it.each(['missing row', 'failed refresh'])('keeps review locked after a %s', async (scenario) => {
+      table.viewVote.emit('responded');
+      await settle();
+      getMyVotes.mockReturnValueOnce(
+        scenario === 'missing row' ? of({ votes: feed.filter((item) => item.uid !== 'responded'), complete: true }) : throwError(() => new Error('503'))
+      );
+      dashboard['refreshVotes']();
+      await settle();
+
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.listVote()).toBeNull();
+      expect(drawer()?.readOnly()).toBe(true);
+    });
+
+    it('clears review mode on close and opens a first ballot editable', async () => {
+      table.viewVote.emit('responded');
+      await settle();
+      drawer()!.visible.set(false);
+      await settle();
+      expect(dashboard['castDrawerReadOnly']()).toBe(false);
+
+      table.viewVote.emit('soon');
+      await settle();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('soon');
+      expect(drawer()?.readOnly()).toBe(false);
+    });
+
+    it('keeps a submitted ballot voted when reviewed (#4331)', async () => {
+      const loadsBeforeReview = getMyVotes.mock.calls.length;
+      table.viewVote.emit('responded');
+      await settle();
+      expect(getMyVotes).toHaveBeenCalledTimes(loadsBeforeReview);
+      expect(drawer()?.readOnly()).toBe(true);
+
+      expect(element('votes-your-vote-responded')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-responded')?.textContent).toContain('Review');
     });
 
     it('opens the vote page for an ended vote from a row, and its Results on the results tab', async () => {
@@ -1086,8 +1130,15 @@ describe('VotesDashboardComponent personal summary', () => {
       await selectSummary('needs-vote');
       expect(rows()).not.toContain('soon');
       await selectSummary('needs-vote');
+      // The real drawer closes itself on submit; the stub doesn't, so close it before Review.
+      drawer()!.visible.set(false);
+      await settle();
       element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'soon']);
+      await settle();
+      // Review on the just-voted row reopens the drawer to review the locked ballot (#4331), rather than navigating.
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.readOnly()).toBe(true);
       expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
     });
 

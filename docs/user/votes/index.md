@@ -22,7 +22,7 @@ The Votes section lets you create and manage polls for formal project governance
 
 ## Navigation
 
-To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls. Selecting an open poll you haven't voted on yet opens its ballot right on the list, so you can vote without leaving the page. Selecting any other poll opens its page.
+To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls. Selecting an open poll you haven't voted on yet opens its ballot right on the list, so you can vote without leaving the page. Selecting **Review** on an open poll you've already voted on opens the same ballot drawer on the list with your recorded choices locked. Submitted ballots cannot be changed. Selecting any other poll opens its page.
 
 To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the polls for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see polls with every status.
 

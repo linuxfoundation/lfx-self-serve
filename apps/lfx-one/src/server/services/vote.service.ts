@@ -20,6 +20,7 @@ import {
   ExtendVoteRequest,
   IndexedVote,
   IndexedVoteResponse,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesResponse,
   PaginatedResponse,
@@ -31,6 +32,7 @@ import {
   Vote,
   VoteListResponse,
   VoteReminderRecipient,
+  VoteResponseDetail,
   VoteStatusCounts,
   VoteSummary,
   VoteParticipationVoter,
@@ -52,7 +54,7 @@ import {
 import { Request } from 'express';
 import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
 
-import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -60,6 +62,7 @@ import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { EmailService } from './email.service';
 import { logger } from './logger.service';
@@ -1005,7 +1008,72 @@ export class VoteService {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       response.uid = match.vote_id;
     }
+    // Admin Mode needs participation metadata, never a legacy index row's ballot content.
+    // Named ballot inspection uses the privacy-checked my-ballot path instead.
+    if (isImpersonating(req)) {
+      return { uid: response.uid, vote_uid: response.vote_uid, vote_status: response.vote_status, voter_removed: response.voter_removed };
+    }
     return response;
+  }
+
+  /**
+   * Reads the caller's own current ballot for a vote (#4331), or null when they have no submitted ballot.
+   * @description The response uid comes only from the identity-matched row (`getMyVoteResponse`), never from the
+   * client, so on a pseudo-anonymous vote the caller still sees only their own ballot. The ballot is read from the
+   * voting service rather than the query-service index, which omits ballot content on pseudo-anonymous votes.
+   */
+  public async getMyVoteBallot(req: Request, voteUid: string): Promise<MyVoteBallot | null> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) return null;
+
+    if (isImpersonating(req)) {
+      const vote = await this.getVoteById(req, voteUid);
+      if (vote.pseudo_anonymity !== false) {
+        throw new AuthorizationError('This ballot is private while impersonating a user.', {
+          code: 'IMPERSONATION_BALLOT_PRIVATE',
+          operation: 'get_my_vote_ballot',
+          service: 'vote_service',
+        });
+      }
+    }
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (!detail) {
+      throw new MicroserviceError('Vote ballot response body was empty', 502, 'VOTE_BALLOT_EMPTY', {
+        operation: 'get_my_vote_ballot',
+        service: 'vote_service',
+        path: `/vote_responses/${encodeURIComponent(row.uid)}`,
+      });
+    }
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_vote_ballot', 'Vote response belongs to a different vote, returning no ballot', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return null;
+    }
+
+    return {
+      vote_response_uid: row.uid,
+      vote_uid: voteUid,
+      abstained: detail?.abstained === true,
+      poll_answers: (detail?.poll_answers ?? []).map((answer) => ({
+        question_id: answer.question_id,
+        prompt: answer.prompt,
+        type: answer.type,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
+      vote_creation_time: detail?.vote_creation_time || undefined,
+    };
   }
 
   // ============================================

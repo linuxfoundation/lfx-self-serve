@@ -23,6 +23,10 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 2. Select your preferred option or options from the poll.
 3. Submit your vote. The list then shows the poll as voted.
 
+### While impersonating another user
+
+In **Admin Mode**, you cannot cast or change another user's ballot. You may inspect a named ballot read-only when your existing access permits it. Pseudo-anonymous ballots, and ballots whose privacy setting cannot be verified, hide the target voter's choices, abstention and ballot comments. My Votes, the vote page and Pending Actions explain the restriction. These limits apply only while impersonating; they do not change your own voting or normal vote-management permissions.
+
 ## View results
 
 Select a poll to view its current results and status.

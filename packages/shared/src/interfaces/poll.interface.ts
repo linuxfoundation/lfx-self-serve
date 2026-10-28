@@ -1189,6 +1189,57 @@ export interface CreateVoteResponseRequest {
 }
 
 /**
+ * Upstream GET /vote_responses/{vote_response_uid} subset read by the BFF (#4331).
+ * @description Read straight from the voting service, which (unlike the query-service index)
+ * returns ballot content on pseudo-anonymous votes too. Never forwarded to the client as-is.
+ */
+export interface VoteResponseDetail {
+  /** Vote response (ballot) identifier */
+  vote_response_uid: string;
+  /** Parent vote identifier */
+  vote_uid: string;
+  /** Upstream submission status */
+  vote_status?: string;
+  /** Whether the ballot is an abstention */
+  abstained?: boolean;
+  /** Answers to the poll questions — choice arrays may be omitted when empty */
+  poll_answers?: IndexedPollAnswer[];
+  /** Responses to comment prompts */
+  comment_responses?: CommentResponseInput[];
+  /** When the ballot was last submitted */
+  vote_creation_time?: string;
+}
+
+/**
+ * The caller's own current ballot, returned by GET /api/votes/:uid/my-ballot (#4331).
+ * @description An allowlisted projection of `VoteResponseDetail` for the caller's identity-matched row only.
+ */
+export interface MyVoteBallot {
+  /** Vote response (ballot) identifier */
+  vote_response_uid: string;
+  /** Parent vote identifier */
+  vote_uid: string;
+  /** Whether the ballot is an abstention */
+  abstained: boolean;
+  /** Answers to the poll questions, with choice arrays normalized to `[]` */
+  poll_answers: PollAnswer[];
+  /** Responses to comment prompts */
+  comment_responses: CommentResponseInput[];
+  /** When the ballot was last submitted */
+  vote_creation_time?: string;
+}
+
+/** Cast-drawer form values derived from a `MyVoteBallot` (#4331), keyed by question id / prompt id. */
+export interface VoteCastFormPrefill {
+  /** Question id → a single choice id (single choice) or choice ids (multiple choice, ranked order) */
+  answers: Record<string, string | string[]>;
+  /** Whether the ballot is an abstention */
+  abstain: boolean;
+  /** Comment prompt id → comment text */
+  comments: Record<string, string>;
+}
+
+/**
  * Request body for updating a vote/poll
  * @description Only permitted when vote status is "disabled"
  * @see https://github.com/linuxfoundation/lfx-v2-voting-service

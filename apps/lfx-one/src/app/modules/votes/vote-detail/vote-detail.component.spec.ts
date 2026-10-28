@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
+  MyVoteBallot,
   MyVoteResponse,
   PollCommentResult,
   PollQuestionResult,
@@ -23,6 +24,7 @@ import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
+import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +88,7 @@ describe('VoteDetailComponent', () => {
   let voteService: {
     fetchVote: ReturnType<typeof vi.fn>;
     getMyVoteResponse: ReturnType<typeof vi.fn>;
+    getMyVoteBallot: ReturnType<typeof vi.fn>;
     getVoteResults: ReturnType<typeof vi.fn>;
   };
   let projectService: { getProjectStrict: ReturnType<typeof vi.fn> };
@@ -95,12 +98,14 @@ describe('VoteDetailComponent', () => {
   let paramMap: BehaviorSubject<ParamMap>;
   let queryParamMap: BehaviorSubject<ParamMap>;
   let reqContext: ServerRequestContext;
+  const impersonating = signal(false);
 
   async function setup(platform: 'browser' | 'server' = 'browser', includeRealHeader = false): Promise<ComponentFixture<VoteDetailComponent>> {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
         { provide: VoteService, useValue: voteService },
+        { provide: UserService, useValue: { impersonating } },
         { provide: ProjectService, useValue: projectService },
         { provide: CommitteeService, useValue: committeeService },
         { provide: Router, useValue: router },
@@ -134,9 +139,11 @@ describe('VoteDetailComponent', () => {
     fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
   beforeEach(() => {
+    impersonating.set(false);
     voteService = {
       fetchVote: vi.fn().mockReturnValue(of(makeVote())),
       getMyVoteResponse: vi.fn().mockReturnValue(of(null)),
+      getMyVoteBallot: vi.fn().mockReturnValue(of(null)),
       getVoteResults: vi.fn().mockReturnValue(of(makeResults())),
     };
     projectService = { getProjectStrict: vi.fn().mockReturnValue(of({ writer: false } as Project)) };
@@ -146,6 +153,52 @@ describe('VoteDetailComponent', () => {
     paramMap = new BehaviorSubject(convertToParamMap({ id: 'vote-1' }));
     queryParamMap = new BehaviorSubject(convertToParamMap({}));
     reqContext = {} as ServerRequestContext;
+  });
+
+  describe('Admin Mode ballot policy (#4331)', () => {
+    it.each([true, undefined, null])('does not request private recorded ballots for privacy %s', async (privacy) => {
+      impersonating.set(true);
+      const vote = makeVote();
+      Reflect.set(vote, 'pseudo_anonymity', privacy); // Includes malformed runtime null metadata.
+      voteService.fetchVote.mockReturnValue(of(vote));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-impersonation-notice')?.textContent).toContain('This ballot is private');
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it.each([false, true, undefined, null])('explains why an awaiting ballot cannot be cast during impersonation (privacy %s)', async (privacy) => {
+      impersonating.set(true);
+      const vote = makeVote();
+      Reflect.set(vote, 'pseudo_anonymity', privacy);
+      voteService.fetchVote.mockReturnValue(of(vote));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+      expect(read(fixture, 'canCastVote')).toBe(false);
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+      call(fixture, 'onCastVote');
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+      expect(testId(fixture, 'vote-detail-impersonation-notice')?.textContent).toContain('You cannot cast or change their vote.');
+      expect(testId(fixture, 'vote-detail-impersonation-notice')?.textContent).not.toContain('This ballot is private');
+    });
+
+    it('still loads named recorded ballots during impersonation', async () => {
+      impersonating.set(true);
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: false })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      await setup();
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+    });
+
+    it('does not demote a manager or change their normal results permissions', async () => {
+      impersonating.set(true);
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const fixture = await setup();
+      expect(read(fixture, 'audience')).toBe('creator');
+      expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
+    });
   });
 
   describe('load state', () => {
@@ -350,6 +403,108 @@ describe('VoteDetailComponent', () => {
       results.next(makeResults());
       TestBed.tick();
       expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent?.trim()).toBe('1 invited voter has not responded yet');
+    });
+  });
+
+  describe('your ballot (#4331)', () => {
+    const ballot: MyVoteBallot = { vote_response_uid: 'resp-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+
+    it.each([
+      ['a named', false],
+      ['a pseudo-anonymous', true],
+    ])('shows a submitted voter their own ballot on %s vote', async (_label, pseudoAnonymity) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: pseudoAnonymity })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(of(ballot));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+      expect(read(fixture, 'myBallot')).toEqual(ballot);
+      expect(testId(fixture, 'vote-detail-my-ballot')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+    });
+
+    it.each(['success', 'error', 'missing'])('shows a loading placeholder until the ballot read settles with %s', async (outcome) => {
+      const pending = new Subject<MyVoteBallot | null>();
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(pending);
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')).toBeNull();
+
+      if (outcome === 'success') {
+        pending.next(ballot);
+        pending.complete();
+      } else if (outcome === 'missing') {
+        pending.next(null);
+        pending.complete();
+      } else {
+        pending.error(new HttpErrorResponse({ status: 500 }));
+      }
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, outcome === 'success' ? 'vote-detail-my-ballot' : 'vote-detail-my-ballot-error')).not.toBeNull();
+    });
+
+    it('shows a ballot error without losing submission confirmation when the recorded ballot is missing', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(of(null));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')?.textContent).toContain("Couldn't load your ballot.");
+      expect(testId(fixture, 'vote-detail-voter-confirmation')).not.toBeNull();
+    });
+
+    it('clears ballot loading when navigation cancels a pending read', async () => {
+      const pending = new Subject<MyVoteBallot | null>();
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(pending);
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).not.toBeNull();
+      voteService.fetchVote.mockReturnValue(of(makeVote({ uid: 'vote-2' })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE, { vote_uid: 'vote-2' })));
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(pending.observed).toBe(false);
+      expect(testId(fixture, 'vote-detail-my-ballot-loading')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it('does not read a ballot for a voter who has not voted', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it('does not read a ballot for a manager', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(read(fixture, 'audience')).toBe('creator');
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+    });
+
+    it('says the ballot could not load when the read fails', async () => {
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(httpError(500));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
+      expect(testId(fixture, 'vote-detail-my-ballot-error')?.textContent).toContain("Couldn't load your ballot.");
     });
   });
 

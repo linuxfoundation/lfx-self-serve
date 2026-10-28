@@ -13,6 +13,8 @@ const {
   getVoteVoters,
   getVoteResults,
   sendVoteReminders,
+  getMyVoteBallot,
+  createVoteResponse,
   assertVoteWrite,
   hasVoteWrite,
   success,
@@ -25,6 +27,8 @@ const {
   getVoteVoters: vi.fn(),
   getVoteResults: vi.fn(),
   sendVoteReminders: vi.fn(),
+  getMyVoteBallot: vi.fn(),
+  createVoteResponse: vi.fn(),
   assertVoteWrite: vi.fn(),
   hasVoteWrite: vi.fn(),
   success: vi.fn(),
@@ -39,6 +43,8 @@ vi.mock('../services/vote.service', () => ({
     public getVoteVoters = getVoteVoters;
     public getVoteResults = getVoteResults;
     public sendVoteReminders = sendVoteReminders;
+    public getMyVoteBallot = getMyVoteBallot;
+    public createVoteResponse = createVoteResponse;
   },
 }));
 vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite, hasVoteWrite }));
@@ -48,7 +54,7 @@ vi.mock('@lfx-one/shared/utils', () => ({ codePointLength: (value: string) => [.
 import { VOTE_VOTERS_DRAFT } from '@lfx-one/shared/constants';
 import { VoteVoterStatus } from '@lfx-one/shared/enums';
 
-import { ConflictError, MicroserviceError, ServiceValidationError } from '../errors';
+import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { VoteController } from './vote.controller';
 
 describe('VoteController management reads', () => {
@@ -396,5 +402,78 @@ describe('VoteController results (#4330)', () => {
 
     expect(next).toHaveBeenCalledWith(forbidden);
     expect(json).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoteController own ballot (#4331)', () => {
+  const controller = new VoteController();
+  const VOTE_UID = 'v0000000-0000-0000-0000-00000000c401';
+  const RESPONSE_UID = 'vr000000-0000-0000-0000-00000000c401';
+  const answers = [{ question_id: 'q-1', choice_ids: ['c-yes'] }];
+  const json = vi.fn();
+  const send = vi.fn();
+  const status = vi.fn(() => ({ send }));
+  const res = { json, status } as unknown as Response;
+  const next = vi.fn();
+  beforeEach(() => vi.resetAllMocks());
+
+  describe('getMyVoteBallot', () => {
+    it("returns the caller's ballot", async () => {
+      const ballot = { vote_response_uid: RESPONSE_UID, vote_uid: VOTE_UID, abstained: false, poll_answers: [], comment_responses: [] };
+      getMyVoteBallot.mockResolvedValue(ballot);
+      const req = { params: { uid: VOTE_UID } } as unknown as Request;
+
+      await controller.getMyVoteBallot(req, res, next);
+
+      expect(getMyVoteBallot).toHaveBeenCalledWith(req, VOTE_UID);
+      expect(json).toHaveBeenCalledWith(ballot);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('responds 404 when the caller has no submitted ballot', async () => {
+      getMyVoteBallot.mockResolvedValue(null);
+
+      await controller.getMyVoteBallot({ params: { uid: VOTE_UID } } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+      expect(json).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank vote uid without reading the ballot', async () => {
+      await controller.getMyVoteBallot({ params: { uid: ' ' }, path: '/votes/%20/my-ballot' } as unknown as Request, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(getMyVoteBallot).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createVoteResponse (shared validation unchanged)', () => {
+    const request = (body: unknown) => ({ params: {}, body }) as unknown as Request;
+
+    it('forwards the ballot without inventing comment_responses', async () => {
+      const req = request({ vote_uid: VOTE_UID, vote_response_uid: RESPONSE_UID, abstain: false, user_vote_content: answers });
+
+      await controller.createVoteResponse(req, res, next);
+
+      expect(createVoteResponse).toHaveBeenCalledWith(req, {
+        vote_uid: VOTE_UID,
+        vote_response_uid: RESPONSE_UID,
+        abstain: false,
+        user_vote_content: answers,
+        comment_responses: undefined,
+      });
+      expect(status).toHaveBeenCalledWith(204);
+    });
+
+    it('rejects an answer with no choices', async () => {
+      await controller.createVoteResponse(
+        request({ vote_uid: VOTE_UID, vote_response_uid: RESPONSE_UID, abstain: false, user_vote_content: [{ question_id: 'q-1' }] }),
+        res,
+        next
+      );
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(createVoteResponse).not.toHaveBeenCalled();
+    });
   });
 });
