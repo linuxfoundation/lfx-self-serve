@@ -102,6 +102,7 @@ describe('LinkedIn profile and post surface', () => {
       agentKey: 'linkedin-post',
       documentId: 'run-' + 'a'.repeat(24),
       startedBy: 'Synthetic writer',
+      startedByViewer: true,
       startedAt: '2026-10-19T12:00:00.000Z',
     };
     api.startForDocument

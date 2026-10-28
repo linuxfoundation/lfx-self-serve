@@ -924,6 +924,7 @@ describe('MktgAgentRunComponent', () => {
         agentKey: type.agentKey,
         documentId: 'living',
         startedBy: 'Another writer',
+        startedByViewer: false,
         startedAt: '2026-10-19T12:00:00.000Z',
       };
     };

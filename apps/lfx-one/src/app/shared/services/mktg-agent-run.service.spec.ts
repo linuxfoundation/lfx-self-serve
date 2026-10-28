@@ -344,6 +344,7 @@ describe('MktgAgentRunService', () => {
       agentKey: 'brand-kit',
       documentId: 'living',
       startedBy: 'Another writer',
+      startedByViewer: false,
       startedAt: '2026-10-19T12:00:00.000Z',
     };
     const failure = new HttpErrorResponse({ status: 409, error: conflict });
@@ -413,6 +414,8 @@ describe('MktgAgentRunService', () => {
     { agentKey: 'synthetic-other' },
     { documentId: 'other' },
     { startedBy: undefined },
+    { startedByViewer: undefined },
+    { startedByViewer: 'true' },
   ])('rejects malformed or out-of-scope active conflict metadata: %j', (override) => {
     const body = {
       code: MKTG_RUN_ACTIVE,
@@ -422,6 +425,7 @@ describe('MktgAgentRunService', () => {
       agentKey: 'brand-kit',
       documentId: 'living',
       startedBy: 'Another writer',
+      startedByViewer: false,
       startedAt: '2026-10-19T12:00:00.000Z',
       ...override,
     };

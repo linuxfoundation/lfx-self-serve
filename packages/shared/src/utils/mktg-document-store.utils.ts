@@ -219,15 +219,17 @@ export function mktgRunClaimAnswers(run: MktgStartedRunRecord, questionsId: stri
   };
 }
 
-/** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
+/** Explicit public projection: no session capabilities, subjects or private coverage. Closed markers opt in only for selected details. */
 export function mktgRunProgress(
   run: MktgStartedRunRecord,
   fullReply = run.failureText,
   activity?: MktgRunActivity[],
   readerSubject?: string,
-  readerIsWriter = false
+  readerIsWriter = false,
+  includeClosed = false
 ): MktgDocumentRunProgress | null {
-  if (run.state === 'completed' || run.state === 'superseded' || run.state === 'discarded') {
+  const closed = run.state === 'superseded' || run.state === 'discarded';
+  if (run.state === 'completed' || (closed && !includeClosed)) {
     return null;
   }
   // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
@@ -241,7 +243,8 @@ export function mktgRunProgress(
     documentId: run.documentId,
     startedAt: run.startedAt,
     state,
-    ...(activity && { activity }),
+    ...(closed && run.closedAt && Number.isFinite(Date.parse(run.closedAt)) && { closedAt: run.closedAt }),
+    ...(!closed && activity && { activity }),
     ...(readerIsWriter &&
       state === 'questions' &&
       isMktgRunPendingQuestions(run.pendingQuestions) &&

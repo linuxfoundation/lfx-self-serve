@@ -11,6 +11,8 @@ export interface MktgActiveRunConflict {
   code: typeof MKTG_RUN_ACTIVE;
   message: string;
   startedBy: string;
+  /** Whether the active run's creator is the effective viewer. */
+  startedByViewer: boolean;
   /** When the active run started (ISO); the run page shows waiting since. */
   startedAt: string;
   activeRunId: string;
@@ -91,7 +93,7 @@ export interface MktgPublicRunAnswersResponse {
   state: 'writing';
 }
 
-/** Server-only terminal markers; closed runs are not reconciled or listed. */
+/** Stored states include completion; closed markers appear only on selected details. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
@@ -107,7 +109,10 @@ export interface MktgDocumentRunProgress {
   documentId: string;
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
-  state: MktgDocumentRunState;
+  /** Closed states appear only on a selected-run detail, never in listings. */
+  state: Exclude<MktgStoredDocumentRunState, 'completed'>;
+  /** Recorded closure time; absent on legacy closed records. */
+  closedAt?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Present only for project writers while this run is waiting for answers. */
@@ -155,6 +160,8 @@ export interface MktgStartedRunRecord {
   /** Private bounded ACK ledger; overflow rejects a new turn rather than forgetting accepted ones. */
   acceptedAttemptIds?: string[];
   state: MktgStoredDocumentRunState;
+  /** Timestamp recorded when discarded or superseded; absent on legacy records. */
+  closedAt?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */

@@ -37,6 +37,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
               agentKey: 'linkedin-post',
               documentId,
               startedBy: 'Synthetic writer',
+              startedByViewer: true,
               startedAt: '2026-10-19T12:00:00.000Z',
             },
             409

@@ -454,7 +454,14 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({
       statusCode: 409,
       code: 'MKTG_RUN_ACTIVE',
-      details: { activeRunId: hash(session), state, agentKey: types[0].agentKey, documentId: 'living', startedAt: JSON.parse(stored().body).startedAt },
+      details: {
+        activeRunId: hash(session),
+        state,
+        agentKey: types[0].agentKey,
+        documentId: 'living',
+        startedByViewer: true,
+        startedAt: JSON.parse(stored().body).startedAt,
+      },
     });
     expect(flows.interrupt).not.toHaveBeenCalled();
     expect(stored().metadata['state']).toBe(state);
@@ -485,6 +492,25 @@ describe('MktgDocumentRunService core', () => {
     await service.start(req, project, types[0].agentKey, 'replacement-session');
     expect(stored('replacement-session').metadata['state']).toBe('writing');
     expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it.each(['discarded', 'superseded'] as const)('returns %s closure only for a matching selected detail and keeps it out of listings', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    if (state === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    else Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+    expect(stored().metadata['closed-at']).toBe(new Date().toISOString());
+    flows.result.mockClear();
+    flows.author.mockClear();
+    const result = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(result).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state, closedAt: new Date().toISOString() }] });
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+    await expect(service.readClosedProgress(req, project, 'faq', 'other-document', hash(session))).rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(service.readClosedProgress(req, project, types[0].agentKey, 'living', '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+    delete stored().metadata['closed-at'];
+    expect(await service.readClosedProgress(req, project, types[0].agentKey, 'living', hash(session))).not.toHaveProperty('closedAt');
   });
 
   it('settles an active comment redraft before closing its discarded run', async () => {
@@ -542,7 +568,7 @@ describe('MktgDocumentRunService core', () => {
     });
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).rejects.toMatchObject({
       statusCode: 409,
-      details: { activeRunId: hash(session), state: 'questions', startedAt: JSON.parse(stored().body).startedAt },
+      details: { activeRunId: hash(session), state: 'questions', startedByViewer: true, startedAt: JSON.parse(stored().body).startedAt },
     });
     expect(flows.interrupt).not.toHaveBeenCalled();
   });
@@ -597,18 +623,30 @@ describe('MktgDocumentRunService core', () => {
     expect(flows.interrupt).not.toHaveBeenCalled();
     expect(stored().metadata['state']).toBe('writing');
     await expect(service.assertSingleActiveOneOffRun(owner, project, 'member-360')).rejects.toMatchObject({ statusCode: 409 });
-    expect(flows.author).toHaveBeenCalledWith(owner, 'synthetic-owner', 'mktg_run_start');
+    expect(flows.author).not.toHaveBeenCalled();
   });
 
   it.each(['Synthetic writer', null])('names the living-run creator only in the client response (%s)', async (name) => {
     flows.author.mockResolvedValue(name ? { name } : null);
-    await service.start(req, project, types[0].agentKey, session);
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    await service.start(owner, project, types[0].agentKey, session);
     const conflict = await service.assertSingleActiveRun(req, project, types[0].agentKey).catch((err: unknown) => err);
     expect(conflict).toBeInstanceOf(ConflictError);
     if (!(conflict instanceof ConflictError)) return;
     const startedBy = name ?? 'Another writer';
-    expect(conflict.toResponse()).toMatchObject({ startedBy, message: `${startedBy}'s ${types[0].itemLabel} run is in progress.` });
+    expect(conflict.toResponse()).toMatchObject({ startedBy, startedByViewer: false, message: `${startedBy}'s ${types[0].itemLabel} run is in progress.` });
+    expect(flows.author).toHaveBeenCalledWith(req, 'synthetic-owner', 'mktg_run_start');
     expect(conflict.message).not.toContain(startedBy);
+  });
+
+  it('uses Your for the viewer own living run without resolving the author', async () => {
+    const viewer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-viewer' } } });
+    await service.start(viewer, project, types[0].agentKey, session);
+    const conflict = await service.assertSingleActiveRun(viewer, project, types[0].agentKey).catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    expect(conflict.toResponse()).toMatchObject({ startedByViewer: true, message: `Your ${types[0].itemLabel} run is in progress.` });
+    expect(flows.author).not.toHaveBeenCalled();
   });
 
   it('uses the caller-facing message for the caller own one-off conflict', async () => {
@@ -616,7 +654,7 @@ describe('MktgDocumentRunService core', () => {
     const conflict = await service.assertSingleActiveOneOffRun(req, project, 'member-360').catch((err: unknown) => err);
     expect(conflict).toBeInstanceOf(ConflictError);
     if (!(conflict instanceof ConflictError)) return;
-    expect(conflict.toResponse()).toMatchObject({ startedBy: 'Another writer', message: 'Your Member 360 run is in progress.' });
+    expect(conflict.toResponse()).toMatchObject({ startedBy: 'Another writer', startedByViewer: true, message: 'Your Member 360 run is in progress.' });
   });
 
   it('refuses retry while the creator has another active one-off and retries when the slot clears', async () => {
@@ -1177,6 +1215,9 @@ describe('MktgDocumentRunService core', () => {
         expect.objectContaining({ status: 'failed', failureText: 'A newer run superseded this send.' })
       );
       expect(stored().metadata['state']).toBe('superseded');
+      const closedAt = Date.parse(stored().metadata['closed-at']);
+      expect(closedAt).toBeGreaterThanOrEqual(Date.parse(stored('synthetic-second-session').metadata['started-at']));
+      expect(closedAt).toBeLessThanOrEqual(Date.now());
     });
   });
   it('releases a bound send when the authoritative Run writing deadline expires without resubmitting', async () => {
