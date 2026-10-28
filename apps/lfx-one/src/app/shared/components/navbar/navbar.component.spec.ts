@@ -650,9 +650,10 @@ describe('NavbarComponent', () => {
       };
 
       /** A desktop navbar docked to the rail, its panel laid out 280px wide from x=8 when it peeks. */
-      const createPeekFixture = async () => {
+      const createPeekFixture = async (routerEvents?: Observable<unknown>) => {
         stubViewport(false);
-        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate });
+        const navigation = routerEvents ? { extras: {}, trigger: 'imperative' } : null;
+        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate, routerEvents, navigation });
         const panel = fixture.nativeElement.querySelector('nav') as HTMLElement;
         vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 8, 280, 800));
         const collapse = TestBed.inject(NavbarCollapseService);
@@ -739,6 +740,41 @@ describe('NavbarComponent', () => {
         outside.focus();
         inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
         vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps a hover peek open through a navigation picked from it, closing once the pointer leaves', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(100);
+        events.next(new NavigationEnd(1, '/org/acme/overview', '/org/acme/overview'));
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a hover peek on a navigation once the pointer is off it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(600);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a pinned peek on a navigation picked from it, even with the pointer over it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek(true);
+
+        move(100);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
         expect(collapse.peek()).toBe(false);
       });
 
