@@ -31,7 +31,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^20.3.8",
+    "@angular-devkit/build-angular": "^20.3.42",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-angular": "^20.0.0",
     "@linuxfoundation/lfx-ui-core": "^0.3.1",
@@ -58,7 +58,7 @@
   ],
   "resolutions": {
     "@tailwindcss/typography/postcss-selector-parser": "^6.1.5",
-    "webpack@npm:5": "5.101.2"
+    "webpack@npm:5": "5.112.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": [

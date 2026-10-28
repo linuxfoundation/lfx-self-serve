@@ -206,7 +206,8 @@
             "compodoc": true,
             "port": 6006,
             "compodocArgs": ["-e", "json", "-d", ".", "-p", ".storybook/tsconfig.json"],
-            "experimentalZoneless": true
+            "experimentalZoneless": true,
+            "sourceMap": false
           }
         },
         "build-storybook": {
@@ -218,7 +219,8 @@
             "compodoc": true,
             "outputDir": "storybook-static",
             "compodocArgs": ["-e", "json", "-d", ".", "-p", ".storybook/tsconfig.json"],
-            "experimentalZoneless": true
+            "experimentalZoneless": true,
+            "sourceMap": false
           }
         }
       }
