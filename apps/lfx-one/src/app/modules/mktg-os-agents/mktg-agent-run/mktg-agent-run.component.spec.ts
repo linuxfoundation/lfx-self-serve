@@ -243,8 +243,11 @@ describe('MktgAgentRunComponent', () => {
     }
   });
 
-  it('shows fixed Kit and Family parents instead of a separate back arrow', async () => {
-    await configure('browser', 'foundation-setup');
+  it.each(['foundation-setup', 'brand-kit'])('uses Kit labels and fixed parents for %s', async (agentId) => {
+    await configure('browser', agentId);
+    const label = agentId === 'brand-kit' ? 'Brand kit' : 'Messaging framework';
+    expect(query('mktg-agent-run-name')?.textContent).toBe(label);
+    expect(fixture.nativeElement.querySelector('[aria-current="page"]')?.textContent).toBe(label);
     const breadcrumb: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb"]');
     expect(breadcrumb?.textContent).toContain('kit');
     expect(breadcrumb?.textContent).toContain('Positioning & brand');

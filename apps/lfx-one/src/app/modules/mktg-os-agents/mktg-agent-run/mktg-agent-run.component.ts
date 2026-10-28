@@ -55,7 +55,7 @@ import {
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgSentenceCaseLabel } from '@lfx-one/shared/utils';
+import { mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgSentenceCaseLabel, mktgKitAssetLabel } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -156,8 +156,8 @@ export class MktgAgentRunComponent {
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
   protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
-  protected readonly assetName =
-    MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.itemLabel ?? this.intake?.documentName ?? 'Document';
+  private readonly assetType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id);
+  protected readonly assetName = mktgKitAssetLabel(this.assetType?.agentKey ?? '') ?? this.assetType?.itemLabel ?? this.intake?.documentName ?? 'Document';
   protected readonly sourcesHint = this.intakeSourcesHint();
   protected readonly dedicatedAudit = !!this.intake?.oneOffDocument && this.intake.agentId === AEO_GEO_INTAKE.agentId;
   /**
