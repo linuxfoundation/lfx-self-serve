@@ -3692,6 +3692,61 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect('conversionPixelId' in submitReddit(f)).toBe(false);
   });
 
+  /**
+   * The rest of the Reddit fields the brief does not derive, on the same live brief switch (#4589).
+   * Every typed value is one neither the component default nor the brief carries, so a field that
+   * survived the switch could not pass by coinciding with a re-seed.
+   */
+  it('drops every typed reddit field when a different brief is handed over', async () => {
+    const mounted = await mount(null, true);
+    const f = mounted.fixture;
+    typeRedditBudget(f, 750);
+    pickRedditObjective(f, 'video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_15S');
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(f, 'Shop Now');
+    expect(mounted.latest()).toMatchObject({
+      redditBudgetUsd: 750,
+      redditObjective: 'video_views',
+      redditVideoGoal: 'VIDEO_VIEW_15S',
+      redditPostUrl: 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/',
+      redditImageUrl: 'https://cdn.example.org/promo.png',
+      redditCallToAction: 'Shop Now',
+    });
+
+    const next = brief();
+    f.componentRef.setInput('draft', null);
+    f.componentRef.setInput('briefData', { ...next, eventDetails: { ...next.eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } });
+    f.detectChanges();
+    await f.whenStable();
+
+    expect(mounted.latest()).toMatchObject({
+      eventSlug: 'oss-na-2026',
+      redditBudgetUsd: 500,
+      redditObjective: 'conversions',
+      redditVideoGoal: '',
+      redditPostUrl: '',
+      redditImageUrl: '',
+      redditCallToAction: '',
+    });
+    const el = (testId: string): HTMLInputElement | HTMLSelectElement =>
+      f.nativeElement.querySelector(`[data-testid="implementation-reddit-${testId}"]`) as HTMLInputElement | HTMLSelectElement;
+    expect(el('budget').value).toBe('500');
+    expect(el('objective').value).toBe('conversions');
+    expect(redditVideoGoalSelect(f)).toBeNull();
+    expect(el('post-url').value).toBe('');
+    expect(el('image-url').value).toBe('');
+    expect(el('call-to-action').value).toBe('');
+
+    const config = submitReddit(f);
+    expect(config['budgetUsd']).toBe(500);
+    expect(config['objective']).toBe('conversions');
+    for (const key of ['videoGoal', 'postUrl', 'imageUrl', 'imageAssetId', 'callToAction']) {
+      expect(key in config).toBe(false);
+    }
+  });
+
   it('renders the pixel through the shared lfx-input-text wrapper, tied to its hint', async () => {
     const f = (await mountWithPixel(null, true)).fixture;
     at(f).selectedPlatforms.set(['reddit-ads']);
