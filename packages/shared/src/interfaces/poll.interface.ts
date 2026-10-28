@@ -500,7 +500,7 @@ export interface VoteLinkBallotState {
   already_voted: boolean;
   voter_removed: boolean;
   abstained?: boolean;
-  poll_answers?: VoteAnswerInput[];
+  poll_answers?: IndexedPollAnswer[];
   comment_responses?: CommentResponseInput[];
 }
 
@@ -517,6 +517,14 @@ export interface VoteLinkBallot {
   poll_questions: PollQuestion[];
   poll_comment_prompts?: PollCommentPrompt[];
   ballot: VoteLinkBallotState;
+}
+
+/** What a ballot form hands back when the voter submits (before it is wrapped for POST/PUT). */
+export interface VoteBallotSubmission {
+  abstain: boolean;
+  userVoteContent?: VoteAnswerInput[];
+  /** Undefined = keep existing comments; an empty array = clear them. */
+  commentResponses?: CommentResponseInput[];
 }
 
 /** Request body for POST /public/api/votes/link-ballot (the token travels only in the body). */
