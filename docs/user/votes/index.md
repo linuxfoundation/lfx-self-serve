@@ -4,27 +4,28 @@ description: Create polls, cast votes, and view results for project governance d
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
-last_updated: 2026-10-18
+last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
-All authenticated users can view polls and cast votes on polls they are eligible for. Creating and managing polls requires a **maintainer**, **board-member**, or **executive-director** persona.
+All authenticated users can view votes and cast a ballot on the ones they are eligible for. Creating and managing votes requires a **maintainer**, **board-member**, or **executive-director** persona.
 
-The Votes section lets you create and manage polls for formal project governance decisions. Votes are used for committee elections, policy approvals, and other decisions that require a recorded community response.
+The Votes section lets you create and manage votes for formal project governance decisions. Votes are used for committee elections, policy approvals, and other decisions that require a recorded community response.
 
 ## What you can do
 
-- View all polls for your project or foundation
-- Create new polls with custom options and voting rules
-- Cast your vote on open polls
-- View real-time and final vote results
-- Manage poll settings and close polls
+- View all votes for your project or foundation
+- [Create a vote](create-vote/) with one or more questions, comment questions, and an optional abstain choice
+- Cast your vote on an open vote: select **Vote**, or **Review** once you have voted
+- [See results](vote-results/): **Results** opens a drawer with the tallies, abstentions, and comments
+- [Manage votes](manage-votes/): edit or delete drafts, send reminders, and copy a link from the **⋮** row menu
+- [Present, extend, clone, or send a summary](present-extend-clone/) from the same row menu
 
 ## Navigation
 
-To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls.
+To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the votes you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other votes.
 
-To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the polls for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see polls with every status.
+To manage votes for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the votes for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see votes with every status.
 
 In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching polls.
 
@@ -88,9 +89,9 @@ While loading, the cells show dashes and cannot be selected. A successfully load
 
 ## Key concepts
 
-- **Poll**: A formal vote with defined options and an eligible voter set
-- **Voter eligibility**: Voter eligibility is configured by the poll creator.
-- **Vote result**: The tally of responses after the poll closes
+- **Vote**: A formal decision with one or more questions and an eligible voter set
+- **Eligible Participants**: Who in the vote's group can vote: voting reps only, voting reps and alternates, or all members of the group
+- **Vote result**: The tally of responses. Voters see it after the vote closes; managers can see live tallies while it is open
 
 ## Project context
 
