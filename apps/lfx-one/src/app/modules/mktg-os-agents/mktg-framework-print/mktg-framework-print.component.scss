@@ -24,6 +24,33 @@
   -webkit-print-color-adjust: exact;
 }
 
+/* Shared chapter chrome is always Inter; brand typography belongs to content/samples. */
+.lfx-print-chapter-title {
+  display: flex;
+  align-items: center;
+  gap: 10pt;
+  margin: 0 0 8pt;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 22pt;
+  font-weight: 500;
+  line-height: 1.1;
+  break-after: avoid;
+
+  > span {
+    color: var(--mfp-accent);
+    font-size: 11pt;
+    font-weight: 600;
+  }
+
+  &::after {
+    content: '';
+    flex: 1;
+    min-width: 18pt;
+    height: 1pt;
+    background-color: var(--mfp-accent);
+  }
+}
+
 /* styles.scss sets Inter on headings, paragraphs and controls in the base
    layer, which beats inheritance: inside the print they inherit the brand's
    typeface from the document instead, as in the brand kit book. */

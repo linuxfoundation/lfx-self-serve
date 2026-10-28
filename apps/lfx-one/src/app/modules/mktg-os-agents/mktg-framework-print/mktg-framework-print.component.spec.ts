@@ -144,6 +144,7 @@ describe('MktgFrameworkPrintComponent', () => {
     fixture.componentRef.setInput('number', '01');
     await fixture.whenStable();
     expect(numbers()).toEqual(['01.1', '01.2', '01.3', '01.4']);
+    expect(host().querySelectorAll('lfx-mktg-print-chapter-header .lfx-print-chapter-title')).toHaveLength(4);
     const heads = host().querySelectorAll('[data-testid="mktg-print-running-head"]');
     expect(heads).toHaveLength(4);
     heads.forEach((head) => expect(head.textContent).toContain('TestOrbit Messaging Framework'));

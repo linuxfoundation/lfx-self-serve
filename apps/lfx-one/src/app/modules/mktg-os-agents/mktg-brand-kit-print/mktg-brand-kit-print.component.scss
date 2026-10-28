@@ -1,13 +1,29 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* Physical type/spacing fits both portrait paper sizes; there is no plate height,
-   aspect ratio, container scaling, transform or overflow clipping. */
+/* The table, not a flex/height-constrained page, owns physical pagination. */
+.lfx-brand-kit-portrait {
+  font-family: var(--font-inter), sans-serif;
+}
+
 .kit-chapter {
-  display: flex;
-  flex-direction: column;
-  gap: 12pt;
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  border-spacing: 0;
   break-before: page;
+  break-inside: auto;
+
+  > thead {
+    display: table-header-group;
+    break-inside: avoid;
+  }
+
+  > thead > tr > td,
+  > tbody > tr > td {
+    padding: 0 0 10pt;
+    vertical-align: top;
+  }
 }
 
 .kit-block,
@@ -16,58 +32,61 @@ figure {
   break-inside: avoid;
 }
 
-h2,
+.kit-title-row,
 h3,
 thead {
   break-after: avoid;
-}
-
-h2 {
-  margin-top: 10pt;
-  font-size: 22pt;
-  font-weight: 500;
 }
 
 h3 {
   font-size: 11pt;
   font-weight: 600;
 }
-
 ul {
   list-style: disc;
   padding-left: 14pt;
 }
+figcaption {
+  margin-top: 4pt;
+  font-size: 8pt;
+}
 
-table {
+.kit-data-table {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 8.5pt;
+
+  th,
+  td {
+    border-bottom: 0.5pt solid var(--mfp-tint);
+    padding: 4pt;
+    text-align: left;
+    vertical-align: middle;
+  }
 }
 
-thead {
-  display: table-header-group;
-}
-
-th,
-td {
-  border-bottom: 0.5pt solid var(--mfp-tint);
-  padding: 6pt 4pt;
-  text-align: left;
-  vertical-align: top;
+.kit-lockups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(45mm, 1fr));
+  gap: 8pt;
 }
 
 .kit-logo {
   display: block;
   width: auto;
   max-width: min(60mm, 100%);
-  max-height: 28mm;
+  max-height: 20mm;
   object-fit: contain;
 }
 
 .kit-colourway {
-  padding: 6pt;
+  padding: 4pt;
   border: 0.5pt solid var(--mfp-ink);
+  img {
+    max-height: 10mm;
+    max-width: 100%;
+  }
 }
 
 .kit-swatch {
@@ -79,14 +98,47 @@ td {
   vertical-align: middle;
 }
 
+.kit-rule-grid,
+.kit-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12pt;
+}
+
+.kit-specimen,
+.kit-usage-frame {
+  font-family: var(--mfp-font);
+}
 .kit-specimen {
   overflow-wrap: break-word;
   word-break: normal;
-  font-family: var(--mfp-font);
 }
 
-.kit-usage-sample {
-  margin-top: 6pt;
-  padding: 8pt;
-  border-left: 3pt solid;
+.kit-usage-frame {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: min(100%, 65mm);
+  aspect-ratio: 16 / 9;
+  border: 0.5pt solid var(--mfp-ink);
+  padding: 6pt;
+  font-size: 8.5pt;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+
+  img {
+    max-width: 80%;
+    max-height: 10mm;
+    object-fit: contain;
+    object-position: left;
+  }
+  p {
+    margin: 0;
+    font-size: inherit;
+    line-height: 1.2;
+  }
+  &[data-layout='report'] {
+    width: min(100%, 33mm);
+    aspect-ratio: 3 / 4;
+  }
 }

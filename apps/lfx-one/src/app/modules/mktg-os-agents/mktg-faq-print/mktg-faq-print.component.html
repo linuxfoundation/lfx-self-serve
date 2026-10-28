@@ -14,10 +14,7 @@
   <!-- Always render the document identity, even with no questions or an empty first group. -->
   <header class="break-inside-avoid break-after-avoid">
     <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
-    <h2 class="mb-[8pt] flex items-baseline gap-[10pt] text-[22pt] font-medium break-after-avoid">
-      <span class="text-[11pt] font-semibold text-[color:var(--mfp-accent)]">{{ number() }}</span
-      >FAQ
-    </h2>
+    <lfx-mktg-print-chapter-header [number]="number()" title="FAQ" />
   </header>
   @for (group of v.groups; track group.path) {
     @for (row of group.questions; track row.path; let firstQuestion = $first) {

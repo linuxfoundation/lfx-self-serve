@@ -181,6 +181,11 @@ test('Download PDF prints all four approved assets with one family cover and con
   }
   await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first()).toHaveCSS('aspect-ratio', '16 / 9');
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('SVG supplied');
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('V1.0');
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toContainText('02.5 Voice in brief');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });

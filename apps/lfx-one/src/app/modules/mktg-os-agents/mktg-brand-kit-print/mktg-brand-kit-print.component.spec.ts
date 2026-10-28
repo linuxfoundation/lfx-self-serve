@@ -35,7 +35,10 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   const heads = root.querySelectorAll('[data-testid="mktg-print-running-head"]');
   expect(heads).toHaveLength(5);
   heads.forEach((head) => expect(head.textContent).toContain('02 Brand kit · Project One'));
-  expect(root.textContent).toContain('V3.0');
+  expect(root.textContent).not.toContain('V3.0');
+  expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
+  expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+  expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
   expect(root.querySelector('[data-testid="kit-print-lockups"] img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
   expect(root.querySelectorAll('.lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
   expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
@@ -48,6 +51,12 @@ it('renders all chapter data as text and keeps source type metrics beside portra
     expect(root.querySelector('[data-testid="kit-print-logo"]')?.textContent).toContain(text);
   }
   expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody tr')).toHaveLength(kit.chapters.logo.colorways.length);
+  expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody img')).toHaveLength(kit.chapters.logo.colorways.length);
+  const ending = root.querySelector('[data-testid="kit-print-ending-rules"]');
+  expect(ending?.tagName).toBe('TR');
+  expect(ending?.classList.contains('kit-block')).toBe(true);
+  expect(ending?.textContent).toContain('Partnership lockups');
+  expect(ending?.textContent).toContain('Watch-outs');
   kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
   expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
   const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
@@ -59,4 +68,40 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
+});
+
+it('omits missing logo slots and colourway samples without empty boxes or apology text', async () => {
+  const { root, view, brand, fixture } = await setup();
+  fixture.componentRef.setInput('view', {
+    ...view,
+    logos: { primary: null, stacked: null, symbol: null, reversed: null },
+    symbol: null,
+    colorways: view.colorways.map((row) => ({ ...row, logo: null })),
+  });
+  fixture.componentRef.setInput('brand', { ...brand, logoOnDark: null, logoOnLight: null });
+  await fixture.whenStable();
+  expect(root.querySelector('[data-testid="kit-print-lockups"]')).toBeNull();
+  expect(root.querySelector('[data-testid="kit-print-colorways"]')).toBeNull();
+  expect(root.querySelector('.kit-colourway')).toBeNull();
+  expect(root.textContent).not.toContain('SVG supplied');
+});
+
+it('renders two-up aspect-ratio usage frames with ground, logo and current brand line', async () => {
+  const { root, view, brand, fixture } = await setup();
+  expect(root.querySelectorAll('.kit-usage-grid')).toHaveLength(2);
+  const frames = root.querySelectorAll<HTMLElement>('.kit-usage-frame');
+  expect(frames).toHaveLength(4);
+  frames.forEach((frame) => {
+    expect(frame.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(frame.textContent).toContain(view.voice.line);
+  });
+  const expected = document.createElement('span');
+  expected.style.backgroundColor = brand.dark;
+  expect(frames[0].style.backgroundColor).toBe(expected.style.backgroundColor);
+  expect(frames[2].getAttribute('data-layout')).toBe('report');
+  expect(frames[2].style.backgroundColor).toBe('white');
+  fixture.componentRef.setInput('view', { ...view, projectName: 'Updated synthetic project', voice: { ...view.voice, line: 'Updated approved line' } });
+  await fixture.whenStable();
+  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated synthetic project');
+  expect(root.querySelector('.kit-usage-frame')?.textContent).toContain('Updated approved line');
 });

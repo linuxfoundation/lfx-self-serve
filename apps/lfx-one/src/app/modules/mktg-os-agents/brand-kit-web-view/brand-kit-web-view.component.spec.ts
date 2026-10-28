@@ -209,8 +209,8 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
+      expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
@@ -220,7 +220,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-title')?.textContent).toContain('Synthetic draft only');
       expect(query('brand-kit-web-view-print')?.textContent).toContain('Project One');
       expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
     it('omits the book and guards Download PDF when no approved kit is supplied', async () => {
@@ -255,6 +255,7 @@ describe('BrandKitWebViewComponent', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
       expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
       expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
