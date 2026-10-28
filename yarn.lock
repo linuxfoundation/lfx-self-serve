@@ -5090,18 +5090,18 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@linuxfoundation/lfx-ui-core@npm:^0.2.0":
-  version: 0.2.0
-  resolution: "@linuxfoundation/lfx-ui-core@npm:0.2.0"
+"@linuxfoundation/lfx-ui-core@npm:^0.3.1":
+  version: 0.3.1
+  resolution: "@linuxfoundation/lfx-ui-core@npm:0.3.1"
   dependencies:
-    dompurify: "npm:3.3.3"
+    dompurify: "npm:^3.4.17"
     marked: "npm:17.0.5"
   peerDependencies:
     prettier: ">=3.0.0"
   peerDependenciesMeta:
     prettier:
       optional: true
-  checksum: 10c0/857fec3b1be0b65f9b3c2189730ff27f51d89e101c10b139b8286823fca7a8acba4f01ca2334b06dff459ad0261358a5fca458d83020c935f694d02d54e9cf89
+  checksum: 10c0/8a660af33bce2a56be031d736428e4774c5864548b167833c475646939580a673d49e2fddd441b9d0e7588c9c6489fe7e6dd868d4938e37bf1b8442f66a97ff3
   languageName: node
   linkType: hard
 
@@ -11921,15 +11921,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dompurify@npm:3.3.3":
-  version: 3.3.3
-  resolution: "dompurify@npm:3.3.3"
+"dompurify@npm:^3.4.17":
+  version: 3.4.17
+  resolution: "dompurify@npm:3.4.17"
   dependencies:
     "@types/trusted-types": "npm:^2.0.7"
   dependenciesMeta:
     "@types/trusted-types":
       optional: true
-  checksum: 10c0/097c14a21a3f6cb95beded9ecd255f7c3512c42767b048390c747b0fe35736f6a71e02320fc50a9ac2be645834b463e4760915d595d502a56452daf339d0ea9c
+  checksum: 10c0/6a12251ef5e700fc91b6d96d33e9f8b5fd590c55276f632cf42d182c5808e9f48d5bef435ab26eac235dfcc05ed8fe95e1c8308dcc502bf1050e561f14d0361a
   languageName: node
   linkType: hard
 
@@ -15634,7 +15634,7 @@ __metadata:
     "@gatewaze/host-session": "npm:1.2.0"
     "@launchdarkly/node-server-sdk": "npm:^9.14.0"
     "@lfx-one/shared": "workspace:*"
-    "@linuxfoundation/lfx-ui-core": "npm:^0.2.0"
+    "@linuxfoundation/lfx-ui-core": "npm:^0.3.1"
     "@openfeature/core": "npm:^1.9.1"
     "@openfeature/launchdarkly-client-provider": "npm:0.3.3"
     "@openfeature/web-sdk": "npm:1.7.2"
@@ -15725,7 +15725,7 @@ __metadata:
   dependencies:
     "@commitlint/cli": "npm:^20.1.0"
     "@commitlint/config-angular": "npm:^20.0.0"
-    "@linuxfoundation/lfx-ui-core": "npm:^0.2.0"
+    "@linuxfoundation/lfx-ui-core": "npm:^0.3.1"
     "@stripe/stripe-js": "npm:^9.7.0"
     "@types/node": "npm:^24.2.1"
     "@typescript-eslint/eslint-plugin": "npm:^8.39.1"
