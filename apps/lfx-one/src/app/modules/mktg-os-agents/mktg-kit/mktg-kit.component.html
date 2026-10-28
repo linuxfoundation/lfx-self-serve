@@ -138,12 +138,13 @@
             <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-sm" [attr.data-testid]="'mktg-kit-asset-' + row.asset.id">
               <span>{{ row.asset.label }}</span>
               @if (row.run?.link; as link) {
-                <span class="relative z-10 flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
+                <span class="relative z-10 flex flex-wrap items-baseline gap-2 text-xs text-gray-500" data-testid="mktg-kit-run-status">
                   <span>{{ row.run?.caption }}</span>
                   <a
                     class="text-blue-700 hover:underline"
+                    data-testid="mktg-kit-run-status-link"
                     [routerLink]="link.commands"
-                    [queryParams]="{ project: kit.projectQueryParams().project, run: link.queryParams['run'] }"
+                    [queryParams]="link.queryParams"
                     >{{ row.run?.label }}</a
                   >
                 </span>

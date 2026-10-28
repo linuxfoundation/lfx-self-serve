@@ -76,9 +76,10 @@ describe('Marketing kit home', () => {
     const root: HTMLElement = fixture.nativeElement;
     const row = root.querySelector(`[data-testid="mktg-kit-asset-${agentKey === 'foundation-message' ? 'messaging-framework' : agentKey}"]`);
     expect(row?.textContent).toContain(status);
-    const link = row?.querySelector('a');
+    const link = row?.querySelector('[data-testid="mktg-kit-run-status-link"]');
     expect(link?.textContent ?? null).toBe(label);
     if (label) {
+      expect(row?.querySelector('[data-testid="mktg-kit-run-status"]')?.textContent).toContain(status);
       const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
       const target = state === 'questions' ? runTarget : 'documents/foundation-message/living';
       expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (state === 'questions' ? '' : '&run=synthetic-run'));
