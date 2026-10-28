@@ -21,6 +21,7 @@ import {
   Member360GenerationStart,
   Member360PriorRun,
   Member360Result,
+  Member360AnswersBody,
   MktgGenerationAttribution,
   MktgRunResultResponse,
   Project,
@@ -36,6 +37,10 @@ import {
   redactMember360Tabs,
   findMember360Questions,
   member360TerminalResult,
+  mktgOneOffTerminalFacts,
+  parseMember360Questions,
+  member360QuestionsId,
+  renderMember360Answers,
 } from '@lfx-one/shared/server';
 import { extractMktgToolResults, isMktgReasoningEvent, isMktgToolTaskEvent, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
 import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
@@ -65,6 +70,7 @@ export class Member360Service {
     return {
       status: result.status === 'needs_input' ? 'questions' : result.status,
       activity: result.activity,
+      ...(result.questions && { questions: result.questions, questionsId: result.questionsId }),
       persistence: result.persistence,
       failureText: result.status === 'needs_input' ? undefined : result.message,
       failureReason: result.reason,
@@ -94,6 +100,30 @@ export class Member360Service {
       mentionOnOwnLine: true,
     });
     return { sessionId, documentId: buildMktgRunDocumentId(sessionId) };
+  }
+
+  /** Only a validated, creator-authorized controller call reaches this transport. */
+  public async sendAnswers(req: Request, body: Member360AnswersBody): Promise<void> {
+    const payloads = await this.guild.getRawEventPayloads(req, body.sessionId);
+    const text = findMember360Questions(payloads);
+    const turn = text ? parseMember360Questions(text) : null;
+    if (!text || !turn || member360QuestionsId(text) !== body.questionsId || mktgFailureAfterQuestions(payloads, isMember360Question) !== null) {
+      throw new ConflictError('These questions are no longer waiting for answers. Refresh the run.', 'MEMBER_360_QUESTIONS_CHANGED');
+    }
+    if (body.answers.length !== turn.questions.length || body.answers.some((answer) => !turn.questions.some((question) => question.id === answer.id))) {
+      throw ServiceValidationError.forField('answers', 'Answer each of the current questions exactly once.');
+    }
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
+    if (agent?.status !== 'active' || !agent.guildAgentHandle) throw ServiceValidationError.forField('agentId', 'Member 360 is unavailable.');
+    await this.guild.sendFollowUp(req, body.sessionId, {
+      message: renderMember360Answers(body.answers.map(({ id, ...answer }) => ({ ...answer, key: id }))),
+      handle: agent.guildAgentHandle, // sendFollowUp routes on its own line by default.
+    });
+    logger.info(req, 'member_360_answers', 'Sent the requester answers', {
+      session_id: body.sessionId,
+      questions_id: body.questionsId,
+      count: body.answers.length,
+    });
   }
 
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
@@ -188,15 +218,29 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
+      const turn = questionsText ? parseMember360Questions(questionsText) : null;
+      const questions = turn?.questions.map((item) => ({
+        key: item.id,
+        label: item.id.replace(/-/g, ' '),
+        question: item.question,
+        why: item.why,
+        suggestedAnswer: item.suggested_answer,
+        basis: [],
+      }));
+      const questionsResult: Member360Result = {
+        status: 'needs_input',
+        activity,
+        ...(questions && questionsText && { questions, questionsId: member360QuestionsId(questionsText) }),
+      };
       if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
-        return { status: 'needs_input', activity };
+        return questionsResult;
       }
-      const failed = member360TerminalResult(payloads, contacts);
+      const failed = member360TerminalResult(payloads.slice(mktgOneOffTerminalFacts(payloads).currentTurnOffset), contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
-      if (questionsText) return { status: 'needs_input', activity };
+      if (questionsText) return questionsResult;
       return { status: 'pending', activity };
     }
     const type = findMktgDocumentType('member-360');

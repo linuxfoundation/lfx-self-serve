@@ -8,13 +8,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn(), active: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  result: vi.fn(),
+  preflight: vi.fn(),
+  track: vi.fn(),
+  record: vi.fn(),
+  active: vi.fn(),
+  sendAnswers: vi.fn(),
+  resume: vi.fn(),
+  user: 'synthetic-subject' as string | undefined,
+}));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
     public assertSingleActiveOneOffRun = mocks.active;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
+    public resumeAfterQuestions = mocks.resume;
   },
 }));
 vi.mock('../services/member-360.service', async (original) => {
@@ -24,17 +35,66 @@ vi.mock('../services/member-360.service', async (original) => {
       public static toRunResult = actual.Member360Service.toRunResult;
       public start = mocks.start;
       public result = mocks.result;
+      public sendAnswers = mocks.sendAnswers;
     },
   };
 });
-vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: () => 'synthetic-subject' }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: () => mocks.user }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: () => 0, success: vi.fn() } }));
 
 describe('Member 360 HTTP boundary', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.user = 'synthetic-subject';
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+  });
+  const answersBody = () => ({
+    project: 'sample-project',
+    sessionId: 'session-1',
+    ownerToken: createSessionOwnerToken('synthetic-subject', 'member-360:sample-project:session-1'),
+    questionsId: 'a'.repeat(64),
+    answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' }],
+  });
+  it('sends validated creator answers and resumes the same tracked session', async () => {
+    const req = { body: answersBody() } as Request;
+    mocks.preflight.mockResolvedValueOnce('resolved-project');
+    const res = { set: vi.fn().mockReturnThis(), json: vi.fn() };
+    const next = vi.fn();
+    await new Member360Controller().answers(req, res as unknown as Response, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.sendAnswers).toHaveBeenCalledWith(req, req.body);
+    expect(mocks.resume).toHaveBeenCalledWith(req, 'resolved-project', 'session-1', 'a'.repeat(64));
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+  it.each(['other-user', 'other-project', 'chat-token'])('rejects %s ownership without a project-writer bypass', async (kind) => {
+    const body = answersBody();
+    let scope = 'member-360:sample-project:session-1';
+    if (kind === 'other-project') scope = 'member-360:other-project:session-1';
+    else if (kind === 'chat-token') scope = 'session-1';
+    body.ownerToken = createSessionOwnerToken(kind === 'other-user' ? 'other-user' : 'synthetic-subject', scope);
+    const next = vi.fn();
+    await new Member360Controller().answers({ body } as Request, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+    expect(mocks.preflight).not.toHaveBeenCalled();
+    expect(mocks.sendAnswers).not.toHaveBeenCalled();
+  });
+  it('rejects anonymous, malformed and stale submissions without resuming', async () => {
+    const controller = new Member360Controller();
+    const next = vi.fn();
+    mocks.user = undefined;
+    await controller.answers({ body: answersBody() } as Request, {} as Response, next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 401 }));
+    mocks.user = 'synthetic-subject';
+    for (const patch of [{ questionsId: 'bad' }, { answers: [] }, { handle: 'other' }]) {
+      await controller.answers({ body: { ...answersBody(), ...patch } } as Request, {} as Response, next);
+      expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 400 }));
+    }
+    const conflict = Object.assign(new Error('Changed questions'), { statusCode: 409 });
+    mocks.sendAnswers.mockRejectedValueOnce(conflict);
+    await controller.answers({ body: answersBody() } as Request, {} as Response, next);
+    expect(next).toHaveBeenLastCalledWith(conflict);
+    expect(mocks.resume).not.toHaveBeenCalled();
   });
   it('refuses before creating a Guild session and passes explicit discard separately from the agent intake', async () => {
     const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });

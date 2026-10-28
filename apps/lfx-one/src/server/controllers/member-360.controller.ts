@@ -3,7 +3,7 @@
 
 import { MEMBER_360_MAX_BYTES, MEMBER_360_MAX_TRACKERS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 import { Member360Session } from '@lfx-one/shared/interfaces';
-import { member360GenerateSchema } from '@lfx-one/shared/server';
+import { member360GenerateSchema, member360AnswersSchema } from '@lfx-one/shared/server';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
@@ -70,6 +70,28 @@ export class Member360Controller {
       await this.runs.recordResultBestEffort(req, sessionId, Member360Service.toRunResult(response), project);
       logger.success(req, operation, start, { status: response.status });
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async answers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'member_360_answers';
+    const start = logger.startOperation(req, operation, {});
+    try {
+      const user = getEffectiveSub(req);
+      if (!user) throw new AuthenticationError('Sign in to answer this run.', { operation, service: 'member_360' });
+      const parsed = member360AnswersSchema.safeParse(req.body);
+      if (!parsed.success) throw this.invalid('answers', 'Send complete answers to the current questions.');
+      const { project, sessionId, ownerToken, questionsId } = parsed.data;
+      if (!verifySessionOwnerToken(ownerToken, user, `member-360:${project}:${sessionId}`)) {
+        throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
+      }
+      const projectUid = await this.runs.resolveProject(req, project);
+      await this.service.sendAnswers(req, parsed.data);
+      await this.runs.resumeAfterQuestions(req, projectUid, sessionId, questionsId);
+      logger.success(req, operation, start, { count: parsed.data.answers.length });
+      res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {
       next(error);
     }

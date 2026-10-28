@@ -3,8 +3,8 @@
 
 import type { z } from 'zod';
 import type { envelopeSchema, tabsSchema, memberRankingRowSchema } from '../server/member-360-schema.utils';
-import type { formInputSchema, trackerSchema, priorRunSchema } from '../server/member-360.utils';
-import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunSessionResponse } from './mktg-run.interface';
+import type { formInputSchema, trackerSchema, priorRunSchema, member360QuestionsSchema, member360AnswersSchema } from '../server/member-360.utils';
+import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunSessionResponse, MktgRunQuestion } from './mktg-run.interface';
 import type { CATEGORY_KEYS, MEMBER_360_FINALIZE_RECEIPT_ID } from '../constants/member-360.constants';
 export type Member360Envelope = z.infer<typeof envelopeSchema>;
 export type Member360Tabs = z.infer<typeof tabsSchema>;
@@ -43,8 +43,14 @@ export interface Member360Session extends MktgRunSessionResponse {
   documentId: string;
 }
 export type Member360FailureReason = 'no_edit_access' | 'agent_stopped';
+export type Member360QuestionsTurn = z.infer<typeof member360QuestionsSchema>;
+export type Member360AnswersBody = z.infer<typeof member360AnswersSchema>;
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input' | 'failed';
+  /** Creator-only questions, without the agent's internal evidence basis. */
+  questions?: MktgRunQuestion[];
+  /** SHA-256 of the boundary-trimmed attributed questions turn. */
+  questionsId?: string;
   /** Ephemeral, redacted terminal agent text; never stored as a document. */
   message?: string;
   /** Server-classified failure; clients default older responses to agent_stopped. */
