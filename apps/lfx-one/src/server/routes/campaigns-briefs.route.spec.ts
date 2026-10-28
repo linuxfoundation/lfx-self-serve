@@ -69,7 +69,6 @@ vi.mock('../services/logger.service', () => ({
 
 const campaignsRouter = (await import('./campaigns.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
-const { MicroserviceError } = await import('../errors/microservice.error');
 
 let server: Server;
 let baseUrl: string;
@@ -195,13 +194,24 @@ describe('GET /api/campaigns/briefs addressed by slug or uid', () => {
     expect(checkSingleAccess).toHaveBeenCalledTimes(1);
   });
 
-  it('fails the request when the uid lookup itself fails, instead of guessing', async () => {
+  // The failure is produced by the REAL `ProjectService.getProjectSlugByUid` over a stubbed NATS
+  // connection, so the route answers with whatever the service actually throws: a lost answer is a
+  // 503 and an unusable one a 502, never a guess at the project.
+  it.each([
+    ['a lost NATS answer', () => Promise.reject(new Error('TIMEOUT')), 503, 'SERVICE_UNAVAILABLE'],
+    ['an unusable NATS answer', () => Promise.resolve({ data: '' }), 502, 'BAD_GATEWAY'],
+  ] as const)('fails the request on %s, instead of guessing', async (_label, natsReply, status, code) => {
     checkSingleAccess.mockResolvedValue(true);
-    getProjectSlugByUid.mockRejectedValue(new MicroserviceError('Upstream unavailable', 503, 'SERVICE_UNAVAILABLE', { operation: 'get_project_slug_by_uid' }));
+    const { ProjectService: RealProjectService } = await vi.importActual<typeof import('../services/project.service')>('../services/project.service');
+    const nats = { getCodec: () => ({ encode: (v: string) => v, decode: (v: string) => v }), request: natsReply };
+    getProjectSlugByUid.mockImplementation((req: express.Request, uid: string) =>
+      RealProjectService.prototype.getProjectSlugByUid.call({ natsService: nats }, req, uid)
+    );
 
     const response = await listBriefs(PROJECT_UID);
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ code });
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

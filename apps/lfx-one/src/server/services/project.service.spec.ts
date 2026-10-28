@@ -2889,18 +2889,30 @@ describe('ProjectService — getProjectSlugByUid', () => {
     await expect(service.getProjectSlugByUid(req, uid)).resolves.toBeNull();
   });
 
+  // An unusable answer is the service's malfunction, not a miss: 502, so a caller never authorizes on it.
   it.each([
-    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' }), 'Project uid lookup failed: internal'],
-    ['an empty reply', '', 'Project uid lookup failed: empty reply'],
-  ])('throws on %s instead of reporting the project as missing', async (_label, data, message) => {
+    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' })],
+    ['an empty reply', ''],
+  ])('answers %s with a 502 MicroserviceError instead of reporting the project as missing', async (_label, data) => {
     natsRequest.mockResolvedValue({ data });
 
-    await expect(service.getProjectSlugByUid(req, uid)).rejects.toThrow(message);
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 502, code: 'BAD_GATEWAY', operation: 'get_project_slug_by_uid' });
   });
 
-  it('throws on a timeout instead of reporting the project as missing', async () => {
-    natsRequest.mockRejectedValue(new Error('timeout'));
+  // A lost answer is an outage, not a miss: 503 with the transport marker.
+  it.each([
+    ['a timeout', new Error('TIMEOUT')],
+    ['no responder', new Error('503 no responders')],
+    ['a closed connection', new Error('CONNECTION_CLOSED')],
+  ])('answers %s with a 503 transport MicroserviceError', async (_label, failure) => {
+    natsRequest.mockRejectedValue(failure);
 
-    await expect(service.getProjectSlugByUid(req, uid)).rejects.toThrow('timeout');
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true, originalError: failure });
   });
 });
