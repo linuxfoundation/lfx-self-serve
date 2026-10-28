@@ -3,6 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, input, model } from '@angular/core';
 
+/** Pill-shaped search field, 34px tall, with a leading search icon. Use `[(value)]` for two-way binding. */
 @Component({
   selector: 'lfx-ui-search-input',
   templateUrl: './search-input.component.html',

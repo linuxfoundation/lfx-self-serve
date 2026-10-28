@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, ElementRef, input, model, Signal, viewChildren } from '@angular/core';
 import { UiTabItem } from '@lfx-one/shared/interfaces';
 
+/** Underline tabs with optional counts. The active tab has a 2px blue underline; use `[(value)]` to read and set the selection. */
 @Component({
   selector: 'lfx-ui-tabs',
   templateUrl: './tabs.component.html',

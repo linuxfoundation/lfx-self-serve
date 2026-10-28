@@ -16,7 +16,7 @@ const meta: Meta<UiButtonComponent> = {
       options: ['primary', 'outline-neutral', 'outline-accent', 'ghost-neutral', 'ghost-accent', 'destructive', 'ghost-destructive', 'recording'],
     },
   },
-  decorators: [applicationConfig({ providers: [provideRouter([])] })],
+  decorators: [applicationConfig({ providers: [provideRouter([{ path: '**', children: [] }])] })],
   args: { variant: 'primary', size: 'md', icon: '', trailingIcon: '', iconOnly: false, disabled: false, fullWidth: false, type: 'button', ariaLabel: '' },
   render: (args) => ({ props: args, template: `<lfx-ui-button ${argsToTemplate(args)}>Button</lfx-ui-button>` }),
 };

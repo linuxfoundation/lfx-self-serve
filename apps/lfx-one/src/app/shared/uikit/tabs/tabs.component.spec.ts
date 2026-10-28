@@ -77,6 +77,12 @@ describe('UiTabsComponent', () => {
     expect(tab('past').getAttribute('aria-controls')).toBe('meetings-panel-past');
   });
 
+  it('uses a 2px underline and exact px spacing', () => {
+    expect(tab('upcoming').className).toContain('border-b-2');
+    expect(tab('upcoming').className).toContain('text-[13px]');
+    expect(tab('upcoming').className).toContain('gap-[7px]');
+  });
+
   it('selects a tab on click', async () => {
     tab('past').click();
     await fixture.whenStable();

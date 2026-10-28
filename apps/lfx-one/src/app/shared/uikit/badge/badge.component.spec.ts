@@ -20,6 +20,13 @@ describe('UiBadgeComponent', () => {
     expect((fixture.nativeElement as HTMLElement).textContent?.trim()).toBe('3');
   });
 
+  it('is 18px tall with a 6px inline padding', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.className).toContain('h-[18px]');
+    expect(host.className).toContain('px-[6px]');
+    expect(host.className).toContain('text-[11px]');
+  });
+
   it('is neutral by default and blue for the accent tone', async () => {
     const host = fixture.nativeElement as HTMLElement;
     expect(host.className).toContain('bg-gray-100');

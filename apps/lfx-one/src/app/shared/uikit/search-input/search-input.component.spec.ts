@@ -50,6 +50,11 @@ describe('UiSearchInputComponent', () => {
     expect(input().disabled).toBe(true);
   });
 
+  it('is a 34px pill', () => {
+    expect(input().className).toContain('h-[34px]');
+    expect(input().className).toContain('rounded-full');
+  });
+
   it('keeps a 300px minimum width on the host', () => {
     expect((fixture.nativeElement as HTMLElement).className).toContain('min-w-[min(300px,100%)]');
   });

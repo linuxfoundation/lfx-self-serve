@@ -45,12 +45,13 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['sm', 'h-6'],
-    ['md', 'h-8'],
-    ['lg', 'h-10'],
-  ])('sizes %s to %s', async (size, token) => {
+    ['sm', 'h-[24px]', 'rounded-[8px]'],
+    ['md', 'h-[32px]', 'rounded-[12px]'],
+    ['lg', 'h-[40px]', 'rounded-[16px]'],
+  ])('sizes %s to %s with a %s radius', async (size, height, radius) => {
     await set('size', size);
-    expect(el().className).toContain(token);
+    expect(el().className).toContain(height);
+    expect(el().className).toContain(radius);
   });
 
   it('renders the leading icon before the label', async () => {
@@ -79,7 +80,7 @@ describe('UiButtonComponent', () => {
   it('makes an icon-only button square and names it', async () => {
     await set('iconOnly', true);
     await set('ariaLabel', 'Next');
-    expect(el().className).toContain('w-8');
+    expect(el().className).toContain('w-[32px]');
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 

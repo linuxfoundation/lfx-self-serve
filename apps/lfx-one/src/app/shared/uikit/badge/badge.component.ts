@@ -3,6 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
+/** Small pill for a count or short label, such as the number of active filters. */
 @Component({
   selector: 'lfx-ui-badge',
   template: '{{ value() }}',
@@ -21,7 +22,8 @@ export class UiBadgeComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
-      const base = 'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none';
+      // Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design.
+      const base = 'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-[6px] text-[11px] font-semibold leading-none';
       const tones = { neutral: 'bg-gray-100 text-gray-600', accent: 'bg-blue-100 text-blue-700' };
       return `${base} ${tones[this.tone()]}`;
     });

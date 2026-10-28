@@ -5,6 +5,10 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+/**
+ * Button with eight variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
+ * Supports a leading and a trailing Font Awesome icon, an icon-only mode, and full width.
+ */
 @Component({
   selector: 'lfx-ui-button',
   imports: [NgTemplateOutlet, RouterLink],
@@ -20,7 +24,7 @@ export class UiButtonComponent {
   public readonly variant = input<
     'primary' | 'outline-neutral' | 'outline-accent' | 'ghost-neutral' | 'ghost-accent' | 'destructive' | 'ghost-destructive' | 'recording'
   >('primary');
-  /** `sm` is 24px tall, `md` 32px, `lg` 40px. */
+  /** `sm` is 24px tall (8px radius), `md` 32px (12px radius), `lg` 40px (16px radius). */
   public readonly size = input<'sm' | 'md' | 'lg'>('md');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. */
   public readonly icon = input<string>('');
@@ -64,11 +68,23 @@ export class UiButtonComponent {
         'ghost-destructive': 'text-red-700 hover:bg-red-50 hover:text-red-800 active:bg-red-100',
         recording: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow active:bg-emerald-800 active:shadow-none',
       };
-      // Radius follows the design's 8/12/16px steps.
+      // Exact px (8/12/16 radius steps): rem undershoots the design at the 14px root.
       const sizes = {
-        sm: { text: 'h-6 gap-1 rounded-lg text-xs', pad: 'px-1.5', square: 'w-6 px-0' },
-        md: { text: 'h-8 gap-2 rounded-xl text-sm', pad: 'px-3', square: 'w-8 px-0' },
-        lg: { text: 'h-10 gap-2 rounded-2xl text-base', pad: 'px-4', square: 'w-10 px-0' },
+        sm: {
+          text: 'h-[24px] gap-[4px] rounded-[8px] text-[12px] leading-[16px] [&>i]:text-[13px] [&>i]:leading-none',
+          pad: 'px-[6px]',
+          square: 'w-[24px] px-0',
+        },
+        md: {
+          text: 'h-[32px] gap-[8px] rounded-[12px] text-[14px] leading-[20px] [&>i]:text-[14px] [&>i]:leading-none',
+          pad: 'px-[12px]',
+          square: 'w-[32px] px-0',
+        },
+        lg: {
+          text: 'h-[40px] gap-[8px] rounded-[16px] text-[16px] leading-[24px] [&>i]:text-[15px] [&>i]:leading-none',
+          pad: 'px-[16px]',
+          square: 'w-[40px] px-0',
+        },
       };
       const size = sizes[this.size()];
       const width = this.fullWidth() ? 'w-full' : '';
