@@ -1884,6 +1884,7 @@ describe('MktgDocumentViewComponent', () => {
       if (!type) throw new Error('Missing registered ICP document type');
       const attempts = TestBed.inject(MktgRunAttemptService);
       const cache = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+      cache.clear(PROJECT.uid, ICP_INTAKE.agentId); // Each vector owns its private cache; localStorage survives TestBed resets.
       const request = {
         projectUid: PROJECT.uid,
         agentId: ICP_INTAKE.agentId,
@@ -1920,10 +1921,14 @@ describe('MktgDocumentViewComponent', () => {
       if (state === 'missing' || state === 'mismatch') {
         expect(params?.['questions']).toBeNull();
         expect(attempts.save).not.toHaveBeenCalled();
+        expect(attempts.prepare).not.toHaveBeenCalled();
       } else {
+        expect(attempts.prepare).toHaveBeenCalledExactlyOnceWith(request, true);
         const restored = cache.consume(params?.['questions'], PROJECT.uid, ICP_INTAKE.agentId)?.pending;
         expect(restored).toMatchObject({ state: 'failed', request });
         expect(restored?.pendingQuestions).toBeUndefined();
+        if (!restored) throw new Error('Missing synthetic retained failure');
+        expect(cache.takeFreshDraft(restored)).toBe(false); // Resume authority never grants a new Generate.
       }
     }
   );

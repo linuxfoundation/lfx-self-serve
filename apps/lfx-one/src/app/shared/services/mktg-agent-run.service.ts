@@ -211,7 +211,8 @@ export class MktgAgentRunService {
       attempt$ = this.followUp(request, stored);
     }
 
-    const scope = JSON.stringify([this.attempts.subject(), request.projectUid]);
+    // A legacy unscoped run still observes its result once; bind cancellation to the active scope without adding it to the request.
+    const scope = JSON.stringify([this.attempts.subject(), request.projectUid || this.projectContext.activeContextUid()]);
     const failed = (error: unknown): Observable<never> => {
       if (scope === this.runScope()) this.track(request, { state: 'failed' });
       return throwError(() => error);

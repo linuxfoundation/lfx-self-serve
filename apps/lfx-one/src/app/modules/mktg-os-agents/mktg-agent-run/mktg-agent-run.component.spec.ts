@@ -1106,11 +1106,13 @@ describe('MktgAgentRunComponent', () => {
         navigate.mockClear();
         query('mktg-agent-run-retry')?.querySelector('button')?.click();
         await fixture.whenStable();
-        expect(prepare).toHaveBeenCalledExactlyOnceWith(request);
+        expect(prepare).toHaveBeenCalledExactlyOnceWith(request, false);
         const generation = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['generation'];
         const fresh = attempts.consume(generation, PROJECT_1.uid, ICP_INTAKE.agentId)?.pending;
         expect(fresh).toMatchObject({ state: 'draft', request });
         expect(fresh?.attempt).toBeUndefined();
+        if (!fresh) throw new Error('Missing synthetic fresh retry draft');
+        expect(attempts.takeFreshDraft(fresh)).toBe(true); // Only this explicit Retry grants a fresh Generate.
         expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
       }
     }
