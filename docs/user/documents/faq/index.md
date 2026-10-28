@@ -24,9 +24,17 @@ Yes. Use the **Download** icon on the row of an uploaded file; hover over a row'
 
 Yes, if you have write access to the active project or foundation. Use **Upload Files** above the documents list. If you don't see the **Upload Files**, **New Folder**, and **Add Link** buttons, you don't have write access. Contact your project administrator.
 
+## Why can't I add a document to a meeting, group, or mailing list from this page?
+
+The Documents page only adds to the project's own documents. The other sources are managed where they come from: meeting attachments on the meeting, group documents on the group's **Documents** tab, and mailing-list files on the mailing list. Recordings, transcripts, and summaries are created after a meeting runs. See [Manage Documents](../manage-documents/#where-documents-come-from).
+
+## How do I see or add a group's documents?
+
+Open **Groups** in the left navigation, select the group, and open its **Documents** tab. Anyone who can view the group can see the tab. With write access to the group, you can upload files, create folders, and add links there. Those documents also appear on the project Documents page, under **Groups**.
+
 ## Can I organize documents into folders?
 
-Yes, with write access. Select **New Folder**, name it, then choose that folder when you upload files or add links. Select a folder in the list to open it, and use the breadcrumb to go back.
+Yes, with write access, for project documents and for a group's documents. Select **New Folder**, name it, then choose that folder when you upload files or add links. Select a folder in the list to open it, and use the breadcrumb to go back. Meeting materials, recordings, transcripts, summaries, and mailing-list files can't be put in folders. A group's folders appear on the group's own page, while the project page lists the group's files and links without them.
 
 ## Can I add a link instead of a file?
 

@@ -28,6 +28,17 @@ Use the tabs above the list to narrow it by source: **All**, **Project**, **Grou
 
 The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Organization lens, it opens that lens's home page instead.
 
+## Where documents come from
+
+The list brings together documents from different parts of LFX, and each source is managed in its own place:
+
+- **Project** documents are added and organized on this page, if you have write access.
+- **Groups** documents are managed on each group's **Documents** tab.
+- **Meetings** attachments are managed on the meeting. Recordings, transcripts, and summaries are created after a meeting runs and can't be edited here.
+- **Mailing Lists** files come from the mailing list and can't be added or edited in LFX.
+
+Folders work only for project documents and for documents on a group's own **Documents** tab. See [Manage Documents](manage-documents/#where-documents-come-from) for the full breakdown.
+
 ## Project context
 
 Documents are scoped to a project or foundation. Use the lens switcher to change your active context and see documents for a different project or foundation.
