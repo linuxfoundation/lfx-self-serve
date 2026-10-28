@@ -31,8 +31,10 @@ If you have **Manage** access on the project, the detail view also shows:
 
 These actions need **Manage** access on the project. On the **Responses** tab:
 
+- Select **Send reminders** to resend the survey email to recipients who have not responded. Every non-respondent starts selected; clear anyone you don't want to remind. This is available while the survey is open.
 - Select **Download CSV** to export every recipient's delivery status, response and comment. The file does not include personal survey links.
 - Open the **⋮** menu on a recipient's row to:
+  - **Send reminder** — resend the survey email to that recipient (open surveys, non-respondents only).
   - **Copy personal link** — copy the recipient's own survey link. Anyone with this link can answer as that recipient, so share it only with them.
   - **Email recipient** — open your mail app with a reminder that includes their personal link.
   - **View sent email** — see the survey email as that recipient received it, with their name, project and link filled in.
@@ -40,6 +42,16 @@ These actions need **Manage** access on the project. On the **Responses** tab:
 ## View NPS analytics
 
 The Net Promoter Score (NPS) analytics show how likely respondents are to recommend your project.
+
+## Resync recipients
+
+If committee members joined after the survey launched, you can send it to them too. This needs **Manage** access on the project and an open survey.
+
+1. Open the survey and select the **⋮** menu in the header.
+2. Select **Resync recipients**. The dialog lists the committee members who would receive the survey.
+3. Select **Send** to email them.
+
+A resync only adds recipients. Existing recipients are not emailed again and no one is removed. On a survey sent to several foundations' boards, it only covers your project's board.
 
 ## Edit a survey
 

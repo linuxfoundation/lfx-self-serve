@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
-import { NpsBand, Survey, SurveyResponseItem, SurveySentEmailDialogData } from '@lfx-one/shared/interfaces';
+import { NpsBand, Survey, SurveyReminderDialogData, SurveyResponseItem, SurveySentEmailDialogData } from '@lfx-one/shared/interfaces';
 import {
   buildSurveyFollowUpMailto,
   buildSurveyResponsesCsvRows,
@@ -17,6 +17,8 @@ import {
   getNpsBand,
   getResponseComment,
   getResponseDeliveryTimestamp,
+  hasSurveyResponse,
+  isSurveyOpenForFollowUp,
   localDateStamp,
 } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
@@ -25,6 +27,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
+import { SurveyReminderDialogComponent } from '../survey-reminder-dialog/survey-reminder-dialog.component';
 import { SurveySentEmailDialogComponent } from '../survey-sent-email-dialog/survey-sent-email-dialog.component';
 
 /**
@@ -42,6 +45,7 @@ export class SurveyResponsesListComponent {
   // === Services ===
   private readonly clipboardShareService = inject(ClipboardShareService);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   /** Parent survey — supplies header counts and committee/project labels for grouping. */
@@ -51,6 +55,12 @@ export class SurveyResponsesListComponent {
   public readonly loading = input<boolean>(false);
   /** True when the rows could not all be loaded; the list is then incomplete. */
   public readonly loadError = input<boolean>(false);
+  /** Active project: reminders are offered only for its committees (the server refuses any other). */
+  public readonly projectUid = input<string | null>(null);
+
+  // === Outputs ===
+  /** Emitted after reminders were sent, so the parent can reload the rows. */
+  public readonly remindersSent = output<void>();
 
   // === Constants ===
   protected readonly npsOptions = [
@@ -106,6 +116,19 @@ export class SurveyResponsesListComponent {
     const survey = this.survey();
     return new Map(this.responses().map((r) => [r.id, (survey && buildSurveyFollowUpMailto(survey, r)) || `mailto:${encodeURIComponent(r.email ?? '')}`]));
   });
+  /** Reminders only go out while the survey accepts responses. */
+  protected readonly canRemind: Signal<boolean> = computed(() => {
+    const survey = this.survey();
+    return !!survey && isSurveyOpenForFollowUp(survey);
+  });
+  /** Committees of the active project on this survey. */
+  private readonly projectCommitteeUids: Signal<Set<string>> = computed(() => {
+    const projectUid = this.projectUid();
+    return new Set((this.survey()?.committees ?? []).filter((c) => !!projectUid && c.project_uid === projectUid).map((c) => c.committee_uid));
+  });
+  protected readonly nonRespondents: Signal<SurveyResponseItem[]> = computed(() =>
+    this.responses().filter((r) => !hasSurveyResponse(r) && this.projectCommitteeUids().has(r.committee_uid ?? ''))
+  );
   protected readonly isFiltered: Signal<boolean> = computed(
     () => this.searchTerm() !== '' || this.npsFilter() !== 'all' || this.commentFilter() !== 'all' || this.deliveryFilter() !== 'all'
   );
@@ -117,6 +140,9 @@ export class SurveyResponsesListComponent {
     this.rowActionMenuResponseId.set(item.id);
     const survey = this.survey();
     const items: MenuItem[] = [];
+    if (this.canRemind() && !hasSurveyResponse(item) && this.projectCommitteeUids().has(item.committee_uid ?? '')) {
+      items.push({ label: 'Send reminder', icon: 'fa-light fa-paper-plane', command: () => this.openReminderDialog([item]) });
+    }
     if (item.survey_link) {
       items.push({
         label: 'Copy personal link',
@@ -138,6 +164,26 @@ export class SurveyResponsesListComponent {
     }
     this.rowActionMenuItems.set(items);
     menu.toggle(event);
+  }
+
+  /** Opens the reminder dialog for the given non-respondents (all of them from the header button). */
+  protected openReminderDialog(recipients: SurveyResponseItem[] = this.nonRespondents()): void {
+    const survey = this.survey();
+    if (!survey || recipients.length === 0) return;
+    const data: SurveyReminderDialogData = { survey, recipients };
+    this.dialogService
+      .open(SurveyReminderDialogComponent, {
+        header: 'Send survey reminder',
+        width: 'min(960px, 96vw)',
+        modal: true,
+        closable: true,
+        draggable: false,
+        data,
+      })
+      ?.onClose.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sent) => {
+        if (sent === true) this.remindersSent.emit();
+      });
   }
 
   protected exportCsv(): void {

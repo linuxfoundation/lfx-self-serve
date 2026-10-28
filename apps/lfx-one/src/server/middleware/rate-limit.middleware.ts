@@ -104,6 +104,21 @@ export const voteWriteRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for survey follow-up writes (#4340).
+ *
+ * Applied per-route to `POST /api/surveys/:uid/reminders` and `POST /api/surveys/:uid/resync`.
+ * Each call emails survey recipients, and this cap is the only guard against repeat sends.
+ * Same shape and per-pod caveat as `voteWriteRateLimiter`.
+ */
+export const surveyWriteRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 10, // limit each user to 10 survey writes per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
  * Rate limiter for newsletter coworker invites (#3483).
  *
  * Applied per-route to `POST /api/newsletters/foundations/:foundationUid/invites`, which sends a

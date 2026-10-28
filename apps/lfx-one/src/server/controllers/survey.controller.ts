@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateSurveyRequest } from '@lfx-one/shared/interfaces';
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
+import { CreateSurveyRequest, SendSurveyRemindersRequest } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { SurveyService } from '../services/survey.service';
 
@@ -170,6 +171,81 @@ export class SurveyController {
   }
 
   /**
+   * POST /surveys/:uid/reminders — resends the survey email to the selected response rows (#4340).
+   */
+  public async sendSurveyReminders(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const payload: SendSurveyRemindersRequest = req.body;
+    const startTime = logger.startOperation(req, 'send_survey_reminders', {
+      survey_uid: surveyUid,
+      recipient_count: Array.isArray(payload?.recipient_ids) ? payload.recipient_ids.length : undefined,
+    });
+
+    try {
+      const context = { operation: 'send_survey_reminders', service: 'survey_controller', path: req.path } as const;
+      if (!this.validateSurveyUid(surveyUid, req, next, context.operation)) return;
+      if (!validateRequestBody(payload, req, next, context)) return;
+      if (!validateArrayParameter(payload.recipient_ids, 'recipient_ids', req, next, context)) return;
+      if (payload.recipient_ids.length > SURVEY_REMINDER_MAX_RECIPIENTS) {
+        throw ServiceValidationError.forField('recipient_ids', `recipient_ids may name at most ${SURVEY_REMINDER_MAX_RECIPIENTS} recipients`, context);
+      }
+      if (payload.recipient_ids.some((id) => typeof id !== 'string' || !isUuid(id))) {
+        throw ServiceValidationError.forField('recipient_ids', 'recipient_ids must contain only response UUIDs', context);
+      }
+
+      const result = await this.surveyService.sendSurveyReminders(req, surveyUid, [...new Set(payload.recipient_ids)]);
+
+      logger.success(req, 'send_survey_reminders', startTime, { survey_uid: surveyUid, recipient_count: result.recipient_count });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /surveys/:uid/resync-preview — committee members a resync would add (#4340).
+   */
+  public async getResyncPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const startTime = logger.startOperation(req, 'get_survey_resync_preview', { survey_uid: surveyUid });
+
+    try {
+      if (!this.validateSurveyUid(surveyUid, req, next, 'get_survey_resync_preview')) return;
+      const committeeUid = this.parseCommitteeUid(req, 'get_survey_resync_preview');
+
+      const preview = await this.surveyService.getResyncPreview(req, surveyUid, committeeUid);
+
+      logger.success(req, 'get_survey_resync_preview', startTime, {
+        survey_uid: surveyUid,
+        recipient_count: preview.affected_recipients.length,
+      });
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /surveys/:uid/resync — sends the survey to committee members added since launch (#4340).
+   */
+  public async resyncRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const startTime = logger.startOperation(req, 'resync_survey_recipients', { survey_uid: surveyUid });
+
+    try {
+      if (!this.validateSurveyUid(surveyUid, req, next, 'resync_survey_recipients')) return;
+      const committeeUid = this.parseCommitteeUid(req, 'resync_survey_recipients');
+
+      await this.surveyService.resyncRecipients(req, surveyUid, committeeUid);
+
+      logger.success(req, 'resync_survey_recipients', startTime, { survey_uid: surveyUid, committee_uid: committeeUid });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /surveys/:uid
    */
   public async getSurveyById(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -260,5 +336,27 @@ export class SurveyController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** surveyUid is interpolated into the upstream path — accept UUIDs only. */
+  private validateSurveyUid(surveyUid: string | undefined, req: Request, next: NextFunction, operation: string): surveyUid is string {
+    if (!validateUidParameter(surveyUid, req, next, { operation, service: 'survey_controller' })) {
+      return false;
+    }
+    if (!isUuid(surveyUid as string)) {
+      next(ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path }));
+      return false;
+    }
+    return true;
+  }
+
+  /** Optional `committee_uid` query param; must be a UUID when present. */
+  private parseCommitteeUid(req: Request, operation: string): string | undefined {
+    const value = req.query['committee_uid'];
+    if (value === undefined || value === '') return undefined;
+    if (typeof value !== 'string' || !isUuid(value)) {
+      throw ServiceValidationError.forField('committee_uid', 'committee_uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path });
+    }
+    return value;
   }
 }

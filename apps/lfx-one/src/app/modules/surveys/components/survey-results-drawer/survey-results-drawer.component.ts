@@ -2,24 +2,43 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NpsGaugeComponent } from '@components/nps-gauge/nps-gauge.component';
 import { SurveyStatus } from '@lfx-one/shared';
-import { NpsBreakdown, Survey, SurveyComment, SurveyEngagementRates, SurveyParticipationStats, SurveyResponseItem } from '@lfx-one/shared/interfaces';
-import { getResponseComment, getSurveyDisplayStatus, getSurveyEngagementRates, hasSurveyResponse } from '@lfx-one/shared/utils';
+import {
+  NpsBreakdown,
+  Survey,
+  SurveyComment,
+  SurveyEngagementRates,
+  SurveyParticipationStats,
+  SurveyResponseItem,
+  SurveyResyncDialogData,
+  SurveyResyncScope,
+} from '@lfx-one/shared/interfaces';
+import {
+  getResponseComment,
+  getSurveyDisplayStatus,
+  getSurveyEngagementRates,
+  getSurveyResyncScope,
+  hasSurveyResponse,
+  isSurveyOpenForFollowUp,
+} from '@lfx-one/shared/utils';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { SurveyResponsesListComponent } from '../survey-responses-list/survey-responses-list.component';
+import { SurveyResyncDialogComponent } from '../survey-resync-dialog/survey-resync-dialog.component';
 
 @Component({
   selector: 'lfx-survey-results-drawer',
   imports: [DrawerModule, DatePipe, NgTemplateOutlet, SurveyStatusLabelPipe, SkeletonModule, NpsGaugeComponent, SurveyResponsesListComponent],
+  providers: [DialogService],
   templateUrl: './survey-results-drawer.component.html',
   styleUrl: './survey-results-drawer.component.scss',
 })
@@ -27,6 +46,8 @@ export class SurveyResultsDrawerComponent {
   // === Services ===
   private readonly surveyService = inject(SurveyService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly surveyId = input<string | null>(null);
@@ -46,6 +67,8 @@ export class SurveyResultsDrawerComponent {
   protected readonly activeTab = signal<'overview' | 'responses'>('overview');
   protected readonly responsesLoading = signal<boolean>(false);
   protected readonly responsesLoadError = signal<boolean>(false);
+  /** Bumped after a reminder or resync so the survey and its rows reload. */
+  private readonly refreshCount = signal<number>(0);
 
   // === Computed: project scope + responsive drawer width ===
   protected readonly projectUid: Signal<string | null> = computed(() => this.projectContextService.activeContext()?.uid ?? null);
@@ -70,6 +93,11 @@ export class SurveyResultsDrawerComponent {
   protected readonly groupName: Signal<string> = this.initGroupName();
   protected readonly engagementRates: Signal<SurveyEngagementRates | null> = this.initEngagementRates();
   protected readonly comments: Signal<SurveyComment[]> = this.initComments();
+  /** Resync is offered only while open, and only when it can be kept to this project's committee. */
+  protected readonly resyncScope: Signal<SurveyResyncScope | null> = computed(() => {
+    const s = this.survey();
+    return s && this.hasPMOAccess() && isSurveyOpenForFollowUp(s) ? getSurveyResyncScope(s, this.projectUid()) : null;
+  });
   protected readonly hasComments: Signal<boolean> = computed(() => this.comments().length > 0);
   protected readonly commentsCount: Signal<number> = computed(() => this.comments().length);
 
@@ -108,6 +136,31 @@ export class SurveyResultsDrawerComponent {
     }
   }
 
+  protected refresh(): void {
+    this.refreshCount.update((n) => n + 1);
+  }
+
+  protected openResyncDialog(): void {
+    const survey = this.survey();
+    const scope = this.resyncScope();
+    if (!survey || !scope) return;
+    this.closeAdminMenu();
+    const data: SurveyResyncDialogData = { survey, committeeUids: scope.committeeUids };
+    this.dialogService
+      .open(SurveyResyncDialogComponent, {
+        header: 'Resync recipients',
+        width: 'min(760px, 96vw)',
+        modal: true,
+        closable: true,
+        draggable: false,
+        data,
+      })
+      ?.onClose.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sent) => {
+        if (sent === true) this.refresh();
+      });
+  }
+
   protected getBreakdownPercentage(count: number, total: number): number {
     if (total <= 0) return 0;
     return Math.round((count / total) * 100);
@@ -116,9 +169,10 @@ export class SurveyResultsDrawerComponent {
   // === Private Initializers ===
   private initSurvey(): Signal<Survey | null> {
     return toSignal(
-      // Same project scope as the response rows, so totals/NPS and rates/comments always match.
-      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid)]).pipe(
-        switchMap(([id, projectUid]) => {
+      // Same project scope as the response rows, so totals/NPS and rates/comments always match;
+      // `refreshCount` reloads after a reminder or resync.
+      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.refreshCount)]).pipe(
+        switchMap(([id, projectUid, refreshCount]) => {
           if (!id) {
             this.loading.set(false);
             return of(null);
@@ -127,7 +181,7 @@ export class SurveyResultsDrawerComponent {
           this.loading.set(true);
           const listData = this.listSurvey();
 
-          return this.surveyService.getSurvey(id, projectUid ?? undefined).pipe(
+          return this.surveyService.getSurvey(id, projectUid ?? undefined, { skipCache: refreshCount > 0 }).pipe(
             catchError(() => of(listData)),
             finalize(() => this.loading.set(false)),
             startWith(listData)
@@ -141,8 +195,14 @@ export class SurveyResultsDrawerComponent {
   private initResponses(): Signal<SurveyResponseItem[]> {
     return toSignal(
       // `visible` is a trigger so reopening the drawer refetches (and retries a failed load);
-      // closing it cancels an in-flight load.
-      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid), toObservable(this.hasPMOAccess), toObservable(this.visible)]).pipe(
+      // closing it cancels an in-flight load. `refreshCount` reloads after a reminder or resync.
+      combineLatest([
+        toObservable(this.surveyId),
+        toObservable(this.projectUid),
+        toObservable(this.hasPMOAccess),
+        toObservable(this.visible),
+        toObservable(this.refreshCount),
+      ]).pipe(
         switchMap(([id, projectUid, canManage, visible]) => {
           this.responsesLoadError.set(false);
           if (!id || !canManage || !visible) {

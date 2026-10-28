@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Survey, SurveyResponseItem } from '../interfaces/survey.interface';
-import { buildSurveyFollowUpMailto, buildSurveyResponsesCsvRows, getSurveyEngagementRates, renderSurveyEmailForRecipient } from './survey.utils';
+import {
+  buildSurveyFollowUpMailto,
+  buildSurveyResponsesCsvRows,
+  getSurveyEngagementRates,
+  getSurveyResyncScope,
+  renderSurveyEmailForRecipient,
+} from './survey.utils';
 
 const survey = {
   uid: 's-1',
@@ -120,5 +126,20 @@ describe('buildSurveyResponsesCsvRows', () => {
       'Great',
     ]);
     expect(rows.flat()).not.toContain('https://www.surveymonkey.com/r/x');
+  });
+});
+
+describe('getSurveyResyncScope', () => {
+  const withCommittees = (...projects: string[]) =>
+    ({ ...survey, committees: projects.map((p, i) => ({ committee_uid: `c-${i}`, project_uid: p })) }) as unknown as Survey;
+
+  it("names the project's committees explicitly, never the whole survey", () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-1'), 'p-1')).toEqual({ committeeUids: ['c-0', 'c-1'] });
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2', 'p-1'), 'p-1')).toEqual({ committeeUids: ['c-0', 'c-2'] });
+  });
+
+  it('offers no resync when the project has no committee on the survey or no project is active', () => {
+    expect(getSurveyResyncScope(withCommittees('p-1', 'p-2'), 'p-9')).toBeNull();
+    expect(getSurveyResyncScope(withCommittees('p-1'), null)).toBeNull();
   });
 });

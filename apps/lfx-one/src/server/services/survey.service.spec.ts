@@ -437,3 +437,103 @@ describe('SurveyService.getSurveyResponses — personal link gate', () => {
     expect(page.data.every((r) => r.survey_link === undefined)).toBe(true);
   });
 });
+
+describe('SurveyService follow-up actions (#4340)', () => {
+  let service: SurveyService;
+  let checkAccessSpy: MockInstance<AccessCheckService['checkAccess']>;
+  const req = { path: '/api/surveys/s-1/resync', bearerToken: 'caller-token' } as Request;
+  // Multi-foundation survey: the caller writes p-1 (committee c-1) but not p-2 (c-2).
+  const survey = {
+    committees: [
+      { committee_uid: 'c-1', project_uid: 'p-1' },
+      { committee_uid: 'c-2', project_uid: 'p-2' },
+    ],
+  };
+  const responses = [
+    { id: 'r-1', committee_uid: 'c-1' },
+    { id: 'r-2', committee_uid: 'c-2' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequestMock.mockReset().mockImplementation(async (_req: Request, _svc: string, path: string, method: string) => {
+      if (method !== 'GET') return undefined;
+      if (path === '/surveys/s-1') return survey;
+      if (path === '/surveys/s-1/responses') return { data: responses, meta: { page_token: '' } };
+      return { affected_recipients: null };
+    });
+    service = new SurveyService();
+    checkAccessSpy = vi.spyOn(AccessCheckService.prototype, 'checkAccess').mockResolvedValue(
+      new Map([
+        ['p-1#writer_guard', true],
+        ['p-2#writer_guard', false],
+      ])
+    );
+  });
+
+  afterEach(() => {
+    checkAccessSpy.mockRestore();
+  });
+
+  const writes = () => proxyRequestMock.mock.calls.filter((call) => call[3] === 'POST');
+
+  it('sends reminders through bulk_resend for recipients of managed committees', async () => {
+    const result = await service.sendSurveyReminders(req, 's-1', ['r-1']);
+
+    expect(writes()).toEqual([[req, 'LFX_V2_SERVICE', '/surveys/s-1/bulk_resend', 'POST', undefined, { recipient_ids: ['r-1'] }]]);
+    expect(result).toEqual({ recipient_count: 1 });
+  });
+
+  it.each([[['r-1', 'r-2']], [['r-unknown']]])('refuses reminders naming %j and sends nothing', async (ids) => {
+    await expect(service.sendSurveyReminders(req, 's-1', ids)).rejects.toMatchObject({ statusCode: 403, code: 'SURVEY_RECIPIENT_NOT_MANAGED' });
+    expect(writes()).toEqual([]);
+  });
+
+  it('resyncs a managed committee with committee_uid as a query param', async () => {
+    await service.resyncRecipients(req, 's-1', 'c-1');
+
+    expect(writes()).toEqual([[req, 'LFX_V2_SERVICE', '/surveys/s-1/send_missing_recipients', 'POST', { committee_uid: 'c-1' }]]);
+  });
+
+  it.each([['c-2'], [undefined]])('refuses a resync scoped to %s when the caller does not manage it all', async (committeeUid) => {
+    await expect(service.resyncRecipients(req, 's-1', committeeUid)).rejects.toMatchObject({ statusCode: 403, code: 'SURVEY_COMMITTEE_NOT_MANAGED' });
+    await expect(service.getResyncPreview(req, 's-1', committeeUid)).rejects.toMatchObject({ statusCode: 403 });
+    expect(writes()).toEqual([]);
+    expect(proxyRequestMock.mock.calls.some((call) => call[2] === '/surveys/s-1/preview_send')).toBe(false);
+  });
+
+  it('allows a whole-survey resync when the caller manages every committee, and normalizes the preview', async () => {
+    checkAccessSpy.mockResolvedValue(
+      new Map([
+        ['p-1#writer_guard', true],
+        ['p-2#writer_guard', true],
+      ])
+    );
+
+    const preview = await service.getResyncPreview(req, 's-1');
+
+    expect(proxyRequestMock).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/surveys/s-1/preview_send', 'GET', undefined);
+    expect(preview).toEqual({ affected_recipients: [], affected_committees: [] });
+  });
+
+  it('refuses a whole-survey resync when any committee has no resolvable project', async () => {
+    const mixed = { committees: [{ committee_uid: 'c-1', project_uid: 'p-1' }, { committee_uid: 'c-3' }] };
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) =>
+      method === 'GET' && path === '/surveys/s-1' ? mixed : undefined
+    );
+
+    await expect(service.resyncRecipients(req, 's-1')).rejects.toMatchObject({ statusCode: 403 });
+    expect(writes()).toEqual([]);
+  });
+
+  it('reports a too-large survey instead of a permission error when the row fetch hits the page cap', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _svc: string, path: string, method: string) => {
+      if (method !== 'GET') return undefined;
+      if (path === '/surveys/s-1') return survey;
+      return { data: responses, meta: { page_token: 'more' } };
+    });
+
+    await expect(service.sendSurveyReminders(req, 's-1', ['r-1'])).rejects.toMatchObject({ statusCode: 422, code: 'SURVEY_TOO_MANY_RESPONSES' });
+    expect(writes()).toEqual([]);
+  });
+});

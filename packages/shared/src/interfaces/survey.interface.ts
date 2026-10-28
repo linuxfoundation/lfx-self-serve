@@ -626,3 +626,79 @@ export interface SurveyReviewData {
  * @description Represents the combined state of survey status and response status
  */
 export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';
+
+/**
+ * Request body for `POST /api/surveys/:uid/reminders`
+ * @description `recipient_ids` are response row ids (`SurveyResponseItem.id`), as upstream `bulk_resend` expects.
+ */
+export interface SendSurveyRemindersRequest {
+  recipient_ids: string[];
+}
+
+/**
+ * Result of a reminder send
+ */
+export interface SendSurveyRemindersResult {
+  recipient_count: number;
+}
+
+/**
+ * A committee member who would receive the survey on a resync
+ * @description Mirrors `ITXPreviewRecipient` from lfx-v2-survey-service.
+ */
+export interface SurveyResyncRecipient {
+  user_id: string;
+  email: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  role?: string;
+}
+
+/**
+ * A committee a resync would send to
+ * @description Mirrors `ExcludedCommittee` from lfx-v2-survey-service.
+ */
+export interface SurveyResyncCommittee {
+  project_uid?: string;
+  project_name?: string;
+  committee_uid?: string;
+  committee_name?: string;
+  committee_category?: string;
+}
+
+/**
+ * Who a resync would add, from upstream `preview_send`
+ */
+export interface SurveyResyncPreview {
+  affected_recipients: SurveyResyncRecipient[];
+  affected_committees: SurveyResyncCommittee[];
+}
+
+/**
+ * Data handed to the survey reminder dialog
+ */
+export interface SurveyReminderDialogData {
+  survey: Survey;
+  /** Non-respondents offered for a reminder; all start selected */
+  recipients: SurveyResponseItem[];
+}
+
+/**
+ * Data handed to the resync recipients dialog
+ */
+export interface SurveyResyncDialogData {
+  survey: Survey;
+  /** The active project's committees on this survey; each is previewed and resynced on its own */
+  committeeUids: string[];
+}
+
+/**
+ * Which committees a resync from the active project may touch
+ * @description Always explicit: the drawer's survey detail is project-filtered, so it can't prove it
+ * holds every committee on the survey, and a whole-survey resync is never sent from the UI.
+ */
+export interface SurveyResyncScope {
+  committeeUids: string[];
+}

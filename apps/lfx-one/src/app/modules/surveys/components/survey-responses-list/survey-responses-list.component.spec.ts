@@ -6,16 +6,22 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { DialogService } from 'primeng/dynamicdialog';
+import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { SurveyReminderDialogComponent } from '../survey-reminder-dialog/survey-reminder-dialog.component';
 import { SurveySentEmailDialogComponent } from '../survey-sent-email-dialog/survey-sent-email-dialog.component';
 import { SurveyResponsesListComponent } from './survey-responses-list.component';
 
 const SURVEY = {
   uid: 's-1',
   survey_title: 'Board NPS',
-  survey_cutoff_date: null,
-  committees: [{ committee_uid: 'c-1', committee_name: 'Governing Board', project_name: 'CNCF' }],
+  survey_status: 'sent',
+  survey_cutoff_date: '2099-01-01T00:00:00Z',
+  committees: [
+    { committee_uid: 'c-1', committee_name: 'Governing Board', project_name: 'CNCF', project_uid: 'p-1' },
+    { committee_uid: 'c-2', committee_name: 'Other Board', project_name: 'Other Foundation', project_uid: 'p-2' },
+  ],
   email_body: '<p>Hi {{.FirstName}}</p>',
 } as unknown as Survey;
 
@@ -45,6 +51,7 @@ async function mount(survey: Survey = SURVEY, rows: SurveyResponseItem[] = ROWS)
   const fixture = TestBed.createComponent(SurveyResponsesListComponent);
   fixture.componentRef.setInput('survey', survey);
   fixture.componentRef.setInput('responses', rows);
+  fixture.componentRef.setInput('projectUid', 'p-1');
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, copyLink, open };
@@ -76,11 +83,11 @@ describe('SurveyResponsesListComponent', () => {
 
     const items = openMenu(component, ROWS[0]);
 
-    expect(items.map((i) => i.label)).toEqual(['Copy personal link', 'Email recipient', 'View sent email']);
-    expect(items[1].url).toMatch(/^mailto:p0%40example\.com\?subject=Reminder%3A%20Board%20NPS&body=/);
-    items[0].command!({});
+    expect(items.map((i) => i.label)).toEqual(['Send reminder', 'Copy personal link', 'Email recipient', 'View sent email']);
+    expect(items[2].url).toMatch(/^mailto:p0%40example\.com\?subject=Reminder%3A%20Board%20NPS&body=/);
+    items[1].command!({});
     expect(copyLink).toHaveBeenCalledWith('https://www.surveymonkey.com/r/abc', 'Personal survey link copied.');
-    items[2].command!({});
+    items[3].command!({});
     expect(open).toHaveBeenCalledWith(SurveySentEmailDialogComponent, expect.objectContaining({ data: { survey: SURVEY, response: ROWS[0] } }));
   });
 
@@ -88,6 +95,40 @@ describe('SurveyResponsesListComponent', () => {
     const { fixture, component } = await mount({ ...SURVEY, email_body: undefined });
     current = fixture;
 
-    expect(openMenu(component, ROWS[1]).map((i) => i.label)).toEqual(['Email recipient']);
+    expect(openMenu(component, ROWS[1]).map((i) => i.label)).toEqual(['Send reminder', 'Email recipient']);
+  });
+
+  it('offers no reminders once the survey is closed or for recipients who responded', async () => {
+    const { fixture, component } = await mount({ ...SURVEY, response_status: 'closed' } as Survey);
+    current = fixture;
+    expect(openMenu(component, ROWS[1]).map((i) => i.label)).not.toContain('Send reminder');
+    expect(fixture.nativeElement.querySelector('[data-testid="survey-responses-send-reminders"]')).toBeNull();
+
+    const responded = { ...ROWS[1], response_datetime: '2026-11-03T10:00:00Z' };
+    const open = await mount(SURVEY, [responded]);
+    current = open.fixture;
+    expect(openMenu(open.component, responded).map((i) => i.label)).not.toContain('Send reminder');
+  });
+
+  it('opens the reminder dialog with every non-respondent and reports a send', async () => {
+    const { fixture, component, open } = await mount();
+    current = fixture;
+    open.mockReturnValue({ onClose: of(true) });
+    const sent = vi.fn();
+    component.remindersSent.subscribe(sent);
+
+    fixture.nativeElement.querySelector('[data-testid="survey-responses-send-reminders"] button').click();
+
+    expect(open).toHaveBeenCalledWith(SurveyReminderDialogComponent, expect.objectContaining({ data: { survey: SURVEY, recipients: ROWS } }));
+    expect(sent).toHaveBeenCalledOnce();
+  });
+
+  it("offers reminders only for the active project's committees", async () => {
+    const otherBoard = { ...ROWS[1], id: 'r-other', committee_uid: 'c-2' } as SurveyResponseItem;
+    const { fixture, component } = await mount(SURVEY, [ROWS[1], otherBoard]);
+    current = fixture;
+
+    expect(component['nonRespondents']().map((r) => r.id)).toEqual([ROWS[1].id]);
+    expect(openMenu(component, otherBoard).map((i) => i.label)).not.toContain('Send reminder');
   });
 });

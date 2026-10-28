@@ -1,0 +1,83 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="survey-reminder-dialog">
+  <p class="text-[12.5px] text-gray-500 -mt-1">Resend the survey email, with each recipient's personal link, to recipients who have not responded.</p>
+
+  <div class="border border-gray-200 rounded-lg max-h-[min(32rem,calc(90dvh-14rem))] overflow-auto" data-testid="survey-reminder-dialog-table">
+    <table class="w-full border-collapse text-[12.5px]">
+      <thead>
+        <tr class="bg-gray-50 sticky top-0 z-10">
+          <th class="w-10 py-2.5 px-4 cursor-pointer" (click)="toggleSelectAll()" data-testid="survey-reminder-dialog-select-all">
+            <span id="survey-reminder-select-all-label" class="sr-only">Select all recipients</span>
+            <lfx-checkbox
+              [form]="selectAllForm"
+              control="all"
+              [binary]="true"
+              inputId="survey-reminder-select-all"
+              ariaLabelledBy="survey-reminder-select-all-label"
+              (click)="$event.stopPropagation()"
+              (change)="toggleSelectAll()"></lfx-checkbox>
+          </th>
+          <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Name</th>
+          <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
+          <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Organization</th>
+          <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Delivery status</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (recipient of recipients; track recipient.id) {
+          <tr
+            class="border-t border-gray-100 cursor-pointer transition-colors"
+            [class.bg-blue-50]="selectedIds().has(recipient.id)"
+            [class.hover:bg-gray-50]="!selectedIds().has(recipient.id)"
+            (click)="toggleRecipient(recipient.id)"
+            [attr.data-testid]="'survey-reminder-dialog-row-' + recipient.id">
+            <td class="py-3 px-4">
+              <lfx-checkbox
+                [form]="checkboxForm"
+                [control]="recipient.id"
+                [binary]="true"
+                [inputId]="'survey-reminder-select-' + recipient.id"
+                [ariaLabelledBy]="'survey-reminder-name-' + recipient.id"
+                (click)="$event.stopPropagation()"
+                (change)="toggleRecipient(recipient.id)"></lfx-checkbox>
+            </td>
+            <td class="py-3 px-2 font-semibold text-gray-900" [id]="'survey-reminder-name-' + recipient.id">{{ recipientName(recipient) }}</td>
+            <td class="py-3 px-2 text-gray-500">{{ recipient.email || '—' }}</td>
+            <td class="py-3 px-2 text-gray-500">{{ recipient.organization?.name || '—' }}</td>
+            <td class="py-3 px-4 text-gray-500">{{ recipient.response_status || '—' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="flex items-center justify-between gap-2 mt-4">
+  <span class="text-[11.5px] text-gray-500" aria-live="polite" data-testid="survey-reminder-dialog-count">
+    {{ selectedCount() }} of {{ recipients.length }} selected
+    @if (overCap()) {
+      <span class="text-red-700" data-testid="survey-reminder-dialog-over-cap"> · Select at most {{ maxRecipients }} recipients per send.</span>
+    }
+  </span>
+  <div class="flex gap-2">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      [disabled]="sending()"
+      (onClick)="cancel()"
+      data-testid="survey-reminder-dialog-cancel"></lfx-button>
+    <lfx-button
+      label="Send"
+      icon="fa-light fa-paper-plane"
+      severity="info"
+      size="small"
+      [disabled]="selectedCount() === 0 || overCap() || sending()"
+      [loading]="sending()"
+      (onClick)="send()"
+      data-testid="survey-reminder-dialog-send"></lfx-button>
+  </div>
+</div>

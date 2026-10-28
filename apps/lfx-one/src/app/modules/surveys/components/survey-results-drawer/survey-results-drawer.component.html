@@ -40,6 +40,16 @@
                       <i class="fa-light fa-copy w-4"></i>
                       Duplicate Survey
                     </button>
+                    @if (resyncScope()) {
+                      <button
+                        type="button"
+                        (click)="openResyncDialog()"
+                        class="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        data-testid="survey-results-drawer-resync-button">
+                        <i class="fa-light fa-arrows-rotate w-4"></i>
+                        Resync recipients
+                      </button>
+                    }
                     @if (!isSurveyClosed()) {
                       <button
                         type="button"
@@ -120,6 +130,8 @@
           [responses]="responses()"
           [loading]="responsesLoading()"
           [loadError]="responsesLoadError()"
+          [projectUid]="projectUid()"
+          (remindersSent)="refresh()"
           data-testid="survey-results-drawer-responses" />
       } @else {
         @if (loading()) {
