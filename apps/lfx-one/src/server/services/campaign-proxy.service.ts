@@ -3,6 +3,7 @@
 
 import {
   AI_MODEL,
+  AI_REQUEST_CONFIG,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -473,7 +474,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature: AI_REQUEST_CONFIG.TEMPERATURE,
     }),
     signal,
   });
@@ -508,7 +509,7 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature: AI_REQUEST_CONFIG.TEMPERATURE,
       stream: true,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
