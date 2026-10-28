@@ -172,6 +172,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     Member360ResultComponent,
     MktgRunActivityComponent,
   ],
+  providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
@@ -956,7 +957,7 @@ export class MktgDocumentViewComponent {
     if (!ref) return;
     this.confirmingApproval.set(true);
     const unregisterDestroy = this.destroyRef.onDestroy(() => ref.close());
-    ref.onClose
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => false)))
       .pipe(
         take(1),
         takeUntilDestroyed(this.destroyRef),

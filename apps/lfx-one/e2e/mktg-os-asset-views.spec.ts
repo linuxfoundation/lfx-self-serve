@@ -33,7 +33,8 @@ test.describe('Native FAQ document approval and header', () => {
     await openAssetDocument(page, 'faq');
     const view = page.getByTestId('mktg-faq-view');
     await expect(view).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
+    await expect(page.getByTestId('mktg-document-view-readiness')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
     await expect(page.getByTestId('mktg-document-view-meta')).toContainText('v1');
     await expect(page.getByTestId('mktg-faq-view-metadata')).toHaveCount(0);
@@ -48,7 +49,8 @@ test.describe('Native FAQ document approval and header', () => {
   });
   test('approves directly without confirmation and updates the header', async ({ page }, info) => {
     await openAssetDocument(page, 'faq', 200, true, false, cleanFaqResponse());
-    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready.');
+    await expect(page.getByTestId('mktg-document-view-readiness')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready.');
     const status = page.getByTestId('mktg-document-view-saving-status');
     await expect(status).toHaveAttribute('aria-live', 'polite');
     await expect(status).toHaveText('');
@@ -79,7 +81,8 @@ test.describe('Native FAQ document approval and header', () => {
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
     expect(writes).toHaveLength(1);
     await expect(dialog).toBeHidden();
-    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
+    await expect(page.getByTestId('mktg-document-view-readiness')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
     await page.screenshot({ path: info.outputPath('approved-with-gaps.png'), fullPage: true });
   });
   for (const first of ['approve', 'restore'] as const) {

@@ -16,6 +16,9 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
+        @if (view() && !runState()) {
+          <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
+        }
       </div>
       <div class="grow"></div>
       @if (linkedinContent(); as content) {
