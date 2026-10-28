@@ -187,6 +187,7 @@ import {
   VALID_CAMPAIGN_TOGGLE_STATUSES,
   googleAdsEchoed,
   googleAdsToLower,
+  googleAdsDecodedText,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
@@ -5266,7 +5267,7 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '');
+      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '');
       return { text: field('text'), description1: field('description1'), description2: field('description2'), finalUrl: field('finalUrl') };
     });
   }
@@ -5574,7 +5575,7 @@ export class CampaignController {
    */
   private googleCalloutList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c));
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsDecodedText(c));
   }
 
   /**
@@ -5662,9 +5663,9 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const header = typeof fields['header'] === 'string' ? googleAdsTrimSpace(fields['header']) : '';
+      const header = typeof fields['header'] === 'string' ? googleAdsDecodedText(fields['header']) : '';
       const rawValues = Array.isArray(fields['values']) ? (fields['values'] as unknown[]) : [];
-      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsTrimSpace(v));
+      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsDecodedText(v));
       return { header, values };
     });
   }
@@ -5838,9 +5839,9 @@ export class CampaignController {
     );
   }
 
-  /** One field of a shape-checked raw entry, trimmed with Go's rules, or `''` when absent or null. */
+  /** One field of a shape-checked raw entry, decoded and trimmed as Go does ({@link googleAdsDecodedText}), or `''` when absent or null. */
   private assetText(fields: Record<string, unknown>, name: string): string {
-    return typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '';
+    return typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '';
   }
 
   /** One numeric field of a shape-checked raw entry, or `0` — upstream's own "unset" — when absent or null. */

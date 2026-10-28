@@ -8034,11 +8034,36 @@ describe('ImplementationTabComponent google sitelinks', () => {
   });
 
   /**
-   * Every box in the sub-form is reachable by a screen reader on its own terms: the section's
-   * `<label for>` names only the link-text box, so the other three carry an `aria-label` — a
-   * placeholder is not an accessible name and vanishes as soon as the operator types. The ids are
-   * asserted against the message elements actually rendered, so a rename on either side fails the
-   * test rather than leaving `aria-describedby` pointing at nothing.
+   * Each Google extension section names its first box precisely (#3644). The heading with its
+   * "(n/max)" count names the GROUP, through `aria-labelledby`, and is no longer the `<label for>`
+   * of that box. Bound that way it became the box's accessible name, so a screen reader announced
+   * "Google Sitelinks (0/20)" where every sibling box gives a field name. Each id is resolved
+   * against the rendered DOM, so a renamed heading leaves no dangling reference.
+   */
+  it.each([
+    ['callouts', 'google-callout-add', 'Callout text', 'Google Callouts'],
+    ['sitelinks', 'google-sitelink-text', 'Sitelink link text', 'Google Sitelinks'],
+    ['structured-snippets', 'google-snippet-header', 'Structured snippet header', 'Google Structured Snippets'],
+    ['call-extensions', 'google-call-country', 'Call extension country code', 'Google Call Extensions'],
+    ['promotions', 'google-promotion-target', 'Promotion target', 'Google Promotions'],
+    ['prices', 'google-price-type', 'Price type', 'Google Price Extensions'],
+  ])('names the %s group by its heading and its first box by the field', (section, controlId, name, heading) => {
+    seedChannel(fixture, { includeSearch: true });
+    const root: HTMLElement = fixture.nativeElement;
+    const group = root.querySelector(`[data-testid="implementation-google-${section}-section"]`);
+
+    expect(group?.getAttribute('role')).toBe('group');
+    const headingEl = root.querySelector(`#${group?.getAttribute('aria-labelledby')}`);
+    expect(headingEl?.textContent).toContain(heading);
+    expect(root.querySelector(`label[for="${controlId}"]`)).toBeNull();
+    expect(root.querySelector(`#${controlId}`)?.getAttribute('aria-label')).toBe(name);
+  });
+
+  /**
+   * Every box in the sub-form is reachable by a screen reader on its own terms: each carries an
+   * `aria-label` — a placeholder is not an accessible name and vanishes as soon as the operator
+   * types. The ids are asserted against the message elements actually rendered, so a rename on
+   * either side fails the test rather than leaving `aria-describedby` pointing at nothing.
    */
   it('names every box and points each at whichever of its messages is rendered', () => {
     const c = seedChannel(fixture, { includeSearch: true });
