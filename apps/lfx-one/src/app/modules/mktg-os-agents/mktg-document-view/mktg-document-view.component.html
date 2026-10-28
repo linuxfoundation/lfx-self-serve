@@ -150,6 +150,7 @@
         [runAgentId]="runAgentId()"
         [externalActivity]="visibleRunActivity()"
         [suppressCard]="runFailed()"
+        [headless]="publicProgressPolling() && runState() !== 'failed'"
         (observed)="onPublicProgress($event)"
         (readError)="onPublicProgressError($event)"
         (retry)="onRetryRun()"

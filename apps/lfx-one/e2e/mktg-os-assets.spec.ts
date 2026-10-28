@@ -55,7 +55,7 @@ test.describe('Marketing OS runs land on assets', () => {
     const generate = page.getByTestId('mktg-agent-run-submit-button').getByRole('button');
     await expect(generate).toBeEnabled();
     await generate.click();
-    await expect(page.getByTestId('mktg-agent-run-running')).toContainText('Writing');
+    await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing');
     await expect(page).not.toHaveURL(/\/documents\//);
     await expect(page).toHaveURL(new RegExp('revision=' + revision.id), { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision ' + revision.number);
@@ -116,11 +116,11 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('unconfirmed-kept-intake.png'), fullPage: true });
   });
 
-  test('a first run has progress only until its structured revision lands', async ({ page }) => {
+  test('a document observes its first run headlessly until the structured revision lands', async ({ page }) => {
     await suppressCookieBanner(page);
     const fixture = await setupAsset(page);
     await fixture.open();
-    await expect(page.getByTestId('mktg-document-view-run')).toContainText('Writing the asset');
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-framework')).toHaveCount(0);
     fixture.finish();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -146,12 +146,19 @@ test.describe('Marketing OS runs land on assets', () => {
   test('a transient metadata poll failure keeps the known run and offers a truthful refresh warning', async ({ page }) => {
     const fixture = await setupAsset(page);
     await fixture.open();
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.evaluate(
+      (url) => {
+        history.pushState({}, '', url);
+        dispatchEvent(new PopStateEvent('popstate'));
+      },
+      `/project/mktg-os-agents/documents/${assetRevision().type.agentKey}/living?project=${ASSET_PROJECT.slug}&run=${'c'.repeat(64)}`
+    );
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
     await page.route(/\/api\/mktg-agents\/documents\/[^/]+\/living\?/, (route) =>
       new URL(route.request().url()).searchParams.get('poll') === '1' ? fulfillDocumentJson(route, { code: 'SYNTHETIC_UNAVAILABLE' }, 503) : route.fallback()
     );
-    await expect(page.getByTestId('mktg-document-view-refresh-warning')).toContainText('last loaded', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('last loaded', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-refresh-progress').getByRole('button')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('transient-run-progress-warning.png'), fullPage: true });
@@ -182,11 +189,19 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('selected-run-recovered.png'), fullPage: true });
   });
 
-  test('a questions pause offers the intake form while writing and storing do not', async ({ page }) => {
+  test('a questions pause is reached on the run page, not presented on the document', async ({ page }) => {
     const fixture = await setupAsset(page, { mode: 'questions' });
     await fixture.open();
-    await expect(page.getByTestId('mktg-document-view-run')).toContainText('The agent needs your answers');
-    await expect(page.getByTestId('mktg-document-view-intake-link').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+    await page.evaluate(
+      (url) => {
+        history.pushState({}, '', url);
+        dispatchEvent(new PopStateEvent('popstate'));
+      },
+      `/project/mktg-os-agents/documents/${assetRevision().type.agentKey}/living?project=${ASSET_PROJECT.slug}&run=${'c'.repeat(64)}`
+    );
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers');
     expect(fixture.state.posts).toEqual([]);
     await page.screenshot({ path: test.info().outputPath('questions-intake-action.png'), fullPage: true });
   });
@@ -222,7 +237,7 @@ test.describe('Marketing OS runs land on assets', () => {
     await suppressCookieBanner(page);
     const fixture = await setupAsset(page);
     await fixture.open();
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
     await page.evaluate((url) => {
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('lfx-mktg-')) {
@@ -234,7 +249,8 @@ test.describe('Marketing OS runs land on assets', () => {
     }, `/project/mktg-os-agents/documents?project=${ASSET_PROJECT.slug}`);
     await expect(page.getByTestId('mktg-documents-started-runs')).toBeVisible();
     await page.getByTestId('mktg-documents-open-started-' + 'c'.repeat(64)).click();
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
     fixture.finish();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     expect(fixture.state.posts).toEqual([]);

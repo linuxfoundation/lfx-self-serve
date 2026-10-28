@@ -125,7 +125,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
       await expect(page).toHaveURL(new RegExp('/' + fixture.intake.agentId + '\\?'));
       await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
-      await expect(page.getByTestId('mktg-run-activity')).toContainText('Writing your Boilerplates');
+      await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing your Boilerplates');
       await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('direct-boilerplates-run-progress.png'), fullPage: true });
       fixture.finish();
