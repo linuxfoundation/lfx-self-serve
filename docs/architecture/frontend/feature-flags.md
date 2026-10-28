@@ -1186,8 +1186,8 @@ protected readonly showFeature = this.featureFlagService.getBooleanFlag(FEATURE_
 
 - **Server**: renders a loading state only. LaunchDarkly is browser-only, so every flag reads `false` there; rendering a page would show v1 and then swap.
 - **Browser**: resolves after the first render so hydration matches. A local override (`getFlagOverride`) decides first; otherwise it waits for `providerReady` (up to `MEETINGS_REDESIGN_READY_TIMEOUT_MS`, 5s) and a timeout means the existing dashboard.
-- **Page choice**: the redesign renders only when the flag is on, the active lens is `me` and the URL is the flat `/meetings`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, which always render the existing dashboard.
-- **Loading**: both pages sit in `@defer` blocks so the unchosen one never downloads. The decision is fixed once resolved, so the page does not swap under the user if the flag flips.
+- **Page choice**: the redesign renders only when the flag is on, the active lens is `me` and the URL is the flat `/meetings`. The lens is read once, together with the flag, so a later lens change never swaps the page. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, which always render the existing dashboard.
+- **Loading**: both pages sit in `@defer` blocks. The existing dashboard's chunk is prefetched while the flag resolves so its users pay no extra latency; the redesign chunk loads only when chosen. The decision is fixed once resolved, so the page does not swap under the user if the flag or lens changes.
 
 ### Performance Considerations
 

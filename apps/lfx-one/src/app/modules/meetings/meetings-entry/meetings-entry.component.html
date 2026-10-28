@@ -13,8 +13,17 @@
     }
   }
   @default {
-    <div class="flex min-h-[320px] items-center justify-center text-gray-400" role="status" aria-label="Loading meetings" data-testid="meetings-entry-loading">
-      <i class="fa-light fa-spinner-third fa-spin text-2xl" aria-hidden="true"></i>
+    <!-- Prefetches the existing dashboard's chunk while the flag resolves; `when false` keeps the block from ever rendering. -->
+    @defer (when false; prefetch on immediate) {
+      <lfx-meetings-dashboard />
+    }
+    <div class="flex min-h-[320px] items-center justify-center" role="status" data-testid="meetings-entry-loading">
+      <!-- CSS spinner: first paint must not wait on the deferred Font Awesome kit. -->
+      <div
+        class="h-9 w-9 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500"
+        aria-hidden="true"
+        data-testid="meetings-entry-spinner"></div>
+      <span class="sr-only">Loading meetings</span>
     </div>
   }
 }

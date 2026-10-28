@@ -61,7 +61,8 @@ Each feature module defines its own routes with preloading configuration:
 export const MEETING_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./meetings-dashboard/meetings-dashboard.component').then((m) => m.MeetingsDashboardComponent),
+    // Thin wrapper that @defer-loads MeetingsDashboardComponent or, behind the meetings-redesign flag, MeetingsRedesignComponent
+    loadComponent: () => import('./meetings-entry/meetings-entry.component').then((m) => m.MeetingsEntryComponent),
     data: { preload: true, preloadDelay: 500 },
   },
   // ... additional child routes

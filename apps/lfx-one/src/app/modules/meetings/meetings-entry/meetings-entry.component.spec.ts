@@ -97,14 +97,57 @@ describe('MeetingsEntryComponent', () => {
     expect(has(fixture, 'stub-redesign')).toBe(false);
   });
 
-  it('renders the existing dashboard on a foundation or project prefixed URL even in the Me lens', async () => {
+  it('renders the existing dashboard when the flag is on in the org lens', async () => {
     flagValue.set(true);
-    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
+    activeLens.set('org');
 
     const fixture = await create();
 
     expect(has(fixture, 'stub-v1')).toBe(true);
     expect(has(fixture, 'stub-redesign')).toBe(false);
+  });
+
+  for (const prefix of ['foundation', 'project']) {
+    it(`renders the existing dashboard on /${prefix}/meetings even in the Me lens`, async () => {
+      flagValue.set(true);
+      TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: prefix }] }, { url: [{ path: 'meetings' }] }] } } });
+
+      const fixture = await create();
+
+      expect(has(fixture, 'stub-v1')).toBe(true);
+      expect(has(fixture, 'stub-redesign')).toBe(false);
+    });
+  }
+
+  it('reads the flag once the provider becomes ready', async () => {
+    providerReady.set(false);
+    flagValue.set(true);
+
+    const fixture = await create();
+    expect(has(fixture, 'meetings-entry-loading')).toBe(true);
+
+    resolveReady(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(has(fixture, 'stub-redesign')).toBe(true);
+    expect(has(fixture, 'stub-v1')).toBe(false);
+  });
+
+  it('does not swap pages when the lens changes after it resolved', async () => {
+    flagValue.set(true);
+
+    const fixture = await create();
+    expect(has(fixture, 'stub-redesign')).toBe(true);
+
+    activeLens.set('project');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(has(fixture, 'stub-redesign')).toBe(true);
+    expect(has(fixture, 'stub-v1')).toBe(false);
   });
 
   it('shows the loader, then the existing dashboard, when the provider never becomes ready', async () => {

@@ -1,50 +1,63 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- shortcut: fixed-height columns assume the current app shell's 24px vertical padding. revisit: when the app shell redesign lands. -->
-<div class="flex bg-white min-[1025px]:h-[calc(100dvh-3rem)] min-[1025px]:overflow-hidden" data-testid="meetings-redesign">
+<!-- Arbitrary [Npx] values below are the design's exact pixels: Tailwind's rem scale undershoots them at the 14px root. -->
+<!-- shortcut: no Create meeting in Me lens. revisit: when a project picker for create lands -->
+<div class="flex bg-white min-[1025px]:min-h-[480px] min-[1025px]:overflow-hidden" [style.height.px]="columnHeight()" data-testid="meetings-redesign">
   <!-- Centre column -->
   <div
-    class="min-w-0 flex-1 min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    (scroll)="onScroll($event)"
+    #centre
+    class="min-w-0 flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    [attr.tabindex]="columnHeight() !== null ? 0 : null"
+    (scroll)="updateScroll()"
     data-testid="meetings-redesign-centre">
-    <div class="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 pb-14 pt-4 sm:px-10 sm:pt-7">
-      <!-- Sticky page header -->
+    <!-- 28/40/56 centre padding; 16 at 640px and below -->
+    <div
+      class="mx-auto flex w-full max-w-[1440px] flex-col gap-[20px] px-[16px] pb-[16px] pt-[16px] min-[641px]:px-[40px] min-[641px]:pb-[56px] min-[641px]:pt-[28px]">
+      <!-- Sticky page header; its negative margins cancel the padding above so it spans the column -->
       <div
         #header
-        class="sticky top-0 z-10 -mx-4 -mb-2 -mt-4 flex flex-wrap items-start justify-between gap-5 bg-white px-4 pb-3 pt-4 sm:-mx-10 sm:-mt-7 sm:px-10 sm:pt-7"
+        class="sticky z-10 -mx-[16px] -mb-[8px] -mt-[16px] flex flex-wrap items-start justify-between gap-[20px] bg-white px-[16px] pb-[12px] pt-[16px] min-[641px]:-mx-[40px] min-[641px]:-mt-[28px] min-[641px]:px-[40px] min-[641px]:pt-[28px]"
+        [style.top.px]="stickyTop()"
         data-testid="meetings-redesign-header">
         <span
-          class="pointer-events-none absolute inset-x-0 top-full h-8 bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
-          [class.opacity-0]="!scrolled()"
+          class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
+          [class.opacity-0]="!scrolled() || tabsStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-header-fade"></span>
         <div class="flex min-w-0 flex-col gap-1">
-          <h1 class="font-display text-2xl font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
+          <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
           <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
             Meetings you're invited to or organizing, across all your projects.
           </p>
         </div>
-        @if (canCreateMeeting()) {
-          <lfx-ui-button variant="ghost-accent" size="sm" icon="fa-light fa-plus" link="/meetings/create" data-testid="meetings-redesign-create-button"
-            >Create meeting</lfx-ui-button
-          >
-        }
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below -->
-      <div class="flex flex-col gap-6 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
-        <ng-container [ngTemplateOutlet]="railBlocks" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
+      <div class="flex flex-col gap-[24px] min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
+        <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
       </div>
 
-      <!-- Sticky tabs bar -->
+      <!-- Sticky tabs bar; the fade moves here from the header once it is stuck -->
       <div
+        #tabsBar
         class="sticky z-[5] -mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 bg-white pb-3 pt-1"
-        [style.top.px]="headerHeight()"
+        [style.top.px]="stickyTop() + headerHeight()"
         data-testid="meetings-redesign-tabs-bar">
-        <lfx-ui-tabs class="min-w-[200px] flex-1" ariaLabel="Meetings" [tabs]="tabs" [(value)]="activeTab" data-testid="meetings-redesign-tabs" />
+        <span
+          class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white via-white/85 to-white/0 transition-opacity duration-200 motion-reduce:transition-none"
+          [class.opacity-0]="!tabsStuck()"
+          aria-hidden="true"
+          data-testid="meetings-redesign-tabs-fade"></span>
+        <lfx-ui-tabs
+          class="min-w-[200px] flex-1"
+          ariaLabel="Meetings"
+          [idPrefix]="idPrefix"
+          [tabs]="tabs"
+          [(value)]="activeTab"
+          data-testid="meetings-redesign-tabs" />
         <lfx-ui-search-input
-          class="w-full sm:w-auto"
+          class="w-full min-[641px]:w-auto"
           placeholder="Search meetings"
           ariaLabel="Search meetings"
           [(value)]="search"
@@ -52,35 +65,29 @@
       </div>
 
       <!-- List area -->
-      <div class="min-h-[240px] rounded-xl border border-dashed border-gray-200" data-testid="meetings-redesign-list"></div>
+      <div
+        role="tabpanel"
+        class="min-h-[240px] rounded-xl border border-dashed border-gray-200"
+        [attr.id]="idPrefix + '-panel-' + activeTab()"
+        [attr.aria-labelledby]="idPrefix + '-tab-' + activeTab()"
+        data-testid="meetings-redesign-list"></div>
     </div>
   </div>
 
-  <!-- Right column -->
+  <!-- Right column: fixed 360px, 24px padding -->
   <aside
-    class="hidden w-[360px] flex-none flex-col gap-6 border-l border-gray-200 p-6 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    class="hidden w-[360px] flex-none flex-col gap-[24px] border-l border-gray-200 p-[24px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 min-[1025px]:flex min-[1025px]:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    tabindex="0"
     aria-label="Meeting highlights"
     data-testid="meetings-redesign-right-column">
-    <ng-container [ngTemplateOutlet]="railBlocks" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
+    <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'rail' }" />
   </aside>
 </div>
 
-<ng-template #railBlocks let-scope>
-  @for (block of ['next-meeting', 'last-meeting', 'pending-rsvps']; track block) {
-    <section class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block">
-      <span class="text-[11px] font-semibold uppercase leading-4 tracking-[.08em] text-gray-600">
-        @switch (block) {
-          @case ('next-meeting') {
-            Next meeting
-          }
-          @case ('last-meeting') {
-            Last meeting
-          }
-          @default {
-            Pending RSVPs
-          }
-        }
-      </span>
+<ng-template #railTemplate let-scope>
+  @for (block of railBlocks; track block.key) {
+    <section class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block.key">
+      <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">{{ block.label }}</h2>
       <div class="h-28 rounded-xl border border-gray-200 bg-gray-50"></div>
     </section>
   }
