@@ -667,6 +667,34 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('closes 150ms after the pointer leaves, however much it keeps moving outside', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        move(600);
+        vi.advanceTimersByTime(100);
+        move(650);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS - 100);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('stays open while the pointer is on one of its tooltips outside the panel', async () => {
+        const { collapse } = await createPeekFixture();
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        tooltip.remove();
+      });
+
       it('stays open under a menu opened from it, and re-checks the pointer once the menu closes', async () => {
         const { collapse, navbar } = await createPeekFixture();
         collapse.openPeek();

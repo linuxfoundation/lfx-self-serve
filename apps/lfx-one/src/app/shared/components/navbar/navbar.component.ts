@@ -303,6 +303,8 @@ export class NavbarComponent extends NavMenuBase {
   private morphSettleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
   private pointer: { x: number; y: number } | null = null;
+  /** The pointer was last over a navbar tooltip — appended to `body`, so it can sit outside the panel it belongs to. */
+  private pointerOnTooltip = false;
 
   public constructor() {
     super();
@@ -506,12 +508,15 @@ export class NavbarComponent extends NavMenuBase {
 
       const onMove = (event: MouseEvent): void => {
         this.pointer = { x: event.clientX, y: event.clientY };
+        this.pointerOnTooltip = event.target instanceof Element && !!event.target.closest('.lfxn-tooltip');
         if (!this.collapse.peek() || this.collapse.peekPinned()) return;
-        if (this.pointerInsidePanel()) this.clearPeekCloseTimer();
-        else this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        if (this.peekInUse()) this.clearPeekCloseTimer();
+        // Started once per leave: further movement outside must not keep pushing the close back.
+        else if (!this.peekCloseTimer) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
       const onLeaveWindow = (): void => {
         this.pointer = { x: -1, y: -1 };
+        this.pointerOnTooltip = false;
         if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
       const onDown = (event: MouseEvent): void => {
@@ -673,15 +678,20 @@ export class NavbarComponent extends NavMenuBase {
     this.clearPeekCloseTimer();
     this.peekCloseTimer = setTimeout(() => {
       this.peekCloseTimer = null;
-      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.pointerInsidePanel()) return;
+      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.peekInUse()) return;
       this.morph(() => this.collapse.closePeek());
     }, delay);
   }
 
-  /** Keyboard-only use leaves no pointer position: count it as inside, so only a pointer that left closes the peek. */
-  private pointerInsidePanel(): boolean {
+  /**
+   * The peek is still in use: the pointer is over the panel or one of its tooltips (an interactive role card can reach
+   * past the panel), or a tooltip holds keyboard focus. Keyboard-only use leaves no pointer position, which counts as
+   * inside, so only a pointer that left closes the peek.
+   */
+  private peekInUse(): boolean {
     const panel = this.panelEl()?.nativeElement;
-    if (!panel || !this.pointer) return true;
+    if (!panel || !this.pointer || this.pointerOnTooltip) return true;
+    if (panel.ownerDocument.activeElement?.closest('.lfxn-tooltip')) return true;
     const rect = panel.getBoundingClientRect();
     const { x, y } = this.pointer;
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
