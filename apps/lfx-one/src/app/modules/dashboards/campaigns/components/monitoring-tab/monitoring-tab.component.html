@@ -45,7 +45,7 @@
       Meta Ads
     </button>
     <!-- campaign-service-only monitors (#2519): offered only while the monitor cutover is on. X also
-         stays hidden while the app does not offer the platform (disabled in CAMPAIGN_PLATFORMS).
+         needs `monitorable` in CAMPAIGN_PLATFORMS, which is independent of its disabled CREATE flag.
          Every button's selected colours come from MONITOR_PLATFORM_BUTTON_COLORS, which keeps each
          one at WCAG AA contrast. -->
     @if (monitorViaCampaignService()) {
