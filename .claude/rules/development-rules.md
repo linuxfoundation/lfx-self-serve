@@ -106,6 +106,27 @@ When editing files in `docs/`:
 - **Keep ops debugging commands only if architecture-relevant** — kubectl/snowsql commands belong in runbooks, not architecture docs
 - **Remove specific benchmark numbers** — values like "Current: ~1.5MB ✅" go stale and are hard to maintain
 
+## User Documentation Maintenance
+
+The user-facing docs (`docs/user/<section>/<article>/index.md`, published at `/docs`) describe the app as users see it. They go stale silently, so **a change that alters what a user sees or can do updates the matching `docs/user/` article in the same PR.**
+
+Update the docs when a change:
+
+- **Adds a feature** — a new page, tab, wizard step, button, drawer, filter or setting a user can reach. Add or extend an article.
+- **Removes a feature** — delete or trim every article, step and FAQ line that describes it.
+- **Changes the UI a doc describes** — renamed buttons, tabs, labels or routes; a reordered or restructured flow (e.g. a form becoming a wizard); changed permissions, personas, lens access or feature-flag availability; or a visual change that leaves a screenshot or "you will see…" description wrong. A redesign of a page (e.g. the meeting details page) means re-reading the section that covers it, even when no behavior changed.
+
+Pure internal changes (refactors, types, tests, server-only changes with no visible effect) don't need a docs update.
+
+How to do it:
+
+1. **Find the affected articles** — the section usually matches the module (`modules/meetings` → `docs/user/meetings/`, `modules/surveys` → `docs/user/surveys/`, and so on; Org lens pages → `organization/`, `profile` and `settings` → `profile/` and `account/`). When unsure, `grep -rn "<UI label or route>" docs/user/`.
+2. **Re-read each article against the new UI** and fix every step, label, route, persona or lens claim that no longer matches. Describe only what the code on your branch does; never document a flagged or dark-launched feature as generally available.
+3. **Keep front-matter current** — bump `last_updated` on every article you touch, and keep `title`, `description`, `tags` and `product_area` accurate. A new article goes in an existing topic directory (see [docs-portal.md](../../docs/architecture/frontend/docs-portal.md)).
+4. **State it in the PR** — list the `docs/user/` files you updated, or write "No user docs impact" with a one-line reason.
+
+Use a separate `docs(<section>)` commit for the docs change so it can be reviewed on its own.
+
 ## GitHub Issues
 
 - Work owned by this repo is tracked as GitHub Issues on `linuxfoundation/lfx-self-serve`. Do **not** create Jira tickets.
