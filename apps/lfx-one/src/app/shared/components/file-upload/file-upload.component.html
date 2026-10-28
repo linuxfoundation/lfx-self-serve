@@ -1,178 +1,212 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-fileUpload
-  [mode]="mode()"
-  [name]="name()"
-  [url]="url()"
-  [method]="method()"
-  [multiple]="multiple()"
-  [accept]="accept()"
-  [maxFileSize]="maxFileSize()"
-  [auto]="auto()"
-  [customUpload]="customUpload()"
-  [disabled]="disabled()"
-  [withCredentials]="withCredentials()"
-  [previewWidth]="previewWidth()"
-  [chooseLabel]="chooseLabel()"
-  [uploadLabel]="uploadLabel()"
-  [cancelLabel]="cancelLabel()"
-  [showUploadButton]="showUploadButton()"
-  [showCancelButton]="showCancelButton()"
-  [chooseIcon]="chooseIcon()"
-  [uploadIcon]="uploadIcon()"
-  [cancelIcon]="cancelIcon()"
-  [styleClass]="styleClass()"
-  [style]="style()"
-  [attr.data-testid]="dataTest()"
-  (onBeforeUpload)="handleBeforeUpload($event)"
-  (onSend)="handleBeforeSend($event)"
-  (onUpload)="handleUpload($event)"
-  (onError)="handleError($event)"
-  (onClear)="handleClear()"
-  (onSelect)="handleSelect($event)"
-  (onRemove)="handleRemove($event)"
-  (onProgress)="handleProgress($event)"
-  [uploadStyleClass]="uploadStyleClass()"
-  [chooseStyleClass]="chooseStyleClass()"
-  [cancelStyleClass]="cancelStyleClass()"
-  (uploadHandler)="handleCustomUpload($event)">
-  <!-- Header template passthrough -->
-  @if (headerTemplate) {
-    <ng-template
-      #header
-      let-files
-      let-uploadedFiles="uploadedFiles"
-      let-chooseCallback="chooseCallback"
-      let-clearCallback="clearCallback"
-      let-uploadCallback="uploadCallback">
-      <ng-container
-        *ngTemplateOutlet="
-          headerTemplate || null;
-          context: {
-            $implicit: files,
-            uploadedFiles: uploadedFiles,
-            chooseCallback: chooseCallback,
-            clearCallback: clearCallback,
-            uploadCallback: uploadCallback,
-          }
-        "></ng-container>
-    </ng-template>
-  }
+<!-- PrimeNG's projected button templates must be created on the client, not hydrated. -->
+@defer (on immediate) {
+  <p-fileUpload
+    [mode]="mode()"
+    [name]="name()"
+    [url]="url()"
+    [method]="method()"
+    [multiple]="multiple()"
+    [accept]="accept()"
+    [maxFileSize]="maxFileSize()"
+    [auto]="auto()"
+    [customUpload]="customUpload()"
+    [disabled]="disabled()"
+    [withCredentials]="withCredentials()"
+    [previewWidth]="previewWidth()"
+    [chooseLabel]="chooseLabel()"
+    [uploadLabel]="uploadLabel()"
+    [cancelLabel]="cancelLabel()"
+    [showUploadButton]="showUploadButton()"
+    [showCancelButton]="showCancelButton()"
+    [chooseIcon]="chooseIcon()"
+    [uploadIcon]="uploadIcon()"
+    [cancelIcon]="cancelIcon()"
+    [styleClass]="styleClass()"
+    [style]="style()"
+    [attr.data-testid]="dataTest()"
+    (onBeforeUpload)="handleBeforeUpload($event)"
+    (onSend)="handleBeforeSend($event)"
+    (onUpload)="handleUpload($event)"
+    (onError)="handleError($event)"
+    (onClear)="handleClear()"
+    (onSelect)="handleSelect($event)"
+    (onRemove)="handleRemove($event)"
+    (onProgress)="handleProgress($event)"
+    [uploadStyleClass]="uploadStyleClass()"
+    [chooseStyleClass]="chooseStyleClass()"
+    [cancelStyleClass]="cancelStyleClass()"
+    (uploadHandler)="handleCustomUpload($event)">
+    <!-- Header template passthrough -->
+    @if (headerTemplate) {
+      <ng-template
+        #header
+        let-files
+        let-uploadedFiles="uploadedFiles"
+        let-chooseCallback="chooseCallback"
+        let-clearCallback="clearCallback"
+        let-uploadCallback="uploadCallback">
+        <ng-container
+          *ngTemplateOutlet="
+            headerTemplate || null;
+            context: {
+              $implicit: files,
+              uploadedFiles: uploadedFiles,
+              chooseCallback: chooseCallback,
+              clearCallback: clearCallback,
+              uploadCallback: uploadCallback,
+            }
+          "></ng-container>
+      </ng-template>
+    }
 
-  <!-- Toolbar template passthrough -->
-  @if (toolbarTemplate) {
-    <ng-template #toolbar>
-      <ng-container *ngTemplateOutlet="toolbarTemplate || null"></ng-container>
-    </ng-template>
-  }
+    <!-- Toolbar template passthrough -->
+    @if (toolbarTemplate) {
+      <ng-template #toolbar>
+        <ng-container *ngTemplateOutlet="toolbarTemplate || null"></ng-container>
+      </ng-template>
+    }
 
-  <!-- Content template passthrough -->
-  @if (contentTemplate) {
-    <ng-template
-      #content
-      let-files
-      let-uploadedFiles="uploadedFiles"
-      let-chooseCallback="chooseCallback"
-      let-clearCallback="clearCallback"
-      let-removeUploadedFileCallback="removeUploadedFileCallback"
-      let-removeFileCallback="removeFileCallback"
-      let-progress="progress"
-      let-messages="messages">
-      <ng-container
-        *ngTemplateOutlet="
-          contentTemplate || null;
-          context: {
-            $implicit: files,
-            uploadedFiles: uploadedFiles,
-            chooseCallback: chooseCallback,
-            clearCallback: clearCallback,
-            removeUploadedFileCallback: removeUploadedFileCallback,
-            removeFileCallback: removeFileCallback,
-            progress: progress,
-            messages: messages,
-          }
-        "></ng-container>
-    </ng-template>
-  } @else {
-    <!-- Default content template with React-style UI -->
-    <ng-template
-      #content
-      let-files
-      let-uploadedFiles="uploadedFiles"
-      let-chooseCallback="chooseCallback"
-      let-clearCallback="clearCallback"
-      let-removeUploadedFileCallback="removeUploadedFileCallback"
-      let-removeFileCallback="removeFileCallback"
-      let-progress="progress"
-      let-messages="messages">
-      <!-- Drop zone area -->
-      <div
-        class="border-2 border-solid border-gray-200 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-        role="button"
-        tabindex="0"
-        data-testid="file-upload-dropzone"
-        (click)="chooseCallback()"
-        (keydown.enter)="chooseCallback()"
-        (keydown.space)="$event.preventDefault(); chooseCallback()"
-        aria-label="Click to upload files or drag and drop files here">
+    <!-- Content template passthrough -->
+    @if (contentTemplate) {
+      <ng-template
+        #content
+        let-files
+        let-uploadedFiles="uploadedFiles"
+        let-chooseCallback="chooseCallback"
+        let-clearCallback="clearCallback"
+        let-removeUploadedFileCallback="removeUploadedFileCallback"
+        let-removeFileCallback="removeFileCallback"
+        let-progress="progress"
+        let-messages="messages">
+        <ng-container
+          *ngTemplateOutlet="
+            contentTemplate || null;
+            context: {
+              $implicit: files,
+              uploadedFiles: uploadedFiles,
+              chooseCallback: chooseCallback,
+              clearCallback: clearCallback,
+              removeUploadedFileCallback: removeUploadedFileCallback,
+              removeFileCallback: removeFileCallback,
+              progress: progress,
+              messages: messages,
+            }
+          "></ng-container>
+      </ng-template>
+    } @else {
+      <!-- Default content template with React-style UI -->
+      <ng-template
+        #content
+        let-files
+        let-uploadedFiles="uploadedFiles"
+        let-chooseCallback="chooseCallback"
+        let-clearCallback="clearCallback"
+        let-removeUploadedFileCallback="removeUploadedFileCallback"
+        let-removeFileCallback="removeFileCallback"
+        let-progress="progress"
+        let-messages="messages">
+        <!-- Drop zone area -->
+        <div
+          class="border-2 border-solid border-gray-200 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+          role="button"
+          tabindex="0"
+          data-testid="file-upload-dropzone"
+          (click)="chooseCallback()"
+          (keydown.enter)="chooseCallback()"
+          (keydown.space)="$event.preventDefault(); chooseCallback()"
+          aria-label="Click to upload files or drag and drop files here">
+          <div class="flex flex-col items-center gap-3">
+            <div class="p-3 bg-blue-100 rounded-lg">
+              <i class="fa-light fa-cloud-arrow-up text-blue-600 text-2xl"></i>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-gray-900">
+                {{ chooseLabel() || 'Click to upload files or drag and drop' }}
+              </p>
+              <p class="text-xs text-gray-500 mt-1">
+                @if (accept()) {
+                  {{ getFileTypeHint() }}
+                }
+                @if (maxFileSize()) {
+                  • Max {{ maxFileSize()! / 1024 / 1024 | number: '1.0-0' }}MB each
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      </ng-template>
+    }
+
+    <!-- File item template passthrough -->
+    @if (fileTemplate) {
+      <ng-template #file let-file let-index="index">
+        <ng-container *ngTemplateOutlet="fileTemplate || null; context: { $implicit: file, index: index }"></ng-container>
+      </ng-template>
+    }
+
+    <!-- File label template passthrough (basic mode) -->
+    @if (fileLabelTemplate) {
+      <ng-template #filelabel let-files>
+        <ng-container *ngTemplateOutlet="fileLabelTemplate || null; context: { $implicit: files }"></ng-container>
+      </ng-template>
+    }
+
+    <!-- Icon template passthroughs -->
+    @if (chooseIconTemplate) {
+      <ng-template #chooseicon>
+        <ng-container *ngTemplateOutlet="chooseIconTemplate || null"></ng-container>
+      </ng-template>
+    }
+    @if (uploadIconTemplate) {
+      <ng-template #uploadicon>
+        <ng-container *ngTemplateOutlet="uploadIconTemplate || null"></ng-container>
+      </ng-template>
+    }
+    @if (cancelIconTemplate) {
+      <ng-template #cancelicon>
+        <ng-container *ngTemplateOutlet="cancelIconTemplate || null"></ng-container>
+      </ng-template>
+    }
+
+    <!-- Empty state template passthrough -->
+    @if (emptyTemplate) {
+      <ng-template #empty>
+        <ng-container *ngTemplateOutlet="emptyTemplate || null"></ng-container>
+      </ng-template>
+    }
+  </p-fileUpload>
+} @placeholder {
+  <div [class]="styleClass()" [style]="style()" aria-busy="true" data-testid="file-upload-placeholder">
+    @if (mode() === 'basic') {
+      <lfx-button
+        [label]="chooseLabel() || 'Choose'"
+        [icon]="chooseIcon() || 'fa-light fa-plus'"
+        [styleClass]="chooseStyleClass()"
+        [disabled]="true"
+        [outlined]="true"
+        severity="secondary" />
+    } @else {
+      <div class="border-2 border-solid border-gray-200 rounded-lg p-8 text-center bg-gray-50">
         <div class="flex flex-col items-center gap-3">
-          <div class="p-3 bg-blue-100 rounded-lg">
-            <i class="fa-light fa-cloud-arrow-up text-blue-600 text-2xl"></i>
+          <div class="p-3 bg-gray-100 rounded-lg" aria-hidden="true">
+            <span class="block w-6 h-6"></span>
           </div>
           <div>
-            <p class="text-sm font-medium text-gray-900">
-              {{ chooseLabel() || 'Click to upload files or drag and drop' }}
-            </p>
+            <p class="text-sm font-medium text-gray-900">{{ chooseLabel() || 'Click to upload files or drag and drop' }}</p>
             <p class="text-xs text-gray-500 mt-1">
               @if (accept()) {
                 {{ getFileTypeHint() }}
               }
-              @if (maxFileSize()) {
-                • Max {{ maxFileSize()! / 1024 / 1024 | number: '1.0-0' }}MB each
+              @if (maxFileSize(); as limit) {
+                • Max {{ limit / 1024 / 1024 | number: '1.0-0' }}MB each
               }
             </p>
           </div>
         </div>
       </div>
-    </ng-template>
-  }
-
-  <!-- File item template passthrough -->
-  @if (fileTemplate) {
-    <ng-template #file let-file let-index="index">
-      <ng-container *ngTemplateOutlet="fileTemplate || null; context: { $implicit: file, index: index }"></ng-container>
-    </ng-template>
-  }
-
-  <!-- File label template passthrough (basic mode) -->
-  @if (fileLabelTemplate) {
-    <ng-template #filelabel let-files>
-      <ng-container *ngTemplateOutlet="fileLabelTemplate || null; context: { $implicit: files }"></ng-container>
-    </ng-template>
-  }
-
-  <!-- Icon template passthroughs -->
-  @if (chooseIconTemplate) {
-    <ng-template #chooseicon>
-      <ng-container *ngTemplateOutlet="chooseIconTemplate || null"></ng-container>
-    </ng-template>
-  }
-  @if (uploadIconTemplate) {
-    <ng-template #uploadicon>
-      <ng-container *ngTemplateOutlet="uploadIconTemplate || null"></ng-container>
-    </ng-template>
-  }
-  @if (cancelIconTemplate) {
-    <ng-template #cancelicon>
-      <ng-container *ngTemplateOutlet="cancelIconTemplate || null"></ng-container>
-    </ng-template>
-  }
-
-  <!-- Empty state template passthrough -->
-  @if (emptyTemplate) {
-    <ng-template #empty>
-      <ng-container *ngTemplateOutlet="emptyTemplate || null"></ng-container>
-    </ng-template>
-  }
-</p-fileUpload>
+    }
+  </div>
+}

@@ -18,10 +18,11 @@ import {
 } from '@angular/core';
 import { getAcceptedFileTypesDisplay } from '@lfx-one/shared/utils';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { ButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'lfx-file-upload',
-  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule],
+  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule, ButtonComponent],
   templateUrl: './file-upload.component.html',
   styleUrl: './file-upload.component.scss',
 })
