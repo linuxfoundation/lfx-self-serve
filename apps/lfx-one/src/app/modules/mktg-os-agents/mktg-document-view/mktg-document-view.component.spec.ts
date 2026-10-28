@@ -339,7 +339,6 @@ describe('MktgDocumentViewComponent', () => {
         ]),
         provideNoopAnimations(),
         MessageService,
-        { provide: DialogService, useValue: dialog },
         { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
@@ -353,7 +352,9 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgPendingDocumentService, useValue: pending },
         { provide: MktgPrintService, useValue: print },
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(MktgDocumentViewComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
+      .compileComponents();
   });
 
   it.each(['faq', 'linkedin-post'])('preserves %s capitalization in recorded-failure labels', async (agentKey) => {
@@ -2769,12 +2770,16 @@ describe('MktgDocumentViewComponent', () => {
     const report = {
       sources_read: ['Docs', 'Website'],
       sources_failed: Array.from({ length: failed }, () => ({ name: 'Members', reason: 'Unavailable' })),
-      gaps: Array.from({ length: gaps }, () => 'Missing evidence'),
+      gaps: Array.from({ length: gaps }, (_, index) => `Missing evidence ${index + 1}`),
       notes: '',
     };
     store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
     await render(`/documents/faq/living?revision=${LATEST.id}`);
     expect(query('mktg-document-view-live-state')?.textContent).toBe(expected);
+    const readiness = query('mktg-document-view-readiness');
+    expect(readiness?.textContent).toBe(expected);
+    expect(readiness?.closest('[hidden], .sr-only')).toBeNull();
+    expect(query('mktg-document-view-header')?.contains(readiness)).toBe(true);
   });
 
   it.each(['empty', 'missing', 'invalid', 'question', 'path'])('keeps unanswered FAQ visible with a %s report', async (state) => {
@@ -2786,7 +2791,7 @@ describe('MktgDocumentViewComponent', () => {
     if (state === 'invalid') sidecar = { report: { gaps: [] } };
     store.getRevision.mockReturnValue(of({ ...faqResponse(), markdown: JSON.stringify({ faq: [['About', [[question, null, null]]]] }), sidecar }));
     const closed = new Subject<boolean>();
-    dialog.open.mockReturnValue({ onClose: closed, close: vi.fn() });
+    dialog.open.mockReturnValue({ onClose: closed, onDestroy: NEVER, close: vi.fn() });
     await render(`/documents/faq/living?revision=${LATEST.id}`);
     expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
     query('mktg-document-view-approve')?.querySelector('button')?.click();
@@ -2800,7 +2805,7 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
     store.approveRevision.mockReturnValue(NEVER);
     const closed = new Subject<boolean>();
-    const ref = { onClose: closed, close: vi.fn() };
+    const ref = { onClose: closed, onDestroy: NEVER, close: vi.fn() };
     dialog.open.mockReturnValue(ref);
     await render(`/documents/faq/living?revision=${LATEST.id}`);
     query('mktg-document-view-approve')?.querySelector('button')?.click();
@@ -2817,6 +2822,27 @@ describe('MktgDocumentViewComponent', () => {
     else closed.next(confirmed !== false);
     expect(ref.close).toHaveBeenCalledTimes(confirmed === 'destroy' ? 1 : 0);
     expect(store.approveRevision).toHaveBeenCalledTimes(confirmed === true ? 1 : 0);
+  });
+
+  it('allows another approval attempt after the gaps dialog is dismissed', async () => {
+    const report = { sources_read: ['Docs'], sources_failed: [], gaps: ['Missing evidence'], notes: '' };
+    store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
+    store.approveRevision.mockReturnValue(NEVER);
+    const dismissed = new Subject<void>();
+    const closed = new Subject<boolean>();
+    dialog.open
+      .mockReturnValueOnce({ onClose: NEVER, onDestroy: dismissed, close: vi.fn() })
+      .mockReturnValueOnce({ onClose: closed, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    const approve = query('mktg-document-view-approve')?.querySelector('button');
+    approve?.click();
+    expect(dialog.open).toHaveBeenCalledTimes(1);
+    dismissed.next();
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    approve?.click();
+    expect(dialog.open).toHaveBeenCalledTimes(2);
+    closed.next(true);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id);
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {
