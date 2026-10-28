@@ -126,6 +126,7 @@ export class Member360RunComponent {
         )
         .subscribe((history) => {
           this.history.set(history);
+          if (!this.latest() && !this.historyError()) this.form.controls.compare.setValue(false, { emitEvent: false });
           this.historyLoading.set(false);
           this.form.controls.compare.enable({ emitEvent: false });
         });
@@ -139,15 +140,23 @@ export class Member360RunComponent {
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
-    if (
-      !project ||
-      !this.context.canWrite() ||
-      this.uploading() ||
-      this.submitting() ||
-      this.historyLoading() ||
-      (this.form.controls.compare.value && this.historyError())
-    )
+    if (!project || !this.context.canWrite() || this.submitting()) return;
+    if (this.uploading()) {
+      this.error.set('Wait for your trackers to finish parsing, then create Member 360.');
       return;
+    }
+    if (this.historyLoading()) {
+      this.error.set('Wait for run history to finish loading, then create Member 360.');
+      return;
+    }
+    if (this.form.controls.compare.value && (this.historyError() || !this.latest())) {
+      this.error.set(
+        this.historyError()
+          ? 'The previous run could not be read. Choose No comparison or retry history.'
+          : 'There is no previous run to compare with. Choose No comparison to create Member 360.'
+      );
+      return;
+    }
     this.submitting.set(true);
     this.error.set('');
     this.api
@@ -162,7 +171,7 @@ export class Member360RunComponent {
           if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
           this.router.navigate(['../documents/member-360', session.documentId], {
             relativeTo: this.route,
-            queryParams: { revision: null },
+            queryParams: { revision: null, generation: null, run: session.runId ?? null },
             queryParamsHandling: 'merge',
           });
         },

@@ -43,7 +43,12 @@ test.describe('Marketing OS current revisions', () => {
       await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
       await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
-      if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
+      if (state === 'failed') {
+        const details = page.getByTestId('mktg-document-view-failure-details');
+        await expect(details).not.toHaveAttribute('open');
+        await details.locator('summary').click();
+        await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
+      }
     });
   }
 
@@ -94,8 +99,11 @@ test.describe('Marketing OS current revisions', () => {
       return fulfillDocumentJson(route, {}, 500);
     });
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${startedDocumentRun().runId}`);
+    const details = page.getByTestId('mktg-document-view-failure-details');
+    await expect(details).not.toHaveAttribute('open');
+    await details.locator('summary').click();
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
-    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button').click();
+    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button', { name: 'Check on it again', exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-run-steps')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
@@ -113,7 +121,8 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
-    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-run-start-reason')).toBeVisible();
     await expect(page.getByTestId('mktg-agent-run-result')).toHaveCount(0);
   });
 
@@ -135,7 +144,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });
 
-  test('retains current selection on a transient non-poll reload and offers manual refresh', async ({ page }) => {
+  test('retains current selection on a transient type refetch and offers manual refresh', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
@@ -147,13 +156,12 @@ test.describe('Marketing OS current revisions', () => {
       }
       return route.fallback();
     });
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-notice')).toContainText('Revision 1 is now current');
+    await page.getByTestId('mktg-documents-nav-faq').click();
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded');
-    await expect(page.getByTestId('mktg-documents-current-1')).toBeVisible();
     await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-documents-current-1')).toBeVisible();
+    await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+    await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
   });
 
@@ -198,7 +206,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
   });
 
-  test('shows attribution, real comment counts, base and the non-newest Current badge', async ({ page }) => {
+  test('keeps table attribution but simplifies the document side panel and Make current help', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-revision-3')).toContainText('The writer');
@@ -208,12 +216,22 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('name unavailable');
     await page.getByTestId('mktg-documents-view-latest').click();
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
-    await expect(page.getByTestId('mktg-document-view-revision-3')).toContainText(/revised from 4 comments · based on v1\s*· The writer/);
-    await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('no name (stored before names were recorded)');
-    await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('name unavailable');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('Current since 14 Oct 2026');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('The writer');
-    await expect(page.getByTestId('mktg-document-view-current-since-3')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-revision-label-3')).toHaveText('v3 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-1')).toHaveText('v1 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-2')).toHaveText('v2 · Draft · 13 Oct · Current');
+    await expect(page.getByTestId('mktg-document-view-current-2')).toHaveText('Current');
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
+    await expect(page.getByText('Make current selects the revision agents read.', { exact: false })).toHaveCount(0);
+    const makeCurrent = page.getByTestId('mktg-document-view-restore-1');
+    const hint = 'Agents read the current version. Nothing is added or deleted.';
+    await makeCurrent.hover();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await makeCurrent.focus();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.screenshot({ path: test.info().outputPath('document-side-panel-focus-help.png'), fullPage: true });
   });
 
   test('historical documents default to newest without inventing current-selection attribution', async ({ page }) => {
@@ -232,9 +250,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-notice')).toContainText('No revision was added');
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 1 of 3');
     await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('Current');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('Current since 15 Oct 2026');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('The writer');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-open-3').click();
     await expect(page.getByTestId('mktg-document-view-notice')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
@@ -305,30 +321,25 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 7 of 9');
   });
 
-  test('a table Make current 404 shows not-found without moving the badge', async ({ page }) => {
-    await setupDocuments(page, { writeStatus: 404 });
-    await openDocuments(page);
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-error')).toContainText('This document could not be found.');
-    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-revision-1')).not.toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-restore-1')).toBeEnabled();
-  });
-
-  test('table Make current moves the badge and keeps all three revisions', async ({ page }) => {
+  test('opens older revisions rather than making them current from the table', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-notice')).toContainText('No revision was added');
-    await expect(page.getByTestId('mktg-documents-revision-1')).toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
+    await expect(page.getByTestId('mktg-documents-revisions').getByRole('button')).toHaveCount(0);
+    await expect(page.getByText('To switch back to an older one, open it and choose Make current there;', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-run-again-' + DOCUMENT_TYPE.agentKey)).toHaveText('Create a new version');
+    await expect(page.getByTestId('mktg-documents-view-latest').getByRole('link')).toHaveAccessibleName('Open');
+    await page.getByTestId('mktg-documents-view-1').click();
+    await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toBeVisible();
   });
 
-  test('empty documents link to the agent without running a live session', async ({ page }) => {
-    await setupDocuments(page, { empty: true });
-    await openDocuments(page);
+  test('empty documents follow their family header without starting a live session', async ({ page }) => {
+    const framework = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    if (!framework) throw new Error('Framework type must exist');
+    await setupDocuments(page, { empty: true, documentType: framework });
+    await openDocuments(page, DOCUMENTS_URL.replace(`type=${DOCUMENT_TYPE.agentKey}`, `type=${framework.agentKey}`));
     await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
-    const run = page.locator('[data-testid^="mktg-documents-run-agent-"]');
+    const run = page.locator('[data-testid^="mktg-documents-run-agent-"]').getByRole('link');
+    await expect(run).toHaveAccessibleName('Create messaging framework');
     await expect(run).toHaveAttribute('href', /mktg-os-agents\//);
     await run.click();
     await expect(page).not.toHaveURL(/\/documents\?/);

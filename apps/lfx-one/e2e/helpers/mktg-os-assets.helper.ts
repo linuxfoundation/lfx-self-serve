@@ -160,7 +160,7 @@ export async function setupAsset(
       runId: char.repeat(64),
       startedAt: '2026-10-19T08:00:00Z',
       state: runState,
-      ...(state.mode === 'failed' && { failureText: ASSET_FAILURE }),
+      ...(state.mode === 'failed' && { failureText: ASSET_FAILURE, persistenceFailed: true }),
     }));
   };
   await page.route('**/api/mktg-*/**', async (route) => {

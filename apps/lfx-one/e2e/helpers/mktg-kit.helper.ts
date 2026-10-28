@@ -12,11 +12,12 @@ import {
   SELECTED_FOUNDATION_COOKIE_KEY,
 } from '../../../../packages/shared/src/constants';
 import { createHash } from 'node:crypto';
-import { findMktgRunIntake } from '../../../../packages/shared/src/utils/mktg-document-store.utils';
+import { mktgRunModeFor } from '../../../../packages/shared/src/utils/mktg-family-actions.utils';
 import type {
   FoundationMessageContent,
   MktgArtifactStoredResponse,
   MktgDocumentsResponse,
+  MktgLastIntake,
   MktgDocumentType,
   MktgRevisionResponse,
   MktgRevisionSummary,
@@ -168,6 +169,8 @@ export async function setupKit(
   page: Page,
   options: {
     loaded?: boolean;
+    listing?: MktgDocumentsResponse;
+    intakes?: Record<string, MktgLastIntake>;
     approvedFramework?: boolean;
     writer?: boolean;
     status?: number;
@@ -225,11 +228,14 @@ export async function setupKit(
     }
   );
   const intakePaths = new Set(
-    MKTG_DOCUMENT_TYPES.filter((type) => !!findMktgRunIntake(type.agentKey)).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
+    MKTG_DOCUMENT_TYPES.filter((type) => !!mktgRunModeFor(type.catalogAgentId ?? '')).map((type) => `${MKTG_LAST_INTAKE_API}/${type.agentKey}/last`)
   );
   await page.route(
     (url) => intakePaths.has(url.pathname),
-    (route) => (isProjectRead(route) ? kitJson(route, { intake: null }, writer ? 200 : 403) : rejectUnexpected(route))
+    (route) =>
+      isProjectRead(route)
+        ? kitJson(route, { intake: options.intakes?.[new URL(route.request().url()).pathname.split('/').at(-2) ?? ''] ?? null }, writer ? 200 : 403)
+        : rejectUnexpected(route)
   );
   await page.route(
     (url) => url.pathname === '/api/mktg-agents/foundation-message/stored',
@@ -259,7 +265,7 @@ export async function setupKit(
       if (!isProjectRead(route)) return rejectUnexpected(route);
       if (options.hold) await options.hold;
       const status = options.status ?? (writer ? 200 : 403);
-      const listing = kitDocuments(options.loaded);
+      const listing = options.listing ?? kitDocuments(options.loaded);
       if (options.approvedFramework) {
         const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'foundation-message');
         if (!type) throw new Error('Missing synthetic framework type');
@@ -289,6 +295,13 @@ export async function setupKit(
   await page.route(
     (url) => url.pathname === documentPath,
     (route) => (isProjectRead(route) ? kitJson(route, framework) : rejectUnexpected(route))
+  );
+  await page.route(
+    (url) => url.pathname === `${documentPath}/comments`,
+    (route) => {
+      if (!isProjectRead(route) || new URL(route.request().url()).searchParams.get('revision') !== framework.revision.id) return rejectUnexpected(route);
+      return kitJson(route, { revisionId: framework.revision.id, threads: [] });
+    }
   );
   // The framework asset view specifically reads the optional print-brand revision.
   await page.route(

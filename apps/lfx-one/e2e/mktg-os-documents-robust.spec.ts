@@ -3,6 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 
 import {
   DOCUMENT_PROJECT,
@@ -27,10 +28,19 @@ test.describe('Marketing OS Documents structure', () => {
 
   for (const width of [390, 1024]) {
     test(`recorded progress is a labelled, keyboard-accessible section at ${width}px`, async ({ page }) => {
-      const run = startedDocumentRun('questions');
-      await setupDocuments(page, { empty: true, runs: [run] });
+      // ICP is intentionally the Markdown default but has no answers endpoint; do not invent an ICP questions turn.
+      const type = MKTG_DOCUMENT_TYPES.find(
+        (entry) =>
+          entry.kind === 'living' &&
+          entry.catalogAgentId &&
+          MKTG_AGENT_INTAKES[entry.catalogAgentId]?.endpoints.answers &&
+          MKTG_AGENTS.some((agent) => agent.id === entry.catalogAgentId && agent.status === 'active')
+      );
+      if (!type) throw new Error('Expected an answerable living intake');
+      const run = { ...startedDocumentRun('questions'), agentKey: type.agentKey };
+      await setupDocuments(page, { empty: true, runs: [run], documentType: type });
       await page.setViewportSize({ width, height: 1000 });
-      await openDocuments(page);
+      await openDocuments(page, `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${type.agentKey}`);
       const section = page.getByRole('region', { name: 'Started runs', exact: true });
       await expect(section).toBeVisible();
       await expect(section.getByRole('heading', { level: 2 })).toHaveText('Started runs');
@@ -211,13 +221,13 @@ test.describe('Marketing OS Documents structure', () => {
         const scroller = page.getByTestId('mktg-documents-revisions-scroll');
         const visible = await scroller.boundingBox();
         const actionsCell = await page.getByTestId('mktg-documents-revision-actions-3').boundingBox();
-        const makeCurrent = await page.getByTestId('mktg-documents-restore-3').boundingBox();
-        if (!visible || !actionsCell || !makeCurrent) throw new Error('Desktop table actions must be rendered before measuring');
+        const open = await page.getByTestId('mktg-documents-view-3').boundingBox();
+        if (!visible || !actionsCell || !open) throw new Error('Desktop table actions must be rendered before measuring');
         expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(0);
         expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
         expect(actionsCell.x).toBeGreaterThanOrEqual(visible.x);
         expect(actionsCell.x + actionsCell.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
-        expect(makeCurrent.x + makeCurrent.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
+        expect(open.x + open.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
       }
       if (width === 390) {
         const pageWidth = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));
