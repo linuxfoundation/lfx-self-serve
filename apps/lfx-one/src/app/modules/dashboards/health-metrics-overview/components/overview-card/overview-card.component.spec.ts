@@ -12,7 +12,7 @@ import type { HealthMetricsOverviewCardStatus } from '@lfx-one/shared/interfaces
 
 /** The card with an action, an empty-state action and a body, as a real card projects them. */
 const HOST_TEMPLATE =
-  '<lfx-overview-card heading="Outstanding balance" info="Unpaid invoices" subtitle="As of today" [status]="status()" [isEmpty]="isEmpty()" [emptyCopy]="copy" testId="card" ><button overviewCardAction type="button" data-testid="card-action">Toggle</button><a overviewEmptyAction href="#" data-testid="card-empty-action">Add</a> <p data-testid="card-body">Body</p></lfx-overview-card >';
+  '<lfx-overview-card heading="Outstanding balance" info="Unpaid invoices" [meta]="meta" [status]="status()" [isEmpty]="isEmpty()" [emptyCopy]="copy" testId="card" ><button overviewCardAction type="button" data-testid="card-action">Toggle</button><a overviewEmptyAction href="#" data-testid="card-empty-action">Add</a> <p data-testid="card-body">Body</p></lfx-overview-card >';
 
 @Component({
   selector: 'lfx-overview-card-host',
@@ -23,6 +23,10 @@ class HostComponent {
   public readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
   public readonly isEmpty = signal(false);
   protected readonly copy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance;
+  protected readonly meta = [
+    { label: 'As of:', value: 'today' },
+    { label: 'Audience:', value: 'Board' },
+  ];
 }
 
 describe('OverviewCardComponent', () => {
@@ -52,9 +56,9 @@ describe('OverviewCardComponent', () => {
     expect(query('card-action')).not.toBeNull();
   });
 
-  it('shows a skeleton while reading, with no subtitle or body', () => {
+  it('shows a skeleton while reading, with no meta line or body', () => {
     expect(query('card-loading')).not.toBeNull();
-    expect(query('card-subtitle')).toBeNull();
+    expect(query('card-meta')).toBeNull();
     expect(query('card-body')).toBeNull();
   });
 
@@ -71,14 +75,15 @@ describe('OverviewCardComponent', () => {
 
     expect(query('card-empty')?.textContent).toContain('All invoices are paid');
     expect(query('card-empty-action')).not.toBeNull();
-    expect(query('card-subtitle')).toBeNull();
+    expect(query('card-meta')).toBeNull();
   });
 
-  it('projects the body and subtitle once ready', () => {
+  it('projects the body and the meta line, values darker than labels, once ready', () => {
     show('ready');
 
     expect(query('card-body')).not.toBeNull();
-    expect(query('card-subtitle')?.textContent).toBe('As of today');
+    expect(query('card-meta')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('As of: today · Audience: Board');
+    expect(query('card-meta')?.querySelector('span')?.className).toContain('text-gray-600');
     expect(query('card-empty')).toBeNull();
   });
 });

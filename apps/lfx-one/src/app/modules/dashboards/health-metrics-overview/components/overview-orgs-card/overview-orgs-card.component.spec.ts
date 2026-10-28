@@ -67,9 +67,12 @@ describe('OverviewOrgsCardComponent', () => {
     expect(read).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(text('overview-orgs-members-kpis-active-value')).toBe('725');
     expect(text('overview-orgs-non-members-kpis-non-members-value')).toBe('7,241');
-    expect(text('overview-orgs-members-low')).toBe('54%');
     expect(text('overview-orgs-members-high')).toContain('182');
-    expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-orgs-members"] svg circle')).toHaveLength(4);
+    // The 88px donut: the track plus one segment per level, with no text in its centre.
+    const donut = fixture.nativeElement.querySelector('[data-testid="overview-orgs-members-donut"]') as SVGElement;
+    expect(donut.getAttribute('width')).toBe('88');
+    expect(donut.querySelectorAll('circle')).toHaveLength(4);
+    expect(donut.parentElement?.textContent?.trim().startsWith('High')).toBe(true);
   });
 
   it('gives every KPI label its PCC tooltip', async () => {
@@ -100,7 +103,6 @@ describe('OverviewOrgsCardComponent', () => {
     fixture.detectChanges();
 
     expect(read).toHaveBeenCalledTimes(1);
-    expect(text('overview-orgs-members-low')).toBe('—');
     expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-orgs-members"] svg circle')).toHaveLength(1);
   });
 
