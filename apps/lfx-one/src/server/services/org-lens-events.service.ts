@@ -325,7 +325,9 @@ export class OrgLensEventsService {
         accountId,
         // `:v3` — `:v2` was the company-email scoping; `:v3` is the narrowed row shape (no address in
         // `NAME`) and the narrowed search. Entries written before this ships would otherwise be served
-        // with addresses still in `NAME`, for a full TTL, on exactly the degraded tiers that need it least.
+        // with addresses still in `NAME` for a full TTL — a company address on the normal scoped path,
+        // and a personal one on the zero-coverage arm. Only this scoped read is cached at all; the
+        // unscoped retry below never is.
         `event-attendees:v3:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds, true),
@@ -668,9 +670,12 @@ const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)
 /**
  * A registrant needs a usable address whichever spelling is running. This half of the rule is NOT
  * about company scoping, so it applies to the unscoped fallback too: without it that path returns a
- * row whose `CONTACT_ID` is null — rejected by `isContactRowArray`, so the whole cache entry is
- * refused, and unusable as the grouping key besides. The scoped predicate used to carry this clause,
- * so splitting the fallback out of it originally dropped the guard on exactly the degraded path.
+ * row whose `CONTACT_ID` is null, which is unusable as the grouping key and invisible to the row
+ * count's `COUNT(DISTINCT …)`, so the drawer would list someone the row never counted. Where the
+ * result IS cached — the scoped spelling only, and the unscoped retry never is — such a row is also
+ * rejected by `isContactRowArray`, refusing the whole entry on every read. The scoped predicate used
+ * to carry this clause, so splitting the fallback out of it originally dropped the guard on exactly
+ * the degraded path.
  * (A null `NAME` is now ordinary, not a symptom: it is what a registrant with no resolved person and
  * no `FULL_NAME` looks like once the address is out of the coalesce, and it maps to a neutral label.)
  *

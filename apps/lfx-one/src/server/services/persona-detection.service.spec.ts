@@ -103,9 +103,9 @@ describe('PersonaDetectionService', () => {
       expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'lf-staff', access: 'member' });
     });
 
-    // The `.catch` here is load-bearing for `OrgLensEventsService`, which awaits this outside the
-    // try blocks that catch query failures: a rejection would otherwise be reported as a Snowflake
-    // failure and empty the whole Events list, rather than withhold one field. Fail-closed
+    // The `.catch` here is load-bearing for `OrgLensEventsService`, which awaits this outside every
+    // query try: a rejection would 500 the whole Events list, and reject unhandled on the early
+    // returns that never await it, rather than withhold one field. Fail-closed
     // is also the right direction for a disclosure gate — a staff member briefly missing a number
     // they can get elsewhere beats an external admin seeing one they should not.
     it('degrades to `not staff` when the access check fails, rather than rejecting', async () => {

@@ -382,6 +382,12 @@ describe('OrgLensEventsService company-email scoping', () => {
     // `.test` ends in `t` (and is a reserved TLD). A character-set TRIM written as '\t\n\r ' eats
     // that `t` under SQLite's non-escaping literals, which is why the normalization uses code points.
     addRegistration('  ada@company.test  ', 'Ada Lovelace');
+    // The decoy carries the over-stripped spelling. Correct normalization leaves it unmatched by any
+    // company address while coverage is non-zero, so it is filtered out. An over-strip folds it into
+    // the same group as Ada — one grouping key, so `MAX(NAME)` returns `Not Ada` and this fails.
+    // Without it the assertion survives an over-strip, because the key is stripped on both sides of
+    // the join and the one remaining row still reads `Ada Lovelace`.
+    addRegistration('ada@company.tes', 'Not Ada');
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
