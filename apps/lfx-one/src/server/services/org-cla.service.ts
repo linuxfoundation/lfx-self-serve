@@ -77,6 +77,7 @@ import type {
   EasyClaEvent,
   EasyClaEventList,
   EasyClaSearchList,
+  EasyClaSearchResult,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
   EasyClaSignatureApprovalLists,
@@ -625,6 +626,38 @@ export class OrgClaService {
    * The hop always sends `claType=ccla&watermark=true` and does not take those as
    * client query params. Whether the bytes are actually watermarked is upstream's.
    */
+  /**
+   * One CLA Group from the same unscoped catalogue as sign-options (#2293).
+   *
+   * Returns null on upstream 404, including a gateway 404 when the producer route is not
+   * deployed yet, so the page can show its not-found empty state instead of a load error.
+   * Any other upstream failure is rethrown.
+   *
+   * `projectSfid` is appended the same way `getSignOptions` appends it, from the field the
+   * catalogue already resolved. Absence means the group cannot be signed from here.
+   */
+  public async getClaGroupCatalogue(req: Request, claGroupId: string): Promise<ClaGroupOption | null> {
+    let result: EasyClaSearchResult | null;
+    try {
+      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(claGroupId)}`, {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA group',
+        errorCode: 'UPSTREAM_ERROR',
+      });
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+
+    if (!result?.claGroupID?.trim()) return null;
+    const option = toClaGroupOption(result);
+    const projectSfid = result.projectSFID?.trim();
+    return projectSfid ? { ...option, projectSfid } : option;
+  }
+
   public async getCclaPreview(req: Request, claGroupId: string): Promise<Buffer> {
     const params = new URLSearchParams({ claType: 'ccla', watermark: 'true' });
     return gatewayFetchBinary(req, `${claServiceBaseUrl(SERVICE)}/v4/template/${encodeURIComponent(claGroupId)}/preview?${params.toString()}`, {

@@ -60,6 +60,15 @@ export const ACTIVITY_LOG_ROUTE = '**/api/orgs/*/lens/cla-groups/*/activity**';
  */
 export const PDF_URL_ROUTE = '**/api/orgs/*/lens/cla-groups/*/pdf-url';
 
+/** Catalogue read for a pasted group address (#2293). */
+export const CLA_GROUP_CATALOGUE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/catalogue';
+
+export function stubCatalogueNotFound(page: Page): Promise<void> {
+  return page.route(CLA_GROUP_CATALOGUE_ROUTE, (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'CLA_GROUP_NOT_FOUND' }) })
+  );
+}
+
 export function fulfillJson(page: Page, glob: string, body: unknown): Promise<void> {
   return page.route(glob, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
 }

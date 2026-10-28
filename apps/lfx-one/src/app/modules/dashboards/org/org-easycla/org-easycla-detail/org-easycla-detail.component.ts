@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
+  ClaGroupOption,
   OrgClaAttestationClose,
   OrgClaCoverageChip,
   OrgClaDesigneeRefusal,
@@ -55,6 +56,7 @@ import {
   orgClaIsViewOnly,
   orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
+  orgClaCatalogueGroup,
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
@@ -204,6 +206,20 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
+
+  /**
+   * Catalogue read for a pasted group address (#2293). Idle when a signed row or a matching
+   * picker selection already names the page, so those visits make no extra upstream call.
+   * Keyed on organization and group id so a reused component (A → B → A) cannot keep the
+   * previous group's name.
+   */
+  private readonly catalogue = signal<
+    | { kind: 'idle' }
+    | { kind: 'loading'; key: string }
+    | { kind: 'group'; key: string; option: ClaGroupOption }
+    | { kind: 'not-found'; key: string }
+    | { kind: 'error'; key: string }
+  >({ kind: 'idle' });
   protected readonly easyclaRoleMissing = signal(false);
   protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
   private readonly claLoadingState = signal(false);
@@ -282,10 +298,10 @@ export class OrgEasyclaDetailComponent {
   /**
    * Every agreement a send-by-email POST has succeeded for on this component instance.
    *
-   * Keyed to the *displayed* agreement rather than the route param: Angular reuses this component
-   * when `:claGroupId` changes, and the picker preview is captured at construction, so a reused
-   * instance can keep showing the emailed group after the address has moved. Comparing the route
-   * would lift the lock while Start still posts from `signingChoice()`.
+   * Keyed to the displayed agreement. The address decides which group is displayed, including
+   * when this component is reused across `:claGroupId`, so a move away from the emailed group
+   * stops showing it. Coming back still finds the lock, because the list remembers every group
+   * emailed on this instance.
    *
    * A list rather than one key, because emailing a different group is deliberately allowed: with a
    * single slot the sequence A → B → A forgets A. The unsigned overview does not reload on a route
@@ -393,10 +409,8 @@ export class OrgEasyclaDetailComponent {
    * decided at construction from the route shape alone — a signed row for the same group outranks
    * a selection. It stays a field for the one thing that *is* fixed for the life of the page (the
    * selection belongs to this address at all); whether the preview is what renders is
-   * `showingPreview`, which also weighs the list.
+   * `showingPreview`, which also weighs the list and the live route param.
    */
-  private readonly hasPreviewSelection = !!this.previewSelection;
-
   // Every selection the viewer makes, including clearing it.
   private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
 
@@ -506,7 +520,13 @@ export class OrgEasyclaDetailComponent {
    * The selection alone is not enough. It survives history restoration, so a signatory who signs
    * and comes back to this address still has it — and the agreement they now hold has to win.
    */
-  private readonly showingPreview = computed(() => this.hasPreviewSelection && !this.listedGroupForAddress());
+  /**
+   * Picker state names this address. Re-checked against the live route param: the selection is
+   * captured once, and Angular reuses this component when only `:claGroupId` changes.
+   */
+  private readonly previewMatchesAddress = computed(() => !!this.previewSelection && isSameClaGroup(this.previewSelection.claGroupId, this.claGroupId()));
+
+  private readonly showingPreview = computed(() => this.previewMatchesAddress() && !this.listedGroupForAddress());
 
   /**
    * A group address that names nothing this organization has signed and nothing the picker chose
@@ -518,8 +538,66 @@ export class OrgEasyclaDetailComponent {
    * signable; what is absent is anything *this page* can say about it, because the list read
    * returns signed agreements only and there is no fetch-a-group-by-id read to fall back on.
    */
+  /**
+   * When set, the page still needs the catalogue. Null while the list is in flight, or once a
+   * signed row or a matching picker selection has already answered — those must not call upstream.
+   */
+  private readonly catalogueLookupKey = computed(() => {
+    if (!isPlatformBrowser(this.platformId)) return null;
+    if (!this.hasCompany() || this.claLoading() || this.fetchError() || !this.claData()) return null;
+    const id = this.claGroupId();
+    const orgUid = this.selectedOrgUid();
+    if (!id || !orgUid) return null;
+    // A just-signed return is waiting on the list, not on the catalogue. Fetching the unsigned
+    // overview here would tell someone who just signed that the agreement has not been started.
+    if (this.awaitingSignedRow() || this.signatureStillUnlisted()) return null;
+    if (this.listedGroupForAddress() || this.previewMatchesAddress()) return null;
+    return `${orgUid}::${id}`;
+  });
+
+  protected readonly cataloguePending = computed(() => {
+    const key = this.catalogueLookupKey();
+    if (!key) return false;
+    const cat = this.catalogue();
+    if (cat.kind === 'error' && cat.key === key) return false;
+    if ((cat.kind === 'group' || cat.kind === 'not-found') && cat.key === key) return false;
+    return true;
+  });
+
+  protected readonly catalogueFailed = computed(() => {
+    const key = this.catalogueLookupKey();
+    const cat = this.catalogue();
+    return !!key && cat.kind === 'error' && cat.key === key;
+  });
+
+  protected readonly groupNotFound = computed(() => {
+    const key = this.catalogueLookupKey();
+    const cat = this.catalogue();
+    return !!key && cat.kind === 'not-found' && cat.key === key;
+  });
+
+  /** Why Start is hidden on a catalogue-backed unsigned overview, or '' when Start is offered. */
+  protected readonly catalogueSignBlockReason = computed(() => {
+    if (this.listedGroupForAddress() || this.showingPreview()) return '';
+    const key = `${this.selectedOrgUid()}::${this.claGroupId()}`;
+    const cat = this.catalogue();
+    if (cat.kind !== 'group' || cat.key !== key) return '';
+    if (!cat.option.projectSfid) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
+    if (cat.option.cclaEnabled !== true) return CCLA_SIGN_COPY.picker.cclaDisabledReason;
+    return '';
+  });
+
   protected readonly cannotPreview = computed(
-    () => this.hasCompany() && !this.claLoading() && !this.fetchError() && !!this.claData() && !!this.claGroupId() && !this.claGroup()
+    () =>
+      this.hasCompany() &&
+      !this.claLoading() &&
+      !this.fetchError() &&
+      !this.catalogueFailed() &&
+      !this.cataloguePending() &&
+      !this.groupNotFound() &&
+      !!this.claData() &&
+      !!this.claGroupId() &&
+      !this.claGroup()
   );
 
   // Withheld while `cannotPreview` owns the empty state, so one visit cannot render both. An
@@ -716,6 +794,37 @@ export class OrgEasyclaDetailComponent {
         this.signingOpen.set(false);
       }
     });
+
+    // Pasted group address (#2293). Starts only once the signed list and any matching picker
+    // state have failed to name the page, and follows the live route param.
+    toObservable(this.catalogueLookupKey)
+      .pipe(
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) return of(null);
+          const separator = key.indexOf('::');
+          const orgUid = key.slice(0, separator);
+          const claGroupId = key.slice(separator + 2);
+          return this.claService.getClaGroupCatalogue(orgUid, claGroupId).pipe(
+            map((option) => ({ key, outcome: 'group' as const, option })),
+            catchError((error: HttpErrorResponse) =>
+              of({ key, outcome: error.status === 404 || error.status === 400 ? ('not-found' as const) : ('error' as const) })
+            )
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        if (!result) {
+          this.catalogue.set({ kind: 'idle' });
+          return;
+        }
+        if (result.outcome === 'group') {
+          this.catalogue.set({ kind: 'group', key: result.key, option: result.option });
+          return;
+        }
+        this.catalogue.set({ kind: result.outcome, key: result.key });
+      });
 
     // Only the latest re-read may land: an older one can still name a viewer who has since
     // removed themselves, and it would clear that hide.
@@ -1393,7 +1502,12 @@ export class OrgEasyclaDetailComponent {
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.
-    return this.showingPreview() && this.previewSelection ? orgClaPreviewGroup(this.previewSelection) : undefined;
+    if (this.showingPreview() && this.previewSelection) return orgClaPreviewGroup(this.previewSelection);
+
+    const key = `${this.selectedOrgUid()}::${this.claGroupId()}`;
+    const cat = this.catalogue();
+    if (cat.kind === 'group' && cat.key === key) return orgClaCatalogueGroup(cat.option);
+    return undefined;
   }
 
   private initViewOnly(): boolean {

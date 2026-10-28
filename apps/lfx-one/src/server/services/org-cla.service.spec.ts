@@ -4283,3 +4283,44 @@ describe('OrgClaService — CLA manager designee (#2780)', () => {
     });
   });
 });
+
+describe('OrgClaService.getClaGroupCatalogue', () => {
+  it('returns the project the catalogue resolved, the same field the sign picker uses', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      claGroupID: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSFID: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+
+    const option = await new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID);
+
+    expect(option).toMatchObject({
+      claGroupId: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSfid: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}`,
+      expect.objectContaining({ operation: 'org_cla_group_catalogue' })
+    );
+  });
+
+  it('treats an upstream 404 as not found, including a producer route that is not deployed yet', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).resolves.toBeNull();
+  });
+
+  it('rethrows an upstream failure that is not a 404', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('down', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502 });
+  });
+});

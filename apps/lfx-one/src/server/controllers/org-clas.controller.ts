@@ -182,6 +182,39 @@ export class OrgClasController {
     }
   }
 
+  // GET /api/orgs/:orgUid/lens/cla-groups/:claGroupId/catalogue
+  // The unsigned overview for a pasted group address (#2293). A 404 — unknown id, or the
+  // producer route not deployed yet — is not a load failure. Other upstream failures are.
+  public async getClaGroupCatalogue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_group_catalogue');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_group_catalogue' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_group_catalogue');
+
+      const claGroupId = (req.params['claGroupId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
+        throw ServiceValidationError.forField('claGroupId', 'A CLA group identifier is required', { operation: 'get_org_cla_group_catalogue' });
+      }
+
+      const option = await this.orgClaService.getClaGroupCatalogue(req, claGroupId);
+      if (!option) {
+        logger.success(req, 'get_org_cla_group_catalogue', startTime, { org_uid: orgUid, cla_group_id: claGroupId, found: false });
+        res.status(404).json({ code: 'CLA_GROUP_NOT_FOUND' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_group_catalogue', startTime, { org_uid: orgUid, cla_group_id: claGroupId, found: true });
+      res.json(option);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/orgs/:orgUid/lens/cla-groups/:claGroupId/ccla-preview
   // Watermarked corporate template for the unsigned overview (#2317). A read: impersonation
   // stays allowed, same as sign-options. The client cannot choose the CLA type or turn the

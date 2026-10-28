@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_CLA_REVIEW_COPY_FILENAME } from '../constants/cla.constants';
-import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
+import type { ClaGroupOption, OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
 import { isSameClaGroup } from './cla-identifier.utils';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
@@ -155,6 +155,30 @@ export function orgClaReviewCopyFilename(claGroupName?: string): string {
  * `id` is empty because no signature exists. Nothing keys off it here: the document offer reads
  * `signed`, and the list lookup is bypassed entirely.
  */
+/**
+ * The unsigned overview built from a catalogue read of the address (#2293).
+ *
+ * Same shape as `orgClaPreviewGroup`: one covered project and no foundation SFID, so Start is
+ * requested against the project the catalogue already resolved — the same rule the sign picker
+ * uses. A group with no resolved project carries no project entry, and Start is not offered.
+ */
+export function orgClaCatalogueGroup(option: ClaGroupOption): OrgClaGroup {
+  const projectSfid = option.projectSfid?.trim();
+  const projectName = option.projectName?.trim() || option.claGroupName?.trim() || '';
+  return {
+    id: '',
+    claGroupId: option.claGroupId,
+    claGroupName: option.claGroupName?.trim() || projectName,
+    projects: projectSfid ? [{ projectName, projectSfid }] : [],
+    signed: false,
+    status: 'not-started',
+    needsClaManager: false,
+    claManagersCount: 0,
+    viewerIsClaManager: false,
+    approvalCriteriaCount: 0,
+  };
+}
+
 export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup {
   return {
     id: '',
