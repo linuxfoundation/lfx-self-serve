@@ -5,8 +5,11 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
   MKTG_AGENT_INTAKES,
+  MKTG_DOCUMENT_ID_REGEX,
+  MKTG_LIVING_DOCUMENT_ID,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
@@ -42,14 +45,50 @@ export class MktgRunAttemptService {
     if (!isPlatformBrowser(this.platformId) || !this.subject()) {
       return '';
     }
-    const pending = (resume ? this.load(request.projectUid, request.agentId) : null) ?? this.reserve(request);
+    if (
+      request.intake.oneOffDocument &&
+      (!resume || !request.documentId || request.documentId === MKTG_LIVING_DOCUMENT_ID || !MKTG_DOCUMENT_ID_REGEX.test(request.documentId))
+    )
+      return '';
+    const pending = (resume ? this.load(request.projectUid, request.agentId, request.documentId) : null) ?? this.reserve(request);
     const token = `generation-${window.crypto.randomUUID()}`;
     this.prepared.set(token, { subject: this.subject(), pending });
     if (!resume) this.freshDrafts.set(pending, this.subject());
     return token;
   }
 
-  public consume(token: string, projectUid: string, agentId: string): MktgPreparedGeneration | null {
+  /** Dedicated Generate already ACKed: explicitly project its minimal proof into the existing handoff map. */
+  public prepareAccepted(request: MktgGenerateRequest, session: MktgRunSessionResponse): string {
+    if (
+      !request.intake.oneOffDocument ||
+      !request.intake.tracksDocumentRun ||
+      !session.documentId ||
+      !MKTG_DOCUMENT_ID_REGEX.test(session.documentId) ||
+      session.documentId === MKTG_LIVING_DOCUMENT_ID ||
+      !session.runId ||
+      !MKTG_STARTED_RUN_ID_REGEX.test(session.runId) ||
+      !session.sessionId ||
+      !session.ownerToken ||
+      !isPlatformBrowser(this.platformId) ||
+      !this.subject()
+    )
+      return '';
+    const scoped = { ...request, documentId: session.documentId };
+    this.save({
+      request: scoped,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+      attempt: {
+        documentId: session.documentId,
+        runId: session.runId,
+        priorVersion: 0,
+        session: { agentId: request.agentId, sessionId: session.sessionId, ownerToken: session.ownerToken },
+      },
+    });
+    return this.prepare(scoped, true);
+  }
+
+  public consume(token: string, projectUid: string, agentId: string, documentId?: string): MktgPreparedGeneration | null {
     const prepared = this.prepared.get(token);
     if (
       !prepared ||
@@ -63,6 +102,13 @@ export class MktgRunAttemptService {
     }
     this.prepared.delete(token);
     return prepared;
+  }
+
+  /** Questions OR failed-intake re-entry use this same destination-bound map; a failed public hint grants no Generate/poll capability. */
+  public consumeQuestions(token: string, projectUid: string, agentId: string): MktgPreparedGeneration | null {
+    const pending = this.prepared.get(token)?.pending;
+    if (!pending || (pending.state !== 'failed' && (pending.state !== 'questions' || !pending.pendingQuestions))) return null;
+    return this.consume(token, projectUid, agentId, pending.request.documentId);
   }
 
   /** Single-use object provenance: storage/reserve alone never grants a Generate handoff. */
@@ -179,8 +225,10 @@ export class MktgRunAttemptService {
     if (!subject || subject !== this.subject() || !isPlatformBrowser(this.platformId)) {
       return;
     }
-    const key = this.key(pending.request.projectUid, pending.request.agentId, subject);
+    const key = this.key(pending.request.projectUid, pending.request.agentId, subject, pending.request.documentId);
+    const oneOff = pending.request.intake.oneOffDocument === true;
     const value = { ...pending, updatedAt: new Date().toISOString() };
+    const answeredQuestionsId = value.answered?.questionsId || value.answeredQuestionsId;
     this.memory.set(key, value);
     this.inputMemory.set(key, value);
     try {
@@ -188,14 +236,24 @@ export class MktgRunAttemptService {
         request: {
           agentId: value.request.agentId,
           projectUid: value.request.projectUid,
-          answers: { ...value.request.answers },
-          ...(value.request.feedback !== undefined && { feedback: value.request.feedback }),
+          answers: oneOff ? {} : { ...value.request.answers },
+          ...(value.request.documentId && { documentId: value.request.documentId }),
+          ...(!oneOff && value.request.feedback !== undefined && { feedback: value.request.feedback }),
         },
         state: value.state,
         updatedAt: value.updatedAt,
-        ...(value.attempt && { attempt: value.attempt }),
-        ...(value.pendingQuestions && { pendingQuestions: value.pendingQuestions }),
-        ...(value.answered && { answered: value.answered }),
+        ...(value.attempt && {
+          attempt: {
+            session: { agentId: value.request.agentId, sessionId: value.attempt.session.sessionId, ownerToken: value.attempt.session.ownerToken },
+            priorVersion: value.attempt.priorVersion,
+            ...(value.attempt.runId && { runId: value.attempt.runId }),
+            ...(value.attempt.documentId && { documentId: value.attempt.documentId }),
+            ...(!oneOff && value.attempt.readme && { readme: value.attempt.readme }),
+          },
+        }),
+        ...(!oneOff && value.pendingQuestions && { pendingQuestions: value.pendingQuestions }),
+        ...(!oneOff && value.answered && { answered: value.answered }),
+        ...(oneOff && MKTG_RUN_QUESTIONS_ID_REGEX.test(answeredQuestionsId ?? '') && { answeredQuestionsId }),
         requiresReattachment: !!(value.requiresReattachment || value.request.documents?.length || value.request.logoFiles?.length),
       };
       window.localStorage.setItem(key, JSON.stringify(stored));
@@ -205,9 +263,9 @@ export class MktgRunAttemptService {
   }
 
   /** Peek at source inputs without consuming a token, reserving, or changing a live attempt. */
-  public lastInputs(project: string, agentId: string): MktgGenerateRequest | null {
+  public lastInputs(project: string, agentId: string, documentId?: string): MktgGenerateRequest | null {
     if (!this.subject() || !isPlatformBrowser(this.platformId)) return null;
-    const key = this.key(project, agentId, this.subject());
+    const key = this.key(project, agentId, this.subject(), documentId);
     const value = this.inputMemory.get(key);
     const elapsed = value ? Date.now() - Date.parse(value.updatedAt) : NaN;
     if (!value || !Number.isFinite(elapsed) || elapsed > MKTG_RUN_STORAGE_TTL_MS) {
@@ -221,7 +279,7 @@ export class MktgRunAttemptService {
     if (!this.subject() || !isPlatformBrowser(this.platformId)) {
       return null;
     }
-    const key = this.key(project, agentId, this.subject());
+    const key = this.key(project, agentId, this.subject(), documentId);
     const cached = this.memory.get(key);
     if (cached) {
       return cached;
@@ -240,7 +298,7 @@ export class MktgRunAttemptService {
         !Number.isFinite(Date.parse(parsed.updatedAt)) ||
         Date.now() - Date.parse(parsed.updatedAt) > MKTG_RUN_STORAGE_TTL_MS
       ) {
-        this.clear(project, agentId);
+        this.clear(project, agentId, this.subject(), documentId);
         return null;
       }
       // The live registry, never a serialized endpoint/config, decides where a resumed attempt calls.
@@ -249,15 +307,18 @@ export class MktgRunAttemptService {
           agentId,
           projectUid: project,
           intake: MKTG_AGENT_INTAKES[agentId],
-          answers: { ...parsed.request.answers },
-          ...(parsed.request.feedback !== undefined && { feedback: parsed.request.feedback }),
+          answers: MKTG_AGENT_INTAKES[agentId].oneOffDocument ? {} : { ...parsed.request.answers },
+          ...(documentId && { documentId }),
+          ...(!MKTG_AGENT_INTAKES[agentId].oneOffDocument && parsed.request.feedback !== undefined && { feedback: parsed.request.feedback }),
         },
         state: parsed.state,
         updatedAt: parsed.updatedAt,
         requiresReattachment: parsed.requiresReattachment === true,
         ...(parsed.attempt && { attempt: parsed.attempt }),
-        ...(parsed.pendingQuestions && { pendingQuestions: parsed.pendingQuestions }),
-        ...(parsed.answered && { answered: parsed.answered }),
+        ...(!MKTG_AGENT_INTAKES[agentId].oneOffDocument && parsed.pendingQuestions && { pendingQuestions: parsed.pendingQuestions }),
+        ...(!MKTG_AGENT_INTAKES[agentId].oneOffDocument && parsed.answered && { answered: parsed.answered }),
+        ...(MKTG_AGENT_INTAKES[agentId].oneOffDocument &&
+          MKTG_RUN_QUESTIONS_ID_REGEX.test(parsed.answeredQuestionsId ?? '') && { answeredQuestionsId: parsed.answeredQuestionsId }),
       };
       this.memory.set(key, restored);
       return restored;
@@ -266,11 +327,11 @@ export class MktgRunAttemptService {
     }
   }
 
-  public clear(project: string, agentId: string, subject = this.subject()): void {
+  public clear(project: string, agentId: string, subject = this.subject(), documentId?: string): void {
     if (!subject || subject !== this.subject() || !isPlatformBrowser(this.platformId)) {
       return;
     }
-    const key = this.key(project, agentId, subject);
+    const key = this.key(project, agentId, subject, documentId);
     this.memory.delete(key);
     try {
       window.localStorage.removeItem(key);
@@ -283,7 +344,7 @@ export class MktgRunAttemptService {
     return `${MKTG_PENDING_RUN_STORAGE_KEY_PREFIX}:redraft:${subject}:${scope.projectUid}:${scope.agentKey}:${scope.documentId}:${scope.revisionId}`;
   }
 
-  private key(project: string, agentId: string, subject: string): string {
-    return `${MKTG_PENDING_RUN_STORAGE_KEY_PREFIX}:${subject}:${project}:${agentId}`;
+  private key(project: string, agentId: string, subject: string, documentId?: string): string {
+    return `${MKTG_PENDING_RUN_STORAGE_KEY_PREFIX}:${subject}:${project}:${agentId}${documentId ? `:${documentId}` : ''}`;
   }
 }

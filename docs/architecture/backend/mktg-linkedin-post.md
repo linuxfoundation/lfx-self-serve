@@ -37,7 +37,76 @@ A ready result with `profileSaved: false` does not turn its returned profile int
 
 Both `generate` and `result` enforce the selected project's writer grant. Result reads additionally check the session's user-bound owner token. Every ready output is persisted through `MktgDocumentStoreService.persistGeneration` as its own session-keyed `run-…` document. The stored sidecar includes options and posting notes, **not** the personal profile or voice settings. The agent's H1 includes the profile name, so before project persistence the BFF replaces that title with `# LinkedIn post options` and recomputes `content_sha256` over the edited bytes. Neither the project-readable artifact nor its immutable revision retains the identifying title. The creator-bound result envelope remains the original, integrity-validated agent output.
 
-The frontend retains a TTL-bounded pending capability using the shared one-off vocabulary (`MktgPendingDocumentRun`, `documentId`, `oneOffDocument`, `MKTG_PENDING_DOCUMENT_STORAGE_PREFIX`). It is isolated by effective subject and project, contains no profile answers, resumes an unfinished result poll after navigation/reload, and is removed when storage succeeds or Guild reports a terminal failure. The retry snapshot persists only source kind and bounded share-link metadata, never `content_url`, `content_text`, file bytes or personal setup. Live memory retains the exact source for Retry; after reload it asks the user to re-enter text/the source URL or choose the file again. Existing retry snapshots are stripped on load and all subsequent pending writes use the same serializer. This narrow fix does not migrate other URL copies in `run.source.label` or `answers/share_link`; that wider at-rest migration remains a follow-up. Local storage being disabled prevents reload recovery, not the current run. The UI waits for a persistence receipt before announcing completion and linking to Documents.
+The dedicated page is now profile/source intake only: accepted Generate opens its Document immediately. It never polls or navigates on plain load/reload. Questions return to the form; answers ACK returns to the SAME Document/session without Generate. The shared receiver below owns progress, storage receipts and plain-URL cross-browser recovery. Failed runs return to source/setup re-entry: the previous one-click Retry with kept inputs is removed. Source bytes, URLs, filenames and personal setup are never carried in the navigation hint.
+
+## Shared accepted-one-off resume core
+
+The shared receiver can resume a dedicated form's **already accepted** session without
+submitting another Generate. `MktgRunAttemptService.prepareAccepted(request, session)`
+projects only session id, owner proof, public run selector and document destination into
+the existing subject-bound, single-use `generation` handoff map. It does not copy the
+LinkedIn generation response, source summary, retry setup or personalized envelope.
+Requests and attempts carry the same `documentId`; consumption checks project, agent,
+subject and that exact destination. One-offs cannot use the generic fresh-Generate path.
+The dedicated LinkedIn form uses this handoff; results, activity, Copy post and share-link editing stay on the Document.
+
+Pending proof keys are scoped per subject/project/agent/**document**, not merely per
+agent. Reload storage contains no one-off intake answers, feedback, question text,
+answers text, source labels/bytes or personal setup: only the minimum session capability,
+public destination/run selector and the last acknowledged questions digest. The live
+registry restores endpoint configuration. Private Q&A/source/history remains same-visit
+memory only; one-off generated versions are not serialized by the generic history cache.
+Successful receipt cleanup removes only that document's pending proof. Neither this
+optional cache nor a URL token is the authoritative pending record: a plain document
+URL in another browser still uses server `detail.runs[]` reconciliation.
+
+The owned result controller validates the HMAC and LinkedIn body shape before the
+writer lookup, then delegates to `MktgDocumentRunService.ownedOneOffResult` with a
+validated typed `MktgOneOffRunContext`, never the raw HTTP body, for that exact
+project/agent/session and creator. Its shared `agentResult` dispatcher owns the captured
+link answers, source word count and original profile-initialization permission for BOTH owned polls and Documents
+reconciliation; the controller applies no completion policy. It reuses the fetched record
+and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
+The existing post-write metadata winner confirmation remains unchanged.
+Browser omissions or later source context cannot replace captured values. Legacy untracked
+sessions retain the result-body contract. One server utility classifies repository,
+Smithy timeout and network errors (including status 0, 408, 429 and 5xx). A transient tracking
+read failure logs fixed diagnostic categories and numeric status, never provider text,
+and uses that same legacy creator contract for this poll; authorization failures are
+never softened. Tracking-write failures retain the error under the logger's `err` field.
+This service method is not a new endpoint or public progress projection.
+`profileSaved: false` remains distinct from a successful document receipt in the shared progress event, for the cutover's existing
+profile-persistence warning.
+
+## Dedicated-form transport extension
+
+`LinkedinPostService.startForDocument` submits the dedicated Generate request and hands
+its accepted session and destination to the shared run/attempt path. It retains original
+setup only in creator/project/document-bound live memory for explicit profile editing
+after an unsaved-profile warning; a new browser/client instance cannot recover that setup.
+
+The receiver carries only an allow-listed `source=text|file|url` navigation hint; absent
+or invalid values become `text`. It never puts source text, a source URL, filename or
+setup in a navigation URL. Its existing submitted handler replaces an accepted
+one-off generation token with the public run selector, so reload uses the saved run.
+The same prepared map can carry failed-intake re-entry, including a public hint with
+no session capability when another authorized browser opens a failed document.
+That hint grants neither Generate provenance nor result-poll authority. Server failure
+wins over a still-writing private cache. An owner's valid capability also reconnects a
+server questions pause after reload, when private question text was not retained; the
+intake action waits for those private details rather than opening an empty form. The dedicated intake consumes the
+hint for source/setup re-entry; unsupported Member questions retain their separate
+bounded-pause policy and no intake link.
+
+### Adopting the one-off hook
+
+Register a run-kind document type pointing at its catalog agent and an active intake with
+`oneOffDocument` and `tracksDocumentRun`. Its dedicated Generate records `startForOneOff`
+and returns the accepted session, public runId and exact documentId. Call `prepareAccepted`
+and open that Document with `generation`; the existing receiver replaces it with public
+`run`, resumes the saved run and handles registered result/answers endpoints. Do not use
+shared fresh-Generate or add another registry/poller; private owner proof stays out of URLs.
+A one-off intake may read `latestPending(project, agent)` for advisory same-visit UI only; it reads existing memory, never storage or Generate provenance.
 
 ## Terminal Guild failures
 
@@ -93,7 +162,7 @@ The document field has explicit Edit link, Save link and Cancel controls. While 
 
 ## Read-time document attribution
 
-Expert provisional ruling: a LinkedIn post is a one-off run, not an approvable kit asset. Draft/Approved belongs to the asset JSON views; post approval is out of scope until the later comment-and-revise item. LinkedIn retains its author by-line, option cards, source/share-link controls and Draft another post. It hides asset metadata, Approve, generic Run again, About/Revisions and the revision pill, including for readable legacy Markdown posts. Generic metadata, approval, export and Run again behavior remains unchanged for every other document type; no write-lifecycle unification is introduced.
+Decided by the operator, 23 Oct 2026: a LinkedIn post is a one-off run, not an approvable kit asset. Draft/Approved belongs to the asset JSON views; post approval is out of scope until the later comment-and-revise item. LinkedIn retains its author by-line, option cards, source/share-link controls and Draft another post. It hides asset metadata, Approve, generic Run again, About/Revisions and the revision pill, including for readable legacy Markdown posts. Generic metadata, approval, export and Run again behavior remains unchanged for every other document type; no write-lifecycle unification is introduced.
 
 **Binding operator decision:** `lfx/mktgos-ui-expert/decision-mktgos-ui-expert-revision-authors-are-stored-as-an-opaque-id-and-named-at-read-time@hb1.01M490BZHWCJX7NQWV4QS09CA2.11.01M52MCN7Z88FNFW4G40GV3PQJ`. As ruled in #3773, persisted attribution uses only the effective Auth0 sub. Persisting a username or display name was explicitly rejected. This is a deliberate privacy exception to backend-auth guidance that normally prefers username-based identity references, not an accidental use of the legacy subject helper. Names are resolved through `UserService.getUserInfo` at read time and memoized per request.
 
