@@ -9,6 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
   MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
+  MKTG_FAMILY_EXPORT_FORMAT_HINT,
   MKTG_DOCUMENT_TYPES,
   MKTG_FAMILY_PDF_NOTE,
   MKTG_FAMILY_PRINT_BODY_CLASS,
@@ -39,6 +41,7 @@ import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-fra
   selector: 'lfx-mktg-family-export-actions',
   imports: [DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
+  styleUrl: './mktg-family-export-actions.component.scss',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })
 export class MktgFamilyExportActionsComponent {
@@ -55,6 +58,9 @@ export class MktgFamilyExportActionsComponent {
   protected readonly approvalNote = MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly focusRequested = signal(false);
+  protected readonly highlighted = signal(false);
+  protected readonly formatHint = signal('');
+  private highlightTimer: ReturnType<typeof setTimeout> | undefined;
   protected readonly printOnlyClass = MKTG_FAMILY_PRINT_ONLY_CLASS;
 
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
@@ -104,14 +110,28 @@ export class MktgFamilyExportActionsComponent {
     }
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
+      clearTimeout(this.highlightTimer);
       this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
     });
   }
 
-  /** Navigate to the controls only; never start an export as a side effect. */
+  /** Browser-only visibility check for the Family's fallback and aside slots. */
+  public isRendered(): boolean {
+    return isPlatformBrowser(this.platformId) && this.host.nativeElement.getClientRects().length > 0;
+  }
+
+  /** Reveal format choices only; never choose a format or start an export. */
   public focusDownload(): void {
     if (!isPlatformBrowser(this.platformId)) return;
-    this.host.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const reduced = this.host.nativeElement.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    this.host.nativeElement.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+    this.highlighted.set(true);
+    this.formatHint.set(MKTG_FAMILY_EXPORT_FORMAT_HINT);
+    clearTimeout(this.highlightTimer);
+    this.highlightTimer = setTimeout(() => {
+      this.highlighted.set(false);
+      this.formatHint.set('');
+    }, MKTG_FAMILY_EXPORT_HIGHLIGHT_MS);
     this.focusRequested.set(true);
   }
 

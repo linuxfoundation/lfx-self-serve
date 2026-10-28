@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
 import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
@@ -22,6 +22,7 @@ export async function openFamilyExports(
     result?: 'pending' | 'failed';
     holdList?: boolean;
     holdPrint?: boolean;
+    approvedFamily?: boolean;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -50,10 +51,10 @@ export async function openFamilyExports(
     groups: MKTG_DOCUMENT_TYPES.map((entry) => ({
       type: entry,
       documents:
-        entry.agentKey === type.agentKey && !options.empty
+        !options.empty && (entry.agentKey === type.agentKey || (options.approvedFamily && Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)))
           ? [
               {
-                agentKey: type.agentKey,
+                agentKey: entry.agentKey,
                 documentId: 'living',
                 revisionCount: 1,
                 latestRevisionId: revision.id,

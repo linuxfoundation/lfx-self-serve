@@ -6,7 +6,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MktgFamilyExportLastResponse, MktgFamilyExportRunUpdate } from '@lfx-one/shared/interfaces';
-import { MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
+  MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
+  MKTG_FAMILY_EXPORT_FORMAT_HINT,
+} from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -144,6 +150,36 @@ describe('Family export slot', () => {
     expect(api.run).not.toHaveBeenCalled();
     expect(api.printView).toHaveBeenCalledOnce();
     expect(print.printNow).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reveals format choices with temporary paint, focus and no export (reduced motion: %s)', async (reduced) => {
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    vi.spyOn(root, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList);
+    expect(fixture.componentInstance.isRendered()).toBe(true);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: reduced }))
+    );
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    try {
+      fixture.componentInstance.focusDownload();
+      await fixture.whenStable();
+      expect(root.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+      expect(root.querySelector('section')?.classList.contains('lfx-mktg-export-highlight')).toBe(true);
+      expect(root.querySelector('[data-testid="family-export-format-hint"]')?.textContent).toBe(MKTG_FAMILY_EXPORT_FORMAT_HINT);
+      expect(focus).toHaveBeenCalledOnce();
+      expect(api.run).not.toHaveBeenCalled();
+      expect(api.printView).toHaveBeenCalledOnce();
+      expect(print.printNow).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, MKTG_FAMILY_EXPORT_HIGHLIGHT_MS + 20));
+      await fixture.whenStable();
+      expect(root.querySelector('section')?.classList.contains('lfx-mktg-export-highlight')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('focuses an already printable PDF on request without a reason line', async () => {
@@ -310,8 +346,11 @@ describe('Family export slot', () => {
   });
   it('does not call browser or API operations during SSR', async () => {
     TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
-    const { button } = await setup();
+    const { fixture, button } = await setup();
     expect(button('slides')?.disabled).toBe(true);
     expect(api.last).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.isRendered()).toBe(false);
+    fixture.componentInstance.focusDownload();
+    expect(fixture.componentInstance['highlighted']()).toBe(false);
   });
 });

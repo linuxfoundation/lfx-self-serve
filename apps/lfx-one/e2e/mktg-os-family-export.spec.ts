@@ -169,3 +169,32 @@ test('Download PDF prepares held revisions then opens print synchronously on the
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });
+
+test('Export the kit reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openFamilyExports(page, { approvedFamily: true });
+  const card = page.getByTestId('family-export-actions');
+  const pdf = card.getByTestId('family-export-pdf').getByRole('button');
+  await expect(pdf).toBeEnabled();
+  const before = await card.boundingBox();
+  let starts = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/family/start')) starts++;
+  });
+  await page.evaluate(() => {
+    window.print = () => {
+      document.body.dataset['unexpectedPrint'] = 'yes';
+    };
+  });
+  await page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the kit' }).click();
+  await expect(card).toHaveClass(/lfx-mktg-export-highlight/);
+  await expect(pdf).toBeFocused();
+  await expect(card.getByTestId('family-export-format-hint')).toHaveText('Choose a format: Download PDF or Export to Google Slides');
+  await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(card).toHaveCSS('animation-name', 'none');
+  const after = await card.boundingBox();
+  expect(after?.height).toBe(before?.height);
+  expect(starts).toBe(0);
+  await expect(page.locator('body')).not.toHaveAttribute('data-unexpected-print');
+  await page.screenshot({ path: info.outputPath('export-format-choices.png'), fullPage: true });
+});

@@ -3,6 +3,7 @@
 
 <section
   class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
+  [class.lfx-mktg-export-highlight]="highlighted()"
   aria-labelledby="family-export-title"
   data-testid="family-export-actions">
   <h2 id="family-export-title" class="text-base font-bold">Export the family</h2>
@@ -40,6 +41,7 @@
       <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
     }
     <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
+      <p class="sr-only" data-testid="family-export-format-hint">{{ formatHint() }}</p>
       @if (previewRequested() && pdfReady()) {
         <p class="text-sm text-gray-700" data-testid="family-export-pdf-ready">Your PDF is ready — click to open the print preview</p>
       }
