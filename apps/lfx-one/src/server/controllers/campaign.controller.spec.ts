@@ -12,6 +12,7 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+  GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
@@ -3433,6 +3434,121 @@ describe('CampaignController.createCampaign cutover', () => {
 
     const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
     expect(fields).not.toContain('geoTargets');
+  });
+
+  describe('google criteria the legacy creator drops (#3692)', () => {
+    // One synthetic, non-empty value per field — each something the legacy creator would drop
+    // while the create reported success.
+    const NON_EMPTY: Record<(typeof GOOGLE_CUTOVER_ONLY_CREATE_FIELDS)[number]['field'], unknown> = {
+      excludedGeoTargets: ['CA'],
+      languages: ['EN'],
+      adSchedules: [{ dayOfWeek: 'MONDAY', startHour: 9, startMinute: 'ZERO', endHour: 17, endMinute: 'ZERO' }],
+      deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }],
+      excludedAgeRanges: ['AGE_RANGE_18_24'],
+      excludedGenders: ['FEMALE'],
+      sitelinks: [{ text: 'Schedule', finalUrl: 'https://events.example/schedule' }],
+      callouts: ['Hands-on labs'],
+      structuredSnippets: [{ header: 'Types', values: ['Talks', 'Labs', 'Demos'] }],
+      callExtensions: [{ countryCode: 'US', phoneNumber: '+1 415 555 0100' }],
+      promotions: [{ promotionTarget: 'Conference passes', discountPercent: 25 }],
+      prices: [{ type: 'EVENTS', offerings: [{ header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD' }] }],
+    };
+    const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
+
+    const legacyServes = (): void => {
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+    };
+
+    it.each(CASES)('refuses a non-empty %s by name while the cutover is dark, creating nothing', async (field, label) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ [field]: NON_EMPTY[field] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = refusalFrom();
+      expect(error.statusCode).toBe(400);
+      expect(error.field).toBe(field);
+      expect(error.message).toContain(`Google ${label} cannot be applied`);
+      expect(error.message).toContain(`omit ${field}`);
+    });
+
+    // Over-refusal is the failure mode to avoid: an empty or null list asks for nothing, and the
+    // legacy creator serves that request exactly as asked.
+    it.each(CASES)('still serves an empty or null %s on the legacy road', async (field) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ [field]: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+      await controller.createCampaign(buildReq(googleBody({ [field]: null }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a malformed non-list value rather than dropping it', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ languages: 'EN' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('languages');
+    });
+
+    it('refuses with only some cutover flags on (CREATE on, JOBS off), which is still the legacy road', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: string) => !String(flag).includes('JOBS'));
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ deviceBidModifiers: NON_EMPTY.deviceBidModifiers }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+    });
+
+    it('names the first field in upstream order when a request carries several', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ callouts: NON_EMPTY.callouts, languages: NON_EMPTY.languages }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(refusalFrom().field).toBe('languages');
+    });
+
+    it('does not refuse them on a create that does not include google-ads', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['meta-ads'], metaConfig: { budgetUsd: 250 }, languages: ['EN'] }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+      expect(fields).not.toContain('languages');
+    });
+
+    it('lets campaign-service carry them once the cutover owns the create', async () => {
+      isServerFeatureEnabled.mockReturnValue(true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid-1', error: null });
+
+      await controller.createCampaign(buildReq(googleBody({ languages: ['EN'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['languages']).toEqual(['EN']);
+    });
   });
 
   it('dispatches radius targets at both unit ceilings, which is exactly what upstream accepts', async () => {
