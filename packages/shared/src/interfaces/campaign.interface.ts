@@ -395,7 +395,13 @@ export interface CampaignPlatformOption {
   id: CampaignPlatform;
   label: string;
   icon: string;
+  /** CREATE is off for the platform: the Ad Channels picker and the Implement tab do not offer it. */
   disabled?: boolean;
+  /**
+   * Whether the Monitoring tab offers the platform's monitor, independently of `disabled`. Omitted,
+   * it follows create (offered unless `disabled`); see `campaignPlatformMonitorable`.
+   */
+  monitorable?: boolean;
 }
 
 export interface CampaignGoalOption {
