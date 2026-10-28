@@ -341,7 +341,6 @@ export interface HealthMetricsOverviewBalanceView {
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
-/** A count over a bar: the figure, the text right of it ("of 1,000", "No goal set") and the bar's width and fill. */
 /**
  * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
  * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
@@ -470,7 +469,6 @@ export interface HealthMetricsOverviewBoardView {
   rows: HealthMetricsOverviewBoardRowView[];
 }
 
-/** One line on the registration trend chart, as an SVG path on the 600×220 viewBox. */
 /** A trend dialog figure; the predicted one carries its range as a small high and low stack. */
 export interface HealthMetricsOverviewTrendKpiView {
   key: string;
@@ -486,6 +484,7 @@ export interface HealthMetricsOverviewTrendTickView {
   y: string;
 }
 
+/** The registration trend dialog: its figures, axis ticks and chart paths on the 600×220 viewBox. */
 export interface HealthMetricsOverviewTrendView {
   /** Current, Same point last year, and Predicted (or Final for a past event). */
   kpis: HealthMetricsOverviewTrendKpiView[];

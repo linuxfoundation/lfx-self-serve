@@ -163,8 +163,11 @@ describe('OverviewEventsCardComponent', () => {
 
   it('draws an unfilled outlined track with no status for an event without a goal', async () => {
     EVENTS.upcoming[0] = event('u0', { registrationsGoal: null });
-    await render();
-    EVENTS.upcoming[0] = event('u0');
+    try {
+      await render();
+    } finally {
+      EVENTS.upcoming[0] = event('u0');
+    }
 
     expect(text('overview-events-row-u0-registrations')).toBe('328No goal set');
     expect(query('overview-events-row-u0-registrations-track')?.className).toContain('bg-white');

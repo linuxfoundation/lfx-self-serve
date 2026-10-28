@@ -821,6 +821,13 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.xTicks[6].pct).toBe('100.00');
   });
 
+  it('keeps whole-number steps on a small scale', () => {
+    const small = { format: 'In Person', points: [point(-30, 1, null, 2), point(-10, 3, null, null)] };
+    const view = buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, null, small);
+
+    expect(view.yTicks.map((tick) => tick.label)).toEqual(['4', '3', '2', '1', '0']);
+  });
+
   it('plots the last 180 days, joining the prediction to the last actual figure at today', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, series);
 
