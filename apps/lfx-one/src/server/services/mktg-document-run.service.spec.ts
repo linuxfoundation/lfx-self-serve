@@ -400,6 +400,25 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('writing');
   });
 
+  it.each([true, false])('checks the selected creator slot when another writer retries (active belongs to creator=%s)', async (creatorActive) => {
+    const creator = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-creator-a' } } });
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-writer-b' } } });
+    await service.startForOneOff(creator, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    await service.startForOneOff(creatorActive ? creator : writer, 'member-360', project, 'other-active-session');
+    const retry = service.retry(writer, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session));
+    if (creatorActive) {
+      await expect(retry).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash('other-active-session') } });
+      expect(stored().metadata['state']).toBe('failed');
+    } else {
+      await expect(retry).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('writing');
+      expect(JSON.parse(stored().body).creatorSubject).toBe('synthetic-creator-a');
+    }
+    expect(stored('other-active-session').metadata['state']).toBe('writing');
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
   it('finds an active run beyond the navigation discovery window', async () => {
     await service.start(req, project, types[0].agentKey, session);
     for (let i = 0; i < 129; i++)

@@ -565,7 +565,10 @@ export class MktgDocumentRunService {
   public async retry(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state === 'failed') {
-      await this.assertSingleActiveRun(req, project, stored.record.agentKey, { documentId: stored.record.documentId });
+      await this.assertSingleActiveRun(req, project, stored.record.agentKey, {
+        documentId: stored.record.documentId,
+        creatorSubject: stored.record.creatorSubject,
+      });
       await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, stored.record.answeredQuestionsId, 0);
     }
   }
@@ -1018,7 +1021,9 @@ export class MktgDocumentRunService {
 
   private inSlot(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType, options: MktgActiveRunStartOptions): boolean {
     if (record.agentKey !== type.agentKey) return false;
-    return type.kind === 'run' ? record.creatorSubject === getEffectiveSub(req) : record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
+    return type.kind === 'run'
+      ? record.creatorSubject === (options.creatorSubject ?? getEffectiveSub(req))
+      : record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
   }
 
   private oneOffType(agentId: string): MktgDocumentType {
