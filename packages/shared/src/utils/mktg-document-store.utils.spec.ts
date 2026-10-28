@@ -27,9 +27,17 @@ import {
   mktgRunResultIdentity,
   findMktgRunIntake,
   isMktgRunFailureReason,
+  isMktgRunClosed,
+  isMktgRunTerminal,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
+
+it('treats discarded records as closed terminal records with no public progress row', () => {
+  expect(isMktgRunClosed('discarded')).toBe(true);
+  expect(isMktgRunTerminal('discarded')).toBe(true);
+  expect(mktgRunProgress(startedRun({ state: 'discarded' }))).toBeNull();
+});
 
 const SHA = 'ab'.repeat(32);
 const BRAND_KIT = findMktgDocumentType('brand-kit') as MktgDocumentType;

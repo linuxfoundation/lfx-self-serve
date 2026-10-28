@@ -46,7 +46,9 @@ import {
   MktgDocumentRunStartOptions,
   MktgRunActivity,
   ObjectStoreListEntry,
+  MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
+import { MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants/mktg-run.constants';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
@@ -62,7 +64,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
@@ -79,6 +81,7 @@ import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
+import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
 /** Private session-keyed starts. Existing metadata operations only; the terminal cache is disposable. */
 export class MktgDocumentRunService {
@@ -88,6 +91,7 @@ export class MktgDocumentRunService {
   private readonly guild = new GuildService();
   private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly comments = new MktgDocumentCommentsService();
+  private readonly authors = new MktgDocumentAuthorService();
 
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     const uid = typeof raw === 'string' ? raw.trim() : '';
@@ -123,6 +127,66 @@ export class MktgDocumentRunService {
     const type = this.catalogDocumentType(agentId);
     if (!type) throw ServiceValidationError.forField('agentId', 'No registered document intake for this agent.');
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
+  }
+
+  /** Controllers call this before creating any Guild session, not after its accepted ACK. */
+  public async assertSingleActiveCatalogRun(req: Request, project: string, agentId: string, discard?: unknown): Promise<void> {
+    const type = this.catalogDocumentType(agentId);
+    if (type) await this.assertSingleActiveRun(req, project, type.agentKey, { discard });
+  }
+
+  public async assertSingleActiveOneOffRun(req: Request, project: string, agentId: string, discard?: unknown): Promise<void> {
+    await this.assertSingleActiveRun(req, project, this.oneOffType(agentId).agentKey, { discard });
+  }
+
+  /** A stale discard is another conflict, never permission to close a different run. */
+  public async assertSingleActiveRun(req: Request, project: string, agentKey: MktgDocumentAgentKey, options: MktgActiveRunStartOptions = {}): Promise<void> {
+    if (options.discard !== undefined && (typeof options.discard !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(options.discard))) {
+      throw ServiceValidationError.forField('discard', 'Select a valid active run to discard.');
+    }
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!type) throw ServiceValidationError.forField('agentKey', 'No registered document type.');
+    // Unlike the bounded navigation scan, a start must check the whole project listing.
+    const entries = await this.discover(req, project, undefined, true);
+    const active: MktgStoredStartedRun[] = [];
+    for (let offset = 0; offset < entries.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        entries.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (entry) => {
+          try {
+            const cached = this.cached(entry.key);
+            if (cached?.stamp === (entry.lastModified?.getTime() ?? 0) && cached.progress === null) return null;
+            const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
+            if (!metadata) return null;
+            if (isMktgRunClosed(metadata['state'] as MktgStoredDocumentRunState)) this.remember(entry, null);
+            if (isMktgRunTerminal(metadata['state'] as MktgStoredDocumentRunState)) return null;
+            const stored = await this.read(req, project, entry.key);
+            return stored && !isMktgRunTerminal(stored.record.state) && this.inSlot(req, stored.record, type, options) ? stored : null;
+          } catch (err) {
+            logger.warning(req, 'mktg_run_start', 'Active-run check could not read a record; skipping it', { project, key: entry.key, err });
+            return null;
+          }
+        })
+      );
+      active.push(...batch.filter((stored): stored is MktgStoredStartedRun => stored !== null));
+    }
+    for (const stored of active.filter((entry) => entry.record.runId === options.discard)) {
+      await this.settleRedraft(
+        req,
+        stored.record,
+        { status: 'failed', failureText: 'This send was discarded.' },
+        await this.redrafts.forSession(req, stored.record.sessionId)
+      );
+      const closed = await this.mark(req, stored, 'discarded');
+      if (closed.state !== 'discarded' && !isMktgRunTerminal(closed.state)) {
+        throw await this.activeRunConflict(req, closed, type);
+      }
+      if (closed.state === 'discarded') void this.guild.interruptSession(req, stored.record.sessionId);
+    }
+    // Legacy duplicate records require separate confirmations; never discard an unselected run.
+    const conflict = active.find((stored) => stored.record.runId !== options.discard);
+    if (conflict) {
+      throw await this.activeRunConflict(req, conflict.record, type);
+    }
   }
 
   /** After owner/writer checks, select captured context over the controller's validated typed fallback and reuse Documents completion. */
@@ -178,9 +242,7 @@ export class MktgDocumentRunService {
 
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
   public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));
-    if (!type) throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
-    return this.start(req, project, type.agentKey, sessionId, 0, 'initial', { oneOff: context ?? {} });
+    return this.start(req, project, this.oneOffType(agentId).agentKey, sessionId, 0, 'initial', { oneOff: context ?? {} });
   }
 
   /**
@@ -503,6 +565,7 @@ export class MktgDocumentRunService {
   public async retry(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state === 'failed') {
+      await this.assertSingleActiveRun(req, project, stored.record.agentKey, { documentId: stored.record.documentId });
       await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, stored.record.answeredQuestionsId, 0);
     }
   }
@@ -770,7 +833,7 @@ export class MktgDocumentRunService {
     }
     return ids;
   }
-  private async discover(req: Request, project: string, coverage?: MktgDocumentRunCoverage): Promise<ObjectStoreListEntry[]> {
+  private async discover(req: Request, project: string, coverage?: MktgDocumentRunCoverage, all = false): Promise<ObjectStoreListEntry[]> {
     const prefix = this.prefix(project);
     const entries = (await this.store.listObjects(req, 'marketing-os-artifacts', prefix))
       .filter((entry) => entry.key.startsWith(prefix) && entry.key.endsWith('.json') && MKTG_STARTED_RUN_ID_REGEX.test(mktgRunIdFromKey(entry.key)))
@@ -787,7 +850,7 @@ export class MktgDocumentRunService {
         }
       }
     }
-    return entries.slice(0, MKTG_STARTED_RUN_DISCOVERY_LIMIT);
+    return all ? entries : entries.slice(0, MKTG_STARTED_RUN_DISCOVERY_LIMIT);
   }
   private skip(entry: ObjectStoreListEntry, coverage?: MktgDocumentRunCoverage, knownUnfinished = false): void {
     if (!coverage) {
@@ -938,6 +1001,30 @@ export class MktgDocumentRunService {
   private documentId(agentKey: string, sessionId: string): string {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
     return type?.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
+  }
+
+  private async activeRunConflict(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType): Promise<ConflictError> {
+    const author = await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
+    const startedBy = author?.name ?? 'Another writer';
+    const itemLabel = type.itemLabel.replace(/\s+run$/i, '');
+    const clientMessage = type.kind === 'run' ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
+    return new ConflictError(`A ${itemLabel} run is already in progress.`, MKTG_RUN_ACTIVE, {
+      operation: 'mktg_run_start',
+      service: 'object_store',
+      clientMessage,
+      details: { activeRunId: record.runId, state: record.state, agentKey: record.agentKey, documentId: record.documentId, startedBy },
+    });
+  }
+
+  private inSlot(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType, options: MktgActiveRunStartOptions): boolean {
+    if (record.agentKey !== type.agentKey) return false;
+    return type.kind === 'run' ? record.creatorSubject === getEffectiveSub(req) : record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
+  }
+
+  private oneOffType(agentId: string): MktgDocumentType {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run' && entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));
+    if (!type) throw ServiceValidationError.forField('agentId', 'No tracked one-off intake for this agent.');
+    return type;
   }
 
   private catalogDocumentType(agentId: string): MktgDocumentType | undefined {

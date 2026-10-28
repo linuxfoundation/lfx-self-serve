@@ -349,8 +349,14 @@ failure; a plain refresh/reopen read checks Guild again, so the run remains read
 Its ready result carries the shared exact persistence receipt as well as the existing `stored`
 flag; existing clients remain compatible.
 
-States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Answerable questions pause the writing deadline until accepted answers renew
+Every Generate or new catalog chat checks stored `writing`/`questions`/`storing` records: living slots use project + type + documentId; one-off slots use creator + type within the project, never another creator's run. A 409 `MKTG_RUN_ACTIVE` returns `activeRunId`, `state`, `agentKey`, `documentId`, `message`, `startedBy` (resolved only on conflict, fallback 'Another writer', response-only); stale discard ids get the same conflict.
+Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Discarded runs are excluded from listings/progress and skipped before body/Guild reads.
+The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids.
+Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
+Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
+
+States are `writing`, `questions`, `storing`, `failed`, `completed`, `superseded` and
+`discarded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the
@@ -370,11 +376,11 @@ it creates no generation and does not change the document's current pointer.
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
 the newest-mtime **128-record discovery window**, with concurrency four per operation for both
 navigation reconciliation and Generate's supersede scan. Both paths HEAD first
-and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
+and skip completed/superseded/discarded bodies; Generate GETs unfinished/failed candidates
 only. A per-process **256-entry LRU terminal key/mtime cache** skips repeated terminal reads;
 it is disposable, invalidated on writes/mtime changes and never an authority.
 Fresh write timestamps are not memoized within S3's current write second. Failed,
-completed and superseded runs are not automatically queried against Guild.
+completed, superseded and discarded runs are not automatically queried against Guild.
 Failures keep a UTF-8/base64 snapshot capped at 768 source bytes, within object
 metadata's size budget; one scoped detail-navigation refresh can return the full
 reply. Errors are isolated per record. Terminal-record pruning/TTL is a follow-up;

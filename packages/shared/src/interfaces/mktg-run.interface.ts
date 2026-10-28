@@ -555,6 +555,8 @@ export interface MktgRunEndpoints {
  * answers against the agent's own intake schema.
  */
 export interface MktgRunGenerateBody {
+  /** Explicitly replace this active run; a stale id is refused. */
+  discard?: string;
   /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
   /**

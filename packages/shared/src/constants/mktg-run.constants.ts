@@ -48,6 +48,9 @@ import {
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
 import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
+/** A start must explicitly discard the current active run before replacing it. */
+export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
 // labels, browser persistence key, and result polling cadence.

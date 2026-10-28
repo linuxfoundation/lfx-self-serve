@@ -14,6 +14,7 @@ import {
   MKTG_STARTED_RUN_FAILURE_BYTES,
   MKTG_RUN_FAILURE_REASON,
   MKTG_ONE_OFF_STOPPED_MESSAGE,
+  MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
 
 const redraft = vi.hoisted(() => ({ forSession: vi.fn(), assertScope: vi.fn(), settle: vi.fn() }));
@@ -32,6 +33,8 @@ const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Recor
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
   events: vi.fn(),
+  author: vi.fn(),
+  interrupt: vi.fn(),
   linkedin: vi.fn(),
   member: vi.fn(),
   attribution: vi.fn(),
@@ -44,11 +47,17 @@ const flows = vi.hoisted(() => ({
   active: 0,
   max: 0,
 }));
+vi.mock('./mktg-document-author.service', () => ({
+  MktgDocumentAuthorService: class {
+    public resolveAuthor = flows.author;
+  },
+}));
 vi.mock('./guild.service', async (original) => {
   const actual = await original<typeof import('./guild.service')>();
   return {
     GuildService: class extends actual.GuildService {
       public override getRawEventPayloads = flows.events;
+      public override interruptSession = flows.interrupt;
     },
   };
 });
@@ -149,7 +158,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MktgDocumentRunService } from './mktg-document-run.service';
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot } from '@lfx-one/shared/interfaces';
 
@@ -191,6 +200,8 @@ describe('MktgDocumentRunService core', () => {
     flows.beforePut.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.events.mockReset().mockResolvedValue([]);
+    flows.interrupt.mockReset().mockResolvedValue(undefined);
+    flows.author.mockReset().mockResolvedValue(null);
     flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
     flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
@@ -201,6 +212,203 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  it.each(['writing', 'questions', 'storing'] as const)('refuses another start while %s with safe conflict facts', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = state;
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ACTIVE',
+      details: { activeRunId: hash(session), state, agentKey: types[0].agentKey, documentId: 'living' },
+    });
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(stored().metadata['state']).toBe(state);
+  });
+
+  it('allows a start with no active run, including failed and discarded records', async () => {
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    await service.start(req, project, types[0].agentKey, session);
+    for (const state of ['failed', 'discarded', 'superseded']) {
+      stored().metadata['state'] = state;
+      await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    }
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+  });
+
+  it('discards exactly the confirmed run, interrupts it, hides it from progress, then records a new start', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(flows.interrupt).toHaveBeenCalledWith(req, session);
+    expect(flows.events).not.toHaveBeenCalled();
+    flows.get.mockClear();
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    expect(flows.get).not.toHaveBeenCalled();
+    expect(flows.result).not.toHaveBeenCalled();
+    await service.start(req, project, types[0].agentKey, 'replacement-session');
+    expect(stored('replacement-session').metadata['state']).toBe('writing');
+    expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it('settles an active comment redraft before closing its discarded run', async () => {
+    await service.start(req, project, types[0].agentKey, session, 1, 'send-one');
+    const context = { project, agentKey: types[0].agentKey, requestId: 'send-one' };
+    redraft.forSession.mockResolvedValueOnce(context);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    expect(redraft.settle).toHaveBeenCalledWith(req, context, { status: 'failed', failureText: 'This send was discarded.' });
+    expect(redraft.settle.mock.invocationCallOrder[0]).toBeLessThan(flows.beforePut.mock.invocationCallOrder[0]);
+    expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it('does not await an interrupt that never resolves', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.interrupt.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).resolves.toBeUndefined();
+    expect(flows.interrupt).toHaveBeenCalledWith(req, session);
+  });
+
+  it.each([ServiceValidationError.forField('run', 'Synthetic invalid record'), new MicroserviceError('Synthetic transient read', 503, 'TEST')])(
+    'isolates a failed record read and fails open (%s)',
+    async (err) => {
+      objects.set(key('unreadable'), { body: '{}', metadata: { state: 'writing' }, lastModified: new Date() });
+      flows.get.mockImplementationOnce(() => {
+        throw err;
+      });
+      await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+      expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_start', 'Active-run check could not read a record; skipping it', {
+        project,
+        key: key('unreadable'),
+        err,
+      });
+    }
+  );
+
+  it('bounds preflight reads and skips matching closed terminal-cache entries', async () => {
+    for (let i = 0; i < 6; i++)
+      objects.set(key(`cached-closed-${i}`), { body: '{}', metadata: { state: 'discarded' }, lastModified: new Date(Date.now() - 10_000) });
+    flows.active = flows.max = 0;
+    await service.assertSingleActiveRun(req, project, types[0].agentKey);
+    expect(flows.max).toBeGreaterThan(1);
+    expect(flows.max).toBeLessThanOrEqual(MKTG_STARTED_RUN_READ_CONCURRENCY);
+    flows.head.mockClear();
+    await service.assertSingleActiveRun(req, project, types[0].agentKey);
+    expect(flows.head).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
+  });
+
+  it('returns the concurrent open state when discard cannot close the selected record', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    redraft.forSession.mockImplementationOnce(async () => {
+      Object.assign(stored().metadata, { state: 'questions', 'retry-at': '2026-10-19T12:00:00.001Z' });
+      return null;
+    });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash(session), state: 'questions' },
+    });
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale discard without mutating or interrupting the current run', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash('stale-session') })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash(session) },
+    });
+    expect(stored().metadata['state']).toBe('writing');
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
+  it.each(['../bad', '', 42, null, 'a'.repeat(63)])('rejects malformed discard %s before touching tracking', async (discard) => {
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard })).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.head).not.toHaveBeenCalled();
+  });
+
+  it('matches one-off runs across document ids, but keeps agent/project boundaries', async () => {
+    const oneOff = MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === 'member-360');
+    expect(oneOff).toBeDefined();
+    if (!oneOff) return;
+    await service.start(req, project, oneOff.agentKey, session);
+    await expect(service.assertSingleActiveRun(req, project, oneOff.agentKey, { documentId: 'run-000000000000000000000000' })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    await expect(service.assertSingleActiveRun(req, 'other-project', oneOff.agentKey)).resolves.toBeUndefined();
+  });
+
+  it('requires a separate confirmation for each legacy duplicate one-off run', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    await service.startForOneOff(req, 'member-360', project, 'legacy-other-session');
+    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash(session))).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash('legacy-other-session') },
+    });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(stored('legacy-other-session').metadata['state']).toBe('writing');
+    expect(flows.interrupt).toHaveBeenCalledTimes(1);
+    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash('legacy-other-session'))).resolves.toBeUndefined();
+    expect(stored('legacy-other-session').metadata['state']).toBe('discarded');
+  });
+
+  it('keeps one-off slots private to their creator across project writers', async () => {
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other' } } });
+    await service.startForOneOff(owner, 'member-360', project, session);
+    await expect(service.assertSingleActiveOneOffRun(other, project, 'member-360', hash(session))).resolves.toBeUndefined();
+    expect(flows.author).not.toHaveBeenCalled();
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(stored().metadata['state']).toBe('writing');
+    await expect(service.assertSingleActiveOneOffRun(owner, project, 'member-360')).rejects.toMatchObject({ statusCode: 409 });
+    expect(flows.author).toHaveBeenCalledWith(owner, 'synthetic-owner', 'mktg_run_start');
+  });
+
+  it.each(['Synthetic writer', null])('names the living-run creator only in the client response (%s)', async (name) => {
+    flows.author.mockResolvedValue(name ? { name } : null);
+    await service.start(req, project, types[0].agentKey, session);
+    const conflict = await service.assertSingleActiveRun(req, project, types[0].agentKey).catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    const startedBy = name ?? 'Another writer';
+    expect(conflict.toResponse()).toMatchObject({ startedBy, message: `${startedBy}'s ${types[0].itemLabel} run is in progress.` });
+    expect(conflict.message).not.toContain(startedBy);
+  });
+
+  it('uses the caller-facing message for the caller own one-off conflict', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    const conflict = await service.assertSingleActiveOneOffRun(req, project, 'member-360').catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    expect(conflict.toResponse()).toMatchObject({ startedBy: 'Another writer', message: 'Your Member 360 run is in progress.' });
+  });
+
+  it('refuses retry while the creator has another active one-off and retries when the slot clears', async () => {
+    const actor = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(actor, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    const documentId = `run-${hash(session).slice(0, 24)}`;
+    await service.startForOneOff(actor, 'member-360', project, 'active-session');
+    await expect(service.retry(actor, project, 'member-360', documentId, hash(session))).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash('active-session') },
+    });
+    expect(stored().metadata['state']).toBe('failed');
+    await service.assertSingleActiveOneOffRun(actor, project, 'member-360', hash('active-session'));
+    await expect(service.retry(actor, project, 'member-360', documentId, hash(session))).resolves.toBeUndefined();
+    expect(stored().metadata['state']).toBe('writing');
+  });
+
+  it('finds an active run beyond the navigation discovery window', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    for (let i = 0; i < 129; i++)
+      objects.set(`document-runs/${project}/${hash(`closed-${i}`)}.json`, {
+        body: '{}',
+        metadata: { state: 'discarded' },
+        lastModified: new Date(Date.now() + i + 1),
+      });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {
