@@ -77,20 +77,25 @@ describe('MktgFaqViewComponent', () => {
   it('opts stored answers and gaps into the same original-index comment anchors, excluding reports', async () => {
     const before = JSON.stringify(ASSET);
     expect(element().querySelector('lfx-mktg-field-comments')).toBeNull();
-    expect(text('mktg-faq-view-unanswered-callout')).toContain(
-      '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed.'
-    );
+    expect(text('mktg-faq-view-unanswered-callout')).toBe('1 question needs an answer from your team.');
     host.commentsEnabled.set(true);
     await fixture.whenStable();
     const pins = () => Array.from(element().querySelectorAll('[data-mktg-comment-field]'));
     expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][0][1]', 'faq[0][1][1][1]', 'faq[1][1][0][1]']);
-    expect(pins()[1].querySelector('button')?.getAttribute('aria-label')).toContain('About TestOrbit · Q2: How much does membership cost?');
-    expect(text('mktg-faq-view-unanswered-callout')).toContain(
-      '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed. Answer one by commenting on it; the agent adds your answer as Notes.'
+    expect(pins()[1].querySelector('button')?.getAttribute('aria-label')).toBe('Answer About TestOrbit · Q2: How much does membership cost? · Answer');
+    expect(pins()[0].querySelector('button')?.textContent?.trim()).toBe('Comment');
+    expect(pins()[1].querySelector('button')?.textContent?.trim()).toBe('Answer');
+    expect(
+      Array.from(element().querySelectorAll('[data-testid^="mktg-faq-view-question-"]')).every((row) => row.classList.contains('group/commentfield'))
+    ).toBe(true);
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '1 question needs an answer from your team. Answer it by commenting on it; the agent adds your answer as Notes.'
     );
     query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][1][1]']);
+    expect(pins()[0].closest('li')?.classList.contains('group/commentfield')).toBe(true);
+    expect(pins()[0].querySelector('button')?.textContent?.trim()).toBe('Answer');
     query('mktg-faq-view-tab-sources')?.click();
     await fixture.whenStable();
     expect(pins()).toHaveLength(0);
@@ -143,7 +148,9 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-approval-state')).toBe('Draft');
     expect(query('mktg-faq-view-mode')).toBeNull();
     expect(text('mktg-faq-view-size')).toBe('3 questions in 2 groups');
-    expect(text('mktg-faq-view-unanswered-chip')).toBe('1 question needs an answer from your team');
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
+    expect(element().textContent).not.toContain('See them');
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
   });
 
@@ -167,7 +174,7 @@ describe('MktgFaqViewComponent', () => {
   });
 
   it('lists the unanswered questions for the reviewer on their own tab, and says so when there are none', async () => {
-    query('mktg-faq-view-unanswered-open')?.click();
+    query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     expect(query('mktg-faq-view-tab-unanswered')?.getAttribute('aria-selected')).toBe('true');
     expect(text('mktg-faq-view-unanswered-list')).toContain('About TestOrbit');
@@ -180,11 +187,20 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
   });
 
-  it('moves focus to the rendered panel start when a shortcut opens it', async () => {
-    query('mktg-faq-view-unanswered-chip')?.click();
+  it('says the plural open-question count once and only adds comment guidance for stored documents', async () => {
+    host.asset.set({
+      ...ASSET,
+      checks: { ...ASSET.checks, unanswered: [...ASSET.checks.unanswered, { path: 'faq[1][1][1]', group: 'Getting involved', question: 'Who can join?' }] },
+    });
     await fixture.whenStable();
-    const panel = query('mktg-faq-view-panel-unanswered');
-    expect(document.activeElement).toBe(panel);
+    expect(text('mktg-faq-view-unanswered-callout')).toBe('2 questions need an answer from your team.');
+    host.commentsEnabled.set(true);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '2 questions need an answer from your team. Answer them by commenting on them; the agent adds your answers as Notes.'
+    );
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
   });
 
   it('shows the sources read, the failed ones, the gaps and the checks', async () => {

@@ -2778,7 +2778,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
     expect(query('mktg-faq-view-needs-answer-0-1')).not.toBeNull();
-    expect(query('mktg-faq-view-unanswered-chip')?.textContent).toContain('1 question needs an answer from your team');
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-callout')?.textContent).toContain('1 question needs an answer from your team.');
     expectContentColumn('mktg-faq-view');
   });
 });
