@@ -291,7 +291,9 @@ export class AudienceQaPanelComponent {
 
     for (const check of this.flattenChecks(result)) {
       if (check.findings.length === 0) {
-        rows.push([result.listId, result.name, result.overall, check.name, check.verdict, '', 'No findings', '']);
+        // A check set aside for the stage records WHY, not "No findings", which reads as a pass.
+        const detail = check.verdict === 'NOT APPLICABLE' ? (check.note ?? 'Not applicable to this send') : 'No findings';
+        rows.push([result.listId, result.name, result.overall, check.name, check.verdict, '', detail, '']);
         continue;
       }
       for (const finding of check.findings) {
