@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
@@ -129,6 +130,7 @@ import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-down
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -158,6 +160,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
     MessageComponent,
+    MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
@@ -182,6 +185,7 @@ export class MktgDocumentViewComponent {
   private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
@@ -506,6 +510,11 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            if (request.runId) {
+              this.loading.set(true);
+              this.view.set(null);
+              this.runDetail.set(null);
+            }
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
             this.clearAeoPrint();
             this.errorText.set('');
@@ -737,23 +746,29 @@ export class MktgDocumentViewComponent {
                       if (selected?.state === 'failed' || (observedRun && !selected && cycle.detail.revisions.length)) this.localProgress.set(null);
                     })
                   )
-                : read(false).pipe(
-                    expand((cycle) => {
-                      const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                      if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                        this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                        return EMPTY;
-                      }
-                      const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                      if (this.selectedRun()?.state === 'questions' && unavailableSince === null) return EMPTY;
-                      const local = this.localProgress();
-                      if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-                      let delay: number = MKTG_RUN_POLL.intervalMs;
-                      if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                      if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-                      return timer(delay).pipe(switchMap(() => read(true)));
-                    })
-                  )
+                : createVisibilityPoll(
+                    this.document,
+                    () =>
+                      read(false).pipe(
+                        expand(() => {
+                          const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
+                          if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
+                            this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
+                            return EMPTY;
+                          }
+                          let delay: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                          if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
+                          if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
+                          return timer(delay).pipe(switchMap(() => read(true)));
+                        })
+                      ),
+                    {
+                      intervalMs: MKTG_RUN_POLL.intervalMs,
+                      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+                      shouldContinue: () => false,
+                    }
+                  ).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))))
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
@@ -805,7 +820,8 @@ export class MktgDocumentViewComponent {
         )
         .subscribe((view) => {
           this.view.set(view);
-          this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
+          if (!this.editingLink() && !this.savingLink())
+            this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
         });
     }
@@ -813,13 +829,32 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
-    this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
-    if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
+    if (this.publicProgressPolling() && this.runParam() && cycle.detail.progressUnavailable && !this.view()) {
+      this.loading.set(true);
       return;
+    }
+    if (
+      !this.publicProgressPolling() ||
+      cycle.detail.progressUnavailable ||
+      !run ||
+      (run.state !== 'writing' && run.state !== 'storing' && run.state !== 'questions') ||
+      !commands
+    ) {
+      this.publicReads.next(cycle);
+      return;
+    }
+    if (this.redirectedRun === run.runId) return;
+    // Resolve the run destination before publishing any stored document body: no old-document flash.
     this.redirectedRun = run.runId;
-    const failedNavigation = () => this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    this.loading.set(true);
+    this.view.set(null);
+    const failedNavigation = () => {
+      this.publicReads.next({ ...cycle, view: null });
+      this.loading.set(false);
+      this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    };
     void this.router
       .navigate(commands, { queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, run: run.runId }, replaceUrl: true })
       .then((opened) => {
@@ -952,9 +987,19 @@ export class MktgDocumentViewComponent {
     const intake = MKTG_AGENT_INTAKES[agentId];
     const selected = this.selectedRun();
     if (!oneOff && selected?.state === 'failed' && pending?.attempt?.runId !== selected.runId) pending = null;
-    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && pending.state !== 'failed') {
+    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && (pending.state !== 'failed' || pending.pendingQuestions)) {
       pending = { ...pending, state: 'failed', pendingQuestions: undefined };
       this.attempts.save(pending); // The server is authoritative even before the private poll has settled.
+    }
+    if (pending?.pendingQuestions && selected?.state !== 'failed') {
+      const sameQuestions =
+        selected?.state === 'questions' &&
+        pending.attempt?.runId === selected.runId &&
+        (oneOff || pending.pendingQuestions.questionsId === selected.pendingQuestions?.questionsId);
+      if (!sameQuestions) {
+        this.attempts.save({ ...pending, pendingQuestions: undefined, state: 'writing' });
+        pending = null;
+      }
     }
     if (!pending && project && oneOff && intake && this.selectedRun()?.state === 'failed') {
       pending = {
@@ -966,7 +1011,13 @@ export class MktgDocumentViewComponent {
     }
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
-      queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
+      queryParams: {
+        ...this.runAgainParams(),
+        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+        questions: token,
+        mode: null,
+        run: !oneOff && selected?.state === 'questions' ? selected.runId : null,
+      },
     });
   }
 

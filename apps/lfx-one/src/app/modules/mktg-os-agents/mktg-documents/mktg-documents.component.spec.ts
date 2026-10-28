@@ -506,7 +506,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-refresh-warning')).toBeNull();
   });
 
-  it.each(['writing', 'storing'] as const)('bounds healthy but stuck %s polling while keeping the last rows', async (state) => {
+  it.each(['writing', 'storing'] as const)('keeps healthy %s polling live while the server remains authoritative', async (state) => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
     await render('/');
@@ -515,17 +515,15 @@ describe('MktgDocumentsComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
-    expect(query('mktg-documents-started-runs')).not.toBeNull();
-    const stopped = store.listDocuments.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
-    store.listDocuments.mockReturnValue(of(documentsResponse()));
-    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
     expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-started-runs')).not.toBeNull();
+    const observed = store.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(observed + 1);
+    store.listDocuments.mockReturnValue(of(documentsResponse()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(query('mktg-documents-started-runs')).toBeNull();
   });
 
   it.each([401, 403, 500])('shows recovered list content after initial %s and successful same-scope refresh', async (status) => {
@@ -582,17 +580,47 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
 
-  it('leaves questions-only rows visible without automatic polling', async () => {
+  it('keeps questions-only rows live and discovers another writer answering them', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('questions')] }));
     await render();
-    vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(4);
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
     expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Writing');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).not.toContain('Needs answers');
   });
 
-  it('routes both Documents entries to private questions while the server still reports writing', async () => {
+  it('shows only neutral loading before the first read, pauses hidden, and discovers a new run on focus', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const first = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(first);
+    await render();
+    expect(query('mktg-documents-loading')?.getAttribute('aria-busy')).toBe('true');
+    expect(query('mktg-documents-nav-brand-kit')).toBeNull();
+    first.next({ project: PROJECT.uid, groups: [], runs: [] });
+    await fixture.whenStable();
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(store.listDocuments).toHaveBeenCalledOnce();
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('questions')] }));
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Needs answers');
+    const row = query('mktg-documents-started-run-' + startedRun().runId);
+    expect(row?.classList.contains('min-h-16')).toBe(true);
+    visibility.mockRestore();
+  });
+
+  it('ignores stale private questions while the server reports writing', async () => {
     const intake = MKTG_AGENT_INTAKES[BRAND_KIT.catalogAgentId ?? ''];
     if (!intake) throw new Error('Missing synthetic intake');
     const attempt = {
@@ -615,11 +643,11 @@ describe('MktgDocumentsComponent', () => {
     await render('/?type=brand-kit&mode=new&questions=old&generation=old&revision=old&run=old');
     const row = query('mktg-documents-open-started-' + startedRun().runId);
     const nav = query('mktg-documents-nav-brand-kit');
-    expect(row?.textContent?.trim()).toBe('Answer the questions');
-    expect(nav?.textContent).toContain('Needs answers');
-    const expected = `/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}`;
-    expect(row?.getAttribute('href')).toBe(expected);
-    expect(nav?.getAttribute('href')).toBe(expected);
+    expect(row?.textContent?.trim()).toBe('Open');
+    expect(nav?.textContent).toContain('Writing');
+    expect(nav?.textContent).not.toContain('Needs answers');
+    expect(row?.getAttribute('href')).toBe(`/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}&run=${attempt.runId}`);
+    expect(nav?.getAttribute('href')).toContain('type=brand-kit');
   });
 
   it('keeps a LinkedIn questions row on its document filter and Open action', async () => {

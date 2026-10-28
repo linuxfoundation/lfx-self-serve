@@ -1,17 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
-  MKTG_RUN_ANSWERED,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_STARTED_RUN_STATE_ORDER,
 } from '@lfx-one/shared/constants';
@@ -23,7 +24,16 @@ import {
   MktgRunActivity,
   MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
-import { findMktgRunIntake, mktgKitAssetLabel, mktgSentenceCaseLabel } from '@lfx-one/shared/utils';
+import {
+  findMktgRunIntake,
+  mktgDiscardedRunMessage,
+  mktgKitAssetLabel,
+  mktgKitRootPath,
+  mktgRunRouteFor,
+  mktgRunAnsweredBy,
+  mktgSentenceCaseLabel,
+  readMktgRetiredRunHint,
+} from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -45,7 +55,7 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
  */
 @Component({
   selector: 'lfx-mktg-run-progress',
-  imports: [DatePipe, ButtonComponent, MessageComponent, MktgRunActivityComponent, MktgRunQuestionsComponent],
+  imports: [DatePipe, RouterLink, ButtonComponent, MessageComponent, MktgSkeletonComponent, MktgRunActivityComponent, MktgRunQuestionsComponent],
   templateUrl: './mktg-run-progress.component.html',
 })
 export class MktgRunProgressComponent {
@@ -56,6 +66,7 @@ export class MktgRunProgressComponent {
   private readonly user = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly document = inject(DOCUMENT);
+  private readonly router = inject(Router);
 
   public readonly project = input.required<string>();
   public readonly projectName = input('your project');
@@ -81,6 +92,8 @@ export class MktgRunProgressComponent {
   public readonly runPage = input(false);
   /** Keep reconciling a legacy private questions fallback even when no public row exists yet. */
   public readonly watchQuestions = input(false);
+  /** Stored-document readers stay live for revisions and approvals even while no run is active. */
+  public readonly continuous = input(false);
   public readonly suppressCard = input(false);
   /** Keep the single public observer alive without rendering a living document's live presentation. */
   public readonly headless = input(false);
@@ -96,6 +109,9 @@ export class MktgRunProgressComponent {
 
   private readonly loaded = signal<MktgDocumentDetailResponse | null>(null);
   private readonly loadedSubject = signal('');
+  private readonly loadedSelector = signal('');
+  private readonly lastSelectedRunId = signal('');
+  private readonly lastSelectedStartedAt = signal('');
   protected readonly warning = signal('');
   protected readonly readFailure = signal('');
   private readonly reload = signal(0);
@@ -112,10 +128,54 @@ export class MktgRunProgressComponent {
     if (!detail) return null;
     if (detail.project !== this.project() || detail.type.agentKey !== this.agentKey() || detail.documentId !== this.documentId()) return null;
     if (this.polling() && this.loadedSubject() && this.loadedSubject() !== this.user.user()?.sub) return null;
+    if (this.polling() && this.runPage() && this.loadedSelector() !== this.runId()) return null;
     return detail;
   });
   public readonly selectedRun = this.initSelectedRun();
   public readonly runState = this.initRunState();
+  protected readonly retiredHint = computed(() => {
+    if (!this.runPage()) return null;
+    return (
+      this.detail()
+        ?.runs?.map(readMktgRetiredRunHint)
+        .find((hint) => hint?.runId === this.runId()) ?? null
+    );
+  });
+  protected readonly replacementRun = computed(() => {
+    if (!this.runPage() || !this.runId() || this.selectedRun() || this.lastSelectedRunId() !== this.runId()) return null;
+    const started = Date.parse(this.lastSelectedStartedAt());
+    return (
+      this.detail()?.runs?.find(
+        (run) =>
+          !readMktgRetiredRunHint(run) &&
+          run.runId !== this.runId() &&
+          run.agentKey === this.agentKey() &&
+          run.state !== 'failed' &&
+          Date.parse(run.startedAt) > started
+      ) ?? null
+    );
+  });
+  protected readonly currentRunId = computed(() => this.retiredHint()?.replacedBy ?? this.replacementRun()?.runId ?? '');
+  protected readonly missingRunMessage = computed(() => {
+    const hint = this.retiredHint();
+    if (hint || this.replacementRun()) return mktgDiscardedRunMessage(hint, hint?.closedAt ? formatDate(hint.closedAt, 'shortTime', 'en-US') : '');
+    return this.detail()?.revisions.length ? 'This run is no longer active.' : 'This run is no longer listed.';
+  });
+  protected readonly currentStateLink = computed(() => {
+    const root = mktgKitRootPath(this.router.url);
+    const replacement = this.replacementRun();
+    if (this.currentRunId())
+      return (
+        mktgRunRouteFor(this.agentKey(), root) ?? [root, 'documents', replacement?.agentKey ?? this.agentKey(), replacement?.documentId ?? this.documentId()]
+      );
+    if (this.retiredHint()) return [root, 'documents'];
+    if (this.detail()?.revisions.length) return [root, 'documents', this.agentKey(), this.documentId()];
+    return [root, 'documents'];
+  });
+  protected readonly currentStateLabel = computed(() => {
+    if (this.currentRunId() || this.retiredHint()) return 'Open the newer run';
+    return this.detail()?.revisions.length ? 'Open the document' : 'Open Documents';
+  });
   protected readonly visibleRunActivity = this.initVisibleActivity();
   protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
   protected readonly pausedWithoutAnswers = computed(
@@ -145,6 +205,7 @@ export class MktgRunProgressComponent {
       loadRevision: this.loadRevision(),
       revisionId: this.revisionId(),
       watchQuestions: this.watchQuestions(),
+      continuous: this.continuous(),
       refresh: this.refreshKey(),
       reload: this.reload(),
     }));
@@ -172,16 +233,7 @@ export class MktgRunProgressComponent {
               this.answersSending.set(true);
               this.answersError.set('');
               return this.answersService.answer(run.runId, { project: request.project, questionsId: pending.questionsId, answers }).pipe(
-                tap(() => {
-                  this.loaded.update(
-                    (detail) =>
-                      detail && {
-                        ...detail,
-                        runs: detail.runs?.map((row) => (row.runId === run.runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)),
-                      }
-                  );
-                  this.onRefreshProgress();
-                }),
+                tap(() => this.acknowledgeAnswers(pending.questionsId, '', run.runId)),
                 catchError((error: HttpErrorResponse) => {
                   if (error.status === 403) {
                     this.answersDenied.set(true);
@@ -193,19 +245,8 @@ export class MktgRunProgressComponent {
                     );
                   } else if (error.status === 409 || error.status === 412) {
                     const answered = this.answeredConflict(error, run.runId, pending.questionsId);
-                    if (answered) {
-                      this.answersNotice.set(`${answered} already answered these — the agent is writing.`);
-                      this.answeredRunId.set(run.runId);
-                      this.answeredQuestionsId.set(pending.questionsId);
-                      this.loaded.update(
-                        (detail) =>
-                          detail && {
-                            ...detail,
-                            runs: detail.runs?.map((row) => (row.runId === run.runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)),
-                          }
-                      );
-                    }
-                    this.onRefreshProgress();
+                    if (answered) this.acknowledgeAnswers(pending.questionsId, `${answered} already answered these — the agent is writing.`, run.runId);
+                    else this.onRefreshProgress();
                   } else {
                     this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
                   }
@@ -233,6 +274,9 @@ export class MktgRunProgressComponent {
           if (key !== readerScope) {
             this.loaded.set(null);
             this.loadedSubject.set('');
+            this.loadedSelector.set('');
+            this.lastSelectedRunId.set('');
+            this.lastSelectedStartedAt.set('');
           }
           readerScope = key;
           this.warning.set('');
@@ -263,15 +307,24 @@ export class MktgRunProgressComponent {
             this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
           };
           const read = (poll: boolean) => {
-            const metadata$ = defer(() => this.store.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
+            // A document handoff updates the selector without replacing its accepted observer.
+            const selectedRunId = this.runPage() ? request.runId : this.runId();
+            const metadata$ = defer(() =>
+              selectedRunId
+                ? this.store.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, !!request.runId, selectedRunId)
+                : this.store.getDocument(request.project, request.agentKey, request.documentId, poll)
+            ).pipe(
               switchMap((detail) => {
                 const selector = this.runId();
                 const selected = selector ? detail.runs?.find((run) => run.runId === selector) : detail.runs?.[0];
                 if (poll || this.localProgress() || selected?.state !== 'failed' || refreshedFailure) return of(detail);
                 refreshedFailure = true;
-                return this.store
-                  .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId)
-                  .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error))));
+                const refreshed = selectedRunId
+                  ? this.store.getDocument(request.project, request.agentKey, request.documentId, false, selected.runId, false, selectedRunId)
+                  : this.store.getDocument(request.project, request.agentKey, request.documentId, false, selected.runId);
+                return refreshed.pipe(
+                  catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error)))
+                );
               }),
               catchError((error: HttpErrorResponse) => {
                 if (error.status === 404 && (this.expectedPending() || request.runId) && type)
@@ -321,6 +374,7 @@ export class MktgRunProgressComponent {
                 if (this.runPage() && request.runId !== this.runId()) return;
                 if (request.subject && request.subject !== this.user.user()?.sub) return;
                 const previous = this.loaded();
+                this.loadedSelector.set(request.runId);
                 // A poll of the same block must not reset the stepper or overwrite unsent edits.
                 this.loaded.set({
                   ...cycle.detail,
@@ -341,7 +395,14 @@ export class MktgRunProgressComponent {
                 this.loadedSubject.set(request.subject);
                 this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
-                const outcome = this.selectedRun()?.state ?? (request.runId && cycle.detail.revisions.length ? 'landed' : '');
+                const selected = this.selectedRun();
+                if (selected) {
+                  this.lastSelectedRunId.set(selected.runId);
+                  this.lastSelectedStartedAt.set(selected.startedAt);
+                }
+                let outcome: string = selected?.state ?? '';
+                if (!selected && (this.retiredHint() || this.replacementRun())) outcome = 'replaced';
+                else if (!selected && request.runId && cycle.detail.revisions.length) outcome = 'landed';
                 if (outcome === terminal) return;
                 terminal = outcome;
                 if (outcome === 'failed') this.failed.emit();
@@ -364,7 +425,7 @@ export class MktgRunProgressComponent {
                   cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
                 const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
                 const local = this.localProgress();
-                if (!active && !questions && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
+                if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
                 let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
                 if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
                 if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
@@ -395,6 +456,25 @@ export class MktgRunProgressComponent {
       .subscribe();
   }
 
+  /** Apply an authenticated answers acknowledgement from either continuation path; never POST here. */
+  public acknowledgeAnswers(questionsId: string, notice: string, expectedRunId = this.runId()): void {
+    const runId = expectedRunId || this.selectedRun()?.runId || '';
+    if (!runId || (this.runId() && this.runId() !== runId) || (this.selectedRun() && this.selectedRun()?.runId !== runId)) return;
+    this.answersError.set('');
+    this.answersNotice.set(notice);
+    this.answeredRunId.set(runId);
+    this.answeredQuestionsId.set(questionsId);
+    this.loaded.update(
+      (detail) =>
+        detail && { ...detail, runs: detail.runs?.map((row) => (row.runId === runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)) }
+    );
+    this.onRefreshProgress();
+  }
+
+  public recheck(): void {
+    this.onRefreshProgress();
+  }
+
   public clear(): void {
     this.loaded.set(null);
     this.loadedSubject.set('');
@@ -412,14 +492,7 @@ export class MktgRunProgressComponent {
 
   /** Only the exact scoped server conflict can retire this browser's answer form. */
   private answeredConflict(error: HttpErrorResponse, runId: string, questionsId: string): string | null {
-    const body: unknown = error.error;
-    if (error.status !== 409 || !body || typeof body !== 'object' || !('code' in body) || body.code !== MKTG_RUN_ANSWERED) return null;
-    const details = 'details' in body ? body.details : body;
-    if (!details || typeof details !== 'object') return null;
-    if (('runId' in details && details.runId !== runId) || ('questionsId' in details && details.questionsId !== questionsId)) return null;
-    const name = 'answeredBy' in details && typeof details.answeredBy === 'string' ? details.answeredBy.trim() : '';
-    // The contract is display-name only; never echo an accidental email or subject identifier.
-    return name && !/[@|:]/.test(name) ? name : 'Another writer';
+    return error.status === 409 ? mktgRunAnsweredBy(error.error, runId, questionsId) : null;
   }
 
   private initPublicQuestions() {
@@ -438,14 +511,16 @@ export class MktgRunProgressComponent {
     return computed(() => {
       const runs = this.detail()?.runs ?? [];
       const selector = this.runId();
-      if (selector) return MKTG_STARTED_RUN_ID_REGEX.test(selector) ? (runs.find((run) => run.runId === selector) ?? null) : null;
-      return this.localProgress() ? null : (runs[0] ?? null);
+      if (selector)
+        return MKTG_STARTED_RUN_ID_REGEX.test(selector) ? (runs.find((run) => !readMktgRetiredRunHint(run) && run.runId === selector) ?? null) : null;
+      return this.localProgress() ? null : (runs.find((run) => !readMktgRetiredRunHint(run)) ?? null);
     });
   }
 
   private initRunState() {
     return computed(() => {
-      if (this.runPage() && this.selectedRun()) return this.selectedRun()?.state ?? null;
+      if (this.selectedRun()) return this.selectedRun()?.state ?? null;
+      if (this.detail() && !this.detail()?.progressUnavailable && !this.unconfirmed()) return null;
       const states = [this.localProgress(), this.selectedRun()?.state].filter((state) => state != null);
       return states.sort((a, b) => MKTG_STARTED_RUN_STATE_ORDER[b] - MKTG_STARTED_RUN_STATE_ORDER[a])[0] ?? null;
     });

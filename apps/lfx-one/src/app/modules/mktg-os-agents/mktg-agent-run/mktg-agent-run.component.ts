@@ -12,7 +12,8 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 import { MessageComponent } from '@components/message/message.component';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
@@ -67,6 +68,8 @@ import {
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
   mktgActiveRunConflictHeading,
+  mktgRunAnsweredBy,
+  readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
@@ -113,6 +116,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     InputTextComponent,
     TextareaComponent,
     MessageComponent,
+    MktgSkeletonComponent,
     AeoGeoRunComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
@@ -139,6 +143,7 @@ export class MktgAgentRunComponent {
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
@@ -165,6 +170,7 @@ export class MktgAgentRunComponent {
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
   /** The logo-files section, when the intake has one and the form is on screen: its file reads are cancelled the same way. */
   private readonly logoFilesSection = viewChild(MktgIntakeLogoFilesComponent);
+  private readonly publicProgressView = viewChild(MktgRunProgressComponent);
   /** The generate request of the run in flight — what an answers round continues. */
   private activeRequest: MktgGenerateRequest | null = null;
 
@@ -221,14 +227,17 @@ export class MktgAgentRunComponent {
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
   protected readonly checkingRun = signal(true);
+  protected readonly publicRefreshKey = signal('');
   protected readonly publicReceiver = signal(!!this.route.snapshot.queryParamMap.get('run'));
   private readonly discoveredRunId = signal('');
+  private publicReadFailed = false;
   private readonly routeRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
     initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
   });
   protected readonly publicRunId = computed(() => this.routeRunId() || this.discoveredRunId());
   protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
+  protected readonly publicDocumentLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID]);
   protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
   protected readonly waitingQuestions = signal(false);
   protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
@@ -676,41 +685,76 @@ export class MktgAgentRunComponent {
     const projectUid = this.projectContext.activeContextUid();
     const agentKey = this.publicAgentKey();
     if (!this.publicReceiver() || !projectUid || !agentKey) return;
+    this.checkingRun.set(false);
     // Public completion has no exact-revision receipt: open the current document, without revision=.
     this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey, ...(failed && { runId: this.publicRunId() }) });
     this.onRetryHandoff();
   }
 
   protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
-    if (cycle.detail.progressUnavailable || cycle.detail.project !== this.publicProject()) return;
+    if (cycle.detail.project !== this.publicProject()) return;
+    if (cycle.detail.progressUnavailable) {
+      if (this.checkingRun()) this.onPublicReadError();
+      return;
+    }
     this.checkingRun.set(false);
+    if (this.publicReadFailed) {
+      this.publicReadFailed = false;
+      this.errorText.set('');
+    }
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
-    const owned = pending?.attempt?.runId === this.publicRunId() ? pending : null;
+    const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
+    if (readMktgRetiredRunHint(run)) {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      this.errorText.set('');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
+    if (owned?.pendingQuestions && !this.answersSending()) {
+      if (!run) {
+        this.runAttempts.clear(this.publicProject(), this.agent?.id ?? '');
+      } else if (run && (run.state !== 'questions' || owned.pendingQuestions.questionsId !== run.pendingQuestions?.questionsId)) {
+        this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: run.state === 'failed' ? 'failed' : 'writing' });
+      }
+    }
     if (this.answersSending() && run?.state === 'questions') return;
-    if (run?.state === 'questions' || (!run && !cycle.detail.revisions.length)) {
+    if (run?.state === 'questions') {
       const privateQuestions = owned?.pendingQuestions;
       if (owned && privateQuestions && (!run || privateQuestions.questionsId === run.pendingQuestions?.questionsId)) {
         if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
+          const token = this.route.snapshot.queryParamMap.get('questions');
+          if (token && !this.freshMode()) this.runAttempts.consume(token, this.publicProject(), this.agent?.id ?? '');
           this.activeRequest = owned.request;
           this.hasAcknowledgement.set(true);
-          this.showQuestions(privateQuestions);
+          this.showQuestions(privateQuestions, true);
         }
         return;
       }
     }
-    if (!run && !cycle.detail.revisions.length && owned?.state === 'writing' && owned.attempt) {
-      this.publicReceiver.set(false);
-      this.resumeAcceptedAttempt(owned, this.publicProject());
-      return;
-    }
     // Server writing/storing/landed (or a new questions block) beats a stale local questions draft.
-    if (this.phase() === 'questions') {
-      this.generationSub?.unsubscribe();
-      this.generationSub = null;
+    if (this.phase() === 'questions' || this.questionsPending()) {
+      if (!this.answersSending()) {
+        this.generationSub?.unsubscribe();
+        this.generationSub = null;
+      }
       this.clearQuestions();
       this.phase.set('running');
     }
+  }
+
+  protected onPublicReadError(error?: HttpErrorResponse): void {
+    this.checkingRun.set(false);
+    this.publicReadFailed = true;
+    this.clearQuestions();
+    this.phase.set('running');
+    if (error?.status === 401) this.errorText.set('Sign in before checking this run.');
+    else if (error?.status === 403) this.errorText.set('You need write access to this project to check its run.');
+    else this.errorText.set('The recorded run could not be checked. Open the document to check its current state.');
   }
 
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
@@ -868,16 +912,16 @@ export class MktgAgentRunComponent {
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
-    if (!pending || !request || this.answersSending()) {
+    if (!pending || !request || this.answersSending() || this.checkingRun() || this.phase() !== 'questions') {
       return;
     }
+    const owner = this.userService.user()?.sub;
     this.lastAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.errorText.set('');
     this.answersSending.set(true);
     this.hasAcknowledgement.set(false);
     this.writingStretch.set(true);
     this.activityStartedAt.set(Date.now());
-    this.phase.set('running');
     this.generationSub?.unsubscribe();
     let accepted = false;
     this.generationSub = this.runService
@@ -888,10 +932,44 @@ export class MktgAgentRunComponent {
           if (progress.type === 'submitted') {
             accepted = true;
             this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            this.publicProgressView()?.acknowledgeAnswers(pending.questionsId, '', pending.attempt.runId || this.publicRunId());
           }
           this.onProgress(progress, request.projectUid);
         },
-        error: () => {
+        error: (error: unknown) => {
+          if (request.projectUid !== this.projectContext.activeContextUid() || owner !== this.userService.user()?.sub) return;
+          const runId = pending.attempt.runId || this.publicRunId();
+          const answeredBy = error instanceof HttpErrorResponse && error.status === 409 ? mktgRunAnsweredBy(error.error, runId, pending.questionsId) : null;
+          if (answeredBy) {
+            this.answersSending.set(false);
+            this.hasAcknowledgement.set(true);
+            this.clearQuestions();
+            this.phase.set('running');
+            this.checkingRun.set(false);
+            this.writingStretch.set(true);
+            this.errorText.set('');
+            const saved = this.runAttempts.load(request.projectUid, request.agentId);
+            if (saved?.attempt?.runId === runId)
+              this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
+            const notice = `${answeredBy} already answered these — the agent is writing.`;
+            const observer = this.publicProgressView();
+            if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
+            else {
+              this.messages.add({ severity: 'info', summary: notice });
+              void this.router.navigate([mktgKitRootPath(this.router.url), 'documents'], { queryParams: { project: this.projectSlug() } });
+            }
+            return;
+          }
+          if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412) && this.publicProgressView()) {
+            this.answersSending.set(false);
+            this.phase.set('running');
+            this.checkingRun.set(true);
+            this.errorText.set('');
+            this.publicProgressView()?.recheck();
+            return;
+          }
           if (accepted) {
             // No Retry here: the accepted run may still finish server-side; a Generate would duplicate it.
             this.discardPendingNavigation();
@@ -905,7 +983,14 @@ export class MktgAgentRunComponent {
             this.errorText.set('The recorded run could not be confirmed. Your intake is kept — check Documents before trying again.');
             return;
           }
-          // Before the ACK, the answers come back on the questions step, as given: not square one.
+          const recorded = this.publicProgressView();
+          if (recorded && (recorded.selectedRun()?.state !== 'questions' || recorded.selectedRun()?.pendingQuestions?.questionsId !== pending.questionsId)) {
+            this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            return;
+          }
+          // Before the ACK, retry only the same still-paused server questions block.
           this.answersSending.set(false);
           this.writingStretch.set(false);
           this.errorText.set('The agent could not take your answers. They are kept — try again.');
@@ -1044,6 +1129,24 @@ export class MktgAgentRunComponent {
           this.publicReceiver.set(true);
         }
         const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+        const sameQuestions =
+          run?.state === 'questions' &&
+          run.runId === (saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId) &&
+          run.pendingQuestions?.questionsId === saved?.pendingQuestions?.questionsId;
+        const hasStoredDocument = documents.groups.some(
+          (group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0)
+        );
+        if (saved?.pendingQuestions && !sameQuestions && (this.assetType || run || hasStoredDocument || saved.attempt?.runId)) {
+          this.waitingQuestions.set(false);
+          this.clearQuestions();
+          if (this.phase() === 'questions') this.phase.set(run ? 'running' : 'form');
+          if (!run) this.runAttempts.clear(project, this.agent?.id ?? '');
+          else this.runAttempts.save({ ...saved, pendingQuestions: undefined, state: run.state === 'questions' ? 'questions' : 'writing' });
+        }
+        if (fresh && !this.startedOverWaiting()) {
+          this.waitingRun.set(run ?? null);
+          if (!run && hasStoredDocument) this.waitingQuestions.set(false);
+        }
         if (
           !fresh &&
           run?.state === 'questions' &&
@@ -1595,10 +1698,13 @@ export class MktgAgentRunComponent {
     this.priorLogoCount.set(0);
     const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
     this.discoveredRunId.set('');
+    this.publicRefreshKey.set('');
+    this.publicReadFailed = false;
     this.publicReceiver.set(!!publicId);
     if (!context) return;
     const recorded = this.runAttempts.load(context.uid, this.agent.id);
-    const recordedId = !fresh && (recorded?.state === 'writing' || recorded?.state === 'questions') ? recorded.attempt?.runId : '';
+    const recordedId =
+      !fresh && (recorded?.state === 'writing' || recorded?.state === 'questions') ? (recorded.attempt?.runId ?? recorded.pendingQuestions?.attempt.runId) : '';
     if (publicId || recordedId) {
       this.discoveredRunId.set(recordedId ?? '');
       this.publicReceiver.set(true);
@@ -1621,7 +1727,7 @@ export class MktgAgentRunComponent {
       this.restoreInputs(draft.request, 'restored');
       if (draft.pendingQuestions && draft.state !== 'failed') {
         this.activeRequest = draft.request;
-        this.showQuestions(draft.pendingQuestions);
+        if (!this.assetType) this.showQuestions(draft.pendingQuestions);
       } else if (draft.requiresReattachment && draft.state !== 'writing') {
         this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
       }
@@ -1653,11 +1759,15 @@ export class MktgAgentRunComponent {
     } else if (returned?.pending.pendingQuestions) {
       this.activeRequest = returned.pending.request;
       this.restoreInputs(returned.pending.request, 'returned');
-      this.showQuestions(returned.pending.pendingQuestions);
+      if (!this.assetType || returned.pending.pendingQuestions.attempt.runId) this.showQuestions(returned.pending.pendingQuestions);
     } else if (returned?.pending.attempt) {
-      this.resumeAcceptedAttempt(returned.pending, context.uid);
-    } else if (draft?.state === 'writing' && draft.attempt) {
-      // Consumed entry URLs also restore an accepted run before its first questions.
+      if (!this.assetType) this.resumeAcceptedAttempt(returned.pending, context.uid);
+      else if (returned.pending.attempt.runId) {
+        this.discoveredRunId.set(returned.pending.attempt.runId);
+        this.publicReceiver.set(true);
+      }
+    } else if (draft?.state === 'writing' && draft.attempt && !this.assetType) {
+      // Capability-only generic agents have no document-run contract; registered documents use public state.
       this.resumeAcceptedAttempt(draft, context.uid);
     }
 
@@ -2012,13 +2122,20 @@ export class MktgAgentRunComponent {
   }
 
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
-  private showQuestions(pending: MktgRunQuestionsPending): void {
+  private showQuestions(pending: MktgRunQuestionsPending, confirmed = false): void {
     if (pending.attempt.runId) {
       this.discoveredRunId.set(pending.attempt.runId);
       this.publicReceiver.set(true);
+      if (!confirmed) {
+        this.checkingRun.set(true);
+        this.questionsPending.set(pending);
+        this.phase.set('running');
+        this.publicRefreshKey.update((value) => value + '1');
+        return;
+      }
     }
     this.recheckingAttempt.set(false);
-    this.lastAnswers.set({});
+    if (this.questionsPending()?.questionsId !== pending.questionsId) this.lastAnswers.set({});
     this.questionsPending.set(pending);
     this.phase.set('questions');
   }

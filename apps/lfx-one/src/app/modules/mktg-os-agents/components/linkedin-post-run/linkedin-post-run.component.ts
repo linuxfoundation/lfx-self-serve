@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -48,6 +48,7 @@ import {
   parseLinkedinContentSource,
   readMktgActiveRunConflict,
   mktgActiveRunConflictHeading,
+  mktgRunAnsweredBy,
 } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -57,7 +58,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { FileSelectEvent } from 'primeng/fileupload';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, take } from 'rxjs';
 
@@ -95,6 +96,8 @@ export class LinkedinPostRunComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
+  private readonly recordedProgress = viewChild(MktgRunProgressComponent);
   protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.linkedin;
 
   public readonly intake = input.required<MktgAgentIntake>();
@@ -287,9 +290,10 @@ export class LinkedinPostRunComponent {
     const pending = this.recordedPending();
     if (!pending || cycle.detail.progressUnavailable || cycle.detail.project !== this.context.activeContextUid()) return;
     this.checkingPending.set(false);
-    if (this.answering()) return;
+    if (this.answering() || this.acceptedRequest() === pending.request) return;
     const run = cycle.detail.runs?.find((row) => row.runId === this.recordedRunId());
-    if (run?.state === 'questions' || (!run && !cycle.detail.revisions.length)) {
+    if (run?.state === 'questions') {
+      this.pendingNotice.set({ documentId: run.documentId, state: 'questions' });
       if (pending.pendingQuestions && !this.questions().length) {
         this.questionsPending = pending;
         this.questions.set(pending.pendingQuestions.questions);
@@ -300,7 +304,11 @@ export class LinkedinPostRunComponent {
     this.questionsPending = null;
     this.questions.set([]);
     this.pendingNotice.set(null);
-    if (this.acceptedRequest() === pending.request) return;
+    if (!run && !cycle.detail.revisions.length) {
+      this.attempts.clear(this.context.activeContextUid(), this.intake().agentId, this.attempts.subject(), this.recordedDocumentId());
+      this.recordedPending.set(null);
+      return;
+    }
     this.acceptedRequest.set(pending.request);
     void this.returnToDocument(pending.request, null);
   }
@@ -484,6 +492,10 @@ export class LinkedinPostRunComponent {
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending;
     if (!pending?.pendingQuestions || this.answering()) return;
+    const version = this.scopeVersion;
+    const owner = this.user.user()?.sub;
+    const project = this.context.activeContextUid();
+    const current = () => version === this.scopeVersion && owner === this.user.user()?.sub && project === this.context.activeContextUid();
     this.previousAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.answering.set(true);
     this.error.set('');
@@ -492,7 +504,8 @@ export class LinkedinPostRunComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (progress) => {
-          if (progress.type !== 'submitted') return;
+          if (!current() || progress.type !== 'submitted') return;
+          this.questionsPending = null;
           this.questions.set([]);
           this.answering.set(false);
           this.pendingNotice.set(null);
@@ -500,7 +513,35 @@ export class LinkedinPostRunComponent {
           void this.returnToDocument(pending.request);
         },
         error: (error: unknown) => {
+          if (!current()) return;
           this.answering.set(false);
+          const runId = pending.attempt?.runId ?? this.recordedRunId();
+          const answeredBy =
+            error instanceof HttpErrorResponse && error.status === 409
+              ? mktgRunAnsweredBy(error.error, runId, pending.pendingQuestions?.questionsId ?? '')
+              : null;
+          if (answeredBy) {
+            this.questionsPending = null;
+            this.questions.set([]);
+            this.pendingNotice.set(null);
+            this.error.set('');
+            this.attempts.save({ ...pending, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.pendingQuestions?.questionsId });
+            this.acceptedRequest.set(pending.request);
+            this.messages.add({ severity: 'info', summary: `${answeredBy} already answered these — the agent is writing.` });
+            this.recordedProgress()?.acknowledgeAnswers(pending.pendingQuestions?.questionsId ?? '', '', runId);
+            void this.returnToDocument(pending.request, null);
+            return;
+          }
+          if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412)) {
+            this.questionsPending = null;
+            this.questions.set([]);
+            this.pendingNotice.set(null);
+            this.error.set('');
+            this.attempts.save({ ...pending, state: 'questions', pendingQuestions: undefined });
+            this.acceptedRequest.set(pending.request);
+            void this.returnToDocument(pending.request, null);
+            return;
+          }
           this.error.set(
             extractErrorMessage(error instanceof HttpErrorResponse ? error : undefined, 'Your answers could not be sent. They are kept — try again.')
           );

@@ -5,6 +5,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
 import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -59,6 +60,7 @@ describe('MktgRunProgressComponent', () => {
       imports: [MktgRunProgressComponent],
       providers: [
         provideNoopAnimations(),
+        provideRouter([]),
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: { user } },
         { provide: MktgDocumentStoreService, useValue: { getDocument: read } },
@@ -152,7 +154,7 @@ describe('MktgRunProgressComponent', () => {
   it.each([
     { answeredBy: 'Synthetic writer', flattened: false, expected: 'Synthetic writer' },
     { answeredBy: null, flattened: true, expected: 'Another writer' },
-    { answeredBy: '<script>synthetic</script>', flattened: false, expected: '<script>synthetic</script>' },
+    { answeredBy: '<script>synthetic</script>', flattened: false, expected: 'Another writer' },
     { answeredBy: 'synthetic-writer@example.test', flattened: true, expected: 'Another writer' },
     { answeredBy: 'auth0|synthetic-subject', flattened: false, expected: 'Another writer' },
   ])('moves an already-answered conflict to writing with attribution ($answeredBy)', async ({ answeredBy, flattened, expected }) => {
@@ -367,8 +369,74 @@ describe('MktgRunProgressComponent', () => {
     finished.revisions = [{ id: 'synthetic-stored', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
     read.mockReturnValue(of(finished));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true);
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true, undefined, true, runId);
     expect(landed).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it('keeps a discarded open run visible with the current-run link rather than landing an older document', async () => {
+    await setup();
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    await fixture.whenStable();
+    const replacementId = 'd'.repeat(64);
+    const changed = detail([{ ...run, runId: replacementId, startedAt: '2026-10-28T10:01:00Z' }]);
+    changed.revisions = [{ id: 'synthetic-older', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
+    read.mockReturnValue(of(changed));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(text()).toContain('This run was discarded; a newer run was started.');
+    const link = fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]');
+    expect(link.textContent).toContain('Open the newer run');
+    expect(link.getAttribute('href')).toContain(`run=${replacementId}`);
+    expect(landed).not.toHaveBeenCalled();
+  });
+
+  it('accepts a safe optional retired hint and its local short time without rendering a private record', async () => {
+    await setup();
+    read.mockReturnValue(
+      of({
+        ...detail([]),
+        runs: [{ runId, state: 'discarded', replacedBy: 'e'.repeat(64), closedBy: 'Synthetic writer', closedAt: '2026-10-28T10:00:00Z' }],
+      })
+    );
+    await fixture.whenStable();
+    expect(text()).toMatch(/This run was discarded by Synthetic writer at .+; a newer run was started[.]/);
+    expect(fixture.componentInstance.selectedRun()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]').getAttribute('href')).toContain(`run=${'e'.repeat(64)}`);
+  });
+
+  it('renders superseded as terminal navigation only, without feed, stepper or retry', async () => {
+    await setup();
+    read.mockReturnValue(of({ ...detail([]), runs: [{ runId, state: 'superseded', closedAt: run.startedAt }] }));
+    await fixture.whenStable();
+    expect(text()).toContain('A newer run replaced this one.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]')?.textContent).toContain('Open the newer run');
+    expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-mktg-run-questions')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-progress-retry"]')).toBeNull();
+  });
+
+  it('keeps stored-document metadata current through idle polls, hidden tabs and focus', async () => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('continuous', true);
+    const empty = detail([]);
+    read.mockReturnValue(of(empty));
+    await fixture.whenStable();
+    const changed = { ...empty, current: { revisionId: 'synthetic-current', changedAt: run.startedAt, changedBy: null } };
+    read.mockReturnValue(of(changed));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(fixture.componentInstance['detail']()?.current?.revisionId).toBe('synthetic-current');
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    const count = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(read).toHaveBeenCalledTimes(count);
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(count + 1);
+    visibility.mockRestore();
   });
 
   it('does not land when progress is unavailable or no stored document exists', async () => {
@@ -391,7 +459,7 @@ describe('MktgRunProgressComponent', () => {
     await fixture.whenStable();
     expect(failed).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId);
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
     expect(text()).toContain('retries saving the existing result');
     const retry = vi.fn();
     fixture.componentInstance.retry.subscribe(retry);
@@ -424,10 +492,10 @@ describe('MktgRunProgressComponent', () => {
     const pending = new Subject<MktgDocumentDetailResponse>();
     read.mockReturnValue(pending);
     await fixture.whenStable();
-    expect(text()).toContain('Checking the run');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-loading"]')?.getAttribute('aria-busy')).toBe('true');
     pending.next(detail([]));
     await fixture.whenStable();
-    expect(text()).toContain('This run could not be found');
+    expect(text()).toContain('This run is no longer listed');
     read.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
     fixture.componentRef.setInput('refreshKey', 'denied');
     await fixture.whenStable();

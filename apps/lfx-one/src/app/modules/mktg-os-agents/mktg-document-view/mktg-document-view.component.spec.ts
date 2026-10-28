@@ -670,6 +670,69 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
+  it('gates a selected run before repainting a previously viewed document body', async () => {
+    await render('/documents/brand-kit/living');
+    const response = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(response);
+    await harness.navigateByUrl(`/documents/brand-kit/living?run=${started('writing').runId}`, MktgDocumentViewComponent);
+    await settle();
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['view']()).toBeNull();
+    expect(query('mktg-document-view-loading')?.getAttribute('aria-busy')).toBe('true');
+    expect(query('mktg-document-view-run-again')).toBeNull();
+  });
+
+  it('re-reads a stored document on focus and observes another writer revision and approval without manual reload', async () => {
+    await render('/documents/brand-kit/living');
+    const next = revision(3, { latest: true });
+    const updated = { ...detail, revisions: [next, { ...LATEST, latest: false }, OLDER], approvedCurrent: { revisionId: next.id, number: next.number } };
+    store.getDocument.mockReturnValue(of(updated));
+    store.getRevision.mockReturnValue(of({ ...updated, revision: next, approval: null, markdown: '# Synthetic current revision', sidecar: null }));
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['view']()?.revision.id).toBe(next.id);
+    expect(component?.['view']()?.approvedCurrent?.revisionId).toBe(next.id);
+    expect(store.getRevision).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', next.id, true);
+  });
+
+  it.each(['writing', 'questions'] as const)('does not send stale private questions from the document when the server says %s', async (state) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const attempt = {
+      runId: started(state).runId,
+      priorVersion: 0,
+      session: { agentId: BRAND_KIT_INTAKE.agentId, sessionId: 'synthetic-old', ownerToken: 'synthetic-proof' },
+    };
+    const privatePending: MktgPendingGeneration = {
+      request: { agentId: BRAND_KIT_INTAKE.agentId, intake: BRAND_KIT_INTAKE, projectUid: PROJECT.uid, answers: {} },
+      attempt,
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+      pendingQuestions: { attempt, questionsId: 'a'.repeat(64), questions: [] },
+    };
+    vi.mocked(attempts.load).mockReturnValue(privatePending);
+    store.getDocument.mockReturnValue(
+      of({
+        ...detail,
+        runs: [
+          {
+            ...started(state),
+            pendingQuestions: state === 'questions' ? { questionsId: 'c'.repeat(64), questions: [], askedAt: started(state).startedAt } : undefined,
+          },
+        ],
+      })
+    );
+    await render('/documents/brand-kit/living');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    harness.routeDebugElement?.injector.get(MktgDocumentViewComponent)['onOpenIntake']();
+    expect(attempts.prepare).not.toHaveBeenCalled();
+    expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ pendingQuestions: undefined }));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining([BRAND_KIT_INTAKE.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ questions: null, run: state === 'questions' ? attempt.runId : null }) })
+    );
+  });
+
   it('clears fresh-entry mode on stored-draft Document navigation', async () => {
     await render('/documents/brand-kit/living?mode=new');
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);

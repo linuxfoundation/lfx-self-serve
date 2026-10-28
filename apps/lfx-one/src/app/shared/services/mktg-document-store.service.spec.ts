@@ -191,6 +191,16 @@ describe('MktgDocumentStoreService', () => {
     refresh.flush({});
   });
 
+  it.each([false, true])('forwards the selected opaque run for closed-state reads without forcing a retry (poll=%s)', (poll) => {
+    const id = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', poll, undefined, true, id).subscribe();
+    const selected = http.expectOne((request) => request.params.get('run') === id);
+    expect(selected.request.params.get('project')).toBe('proj-1');
+    expect(selected.request.params.has('refreshRun')).toBe(false);
+    expect(selected.request.params.has('poll')).toBe(poll);
+    selected.flush({});
+  });
+
   it('retries the exact recorded run without a Generate or Restore request', () => {
     const id = 'b'.repeat(64);
     service.retryRun('proj-1', 'brand-kit', 'living', id).subscribe();

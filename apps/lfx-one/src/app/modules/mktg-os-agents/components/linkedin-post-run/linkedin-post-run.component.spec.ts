@@ -31,7 +31,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { firstValueFrom, of, Subject, throwError } from 'rxjs';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 
@@ -63,7 +63,23 @@ describe('LinkedIn profile and post surface', () => {
     vi.clearAllMocks();
     localStorage.clear();
     api.startForDocument.mockReset();
-    documents.getDocument.mockReset().mockReturnValue(of(emptyDetail));
+    documents.getDocument
+      .mockReset()
+      .mockReturnValue(
+        of({
+          ...emptyDetail,
+          runs: [
+            {
+              project: emptyDetail.project,
+              agentKey: documentType.agentKey,
+              documentId: emptyDetail.documentId,
+              runId: 'b'.repeat(64),
+              state: 'questions',
+              startedAt: '2026-10-28T10:00:00Z',
+            },
+          ],
+        })
+      );
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
@@ -77,6 +93,7 @@ describe('LinkedIn profile and post surface', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideNoopAnimations(),
+        MessageService,
         { provide: ConfirmationService, useValue: confirmation },
         { provide: LinkedinPostService, useValue: api },
         { provide: MktgDocumentStoreService, useValue: documents },
@@ -353,6 +370,17 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
+  it('does not restore a cached questions state the server no longer lists', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    TestBed.inject(MktgRunAttemptService).save(intakePending());
+    documents.getDocument.mockReturnValue(of(emptyDetail));
+    const fixture = await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')).toBeNull();
+    expect(fixture.componentInstance['recordedPending']()).toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
   it.each(['writing', 'landed'] as const)('uses measured %s instead of stale latestPending questions', async (state) => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     const pending = intakePending();
@@ -387,7 +415,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
-  it('never navigates on plain load or reload with a pending accepted attempt present', async () => {
+  it('uses the server questions notice instead of the local writing hint on plain load or reload', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending = intakePending('writing');
@@ -395,7 +423,7 @@ describe('LinkedIn profile and post surface', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const first = await render();
     expect(navigate).not.toHaveBeenCalled();
-    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is being written');
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is waiting for your answers');
     expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.classList.contains('p-button-outlined')).toBe(true);
     expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
     expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-open-pending"] button')?.classList.contains('p-button-outlined')).toBe(false);
@@ -613,6 +641,31 @@ describe('LinkedIn profile and post surface', () => {
     }
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
+
+  it('follows writing after a creator-token answers conflict with the same safe notification', async () => {
+    const fixture = await questionsIntake();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const notify = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const answers = [{ key: 'tendency', text: 'Synthetic answer', origin: 'requester' as const }];
+    fixture.componentInstance['onAnswers'](answers);
+    const http = TestBed.inject(HttpTestingController);
+    http
+      .expectOne(LINKEDIN_POST_INTAKE.endpoints.answers ?? '')
+      .flush(
+        { code: 'MKTG_RUN_ANSWERED', details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-28T10:01:00Z' } },
+        { status: 409, statusText: 'Conflict' }
+      );
+    await fixture.whenStable();
+    expect(notify).toHaveBeenCalledWith({ severity: 'info', summary: 'Synthetic writer already answered these — the agent is writing.' });
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+    expect(fixture.componentInstance['error']()).toBe('');
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ generation: null }) })
+    );
+    fixture.componentInstance['onAnswers'](answers);
+    http.expectNone(LINKEDIN_POST_INTAKE.endpoints.answers ?? '');
   });
 
   it('consumes shared questions and returns on the same-session answers ACK without polling on the form', async () => {

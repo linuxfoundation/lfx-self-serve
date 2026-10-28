@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!headless() && answersNotice()) {
+@if (!headless() && answersNotice() && (runState() === 'writing' || runState() === 'storing')) {
   <p class="text-sm text-gray-600" role="status" data-testid="mktg-run-progress-answered-note">{{ answersNotice() }}</p>
 }
 @if (!headless() && !runPage()) {
@@ -170,14 +170,32 @@
   </section>
 }
 @if (!headless() && runPage() && !detail() && !readFailure()) {
-  <p role="status" class="text-sm text-gray-500" data-testid="mktg-run-progress-loading">Checking the run…</p>
+  <lfx-mktg-skeleton variant="run-page" data-testid="mktg-run-progress-loading" />
 }
-@if (!headless() && runPage() && detail() && !selectedRun() && !detail()?.revisions?.length && !warning()) {
-  <p role="status" class="text-sm text-gray-600" data-testid="mktg-run-progress-empty">This run could not be found. Open Documents to choose a started run.</p>
+@if (!headless() && runPage() && detail() && !selectedRun() && !warning() && !errorText()) {
+  <div class="flex flex-wrap items-center gap-2 text-sm text-gray-600" data-testid="mktg-run-progress-empty">
+    <p role="status">{{ missingRunMessage() }}</p>
+    <a
+      class="font-medium text-blue-700 hover:underline"
+      [routerLink]="currentStateLink()"
+      [queryParams]="{ run: currentRunId() || null, revision: null, generation: null, questions: null, mode: null, type: null }"
+      queryParamsHandling="merge"
+      data-testid="mktg-run-progress-current-link"
+      >{{ currentStateLabel() }}</a
+    >
+  </div>
 }
 @if (!headless() && runPage() && readFailure()) {
   <lfx-message severity="error" [text]="readFailure()" data-testid="mktg-run-progress-error" />
   <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-run-progress-refresh" />
+  <a
+    class="text-sm font-medium text-blue-700 hover:underline"
+    [routerLink]="currentStateLink()"
+    [queryParams]="{ run: null, revision: null, generation: null, questions: null, mode: null, type: null }"
+    queryParamsHandling="merge"
+    data-testid="mktg-run-progress-error-link"
+    >Open Documents</a
+  >
 }
 @if (!headless() && !runPage() && warning()) {
   <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">

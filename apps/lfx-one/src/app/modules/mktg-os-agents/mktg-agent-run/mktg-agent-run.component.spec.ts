@@ -18,6 +18,7 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_ACTIVE,
+  MKTG_RUN_ANSWERED,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
@@ -252,6 +253,25 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  function useRecordedQuestionsFixture(pending: MktgRunQuestionsPending, startedAt = new Date().toISOString()): void {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === pending.attempt.session.agentId);
+    if (!type) throw new Error('Missing recorded questions fixture type');
+    pending.attempt.runId ??= 'b'.repeat(64);
+    const run = {
+      project: PROJECT_1.uid,
+      agentKey: type.agentKey,
+      documentId: 'living',
+      runId: pending.attempt.runId,
+      state: 'questions' as const,
+      startedAt,
+      pendingQuestions: { questionsId: pending.questionsId, questions: pending.questions, askedAt: startedAt },
+    };
+    listDocuments.mockReturnValue(of({ project: PROJECT_1.uid, groups: [], runs: [run] }));
+    vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(
+      of({ project: PROJECT_1.uid, type, documentId: 'living', approvedCurrent: null, revisions: [], runs: [run] })
+    );
+  }
+
   it('does not route another one-off intake into the dedicated audit form', async () => {
     SHELL_INTAKE.oneOffDocument = true;
     try {
@@ -398,6 +418,7 @@ describe('MktgAgentRunComponent', () => {
         questionsId: 'e'.repeat(64),
         questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
       };
+      useRecordedQuestionsFixture(pending);
       TestBed.inject(MktgRunAttemptService).save({
         request,
         state: 'questions',
@@ -888,17 +909,21 @@ describe('MktgAgentRunComponent', () => {
               runs: [{ project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', runId: 'c'.repeat(64), state: 'questions', startedAt }],
             })
           );
-        else
+        else {
+          const pending: MktgRunQuestionsPending = {
+            attempt: { priorVersion: 0, session: { agentId, sessionId: 'synthetic-stale', ownerToken: 'synthetic-proof' } },
+            questionsId: 'synthetic-stale-block',
+            questions: [],
+          };
+          useRecordedQuestionsFixture(pending, startedAt);
           vi.spyOn(TestBed.inject(MktgRunAttemptService), 'load').mockReturnValue({
             request: { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: {} },
+            attempt: pending.attempt,
             state: 'questions',
             updatedAt: startedAt,
-            pendingQuestions: {
-              attempt: { priorVersion: 0, session: { agentId, sessionId: 'synthetic-stale', ownerToken: 'synthetic-proof' } },
-              questionsId: 'synthetic-stale-block',
-              questions: [],
-            },
+            pendingQuestions: pending,
           });
+        }
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         expect(query('mktg-run-waiting-notice')?.textContent).toContain(
@@ -1132,7 +1157,8 @@ describe('MktgAgentRunComponent', () => {
         questionsId: 'abc12345',
         questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
       };
-      attempts.save({ request, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
+      useRecordedQuestionsFixture(pending);
+      attempts.save({ request, attempt: pending.attempt, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
       const saved = attempts.load(PROJECT_1.uid, agentId);
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
@@ -1173,7 +1199,8 @@ describe('MktgAgentRunComponent', () => {
         questionsId: 'abc12345',
         questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: 'Synthetic gap', suggestedAnswer: 'Adoption', basis: [] }],
       };
-      attempts.save({ request, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
+      useRecordedQuestionsFixture(pending);
+      attempts.save({ request, attempt: pending.attempt, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
       const token = attempts.prepare(request, true);
       queryParams.next(convertToParamMap({ mode: 'new', questions: token }));
       const consume = vi.spyOn(attempts, 'consume');
@@ -1493,7 +1520,8 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       expect(query('mktg-agent-run-form')).toBeNull();
       expect(query('mktg-run-questions')).toBeNull();
-      expect(host().textContent).toContain('Checking the run');
+      expect(query('mktg-run-progress-loading')?.getAttribute('aria-busy')).toBe('true');
+      expect(query('mktg-run-public-progress')?.querySelector('h1')).toBeNull();
       const measured: MktgDocumentDetailResponse = { ...record('writing'), runs: state === 'landed' ? [] : [{ ...record('writing').runs[0], state }] };
       if (state === 'landed') measured.revisions = [{ id: 'synthetic-current', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
       response.next(measured);
@@ -1533,6 +1561,96 @@ describe('MktgAgentRunComponent', () => {
         expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ revision: null, generation: null, run: failed ? runId : null }) })
       );
       expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('does not paint a private result questions event before the canonical record confirms it', async () => {
+      await configure('browser', type.catalogAgentId);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-result', ownerToken: 'synthetic-proof' } };
+      const pending = {
+        attempt,
+        questionsId: 'f'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Unconfirmed questions?', why: '', suggestedAnswer: '', basis: [] }],
+      };
+      const request = { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} };
+      TestBed.inject(MktgRunAttemptService).save({ request, attempt, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
+      component['activeRequest'] = request;
+      const response = new Subject<MktgDocumentDetailResponse>();
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(response);
+      component['onProgress']({ type: 'questions', pending }, PROJECT_1.uid);
+      await fixture.whenStable();
+      expect(query('mktg-run-progress-loading')?.getAttribute('aria-busy')).toBe('true');
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(query('mktg-agent-run-form')).toBeNull();
+      response.next(record('writing'));
+      await fixture.whenStable();
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(query('mktg-run-progress-status')?.textContent).toContain('Writing');
+      expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, intake.agentId)?.pendingQuestions).toBeUndefined();
+    });
+
+    it('uses the same notice and progress for an owner-token answers conflict without a second send', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-owner', ownerToken: 'synthetic-proof' } };
+      const pending = {
+        attempt,
+        questionsId: 'a'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: 'Synthetic adoption', basis: [] }],
+      };
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        attempt,
+        pendingQuestions: pending,
+        state: 'questions',
+        updatedAt: new Date().toISOString(),
+      });
+      const metadata = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      metadata.mockReturnValue(
+        of({
+          ...record('questions'),
+          runs: [
+            {
+              ...record('questions').runs[0],
+              pendingQuestions: { questionsId: pending.questionsId, questions: pending.questions, askedAt: record('questions').runs[0].startedAt },
+            },
+          ],
+        })
+      );
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      metadata.mockReturnValue(of(record('writing')));
+      answerQuestions.mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              error: { code: MKTG_RUN_ANSWERED, details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-28T10:01:00Z' } },
+            })
+        )
+      );
+      component['onAnswerQuestions']([{ key: 'goal', text: 'Synthetic adoption', origin: 'accepted' }]);
+      await fixture.whenStable();
+      expect(query('mktg-run-progress-answered-note')?.textContent).toContain('Synthetic writer already answered these — the agent is writing.');
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(component['phase']()).toBe('running');
+      expect(answerQuestions).toHaveBeenCalledOnce();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('never leaves an identity-invalidated public landing blank', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('writing')));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      userSignal.set(null);
+      await fixture.whenStable();
+      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent)).componentInstance as MktgRunProgressComponent;
+      reader.landed.emit();
+      await fixture.whenStable();
+      expect(query('mktg-run-public-error')?.textContent).toContain('Sign in before opening this run');
+      expect(query('mktg-run-public-document-link')?.textContent).toContain('Open the document');
+      expect(query('mktg-agent-run-form')).toBeNull();
     });
 
     it.each([false, true])('continues only this browser’s matching questions attempt (matching=%s)', async (matching) => {

@@ -413,19 +413,31 @@ can label no-questions writing retroactively once an unambiguous finalize confir
 it. Agent writing markers remain a contract follow-up in marketing-os-agents'
 [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md).
 
+**The server is the only run-state authority on every shared surface.** Browser attempts
+are recovery hints, never evidence that a run is writing, waiting or complete. First
+observation gates the page behind one neutral, layout-shaped skeleton; no intake,
+old document or local questions appear first. Recorded state wins on open, focus and
+visibility return. A private questions block can continue only for the matching server
+run/questions turn; missing or contradictory recorded state retires that private
+block immediately. Capability-only agents without a document-run contract are not
+promoted into public run-state evidence. Documents labels use only the recorded state. The shared
+visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
+fresh while idle as well as running. Selected closed-run detail requests carry the
+opaque `run` query so a discarded/superseded marker can render safe navigation copy
+instead of a blank page. No browser cache or actor identifier substitutes for server facts.
+
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
 single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
 failed card renders there, and an active `?run=` replaces to the run page. The
 run page owns one asset heading, one status line and the progress steps.
-One-off receivers keep their existing poll and generating presentation. A living run-page `?run=` reader uses that public progress unless
-this browser holds the matching private attempt. Public landing opens the current
+One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave
 `runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the
-shared questions UI. The route shows Checking the run until the first server read,
+shared questions UI. The route shows a neutral `lfx-mktg-skeleton` until the first server read,
 never an intake-form flash. Recorded state wins over private recovery on load,
 focus and visibility return; questions are reconciled every ten seconds without
 resetting unsent edits. A private block uses its owner-token continuation only
-while the server still reports that questions turn (or has no record), never also
+while the server still reports that questions turn, never also
 posting publicly. LinkedIn pending recovery uses the same headless observer
 before restoring its creator-only questions; writing or a stored revision opens
 its document instead. Other writers submit

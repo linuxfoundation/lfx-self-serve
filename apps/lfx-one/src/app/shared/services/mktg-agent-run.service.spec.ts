@@ -835,6 +835,27 @@ describe('MktgAgentRunService', () => {
     expect(events[1].type).toBe('document');
   });
 
+  it('pauses private result reads while hidden and rechecks the same accepted session on focus', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    resultResponses = [{ status: 'pending' }, { status: 'ready', documentMarkdown: '# Synthetic current draft', version: 1 }];
+    const events: MktgGenerateProgress[] = [];
+    const subscription = service.generate(generateRequest()).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(1);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 4);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(1);
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(2);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(1);
+    expect(events.some((event) => event.type === 'document')).toBe(true);
+    subscription.unsubscribe();
+    visibility.mockRestore();
+  });
+
   it('fails a poll fast on a non-transient response — a 403 means the owner token stopped verifying, not a blip', async () => {
     resultResponses = [new HttpErrorResponse({ status: 403, statusText: 'Forbidden' })];
 
