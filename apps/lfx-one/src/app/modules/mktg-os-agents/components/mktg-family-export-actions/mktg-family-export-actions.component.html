@@ -149,5 +149,11 @@
     @if (document.faq; as faq) {
       <lfx-mktg-faq-print [view]="faq" [number]="faqNumber" [projectName]="document.projectName" />
     }
+    @if (document.boilerplates; as boilerplates) {
+      <lfx-mktg-boilerplates-print [view]="boilerplates" [number]="boilerplatesNumber" [projectName]="document.projectName" />
+    }
+    @if (document.faq; as faq) {
+      <lfx-mktg-faq-print [view]="faq" [number]="faqNumber" [projectName]="document.projectName" />
+    }
   }
 </div>

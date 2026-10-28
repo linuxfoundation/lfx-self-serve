@@ -20,7 +20,7 @@ import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.c
 @Component({ selector: 'lfx-non-members-orgs', template: '<div data-testid="non-members-orgs-stub"></div>' })
 class OrgsStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -28,14 +28,14 @@ class OrgsStubComponent {
 @Component({ selector: 'lfx-non-members-people', template: '<div data-testid="non-members-people-stub"></div>' })
 class PeopleStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for Conversion opportunity, whose read its own spec covers; it reports no count. */
 @Component({ selector: 'lfx-non-members-conversion', template: '<div data-testid="non-members-conversion-stub"></div>' })
 class ConversionStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -112,17 +112,17 @@ describe('HealthMetricsNonMembersComponent', () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
 
-    stub(OrgsStubComponent).settled.emit();
-    stub(PeopleStubComponent).settled.emit();
-    stub(ConversionStubComponent).settled.emit();
+    stub(OrgsStubComponent).settled.emit(false);
+    stub(PeopleStubComponent).settled.emit(false);
+    stub(ConversionStubComponent).settled.emit(false);
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('non-members-sub-nav-conversion');
 
     scrollIntoView.mockClear();
-    stub(OrgsStubComponent).settled.emit();
-    stub(PeopleStubComponent).settled.emit();
-    stub(ConversionStubComponent).settled.emit();
+    stub(OrgsStubComponent).settled.emit(false);
+    stub(PeopleStubComponent).settled.emit(false);
+    stub(ConversionStubComponent).settled.emit(false);
     await flush();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
@@ -158,7 +158,7 @@ describe('HealthMetricsNonMembersComponent', () => {
 
     stub(OrgsStubComponent).countChange.emit(412);
     stub(PeopleStubComponent).countChange.emit(388);
-    stub(ConversionStubComponent).settled.emit();
+    stub(ConversionStubComponent).settled.emit(false);
     await flush();
     expect(fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-conversion"]').textContent).not.toMatch(/\d/);
   });
