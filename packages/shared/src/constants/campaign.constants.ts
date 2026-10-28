@@ -6,7 +6,10 @@ import type {
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
   AudienceLastSentMatchReason,
+  AudienceOptInLookup,
+  AudienceOptInSignal,
   AudienceSignal,
+  AudienceStepKey,
   AudienceSpeakerScope,
   BriefMetricsActionRule,
   CampaignBiddingPlatform,
@@ -3533,6 +3536,15 @@ export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: st
   { mode: 'build', label: 'Build a new audience' },
   { mode: 'reuse', label: 'Use existing lists' },
 ] as const;
+
+/** The opt-in signals an event draft takes from existing lists, in display order. */
+export const AUDIENCE_OPT_IN_SIGNALS: readonly AudienceOptInSignal[] = ['project_opt_in', 'lf_newsletter_opt_in'] as const;
+
+/** An opt-in lookup that has not run: nothing found, nothing added. */
+export const AUDIENCE_OPT_IN_LOOKUP_EMPTY: AudienceOptInLookup = { status: 'idle', added: [], pending: [], others: [], missing: [] };
+
+/** The Audience tab's steps in page order; each visible one is numbered by its place here. */
+export const AUDIENCE_STEP_ORDER: readonly AudienceStepKey[] = ['discover', 'include', 'exclude', 'reuse', 'gaps', 'compose', 'qa'] as const;
 
 /** Operators the custom-audience builder offers for an extra property filter, in display order. */
 export const AUDIENCE_CUSTOM_OPERATORS: readonly { value: AudienceCustomOperator; label: string }[] = [

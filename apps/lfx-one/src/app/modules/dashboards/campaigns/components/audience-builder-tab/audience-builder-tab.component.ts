@@ -2,13 +2,27 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  of,
+  pairwise,
+  startWith,
+  Subscription,
+  switchMap,
+  tap,
+} from 'rxjs';
 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
@@ -19,9 +33,12 @@ import {
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_OPT_IN_LOOKUP_EMPTY,
+  AUDIENCE_OPT_IN_SIGNALS,
   AUDIENCE_PREVIEW_MAX_LIST_IDS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
+  AUDIENCE_STEP_ORDER,
   AUDIENCE_UNION_EXACT_CAP,
 } from '@lfx-one/shared/constants';
 import type {
@@ -47,11 +64,16 @@ import type {
   AudienceListNameConflict,
   AudienceListRef,
   AudienceListSearchResult,
+  AudienceReadinessAction,
+  AudienceReadinessNotice,
   AudienceMasterListBrief,
+  AudiencePendingReuseAttach,
+  AudienceOptInLookup,
   AudiencePreviewCount,
   AudienceSignal,
   AudienceStandingExpansion,
   AudienceStartOverAction,
+  AudienceStepKey,
   AudienceSuppressionList,
   AudienceWriteDispatchContext,
   CampaignAudience,
@@ -63,8 +85,10 @@ import { AudienceCustomBuilderComponent } from '../audience-custom-builder/audie
 import { AudienceLastSentComponent } from '../audience-last-sent/audience-last-sent.component';
 import { AudienceMissingSignalsComponent } from '../audience-missing-signals/audience-missing-signals.component';
 import { AudienceQaPanelComponent } from '../audience-qa-panel/audience-qa-panel.component';
+import { AudienceReadinessBannerComponent } from '../audience-readiness-banner/audience-readiness-banner.component';
 import { AudienceStepCardComponent } from '../audience-step-card/audience-step-card.component';
 import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/audience-suppression-grid.component';
+import { AudienceSummaryBarComponent } from '../audience-summary-bar/audience-summary-bar.component';
 
 /**
  * The Audience tab: discover candidate HubSpot lists for an event, review and select them, apply
@@ -88,7 +112,9 @@ import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/a
     AudienceLastSentComponent,
     AudienceMissingSignalsComponent,
     AudienceQaPanelComponent,
+    AudienceReadinessBannerComponent,
     AudienceStepCardComponent,
+    AudienceSummaryBarComponent,
   ],
   templateUrl: './audience-builder-tab.component.html',
   styleUrl: './audience-builder-tab.component.scss',
@@ -97,6 +123,9 @@ export class AudienceBuilderTabComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly projectSlug = input.required<string>();
@@ -415,6 +444,10 @@ export class AudienceBuilderTabComponent {
    */
   private searchSeq = 0;
   private existingSearchSeq = 0;
+  /** Bumped per opt-in lookup, so a superseded one's reply is dropped. */
+  private optInSeq = 0;
+  /** The opt-in lookup's discovery stream, cancelled when a newer lookup or a run reset replaces it. */
+  private optInSubscription: Subscription | null = null;
   /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
   private suppressionScope = '';
   /**
@@ -503,6 +536,53 @@ export class AudienceBuilderTabComponent {
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
   /** What the last attach expected to create, so its result can say what it actually created. */
   private readonly attachDispatch = signal<AudienceWriteDispatchContext | null>(null);
+  /**
+   * The compose request the operator opened a confirmation for, as `writeRequestKey`; null when
+   * none is open. Stored as the request rather than a flag so ANY change to what compose would send
+   * -- a tick, a reload filling an id, a new edition -- withdraws the confirmation by itself.
+   */
+  private readonly composeConfirmedFor = signal<string | null>(null);
+  /**
+   * The same, for an attach that will create a list in HubSpot: `writeRequestKey|target`, where the
+   * target is `selection`, `master:<id>` or `send:<id>`, so a confirmation names one attach only.
+   */
+  private readonly attachConfirmedFor = signal<string | null>(null);
+  /** The step-4 reuse attach that confirmation is for; null for the step-6 selection. */
+  private readonly pendingReuseAttach = signal<AudiencePendingReuseAttach | null>(null);
+  /** The "combine into a master list" disclosure is open. Direct use is the default action. */
+  protected readonly composeOpen = signal(false);
+  /**
+   * An event-page draft is in the builder, and the list it produced (created, or an existing one
+   * reused in its place) once it has one. The draft's opt-in lists join Include only beside that
+   * list, and only while it is still included (see `addPendingOptIns`).
+   */
+  private readonly eventDraftActive = signal(false);
+  private readonly draftListId = signal<string | null>(null);
+  /** Opt-in lists the operator took out after the draft added them; a re-draft of the page offers them instead. */
+  private readonly optInsDeclined = new Set<string>();
+  /**
+   * The active draft's opt-in lookup has not settled. Attach and compose wait for it: either would
+   * otherwise record the drafted list alone, and a compose then locked the opt-ins out for good.
+   */
+  protected readonly optInsSettling = computed(() => this.eventDraftActive() && this.optIns().status === 'loading');
+  /** The existing opt-in lists an event draft joins to Include. See `lookUpOptIns`. */
+  protected readonly optIns = signal<AudienceOptInLookup>(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
+  /**
+   * The opt-in lookup as shown: an auto-added list the operator has since removed or excluded is
+   * no longer "Added to Include", and is offered again instead.
+   */
+  protected readonly optInView = computed(() => {
+    const lookup = this.optIns();
+    const included = this.inclusion();
+    const added = lookup.added.filter((list) => included.has(list.listId));
+    const removed = lookup.added.filter((list) => !included.has(list.listId));
+    // A locked selection (a compose ran) will never take the held picks: they are offered, not
+    // shown as joining Include once the drafted list exists.
+    if (this.selectionLocked()) {
+      return { ...lookup, added, pending: [], others: [...removed, ...lookup.pending, ...lookup.others] };
+    }
+    return { ...lookup, added, others: [...removed, ...lookup.others] };
+  });
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -745,6 +825,112 @@ export class AudienceBuilderTabComponent {
   /** The next attach or compose creates the standing standard list: it applies and does not exist yet. */
   protected readonly standingWillCreate = computed(() => this.standardApplied() && this.standardList() === null);
 
+  /**
+   * The lists the next attach or compose CREATES in HubSpot, by name: the standing standard list
+   * on first use, and the edition's current-registrants list while it does not exist yet.
+   */
+  protected readonly writeCreates = computed<readonly string[]>(() => this.createsFor([]));
+
+  /** `writeCreates` as one phrase, for the confirmations. */
+  protected readonly writeCreatesText = computed(() => this.writeCreates().join(' and '));
+
+  /** What a direct attach does in HubSpot, for the line under "Use selected lists". */
+  protected readonly directUseNote = computed(() => {
+    const created = this.writeCreates();
+    if (created.length > 0) {
+      return `Also creates ${created.join(' and ')} in HubSpot, so it asks first.`;
+    }
+    return this.standardApplied()
+      ? 'Nothing new is created in HubSpot; the shared standard suppression list is reused (refreshed if the standard lists changed).'
+      : 'Nothing new is created in HubSpot.';
+  });
+
+  /** Everything an attach or compose would send, so a confirmation is tied to exactly that request. */
+  private readonly writeRequestKey = computed(() =>
+    JSON.stringify([
+      // The target too: an email-stage switch keeps the selection, and a confirmation opened for one
+      // email must not dispatch against the next.
+      this.projectSlug(),
+      this.briefId(),
+      this.audienceScope(),
+      [...this.inclusion().keys()].sort(),
+      [...this.sentExcludeIds()].sort(),
+      this.registrantsEvent(),
+      this.writeCreates(),
+    ])
+  );
+
+  /** The compose confirmation is open, and still describes what compose would send. */
+  protected readonly composeConfirming = computed(() => this.composeConfirmedFor() !== null && this.composeConfirmedFor() === this.writeRequestKey());
+
+  /** The direct-attach confirmation is open, and still describes what the attach would send. */
+  protected readonly attachConfirming = computed(() => this.attachConfirmedFor() === this.attachKey('selection'));
+
+  /** The step-4 reuse attach awaiting confirmation, while it still describes what would be sent. */
+  protected readonly reuseAttachConfirming = computed<AudiencePendingReuseAttach | null>(() => {
+    const pending = this.pendingReuseAttach();
+    return pending !== null && this.attachConfirmedFor() === this.attachKey(`${pending.kind}:${pending.id}|${pending.creates}`) ? pending : null;
+  });
+
+  /**
+   * Whether the selection ON SCREEN is the one recorded as this email's audience. An attach leaves
+   * the grids editable, so "an attach succeeded" is not "this is attached": after adding a list the
+   * bar still read "Attached to this email" and hid "Review and attach".
+   */
+  protected readonly selectionAttached = computed(() => {
+    const listId = this.attachedListId();
+    if (listId === null) {
+      return false;
+    }
+    const same = (a: Iterable<string>, b: ReadonlySet<string>): boolean => {
+      const set = new Set(a);
+      return set.size === b.size && [...set].every((id) => b.has(id));
+    };
+    const included = new Set(this.inclusion().keys());
+    // The standing list and the standard rows it stands for are the same exclusion: both sides are
+    // compared in row terms, as `AudienceLastSentComponent.emailRows` does, or a copied past send's
+    // standing-list id beside a ticked standard row reads as a change after attaching it.
+    const expansion = this.standingExpansion();
+    const rows = (ids: Iterable<string>): string[] => [...ids].flatMap((id) => (expansion !== null && id === expansion.listId ? expansion.rowIds : [id]));
+    // As `attachedMasterId` compares: a registrants list still to be created is a change too.
+    const excluded = new Set(rows(this.comparableExcludeIds()));
+    const attached = this.attachResult();
+    if (attached !== null && attached.master.listId === listId) {
+      return same(this.attachedIncludeIds(), included) && same(rows(this.attachedExclusions()), excluded);
+    }
+    const composed = this.composeResult();
+    if (composed !== null && composed.master.listId === listId) {
+      const exclusions = this.composedExclusions();
+      return same(composed.sourceListIds, included) && (exclusions === null || same(rows(exclusions), excluded));
+    }
+    return false;
+  });
+
+  /** Step 4's "Use for this email" note: whether its attach creates anything in HubSpot. */
+  protected readonly reuseAttachNote = computed(() => {
+    if (this.writeCreates().length > 0) {
+      return `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`;
+    }
+    // A past send's own exclusions can complete the standard set while the standing list does not
+    // exist yet, so "nothing is created" holds only once it does; that attach asks first.
+    return this.standardList() === null
+      ? "No master list is built. A past send's own exclusions can still create the project's shared standard suppression list; it asks first if so."
+      : 'No master list is built and nothing new is created in HubSpot.';
+  });
+
+  /**
+   * The compose confirmation's exclusion count, counted as upstream reports it afterwards: the
+   * standard rows as the one standing list when they all apply, plus the registrants list.
+   */
+  protected readonly composeExcludeCount = computed(() => {
+    const standard = new Set(this.standardRowIds());
+    // A copied past send can carry the standing list's own id: it is the same one list.
+    const standingId = this.standardList()?.listId;
+    const sent = this.sentExcludeIds();
+    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id) && id !== standingId).length + 1 : sent.length;
+    return count + (this.registrantsEvent() === '' ? 0 : 1);
+  });
+
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
   protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
 
@@ -777,12 +963,12 @@ export class AudienceBuilderTabComponent {
       return '';
     }
     if (this.registrantsEvent() !== '') {
-      return "The current-registrants list cannot be the send's only suppression: it is applied by edition beside the others. Keep at least one other suppression list ticked in step 3 too.";
+      return "The current-registrants list cannot be the send's only suppression: it is applied by edition beside the others. Keep at least one other suppression list ticked under Standard suppressions too.";
     }
     // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
     // list when none resolves in this portal gave them an instruction they could not follow.
     return this.suppressionLists().some((list) => list.listId !== '')
-      ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
+      ? 'Select at least one suppression list under Standard suppressions first. Every send must keep at least one suppression list.'
       : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
   });
 
@@ -909,7 +1095,8 @@ export class AudienceBuilderTabComponent {
       // A custom create still landing would add its list after the attach recorded the selection.
       !this.customCreating() &&
       // A squatted list name answers every retry with the same 409 until it is fixed in HubSpot.
-      this.listNameConflict() === null
+      this.listNameConflict() === null &&
+      !this.optInsSettling()
   );
 
   /**
@@ -1174,6 +1361,12 @@ export class AudienceBuilderTabComponent {
     return edition === '' ? this.excludeIds() : [...this.excludeIds(), `registrants:${edition}`];
   });
 
+  /** Every list the draft's opt-in lookup found, for the size and link indexes. */
+  private readonly optInLookupLists = computed<readonly AudienceDiscoveredList[]>(() => {
+    const lookup = this.optIns();
+    return [...lookup.added, ...lookup.pending, ...lookup.others];
+  });
+
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
   private readonly sizeIndex = computed(() => {
     const sizes = new Map<string, number>();
@@ -1187,6 +1380,8 @@ export class AudienceBuilderTabComponent {
     this.suppressionLists().forEach((list) => note(list.listId, list.size));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.size)));
     this.searchResults().forEach((list) => note(list.listId, list.size));
+    // A Build-tab draft's opt-in lists come from its own lookup, never `discoveredLists`.
+    this.optInLookupLists().forEach((list) => note(list.listId, list.size));
     return sizes;
   });
 
@@ -1203,6 +1398,7 @@ export class AudienceBuilderTabComponent {
     this.suppressionLists().forEach((list) => note(list.listId, list.hubspotUrl));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.hubspotUrl)));
     this.searchResults().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.optInLookupLists().forEach((list) => note(list.listId, list.hubspotUrl));
     return urls;
   });
 
@@ -1305,14 +1501,45 @@ export class AudienceBuilderTabComponent {
       const figure = reach.toLocaleString('en-US');
       reachText = known.length === included.length ? `≤ ${figure}` : figure;
     }
+    // A preview of THIS selection is the exact union, which beats any sum of list sizes.
+    const preview = this.previewCountLabel();
     return {
       included: included.length,
-      excluded: this.excludeIds().length,
-      reachText,
-      reachPartial: known.length > 0 && known.length < included.length,
+      reachText: preview === '' ? reachText : preview,
+      reachLabel: this.reachLabel(preview !== '', known.length, included.length),
+      reachPartial: preview === '' && known.length > 0 && known.length < included.length,
       reachKnownCount: known.length,
     };
   });
+
+  /**
+   * Each step's number, counting only the steps on screen. Fixed numbers read 3 → 6 → 2 in the
+   * Build tab, where Discover, Include, Reuse and Fill gaps are all hidden.
+   */
+  protected readonly stepNumbers = computed<Record<AudienceStepKey, number>>(() => {
+    const reuse = this.mode() === 'reuse';
+    const visible: Record<AudienceStepKey, boolean> = {
+      discover: reuse,
+      include: reuse && this.hasDiscovered(),
+      exclude: this.showSelection(),
+      reuse: reuse && this.hasDiscovered(),
+      gaps: reuse && this.hasDiscovered(),
+      compose: this.showSelection(),
+      qa: true,
+    };
+    const numbers = {} as Record<AudienceStepKey, number>;
+    let next = 1;
+    for (const step of AUDIENCE_STEP_ORDER) {
+      numbers[step] = visible[step] ? next++ : 0;
+    }
+    return numbers;
+  });
+
+  /**
+   * Everything pausing or limiting the tab, most urgent first, for the one readiness banner.
+   * Warnings lead (they need the operator), then fixed limits, then waits that clear on their own.
+   */
+  protected readonly readinessNotices: Signal<readonly AudienceReadinessNotice[]> = this.initReadinessNotices();
 
   /**
    * Reusing EXISTING lists needs the same settled suppression read that composing does, and at
@@ -1379,10 +1606,13 @@ export class AudienceBuilderTabComponent {
       return this.briefStateMessage();
     }
     if (this.suppressionLoading()) {
-      return 'The suppression lists are still loading in step 3.';
+      return 'The suppression lists are still loading under Standard suppressions.';
+    }
+    if (this.optInsSettling()) {
+      return "The draft's project and LF Newsletter opt-in lists are still being looked up.";
     }
     if (this.suppressionFailed()) {
-      return 'The suppression lists in step 3 could not be loaded. Reload them before attaching.';
+      return 'The suppression lists under Standard suppressions could not be loaded. Reload them before attaching.';
     }
     if (this.suppressionMissing()) {
       return this.suppressionMissingMessage();
@@ -1450,6 +1680,7 @@ export class AudienceBuilderTabComponent {
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
       this.listNameConflict() === null &&
+      !this.optInsSettling() &&
       // A stranded compose in THIS project is unreconciled work: lists may already exist under
       // a name the next compose would reuse. The warning alone did not stop it, so an operator
       // could compose without ever acknowledging it. Scoped to the affected project — composing
@@ -1464,9 +1695,7 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
-    // Feeds `eventUrlValue` from typing; silent resets go through `resetEventUrl`. The other panel's
-    // input is brought up to date when it is shown (`onSetMode`), not on every keystroke: writing the
-    // value back into the input being typed in moved its caret to the end.
+    // Feeds `eventUrlValue` from typing; silent resets go through `resetEventUrl`.
     this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.eventUrlValue.set(value));
 
     // The edition gains its year only once the brief's dates arrive; rows loaded before then lack
@@ -1721,6 +1950,7 @@ export class AudienceBuilderTabComponent {
     const list = this.discoveredLists().find((candidate) => candidate.listId === listId);
     this.dropExclusion(listId);
     this.toggle(this.inclusion, listId, list?.name ?? listId);
+    this.reconcileOptInOwnership();
   }
 
   /** Step 2's Exclude: marks (or unmarks) a discovered list as an exclusion. */
@@ -1750,6 +1980,7 @@ export class AudienceBuilderTabComponent {
     }
     this.exclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   protected onRemoveExclusion(listId: string): void {
@@ -1836,9 +2067,14 @@ export class AudienceBuilderTabComponent {
    * -- excluding that send's suppression lists AND whatever is ticked or marked Exclude here, so the
    * mandatory step-3 suppression always applies.
    */
-  protected onUseSendLists(email: AudienceLastSentEmail): void {
+  protected onUseSendLists(email: AudienceLastSentEmail, confirmed = false): void {
     const includes = email.includedLists.filter((list) => !list.missing).map((list) => list.listId);
     if (includes.length === 0 || !this.canUseExistingMaster()) {
+      return;
+    }
+    // The past send's own exclusions join the request, and can complete the standard set.
+    const extras = email.suppressionLists.map((list) => list.listId);
+    if (!confirmed && this.askToConfirmReuse({ kind: 'send', id: email.emailId, label: `the lists of "${email.emailName}"`, creates: '' }, extras)) {
       return;
     }
     this.attachExisting(
@@ -1860,16 +2096,26 @@ export class AudienceBuilderTabComponent {
    * Prior-send reuse is gated the same way now: it adds the ticked suppressions to the earlier
    * send's own, so at least one must be ticked and the lookup must have settled.
    */
-  protected onUseMasterList(list: AudienceMasterListBrief): void {
+  protected onUseMasterList(list: AudienceMasterListBrief, confirmed = false): void {
     if (!this.canUseExistingMaster()) {
+      return;
+    }
+    if (!confirmed && this.askToConfirmReuse({ kind: 'master', id: list.listId, label: `"${list.name}"`, creates: '' }, [])) {
       return;
     }
     this.attachExisting(list.listId, [list.listId], [], '');
   }
 
   /** Sends to every selected list directly, with the ticked suppression — no master list built. */
-  protected onUseSelectionDirectly(): void {
+  protected onUseSelectionDirectly(confirmed = false): void {
     if (!this.canUseSelectionDirectly()) {
+      return;
+    }
+    // "Nothing new is created" holds only when neither list attach may create is missing.
+    if (!confirmed && this.writeCreates().length > 0) {
+      this.pendingReuseAttach.set(null);
+      this.attachConfirmedFor.set(this.attachKey('selection'));
+      this.scrollTo('campaigns-audience-use-direct-cancel', true);
       return;
     }
     const entries = this.inclusionEntries();
@@ -1919,17 +2165,22 @@ export class AudienceBuilderTabComponent {
   protected onCustomCreated(list: AudienceComposedList): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
+    this.settleDraftList(list.listId);
   }
 
   /** An existing list the builder suggested and the operator chose to reuse. */
   protected onCustomReuse(list: AudienceListSearchResult): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
+    // Reusing an existing list in place of the draft's is the draft's list existing, as a create is:
+    // without this the held opt-ins waited forever with no way to add them.
+    this.settleDraftList(list.listId);
   }
 
   /**
-   * The legacy "Event Audience": a regional-expansion audience the model plans from the event page
-   * itself (the service reads it), so no discovery is needed first. It is drafted into the custom
+   * The event audience the model plans from the event page itself (the service reads it), so no
+   * discovery is needed first. Not location-scoped unless the operator asks: the host city and
+   * country are an explicit choice, never the default. It is drafted into the custom
    * builder, so the same review, property checks, preview and confirmation apply.
    */
   protected onGenerateEventPlan(confirmed = false): void {
@@ -1955,12 +2206,24 @@ export class AudienceBuilderTabComponent {
     }
     this.mode.set('build');
     this.draftedEventUrl.set(url);
+    this.eventDraftActive.set(true);
+    // A re-draft of the same page while the earlier draft's list is still included keeps that list
+    // as the draft's list, and its opt-ins stay owned by it: dropped here, removing that list later
+    // would leave the opt-ins alone in Include (a send to only the portfolio-wide newsletter list).
+    const keptList = this.draftListId();
+    const keepDraft = !otherEvent && keptList !== null && this.inclusion().has(keptList);
+    const carried = keepDraft ? this.optIns().added : [];
+    if (!keepDraft) {
+      this.draftListId.set(null);
+      this.optInsDeclined.clear();
+    }
+    this.lookUpOptIns(url, carried);
     this.customPreset.set({
       version: ++this.customPresetVersion,
       eventUrl: url,
       request:
-        'Regional expansion audience for this event: mailable contacts in its host city and country, contacts who registered for any event held there, ' +
-        "education enrollees there limited to the brand's own courses, and visitors of the event page.",
+        "Event audience, not limited to any location: this event's own past registrants (its earlier editions only, never other events in the same place), " +
+        "education enrollees limited to the brand's own courses, and visitors of the event page.",
     });
   }
 
@@ -2009,17 +2272,126 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onSetMode(mode: AudienceBuildMode): void {
+    // One event page field serves both modes in this layout, so there is no second input to refresh.
     this.mode.set(mode);
-    // The Build and Reuse panels both bind eventUrlControl, and an edit in one never writes back to
-    // the other (Reactive Forms skips the view that made the change, and the hidden panel stays
-    // mounted). Re-writing the value updates every bound input, so the panel shown is current.
-    this.eventUrlControl.setValue(this.eventUrlControl.value, { emitEvent: false });
+  }
+
+  /** Arrow, Home and End keys move between the mode tabs, as the WAI-ARIA tabs pattern expects. */
+  protected onModeKeydown(event: KeyboardEvent): void {
+    const modes = this.modeOptions.map((option) => option.mode);
+    const at = modes.indexOf(this.mode());
+    let next = at;
+    if (event.key === 'ArrowRight') next = (at + 1) % modes.length;
+    else if (event.key === 'ArrowLeft') next = (at - 1 + modes.length) % modes.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = modes.length - 1;
+    else return;
+    event.preventDefault();
+    this.mode.set(modes[next]);
+    this.scrollTo(`campaigns-audience-mode-${modes[next]}`, true);
+  }
+
+  /**
+   * Takes the operator to a step a hint names, switching mode first when the step lives in the
+   * other one. Hints used to say "under X above", which pointed at nothing in the other mode.
+   */
+  protected onGoToStep(step: AudienceStepKey): void {
+    if (step === 'discover' || step === 'include' || step === 'reuse' || step === 'gaps') {
+      this.mode.set('reuse');
+    }
+    // Focus, not only scroll: from the summary bar at the bottom, keyboard and screen-reader users
+    // otherwise kept their place there and tabbed out of the builder. Focusing scrolls it into view.
+    this.scrollTo(`campaigns-audience-step-${step}`, true);
+  }
+
+  protected onReadinessAction(action: AudienceReadinessAction): void {
+    if (action === 'retry-audience-read') this.retryAudienceRead.emit();
+    else this.retryBrief.emit();
+  }
+
+  /** An opt-in list the lookup found but did not add (one per signal is added). */
+  protected onAddOptIn(list: AudienceDiscoveredList): void {
+    if (this.selectionLocked()) return;
+    this.add(list.listId, list.name);
+    this.ensureSuppressionLoaded();
+  }
+
+  /** Compose creates real HubSpot lists, so the first click asks; only the confirmation composes. */
+  protected onRequestCompose(): void {
+    if (!this.canCompose()) return;
+    this.composeConfirmedFor.set(this.writeRequestKey());
+    // The Compose button leaves the DOM as the confirmation replaces it, so focus moves into the
+    // confirmation -- to Cancel, the safe default for a create that cannot be undone.
+    this.scrollTo('campaigns-audience-compose-cancel', true);
+  }
+
+  protected onConfirmCompose(): void {
+    if (!this.composeConfirming()) {
+      return;
+    }
+    this.composeConfirmedFor.set(null);
+    this.onComposeMaster();
+  }
+
+  protected onCancelCompose(): void {
+    this.composeConfirmedFor.set(null);
+    this.scrollTo('campaigns-audience-compose', true);
+  }
+
+  /** Direct attach that creates a list asks first, naming the lists, as compose does. */
+  protected onConfirmUseSelection(): void {
+    if (!this.attachConfirming()) {
+      return;
+    }
+    this.attachConfirmedFor.set(null);
+    this.onUseSelectionDirectly(true);
+  }
+
+  protected onCancelUseSelection(): void {
+    const reuse = this.pendingReuseAttach();
+    this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
+    // Back to the button the confirmation was opened from: its Cancel leaves the DOM with it.
+    if (reuse === null) {
+      this.scrollTo('campaigns-audience-use-direct', true);
+    } else {
+      this.scrollTo(reuse.kind === 'master' ? `audience-last-sent-master-use-${reuse.id}` : `audience-last-sent-use-${reuse.id}`, true);
+    }
+  }
+
+  /** Runs the step-4 reuse attach the operator confirmed. */
+  protected onConfirmReuseAttach(): void {
+    const pending = this.reuseAttachConfirming();
+    this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
+    if (pending === null) {
+      return;
+    }
+    if (pending.kind === 'master') {
+      const list = this.reuseMasterLists().find((candidate) => candidate.listId === pending.id);
+      if (list) this.onUseMasterList(list, true);
+    } else {
+      const email = this.lastSentEmails().find((candidate) => candidate.emailId === pending.id);
+      if (email) this.onUseSendLists(email, true);
+    }
   }
 
   /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
   protected onUseExistingList(list: AudienceListSearchResult): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
+    // A list picked by hand is not the draft's: a draft still waiting for its list offers its
+    // opt-ins by hand instead of promising an add that may never come.
+    if (this.eventDraftActive() && this.draftListId() === null) {
+      this.releasePendingOptIns();
+    }
+  }
+
+  /** The operator started the custom builder over: the event draft, and its automatic opt-ins, are gone. */
+  protected onCustomStartedOver(): void {
+    if (this.eventDraftActive()) {
+      this.releasePendingOptIns();
+    }
   }
 
   protected onSelectAllDiscovered(lists: AudienceListRef[]): void {
@@ -2037,6 +2409,7 @@ export class AudienceBuilderTabComponent {
     }
     this.inclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
@@ -2074,8 +2447,12 @@ export class AudienceBuilderTabComponent {
    */
   protected onCreateForSignal(signal: AudienceSignal): void {
     if (this.customCreating()) return;
+    // Another preset replaces the event draft, so its opt-ins no longer wait on a list: they are
+    // offered to add by hand instead.
+    this.releasePendingOptIns();
     // The builder lives in the Build view; switching there is what makes the preset visible.
     this.mode.set('build');
+    this.scrollTo('campaigns-audience-custom');
     const eventName = this.identity()?.eventName ?? '';
     const editionName = withEventYear(eventName, this.identity()?.eventDates ?? []);
     const brand = this.identity()?.brandShort ?? '';
@@ -2115,10 +2492,16 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onRemoveInclusion(listId: string): void {
+    // Taken out while a draft's lookup is loading: the lookup does not own it yet, so nothing else
+    // records the choice, and a pick of that list would put it straight back. Offered instead.
+    if (this.optIns().status === 'loading') {
+      this.optInsDeclined.add(listId);
+    }
     const next = new Map(this.inclusion());
     next.delete(listId);
     this.inclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   // === Protected Methods: manual search ===
@@ -2239,6 +2622,8 @@ export class AudienceBuilderTabComponent {
     }
 
     const event = this.identity();
+    // The options stay open with the result: the disclosure would otherwise hide what was composed.
+    this.composeOpen.set(true);
     this.composing.set(true);
     this.composeOnWire.set(true);
     this.composeAttempted.set(true);
@@ -2419,6 +2804,88 @@ export class AudienceBuilderTabComponent {
       return 'No reliable total';
     }
     return `Up to ${count.estimate.toLocaleString('en-US')}`;
+  }
+
+  // === Private Initializers ===
+  private initReadinessNotices(): Signal<readonly AudienceReadinessNotice[]> {
+    return computed(() => {
+      const warn: AudienceReadinessNotice[] = [];
+      const info: AudienceReadinessNotice[] = [];
+      const busy: AudienceReadinessNotice[] = [];
+
+      if (!this.capabilitiesKnown()) {
+        busy.push({ testId: 'campaigns-audience-checking', tone: 'busy', message: 'Checking the HubSpot connection...' });
+      } else if (this.degraded()) {
+        // Both branches fail closed; only the CAUSE differs, and stating the wrong one sends the
+        // operator to fix credentials that are fine. Upstream's own reason beats the generic copy.
+        const detail = this.degradedDetail();
+        let message =
+          'This environment has no HubSpot credentials configured, so lists cannot be discovered or created. An administrator needs to set up the connection.';
+        let messageTestId = 'campaigns-audience-degraded-unconfigured';
+        if (this.capabilitiesFailed()) {
+          message =
+            'The Audience Builder could not be reached, so lists cannot be discovered or created. Reload to try again; if it persists, ask an administrator.';
+          messageTestId = 'campaigns-audience-degraded-unknown';
+        } else if (detail) {
+          message = `${detail} Everything below is read-only until the HubSpot connection is usable.`;
+          messageTestId = 'campaigns-audience-degraded-detail';
+        }
+        warn.push({ testId: 'campaigns-audience-degraded-banner', tone: 'warn', title: 'Audience Builder is unavailable', message, messageTestId });
+      }
+
+      // The brief's saved audience is unknown: every write is blocked, since a second audience on
+      // top of a hidden one is a duplicate HubSpot list.
+      if (this.audienceReadPending()) {
+        busy.push({
+          testId: 'campaigns-audience-read-pending',
+          tone: 'busy',
+          message: 'Checking whether this email already has a send audience. Attaching and composing are paused until it loads.',
+        });
+      } else if (this.audienceReadUnavailable()) {
+        info.push({
+          testId: 'campaigns-audience-read-unavailable',
+          tone: 'info',
+          message: "Saved audiences can't be looked up here, so attaching and composing are off to avoid a duplicate master list.",
+        });
+      } else if (this.audienceReadFailed()) {
+        warn.push({
+          testId: 'campaigns-audience-read-failed',
+          tone: 'warn',
+          title: "This email's saved audience could not be checked",
+          message: 'It may already have one. Attaching and composing are blocked until it can be read.',
+          action: { kind: 'retry-audience-read', label: 'Try again', testId: 'campaigns-audience-read-retry' },
+        });
+      }
+
+      // Why nothing can be attached yet. The parent saves the plan when the tab opens, so an empty
+      // brief id is a save in flight, a failed save, an unapproved plan, or one this session does
+      // not own -- never "go and save it".
+      const state = this.briefState();
+      if (this.briefId() === '' && state !== 'none' && state !== 'ready') {
+        const notice: AudienceReadinessNotice = {
+          testId: 'campaigns-audience-brief-state',
+          tone: 'info',
+          message: this.briefStateMessage(),
+          messageTestId: 'campaigns-audience-brief-state-message',
+        };
+        if (state === 'resolving') busy.push({ ...notice, tone: 'busy' });
+        else if (state === 'failed')
+          warn.push({ ...notice, tone: 'warn', action: { kind: 'retry-brief', label: 'Retry', testId: 'campaigns-audience-brief-retry' } });
+        else if (state === 'unopened') warn.push({ ...notice, tone: 'warn' });
+        else info.push(notice);
+      }
+
+      if (this.stagingInFlight()) {
+        busy.push({
+          testId: 'campaigns-audience-staging-pause',
+          tone: 'busy',
+          message:
+            'A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching resume once it finishes or is confirmed on the Implement tab.',
+        });
+      }
+
+      return [...warn, ...info, ...busy];
+    });
   }
 
   // === Private Methods ===
@@ -2732,6 +3199,91 @@ export class AudienceBuilderTabComponent {
     };
   }
 
+  /** A confirmation's identity: what the write would send, and which attach it is. */
+  private attachKey(target: string): string {
+    return `${this.writeRequestKey()}|${target}`;
+  }
+
+  /** Opens the confirmation for a reuse attach that creates lists; false when none is needed. */
+  private askToConfirmReuse(pending: AudiencePendingReuseAttach, extraExclusions: readonly string[]): boolean {
+    const creates = this.createsFor(extraExclusions).join(' and ');
+    if (creates === '') {
+      return false;
+    }
+    this.pendingReuseAttach.set({ ...pending, creates });
+    this.attachConfirmedFor.set(this.attachKey(`${pending.kind}:${pending.id}|${creates}`));
+    this.scrollTo('campaigns-audience-reuse-attach-cancel', true);
+    return true;
+  }
+
+  /**
+   * The lists an attach or compose would CREATE in HubSpot, by name, given exclusions it adds to
+   * the ticked ones (a past send's own): the standing standard list when they complete the standard
+   * set and it does not exist yet, and the edition's registrants list while it does not exist.
+   */
+  private createsFor(extraExclusions: readonly string[]): string[] {
+    const created: string[] = [];
+    const excluded = new Set([...this.excludeIds(), ...extraExclusions]);
+    const standard = this.standardRowIds();
+    if (this.standardList() === null && standard.length > 0 && standard.every((id) => excluded.has(id))) {
+      created.push("the project's shared standard suppression list");
+    }
+    const edition = this.registrantsToCreate();
+    if (edition !== '') {
+      created.push(`"${this.registrantsRow()?.name || `${edition} - Current Registrants`}"`);
+    }
+    return created;
+  }
+
+  /**
+   * The one ownership rule for the draft's opt-ins, run after every edit that can take a list out of
+   * Include: they follow the draft's list while it is included, and are withdrawn and offered by hand
+   * when it leaves. A list the operator removed stops being the lookup's, so adding it back -- or a
+   * list picked by hand in the first place -- is never touched by a later draft.
+   */
+  private reconcileOptInOwnership(): void {
+    const lookup = this.optIns();
+    const included = this.inclusion();
+    const draftList = this.draftListId();
+    if (draftList !== null && !included.has(draftList)) {
+      const owned = lookup.added.filter((list) => included.has(list.listId));
+      if (owned.length > 0) {
+        const next = new Map(included);
+        owned.forEach((list) => next.delete(list.listId));
+        this.inclusion.set(next);
+        this.invalidatePreview();
+      }
+      this.draftListId.set(null);
+      this.eventDraftActive.set(false);
+      this.optIns.set({ ...lookup, added: [], pending: [], others: uniqueLists([...lookup.added, ...lookup.pending, ...lookup.others]) });
+      return;
+    }
+    const excludedPending = lookup.pending.filter((list) => this.exclusion().has(list.listId));
+    if (excludedPending.length > 0) {
+      this.optIns.set({
+        ...lookup,
+        pending: lookup.pending.filter((list) => !this.exclusion().has(list.listId)),
+        others: uniqueLists([...excludedPending, ...lookup.others]),
+      });
+      return this.reconcileOptInOwnership();
+    }
+    const left = lookup.added.filter((list) => !included.has(list.listId));
+    left.forEach((list) => this.optInsDeclined.add(list.listId));
+    if (left.length > 0) {
+      this.optIns.set({ ...lookup, added: lookup.added.filter((list) => included.has(list.listId)), others: uniqueLists([...left, ...lookup.others]) });
+    }
+  }
+
+  /** The draft's list now exists (created or reused): its held opt-ins join Include beside it. */
+  private settleDraftList(listId: string): void {
+    // A replacement list from a same-page re-draft takes over the earlier list's opt-ins: they now
+    // follow the list the draft produced last, which is the one the send is built on.
+    if (this.eventDraftActive() && this.draftListId() !== listId) {
+      this.draftListId.set(listId);
+      this.addPendingOptIns();
+    }
+  }
+
   /** Runs a reload that was asked for while the previous load was on the wire. */
   private runPendingSuppressionReload(): void {
     if (this.suppressionReloadPending) {
@@ -2779,7 +3331,7 @@ export class AudienceBuilderTabComponent {
       return;
     }
     if (sentExclusions.length === 0) {
-      this.attachError.set('Select at least one suppression list in step 3 first.');
+      this.attachError.set('Select at least one suppression list under Standard suppressions first.');
       return;
     }
     const run = this.runGeneration;
@@ -2869,9 +3421,10 @@ export class AudienceBuilderTabComponent {
     this.composedMasterLists.update((lists) => [row, ...lists]);
   }
 
-  private add(listId: string, name: string): void {
+  /** Includes a list; true when it was inserted, false when it was already included. */
+  private add(listId: string, name: string): boolean {
     if (this.inclusion().has(listId)) {
-      return;
+      return false;
     }
     // Including a list un-marks it as an exclusion: a list cannot be both.
     this.dropExclusion(listId);
@@ -2879,6 +3432,7 @@ export class AudienceBuilderTabComponent {
     next.set(listId, name);
     this.inclusion.set(next);
     this.invalidatePreview();
+    return true;
   }
 
   /**
@@ -2964,8 +3518,8 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * Resets the event URL field without emitting (the mirror in the constructor must not re-dirty
-   * it), keeping `eventUrlValue` in step so the buttons judge the URL actually in the field.
+   * Resets the event URL field without emitting, keeping `eventUrlValue` in step so the buttons
+   * judge the URL actually in the field.
    */
   private resetEventUrl(url: string): void {
     this.eventUrlControl.reset(url, { emitEvent: false });
@@ -3027,6 +3581,11 @@ export class AudienceBuilderTabComponent {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
     this.runGeneration += 1;
+    this.optInSubscription?.unsubscribe();
+    this.optInSubscription = null;
+    this.optIns.set(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
+    this.eventDraftActive.set(false);
+    this.draftListId.set(null);
     this.composing.set(false);
     this.previewing.set(false);
     // `searching` belongs here with its siblings. Guarding onSearch's ERROR handler on the run
@@ -3072,6 +3631,9 @@ export class AudienceBuilderTabComponent {
     this.loadedRegistrantsEdition.set('');
     this.composeResult.set(null);
     this.composeDispatch.set(null);
+    this.composeConfirmedFor.set(null);
+    this.attachConfirmedFor.set(null);
+    this.pendingReuseAttach.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);
     // A failed discover belongs to the run that failed. Without this, foundation A's error stays
@@ -3116,10 +3678,189 @@ export class AudienceBuilderTabComponent {
    * one fix, the same way the run-generation guard and `resetRunState` were.
    */
   private invalidatePreview(): void {
+    // A confirmation names the selection it was asked for, so an edit withdraws it.
+    this.composeConfirmedFor.set(null);
     this.previewSeq += 1;
     this.previewCount.set(null);
     this.previewError.set(null);
     this.previewing.set(false);
+  }
+
+  /**
+   * The summary bar's name for the reach figure, matching what the figure is: a previewed union, an
+   * upper bound summed over every list's size, or a sum over only the lists that reported one.
+   */
+  private reachLabel(previewed: boolean, known: number, included: number): string {
+    if (previewed) {
+      return this.previewCount()?.exact ? 'Reach before exclusions' : 'Reach estimate before exclusions';
+    }
+    if (known === 0) {
+      return 'Reach';
+    }
+    return known === included ? 'Reach (at most)' : `Known sizes (${known} of ${included} lists)`;
+  }
+
+  /**
+   * Finds the portal's existing opt-in lists for the event and adds them to Include beside the
+   * drafted list, once that list is created. Opt-ins are subscription types spread over many portal-specific properties, so
+   * a filter for them would be a guess into a production list; discovery already classifies the
+   * lists the portal keeps for them. Read-only: discovery creates nothing.
+   *
+   * Only the opt-in buckets are taken from the result. Identity, the discovered grid and the reuse
+   * lookups belong to the Use existing lists tab, and filling them here would switch its steps on.
+   * The largest list per signal is added; any others are offered, since a brand often keeps older
+   * variants that should not all join the send by default.
+   */
+  private lookUpOptIns(eventUrl: string, carried: AudienceDiscoveredList[] = []): void {
+    const run = this.runGeneration;
+    const seq = ++this.optInSeq;
+    const current = (): boolean => run === this.runGeneration && seq === this.optInSeq;
+    // A new draft starts a new lookup, which owns nothing yet. The last draft's opt-ins stay where
+    // they are: they are owned only while that draft's list is included, and that list -- still in
+    // Include on a re-draft of the same page -- keeps them. Another event's draft never gets here
+    // with them, because it starts over first (`onGenerateEventPlan`).
+    this.optInSubscription?.unsubscribe();
+    // Discovery already ran for this very page: its classified lists hold the opt-in buckets, so a
+    // second full discovery stream would only repeat it.
+    if (this.hasDiscovered() && eventUrl === this.discoveredEventUrl()) {
+      this.applyOptIns({ lists: [...this.discoveredLists()], missingSignals: [...this.missingSignals()] }, carried);
+      return;
+    }
+    // Carried opt-ins stay owned while the lookup runs, so removing the kept list meanwhile still
+    // withdraws them (`reconcileOptInOwnership`).
+    this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'loading', added: carried });
+    let result: AudienceDiscoveryResult | null = null;
+    // A failed lookup keeps the opt-ins it carries owned: emptied, removing the kept draft list
+    // later would leave them alone in Include. The failed panel never renders `added`.
+    const fail = (): void => this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed', added: this.optIns().added });
+    // Settled on `done` or on completion, whichever comes first: the stream may end either way. A
+    // stream that errors after its `discovered` event still settles on the result it delivered.
+    const settle = (): void => {
+      if (!current() || this.optIns().status !== 'loading') return;
+      if (result === null) fail();
+      else this.applyOptIns(result, this.optIns().added);
+    };
+    this.optInSubscription = this.campaignService
+      .discoverAudience(this.projectSlug(), { eventUrl })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (event: SSEEvent<AudienceDiscoverySSEEventType>) => {
+          if (!current()) return;
+          if (event.type === 'discovered') {
+            result = event.data as AudienceDiscoveryResult;
+          } else if (event.type === 'done') {
+            settle();
+          } else if (event.type === 'error' || event.type === 'shutdown') {
+            settle();
+          }
+        },
+        error: settle,
+        complete: settle,
+      });
+  }
+
+  private applyOptIns(result: AudienceDiscoveryResult, carried: AudienceDiscoveredList[] = []): void {
+    const added: AudienceDiscoveredList[] = [];
+    const others: AudienceDiscoveredList[] = [];
+    const missing: AudienceOptInLookup['missing'] = [];
+    for (const signal of AUDIENCE_OPT_IN_SIGNALS) {
+      const lists = result.lists.filter((list) => list.signal === signal).sort((a, b) => (b.size ?? -1) - (a.size ?? -1));
+      if (lists.length === 0) {
+        missing.push(signal);
+        continue;
+      }
+      added.push(lists[0]);
+      others.push(...lists.slice(1));
+    }
+    // Carried opt-ins the earlier draft added and that are still included stay owned on every exit,
+    // so removing that draft's list later still withdraws them (`reconcileOptInOwnership`).
+    const stillOwned = carried.filter((list) => this.inclusion().has(list.listId));
+    const ownedIds = new Set(stillOwned.map((list) => list.listId));
+    const offered = (lists: AudienceDiscoveredList[]): AudienceDiscoveredList[] => lists.filter((list) => !ownedIds.has(list.listId));
+    // A locked selection (a compose already ran) is not changed behind the operator's back: the
+    // lists are still shown, to add by hand once it is unlocked.
+    if (this.selectionLocked()) {
+      this.optIns.set({ status: 'done', added: stillOwned, pending: [], others: offered([...added, ...others]), missing });
+      return;
+    }
+    // No draft waits for them any more (another preset, a Start over, a list picked by hand): they
+    // are offered to add by hand, never left promising an automatic add that cannot happen.
+    if (!this.eventDraftActive()) {
+      this.optIns.set({ status: 'done', added: stillOwned, pending: [], others: offered([...added, ...others]), missing });
+      return;
+    }
+    // Held until the drafted list exists. Added now, they let one click attach a send to only the
+    // portfolio-wide newsletter list before the draft was reviewed or created. A pick already in
+    // Include waits for nothing: one the earlier draft of this page added stays owned (shown as
+    // added, withdrawn with that draft's list); one the operator included by hand is offered.
+    // A pick the operator removed after the draft added it is their choice: offered, never re-added.
+    // A pick marked Exclude is offered too: it would never join Include, so it must not read as pending.
+    const included = this.inclusion();
+    const excluded = this.exclusion();
+    const offeredOnly = (list: AudienceDiscoveredList): boolean => this.optInsDeclined.has(list.listId) || excluded.has(list.listId);
+    // One list per signal: a signal whose carried list is still owned and included keeps that list,
+    // and a larger pick of it from the re-draft is offered rather than added beside it.
+    const ownedSignals = new Set(stillOwned.map((list) => list.signal));
+    const waiting = added.filter((list) => !included.has(list.listId) && !offeredOnly(list) && !ownedSignals.has(list.signal));
+    const declined = added.filter((list) => !included.has(list.listId) && (offeredOnly(list) || ownedSignals.has(list.signal)));
+    const handPicked = added.filter((list) => included.has(list.listId) && !ownedIds.has(list.listId));
+    // An owned list is shown once, as added, even when a larger list of its signal appeared.
+    this.optIns.set({ status: 'done', added: stillOwned, pending: waiting, others: offered(uniqueLists([...handPicked, ...declined, ...others])), missing });
+    if (this.draftListId() !== null) {
+      this.addPendingOptIns();
+    }
+  }
+
+  /**
+   * Adds the draft's held opt-in lists to Include. Only lists actually inserted are recorded as
+   * added: one the operator already included stays theirs, and one they marked Exclude is not
+   * silently un-marked -- it is offered instead.
+   */
+  private addPendingOptIns(): void {
+    const lookup = this.optIns();
+    if (lookup.pending.length === 0 || this.selectionLocked()) {
+      return;
+    }
+    // Only beside the drafted list: removed before the lookup settled, the opt-ins alone would make
+    // a send to the portfolio-wide newsletter list one click away.
+    const draftList = this.draftListId();
+    if (draftList === null || !this.inclusion().has(draftList)) {
+      this.releasePendingOptIns();
+      return;
+    }
+    const added: AudienceDiscoveredList[] = [];
+    const offered: AudienceDiscoveredList[] = [];
+    for (const list of lookup.pending) {
+      if (this.exclusion().has(list.listId)) {
+        offered.push(list);
+      } else if (this.add(list.listId, list.name)) {
+        added.push(list);
+      }
+    }
+    if (added.length > 0) this.ensureSuppressionLoaded();
+    this.optIns.set({ ...lookup, added: [...lookup.added, ...added], pending: [], others: [...offered, ...lookup.others] });
+  }
+
+  /** The held opt-ins stop waiting on a draft and are offered to add by hand. */
+  private releasePendingOptIns(): void {
+    this.eventDraftActive.set(false);
+    const lookup = this.optIns();
+    if (lookup.pending.length > 0) {
+      this.optIns.set({ ...lookup, pending: [], others: [...lookup.pending, ...lookup.others] });
+    }
+  }
+
+  /** Scrolls to (or focuses) an element by test id once the view has rendered the change that shows it. */
+  private scrollTo(testId: string, focus = false): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    afterNextRender(
+      () => {
+        const target = this.host.nativeElement.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+        if (focus) target?.focus();
+        else target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      },
+      { injector: this.injector }
+    );
   }
 }
 
@@ -3131,4 +3872,10 @@ function withEventYear(name: string, dates: readonly string[]): string {
   }
   const year = dates.map((d) => AUDIENCE_EDITION_YEAR_PATTERN.exec(d)?.[0]).find(Boolean);
   return year ? `${trimmed} ${year}` : trimmed;
+}
+
+/** Lists de-duplicated by id, first one kept: an id may be offered from more than one source. */
+function uniqueLists(lists: readonly AudienceDiscoveredList[]): AudienceDiscoveredList[] {
+  const seen = new Set<string>();
+  return lists.filter((list) => !seen.has(list.listId) && seen.add(list.listId) !== undefined);
 }

@@ -187,6 +187,30 @@ describe('AudienceBuilderTabComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Clicks Compose and then its confirmation: compose asks before it creates anything. */
+  function composeMaster(): void {
+    click('campaigns-audience-compose');
+    click('campaigns-audience-compose-confirm');
+  }
+
+  /**
+   * Clicks "Use selected lists", confirming when it asks: an attach that creates the standing list
+   * or the registrants list asks first, and most fixtures here have no standing list yet.
+   */
+  function useSelectionDirectly(): void {
+    click('campaigns-audience-use-direct');
+    if (host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]')) {
+      click('campaigns-audience-use-direct-confirm');
+    }
+  }
+
+  /** Confirms a step-4 reuse attach when it asks (it does while the standing list is missing). */
+  function confirmReuseIfAsked(): void {
+    if (host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')) {
+      click('campaigns-audience-reuse-attach-confirm');
+    }
+  }
+
   /** Toggles one standard suppression row, opening the collapsed standard entry first. */
   function toggleStandardRow(key: string): void {
     if (!host().querySelector(`[data-testid="audience-suppression-grid-toggle-${key}"]`)) {
@@ -496,7 +520,7 @@ describe('AudienceBuilderTabComponent', () => {
       // The wire is what actually matters: a stale id here creates the wrong audience in HubSpot.
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '5', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] }));
       click('audience-card-grid-toggle-999');
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster).toHaveBeenCalled();
       const sent = composeAudienceMaster.mock.calls.at(-1)?.[1]?.listIds ?? [];
@@ -750,13 +774,14 @@ describe('AudienceBuilderTabComponent', () => {
       await renderWithDiscovery({ briefId: 'brief-1' });
       const tab = fixture.componentInstance as unknown as {
         onExcludeList: (list: { listId: string; name: string }) => void;
-        onUseMasterList: (list: { listId: string; name: string }) => void;
+        onUseMasterList: (list: { listId: string; name: string }, confirmed?: boolean) => void;
         attachError: () => string | null;
       };
       tab.onExcludeList({ listId: '901', name: 'Synthetic Master' });
       fixture.detectChanges();
 
-      tab.onUseMasterList({ listId: '901', name: 'Synthetic Master' });
+      // Confirmed: this fixture has no standing list yet, so the attach would create it.
+      tab.onUseMasterList({ listId: '901', name: 'Synthetic Master' }, true);
 
       expect(attachExistingAudience, 'the overlap was attached with the exclusion dropped').not.toHaveBeenCalled();
       expect(tab.attachError()).toContain('both sent to and excluded');
@@ -820,7 +845,7 @@ describe('AudienceBuilderTabComponent', () => {
       await renderWithDiscovery({ briefId: 'brief-1' });
       const tab = fixture.componentInstance as unknown as {
         inclusion: { set: (m: ReadonlyMap<string, string>) => void };
-        onUseSelectionDirectly: () => void;
+        onUseSelectionDirectly: (confirmed?: boolean) => void;
       };
       attachExistingAudience.mockReturnValue(NEVER);
       const longNames = new Map(
@@ -829,7 +854,8 @@ describe('AudienceBuilderTabComponent', () => {
       tab.inclusion.set(longNames);
       fixture.detectChanges();
 
-      tab.onUseSelectionDirectly();
+      // Confirmed: this fixture has no standing list yet, so the attach would create it.
+      tab.onUseSelectionDirectly(true);
 
       const request = attachExistingAudience.mock.calls.at(-1)?.[1] as { inclusionSummary?: string; includeListIds?: string[] } | undefined;
       expect(request?.includeListIds).toHaveLength(50);
@@ -994,7 +1020,7 @@ describe('AudienceBuilderTabComponent', () => {
       completeDiscovery();
       click('audience-card-grid-toggle-101');
       composeAudienceMaster.mockReturnValue(new Subject());
-      click('campaigns-audience-compose');
+      composeMaster();
 
       fixture.componentRef.setInput('initialEventUrl', 'https://events.example.org/event-b');
       fixture.detectChanges();
@@ -1013,7 +1039,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-discover');
       completeDiscovery();
       click('audience-card-grid-toggle-101');
-      click('campaigns-audience-compose');
+      composeMaster();
       expect(composeAudienceMaster, 'a second compose ran over the stranded one').toHaveBeenCalledTimes(1);
     });
 
@@ -1043,7 +1069,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const reply = new Subject<AudienceAttachExistingResult>();
       attachExistingAudience.mockReturnValue(reply);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
       const seen: boolean[] = [];
       fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
 
@@ -1074,7 +1100,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const reply = new Subject<AudienceAttachExistingResult>();
       attachExistingAudience.mockReturnValue(reply);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
       const attached: CampaignAudience[] = [];
       fixture.componentInstance.audienceAttached.subscribe((row) => attached.push(row));
 
@@ -1203,7 +1229,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const reply = new Subject<AudienceComposeMasterResult>();
       composeAudienceMaster.mockReturnValue(reply);
-      click('campaigns-audience-compose');
+      composeMaster();
       const unattached: AudienceComposedList[] = [];
       fixture.componentInstance.audienceComposeUnattached.subscribe((e) => unattached.push(e.master));
 
@@ -1302,7 +1328,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const reply = new Subject<never>();
       composeAudienceMaster.mockReturnValue(reply);
-      click('campaigns-audience-compose');
+      composeMaster();
       const seen: boolean[] = [];
       fixture.componentInstance.audienceWriteInFlight.subscribe((busy) => seen.push(busy));
 
@@ -1367,7 +1393,7 @@ describe('AudienceBuilderTabComponent', () => {
       await renderWithDiscovery({ briefId: 'brief-1' });
       click('audience-card-grid-toggle-101');
       attachExistingAudience.mockReturnValue(new Subject());
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const discover = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-discover"]');
       expect(discover?.disabled, 'Discover stayed live during an attach').toBe(true);
@@ -1383,7 +1409,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const reply = new Subject<AudienceAttachExistingResult>();
       attachExistingAudience.mockReturnValue(reply);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
       fixture.detectChanges();
       expect(seen.at(-1), 'the parent was not told a write started').toBe(true);
 
@@ -1444,7 +1470,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(
         throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'HubSpot did not confirm whether this change was applied' } }))
       );
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
       expect(btn?.disabled, 'compose re-enabled after a failure that may have created a list').toBe(true);
@@ -1458,7 +1484,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
 
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: '<html>502 Bad Gateway</html>' })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().textContent, 'a bare gateway 502 was rendered as a partial compose').not.toContain('Partially completed');
     });
@@ -1721,7 +1747,7 @@ describe('AudienceBuilderTabComponent', () => {
           sourceListIds: ['101'],
         })
       );
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster).toHaveBeenCalledWith('tlf', {
         listIds: ['101'],
@@ -1748,7 +1774,7 @@ describe('AudienceBuilderTabComponent', () => {
             sourceListIds: ['101'],
           })
         );
-        click('campaigns-audience-compose');
+        composeMaster();
       };
 
       await compose(masterUrl);
@@ -1769,7 +1795,7 @@ describe('AudienceBuilderTabComponent', () => {
     it('will not compose with nothing selected', async () => {
       await renderWithDiscovery();
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster).not.toHaveBeenCalled();
     });
@@ -1786,7 +1812,7 @@ describe('AudienceBuilderTabComponent', () => {
         error: 'HubSpot rejected the master list create.',
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const block = host().querySelector('[data-testid="campaigns-audience-compose-partial"]');
       expect(block, 'a partial compose failure was reported as a plain error').not.toBeNull();
@@ -1804,7 +1830,7 @@ describe('AudienceBuilderTabComponent', () => {
         error: 'The audience could not be recorded.',
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const text = host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent ?? '';
       expect(text).toContain('shared standard suppression list');
@@ -1838,7 +1864,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '5', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: ['101'] }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const request = composeAudienceMaster.mock.calls.at(-1)?.[1];
       expect(request?.excludeListIds, 'a list that does not exist yet has no id to send').toEqual(['201']);
@@ -1859,7 +1885,7 @@ describe('AudienceBuilderTabComponent', () => {
         error: 'HubSpot did not confirm the creates.',
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const block = host().querySelector('[data-testid="campaigns-audience-compose-partial"]');
       expect(block, 'an unconfirmed compose was reported as a plain error, losing both list names').not.toBeNull();
@@ -1881,7 +1907,7 @@ describe('AudienceBuilderTabComponent', () => {
         error: 'HubSpot did not confirm the create.',
       } as unknown as AudienceComposeMasterPartial;
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const block = host().querySelector('[data-testid="campaigns-audience-compose-partial"]');
       expect(block, 'the unconfirmed create was not surfaced at all').not.toBeNull();
@@ -1899,7 +1925,7 @@ describe('AudienceBuilderTabComponent', () => {
 
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
-      click('campaigns-audience-compose');
+      composeMaster();
       const internals = fixture.componentInstance as unknown as { composing(): boolean };
       expect(internals.composing(), 'fixture precondition: the compose must be in flight').toBe(true);
 
@@ -1923,7 +1949,7 @@ describe('AudienceBuilderTabComponent', () => {
       expect(grid?.getAttribute('ng-reflect-disabled'), 'fixture precondition: the grid starts editable').not.toBe('true');
 
       composeAudienceMaster.mockReturnValue(new Subject<never>());
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.detectChanges();
 
       const internals = fixture.componentInstance as unknown as { selectionLocked(): boolean };
@@ -1939,7 +1965,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(abandoned);
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('projectSlug', 'another-foundation');
       fixture.detectChanges();
       expect(
@@ -1974,7 +2000,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(
         of({ master: { listId: '900', name: 'Master', size: 10, hubspotUrl: 'https://app.hubspot.com/x/900' }, sourceListIds: [] })
       );
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.detectChanges();
 
       const internals = fixture.componentInstance as unknown as { composeAttempted(): boolean };
@@ -2001,7 +2027,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(new Subject<never>());
       await renderWithDiscovery();
       click('audience-card-grid-toggle-101');
-      click('campaigns-audience-compose');
+      composeMaster();
 
       // Switch away (stranding the compose), then back to the original project.
       fixture.componentRef.setInput('projectSlug', 'another-foundation');
@@ -2027,7 +2053,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
 
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Not authorized for this portal.' } })));
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]')?.textContent).toContain('Not authorized for this portal.');
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')).toBeNull();
@@ -2081,7 +2107,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
       );
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.briefId).toBe('brief-1');
     });
@@ -2093,7 +2119,7 @@ describe('AudienceBuilderTabComponent', () => {
       await renderWithDiscovery('');
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'] }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.briefId).toBeUndefined();
     });
@@ -2105,7 +2131,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
       );
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(seen.attached).toEqual([RECORDED_AUDIENCE]);
       expect(seen.unattached, 'a reconcile warning was raised for a list that IS attached').toEqual([]);
@@ -2120,7 +2146,7 @@ describe('AudienceBuilderTabComponent', () => {
       );
       expect(host().querySelector('[data-testid="campaigns-audience-continue"]'), 'offered before anything was composed').toBeNull();
 
-      click('campaigns-audience-compose');
+      composeMaster();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]')).not.toBeNull();
       click('campaigns-audience-continue');
 
@@ -2133,7 +2159,7 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.componentInstance.continueToEmail.subscribe(() => continued++);
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'] }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-not-attached"]')).not.toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]')).toBeNull();
       click('campaigns-audience-continue');
@@ -2153,7 +2179,7 @@ describe('AudienceBuilderTabComponent', () => {
       const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
       composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'] }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(seen.attached).toEqual([]);
       expect(seen.unattached).toEqual([master]);
@@ -2168,7 +2194,7 @@ describe('AudienceBuilderTabComponent', () => {
       const reply = new Subject<AudienceComposeMasterResult>();
       composeAudienceMaster.mockReturnValue(reply);
 
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('briefId', 'brief-2');
       fixture.detectChanges();
       reply.next({ master, sourceListIds: ['101'], recorded: false });
@@ -2184,7 +2210,7 @@ describe('AudienceBuilderTabComponent', () => {
       const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
       composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'], recorded: false }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const use = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-master-use-900"]');
       expect(use, 'the loose master never reached the reuse grid').not.toBeNull();
@@ -2213,7 +2239,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
       );
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
       fixture.detectChanges();
 
@@ -2247,7 +2273,7 @@ describe('AudienceBuilderTabComponent', () => {
       // `briefId` for the same send. Comparing ids read that as another email and hid the recovery.
       await renderWithDiscovery('');
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('briefId', 'brief-1');
       fixture.detectChanges();
 
@@ -2258,7 +2284,7 @@ describe('AudienceBuilderTabComponent', () => {
     it('calls a brief-less compose another send once the parent resets', async () => {
       await renderWithDiscovery('');
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('audienceScope', 1);
       fixture.detectChanges();
 
@@ -2270,13 +2296,35 @@ describe('AudienceBuilderTabComponent', () => {
       // audience restored afterwards, pointing at a DIFFERENT list, was never shown.
       await renderWithDiscovery('brief-1');
       composeAudienceMaster.mockReturnValue(of({ master: { listId: '777', name: 'Loose', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: false }));
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
       fixture.detectChanges();
 
       expect(host().querySelector('[data-testid="campaigns-audience-existing"]')?.textContent).toContain('900');
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace"]'), 'a replace that cannot run was offered').toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose-link"]'), 'discovery ran, so the grid is reachable').not.toBeNull();
+    });
+
+    it('does not link to the reuse grid for a Build-tab compose that ran no discovery', async () => {
+      // "Master lists already built" shows only after a discovery, so a link there from a Build-tab
+      // compose switched to a tab whose section stayed hidden.
+      await render({ briefId: 'brief-1' });
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).created.emit({
+        listId: '7777',
+        name: 'Built here',
+        hubspotUrl: 'https://app.hubspot.com/x/7777',
+      });
+      fixture.detectChanges();
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '777', name: 'Loose', hubspotUrl: 'u' }, sourceListIds: ['7777'], recorded: false }));
+      composeMaster();
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      const loose = host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]');
+      expect(loose, 'fixture precondition').not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose-link"]'), 'linked to a hidden section').toBeNull();
+      expect(loose?.textContent).toContain('run Discover under Use existing lists first');
     });
 
     it('points at the master a 502 partial confirmed, not at a reload', async () => {
@@ -2289,7 +2337,7 @@ describe('AudienceBuilderTabComponent', () => {
         error: 'Lists created but not attached.',
       } as unknown as AudienceComposeMasterPartial;
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
       fixture.detectChanges();
 
@@ -2302,7 +2350,7 @@ describe('AudienceBuilderTabComponent', () => {
       // attach a master that does not exist.
       await renderWithDiscovery('brief-1');
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })));
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
       fixture.detectChanges();
 
@@ -2317,7 +2365,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
       );
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('audienceScope', 1);
       fixture.detectChanges();
 
@@ -2330,7 +2378,7 @@ describe('AudienceBuilderTabComponent', () => {
       composeAudienceMaster.mockReturnValue(
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
       );
-      click('campaigns-audience-compose');
+      composeMaster();
       fixture.componentRef.setInput('briefId', 'brief-2');
       fixture.detectChanges();
 
@@ -2362,7 +2410,7 @@ describe('AudienceBuilderTabComponent', () => {
       const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
       composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'], recorded: false }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
       settle(masters);
       fixture.detectChanges();
 
@@ -2375,7 +2423,7 @@ describe('AudienceBuilderTabComponent', () => {
       const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
       composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'] }));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(seen.unattached).toEqual([master]);
     });
@@ -2392,7 +2440,7 @@ describe('AudienceBuilderTabComponent', () => {
       const partial = { master, error: 'Lists created but not attached.' } as unknown as AudienceComposeMasterPartial;
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(seen.unattached).toEqual([master]);
       expect(seen.attached).toEqual([]);
@@ -2407,7 +2455,7 @@ describe('AudienceBuilderTabComponent', () => {
       } as unknown as AudienceComposeMasterPartial;
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(seen.unattached, 'the parent was pointed at a master list that was never created').toEqual([]);
     });
@@ -2423,7 +2471,7 @@ describe('AudienceBuilderTabComponent', () => {
       const seen = listen();
       const slowCompose = new Subject<{ master: AudienceComposedList; sourceListIds: string[]; recorded: boolean; audience: CampaignAudience }>();
       composeAudienceMaster.mockReturnValue(slowCompose);
-      click('campaigns-audience-compose');
+      composeMaster();
 
       fixture.componentRef.setInput('projectSlug', 'another-foundation');
       fixture.detectChanges();
@@ -2547,6 +2595,8 @@ describe('AudienceBuilderTabComponent', () => {
 
       click('audience-last-sent-use-em-7');
 
+      confirmReuseIfAsked();
+
       const [project, request] = attachExistingAudience.mock.calls.at(-1) ?? [];
       expect(project).toBe('tlf');
       expect(request).toMatchObject({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201', '777'] });
@@ -2573,9 +2623,11 @@ describe('AudienceBuilderTabComponent', () => {
       // A compose that never settles: the window the race lives in.
       composeAudienceMaster.mockReturnValue(new Subject().asObservable());
       click('audience-card-grid-toggle-101');
-      click('campaigns-audience-compose');
+      composeMaster();
 
       click('audience-last-sent-use-em-7');
+
+      confirmReuseIfAsked();
 
       expect(attachExistingAudience, 'an attach started while a compose was still writing').not.toHaveBeenCalled();
     });
@@ -2600,7 +2652,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['201'], audience: ATTACHED_AUDIENCE })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(attachExistingAudience.mock.calls.at(-1)?.[1]).toMatchObject({ masterListId: '101', suppressionListIds: ['201'] });
       expect(composeAudienceMaster).not.toHaveBeenCalled();
@@ -2618,7 +2670,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const note = host().querySelector('[data-testid="campaigns-audience-attach-suppression"]')?.textContent ?? '';
       expect(note).toContain('through the shared list');
@@ -2658,7 +2710,7 @@ describe('AudienceBuilderTabComponent', () => {
       );
 
       expect(host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]')?.checked).toBe(true);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const request = attachExistingAudience.mock.calls.at(-1)?.[1];
       expect(request.suppressionListIds, 'a list that does not exist yet has no id to send').toEqual(['201']);
@@ -2673,14 +2725,14 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       const first = new Subject<AudienceAttachExistingResult>();
       attachExistingAudience.mockReturnValue(first);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       fixture.componentRef.setInput('briefId', 'brief-2');
       fixture.detectChanges();
       fixture.componentRef.setInput('briefId', 'brief-1');
       fixture.detectChanges();
-      click('campaigns-audience-use-direct');
-      click('campaigns-audience-compose');
+      useSelectionDirectly();
+      composeMaster();
 
       expect(attachExistingAudience, 'a second attach started while the first was on the wire').toHaveBeenCalledTimes(1);
       expect(composeAudienceMaster, 'a compose started while an attach was on the wire').not.toHaveBeenCalled();
@@ -2701,7 +2753,7 @@ describe('AudienceBuilderTabComponent', () => {
       await renderWithPastSend('brief-1');
       click('audience-card-grid-toggle-101');
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(attachExistingAudience, 'a send was recorded with its GDPR/CASL exclusions unread').not.toHaveBeenCalled();
     });
@@ -2712,6 +2764,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' }, suppressionListIds: ['201'], audience: ATTACHED_AUDIENCE })
       );
       click('audience-last-sent-use-em-7');
+      confirmReuseIfAsked();
       expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]'), 'fixture precondition').not.toBeNull();
 
       fixture.componentRef.setInput('briefId', 'brief-2');
@@ -2768,7 +2821,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const request = attachExistingAudience.mock.calls.at(-1)?.[1];
       expect(request).toMatchObject({ briefId: 'brief-1', includeListIds: ['101', '102'], suppressionListIds: ['201'] });
@@ -2776,6 +2829,7 @@ describe('AudienceBuilderTabComponent', () => {
       expect(composeAudienceMaster, 'a master list was composed for lists that already exist').not.toHaveBeenCalled();
       expect(host().querySelector('[data-testid="campaigns-audience-attach-includes"]')?.textContent).toContain('Synthetic Summit 2026 - Speakers');
       expect(host().querySelector('[data-testid="campaigns-audience-attach-continue"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-continue"]'), 'Continue to Implement was offered twice').toBeNull();
     });
 
     it('requires at least one suppression list before composing or attaching', async () => {
@@ -2788,7 +2842,7 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-required"]')).not.toBeNull();
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled).toBe(true);
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
       expect(attachExistingAudience, 'a send was recorded with no suppression list').not.toHaveBeenCalled();
     });
 
@@ -2811,7 +2865,7 @@ describe('AudienceBuilderTabComponent', () => {
       attachExistingAudience.mockReturnValue(
         of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['201', '102'], audience: ATTACHED_AUDIENCE })
       );
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
       const request = attachExistingAudience.mock.calls.at(-1)?.[1];
       expect(request?.masterListId).toBe('101');
       expect([...(request?.suppressionListIds ?? [])].sort()).toEqual(['102', '201']);
@@ -2852,6 +2906,8 @@ describe('AudienceBuilderTabComponent', () => {
 
       click('audience-last-sent-use-em-7');
 
+      confirmReuseIfAsked();
+
       expect(badgeFor('em-7')).toContain('Same lists used for this email');
       expect(badgeFor('em-8'), 'a send sharing the master but not the exclusions read as attached').toContain('Use these lists for this email');
     });
@@ -2868,10 +2924,12 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
       click('audience-last-sent-use-em-7');
+      confirmReuseIfAsked();
       expect(badgeFor('em-7'), 'fixture precondition').toContain('Same lists used for this email');
 
       attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));
       click('audience-last-sent-use-em-8');
+      confirmReuseIfAsked();
 
       expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]'), 'fixture precondition').not.toBeNull();
       expect(badgeFor('em-8'), "the failed attempt's exclusions were reported as the brief's").toContain('Use these lists for this email');
@@ -2883,6 +2941,8 @@ describe('AudienceBuilderTabComponent', () => {
       attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));
 
       click('audience-last-sent-use-em-7');
+
+      confirmReuseIfAsked();
 
       expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')).not.toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]')).toBeNull();
@@ -3045,20 +3105,15 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-use-existing-888"]')).toBeNull();
     });
 
-    it('shows the URL typed in the Build tab when switching to Reuse', async () => {
+    it('keeps one event field, outside both tabs, for drafting and discovering', async () => {
       await render();
-      click('campaigns-audience-mode-build');
-      const planUrl = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-plan-url"]');
-      if (planUrl === null) throw new Error('the event plan URL is not rendered');
-      planUrl.value = 'https://events.example.org/typed-in-event-mode';
-      planUrl.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/typed-in-build');
 
       click('campaigns-audience-mode-reuse');
 
-      expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe(
-        'https://events.example.org/typed-in-event-mode'
-      );
+      const fields = host().querySelectorAll<HTMLInputElement>('input[type="url"]');
+      expect(fields.length, 'the event url is asked for twice').toBe(1);
+      expect(fields[0].value).toBe('https://events.example.org/typed-in-build');
     });
 
     it('loads suppressions scoped to a planned event for a list used without discovery', async () => {
@@ -3210,7 +3265,7 @@ describe('AudienceBuilderTabComponent', () => {
       name.dispatchEvent(new Event('input'));
       fixture.detectChanges();
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.name).toBe('My Master');
     });
@@ -3244,15 +3299,409 @@ describe('AudienceBuilderTabComponent', () => {
       expect((builderPreset() as { request: string }).request).toContain("SYN's education courses");
     });
 
-    it('plans an event audience from the event page through the model, without discovery', async () => {
+    it('plans an event audience from the event page through the model', async () => {
       await render();
       typeEventUrl('https://events.example.org/synthetic-summit/');
 
       click('campaigns-audience-event-generate');
 
-      expect(discoverAudience, 'an event audience needs no discovery').not.toHaveBeenCalled();
       expect(builderPreset()).toMatchObject({ eventUrl: 'https://events.example.org/synthetic-summit/' });
-      expect((builderPreset() as { request: string }).request).toContain('Regional expansion audience');
+      expect((builderPreset() as { request: string }).request).toContain('not limited to any location');
+    });
+
+    describe('opt-in lists for an event draft', () => {
+      function optIn(listId: string, signal: AudienceSignal, size?: number): AudienceDiscoveredList {
+        return { listId, name: `Opt-in ${listId}`, signal, size, reason: 'Subscribed', listType: 'DYNAMIC', hubspotUrl: '' };
+      }
+
+      function draftBuilder(): AudienceCustomBuilderComponent {
+        return fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent;
+      }
+
+      /** The drafted list is created; the draft's opt-ins wait for it. */
+      function createDraftedList(listId = '7777'): void {
+        draftBuilder().created.emit({ listId, name: 'Synthetic Summit - Event audience', hubspotUrl: `https://app.hubspot.com/x/${listId}` });
+        fixture.detectChanges();
+      }
+
+      async function draftWith(lists: AudienceDiscoveredList[], missingSignals: AudienceSignal[] = [], create = true): Promise<void> {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [...discovered().lists, ...lists], missingSignals }));
+        if (create) {
+          createDraftedList();
+        }
+      }
+
+      it('adds the largest project and LF Newsletter opt-in list to Include, and offers the rest', async () => {
+        await draftWith([optIn('301', 'project_opt_in', 50), optIn('302', 'project_opt_in', 900), optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(discoverAudience).toHaveBeenCalledWith('tlf', { eventUrl: 'https://events.example.org/synthetic-summit/' });
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-302"]'), 'the largest project opt-in list was not included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the LF Newsletter list was not included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-301"]'), 'every opt-in variant joined the send').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'a non-opt-in discovered list joined Include').toBeNull();
+
+        click('campaigns-audience-opt-in-add-301');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-301"]')).not.toBeNull();
+      });
+
+      it('leaves the Use existing lists steps as they were', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-mode-build"]')?.getAttribute('aria-selected')).toBe('true');
+        click('campaigns-audience-mode-reuse');
+        expect(
+          host().querySelector('[data-testid="campaigns-audience-discovered-steps"]')?.classList.contains('hidden'),
+          'the opt-in lookup filled the discovered grid'
+        ).toBe(true);
+      });
+
+      it("takes the last draft's opt-in lists out of Include when the event changes", async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        typeEventUrl('https://events.example.org/other-summit/');
+        click('campaigns-audience-event-generate');
+        // A draft for another page starts over once confirmed (the first draft's list is hand work).
+        click('campaigns-audience-start-over-confirm');
+        completeDiscovery(discovered({ lists: [optIn('402', 'lf_newsletter_opt_in', 10)] }));
+        createDraftedList('7778');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), "the first event's opt-in list stayed in the send").toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-402"]')).not.toBeNull();
+      });
+
+      it('holds the opt-in lists until the drafted list is created, so attach cannot send to them alone', async () => {
+        await render({ briefId: 'brief-1' });
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the newsletter list joined Include before the draft existed').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-use-direct"]'), 'attach was offered with only an opt-in list selected').toBeNull();
+
+        createDraftedList();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]')).not.toBeNull();
+      });
+
+      it('adds held opt-ins at once when the lookup settles after the drafted list was created', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        createDraftedList();
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+      });
+
+      it('never takes out a list the operator had already included when a later draft cleans up', async () => {
+        await render();
+        // The operator included 401 by hand before drafting.
+        (fixture.componentInstance as unknown as { add: (id: string, name: string) => boolean }).add('401', 'Opt-in 401');
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]'), "the operator's own list was recorded as the lookup's").toBeNull();
+
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), "a later draft removed the operator's list").not.toBeNull();
+      });
+
+      it('does not un-mark a list the operator marked Exclude', async () => {
+        await render();
+        (fixture.componentInstance as unknown as { onExcludeList: (list: { listId: string; name: string }) => void }).onExcludeList({
+          listId: '401',
+          name: 'Opt-in 401',
+        });
+        fixture.detectChanges();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an excluded list was auto-included').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-exclusion-401"]'), 'the Exclude mark was dropped').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'it is offered to add by hand').not.toBeNull();
+      });
+
+      it('adds the held opt-ins when the draft reuses an existing list instead of creating one', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'fixture precondition').not.toBeNull();
+
+        draftBuilder().reuse.emit({ listId: '8888', name: 'Synthetic Summit - Existing audience', size: 900, hubspotUrl: 'https://app.hubspot.com/x/8888' });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-8888"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins waited forever after a reuse').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).toBeNull();
+      });
+
+      it('reads the opt-ins from a discovery already run for the same page instead of streaming another', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-discover');
+        completeDiscovery(discovered({ lists: [...discovered().lists, optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        expect(discoverAudience, 'fixture precondition').toHaveBeenCalledTimes(1);
+
+        click('campaigns-audience-event-generate');
+
+        expect(discoverAudience, 'a second discovery stream was opened for the same page').toHaveBeenCalledTimes(1);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).not.toBeNull();
+      });
+
+      it('offers late opt-ins by hand when another preset replaced the draft before they settled', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        (fixture.componentInstance as unknown as { onCreateForSignal: (signal: AudienceSignal) => void }).onCreateForSignal('project_opt_in');
+        fixture.detectChanges();
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'stranded as pending').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('holds attach and compose until the active draft opt-in lookup settles', async () => {
+        await render({ briefId: 'brief-1' });
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        createDraftedList();
+
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled, 'attach ran before the opt-ins').toBe(true);
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
+      });
+
+      it('drops the automatic opt-ins when the operator starts the builder over', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        draftBuilder().startedOver.emit();
+        fixture.detectChanges();
+        createDraftedList('8888');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), "an abandoned draft's opt-ins joined an unrelated list").toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('does not put back a hand-included list removed while the draft lookup loads', async () => {
+        await render();
+        (fixture.componentInstance as unknown as { add: (id: string, name: string) => boolean }).add('401', 'Opt-in 401');
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        click('campaigns-audience-remove-401');
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'a removed list came back as the pick').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it("shows a Build-tab draft's opt-in list with its size and link in Include", async () => {
+        await draftWith([{ ...optIn('401', 'lf_newsletter_opt_in', 4000), hubspotUrl: 'https://app.hubspot.com/l/401' }]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-include-link-401"]')?.getAttribute('href')).toBe('https://app.hubspot.com/l/401');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')?.parentElement?.textContent).toContain('4,000');
+      });
+
+      it('stops calling a removed opt-in list added, and offers it again', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-remove-401');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]')).toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('offers the opt-ins by hand when a list is picked from the search instead of the draft', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        (fixture.componentInstance as unknown as { onUseExistingList: (list: { listId: string; name: string }) => void }).onUseExistingList({
+          listId: '9999',
+          name: 'Hand-picked list',
+        });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('does not add late opt-ins once the drafted list was removed', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        createDraftedList();
+        click('campaigns-audience-remove-7777');
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins joined without the event audience').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('never removes an opt-in list the operator added back by hand', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        click('campaigns-audience-remove-401');
+        click('campaigns-audience-opt-in-add-401');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'a later draft removed a hand-picked list').not.toBeNull();
+      });
+
+      it('withdraws the auto-added opt-ins when the drafted list leaves Include, and offers them by hand', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-remove-7777');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins stayed without the event audience').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('keeps the opt-ins with the earlier drafted list on a re-draft of the same page, never stranded as pending', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-7777"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in left with the earlier list still included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'stranded as pending').toBeNull();
+
+        // The re-draft kept the earlier list as the draft's list: removing it still withdraws its opt-in.
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list').toBeNull();
+      });
+
+      it('still withdraws the carried opt-ins when a same-page re-draft lookup fails', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        stream.next({ type: 'error', data: 'portal unreachable' });
+        fixture.detectChanges();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-ins-failed"]')).not.toBeNull();
+
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list after a failed lookup').toBeNull();
+      });
+
+      it('moves the opt-ins to the replacement list a same-page re-draft creates', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList('8888');
+        click('campaigns-audience-remove-7777');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-8888"]')).not.toBeNull();
+        expect(
+          host().querySelector('[data-testid="campaigns-audience-remove-401"]'),
+          'the replacement draft lost its opt-in with the earlier list'
+        ).not.toBeNull();
+
+        click('campaigns-audience-remove-8888');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived the replacement draft list').toBeNull();
+      });
+
+      it('does not re-add an opt-in the operator removed while a same-page re-draft was looking up', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        click('campaigns-audience-remove-401');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an explicit removal was undone').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'and it is offered by hand').not.toBeNull();
+      });
+
+      it('still withdraws the carried opt-ins when the re-draft lookup settles after Start over', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        (fixture.componentInstance as unknown as { eventDraftActive: { set: (v: boolean) => void } }).eventDraftActive.set(false);
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        (fixture.componentInstance as unknown as { eventDraftActive: { set: (v: boolean) => void } }).eventDraftActive.set(true);
+        fixture.detectChanges();
+
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an abandoned lookup dropped the ownership').toBeNull();
+      });
+
+      it('offers an opt-in marked Exclude instead of holding it as pending', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        (fixture.componentInstance as unknown as { onExcludeList: (l: { listId: string; name: string }) => void }).onExcludeList({
+          listId: '401',
+          name: 'LF Newsletter',
+        });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'an excluded opt-in read as pending').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('shows a carried opt-in once when a larger list of its signal appears on a re-draft', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000), optIn('402', 'lf_newsletter_opt_in', 9000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'the owned list also showed under Also found').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-402"]'), 'a second list of the same signal joined Include').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-402"]'), 'and the larger one is offered').not.toBeNull();
+      });
+
+      it('offers the held opt-ins once a compose has locked the selection', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'fixture precondition').not.toBeNull();
+        (fixture.componentInstance as unknown as { composeAttempted: { set: (v: boolean) => void } }).composeAttempted.set(true);
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'still promised to join a locked selection').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('says which opt-in signal has no list', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-missing-project_opt_in"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-missing-lf_newsletter_opt_in"]')).toBeNull();
+      });
+
+      it('points to the search when the lookup fails', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        stream.next({ type: 'error', data: 'portal unreachable' });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-ins-failed"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-discover-error"]'), 'the lookup failure was reported as a discovery').toBeNull();
+      });
     });
 
     it('offers two tabs, opens on Build a new audience, and switches to existing lists', async () => {
@@ -3318,6 +3767,95 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: expect.arrayContaining(['201']) });
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent).toContain('1,234');
+    });
+  });
+
+  describe('layout', () => {
+    function stepNumber(step: string): string {
+      return host().querySelector(`[data-testid="campaigns-audience-step-${step}-step"]`)?.textContent?.trim() ?? '';
+    }
+
+    async function discoverInReuse(): Promise<void> {
+      await render();
+      click('campaigns-audience-mode-reuse');
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    it('numbers only the steps on screen in the Build tab', async () => {
+      await render();
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).reuse.emit({
+        listId: '411',
+        name: 'Synthetic Summit - Prospects',
+        hubspotUrl: 'https://app.hubspot.com/x/411',
+      });
+      fixture.detectChanges();
+
+      expect([stepNumber('exclude'), stepNumber('compose'), stepNumber('qa')], 'the Build tab read 3 → 6 → 2').toEqual(['1', '2', '3']);
+    });
+
+    it('numbers every step in order after a discovery', async () => {
+      await discoverInReuse();
+
+      expect(['discover', 'include', 'exclude', 'reuse', 'gaps', 'compose', 'qa'].map(stepNumber)).toEqual(['1', '2', '3', '4', '5', '6', '7']);
+    });
+
+    it('shows the most urgent notice and folds the rest behind a toggle', async () => {
+      await render({ audienceReadFailed: true });
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      const failed = host().querySelector('[data-testid="campaigns-audience-read-failed"]');
+      const staging = host().querySelector('[data-testid="campaigns-audience-staging-pause"]');
+      expect(failed?.classList.contains('hidden'), 'the warning was not the one shown').toBe(false);
+      expect(staging?.classList.contains('hidden'), 'the wait was shown beside the warning').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-readiness-toggle"]')?.textContent?.trim()).toBe('1 more');
+
+      click('campaigns-audience-readiness-toggle');
+
+      expect(staging?.classList.contains('hidden')).toBe(false);
+    });
+
+    it('re-reads the audience from the readiness banner', async () => {
+      await render({ audienceReadFailed: true });
+      let retried = 0;
+      fixture.componentInstance.retryAudienceRead.subscribe(() => retried++);
+
+      click('campaigns-audience-read-retry');
+
+      expect(retried).toBe(1);
+    });
+
+    it('asks before composing, and composes nothing on cancel', async () => {
+      await discoverInReuse();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-compose');
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-confirming"]')).not.toBeNull();
+      click('campaigns-audience-compose-cancel');
+
+      expect(composeAudienceMaster, 'the first click created lists').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-confirming"]')).toBeNull();
+    });
+
+    it('moves between the mode tabs with the arrow keys', async () => {
+      await render();
+
+      host()
+        .querySelector('[role="tablist"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-reuse"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-build"]')?.getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('keeps the existing-list search to the Build tab', async () => {
+      await render();
+      click('campaigns-audience-mode-reuse');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-use-existing"]')?.classList.contains('hidden')).toBe(true);
     });
   });
 
@@ -3436,7 +3974,7 @@ describe('AudienceBuilderTabComponent', () => {
       );
       const loadsBefore = getAudienceSuppressionLists.mock.calls.length;
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const text = host().querySelector('[data-testid="campaigns-audience-attach-created"]')?.textContent ?? '';
       expect(text).toContain(`the project's shared standard suppression list "${STANDING.name}"`);
@@ -3453,7 +3991,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const text = host().querySelector('[data-testid="campaigns-audience-attach-created"]')?.textContent ?? '';
       expect(text).toContain('No new list was created in HubSpot');
@@ -3539,7 +4077,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       composeAudienceMaster.mockReturnValue(throwError(conflict));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-name-conflict-message"]')?.textContent?.trim()).toBe(CONFLICT_MESSAGE);
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]'), 'shown as a dead-end error').toBeNull();
@@ -3561,7 +4099,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       attachExistingAudience.mockReturnValue(throwError(conflict));
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(host().querySelector('[data-testid="campaigns-audience-name-conflict-message"]')?.textContent?.trim()).toBe(CONFLICT_MESSAGE);
       expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')).toBeNull();
@@ -3589,7 +4127,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(attachExistingAudience.mock.calls.at(-1)?.[1].suppressionListIds).toEqual(['201', '202']);
       const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null; attachedExclusions: () => readonly string[] };
@@ -3606,7 +4144,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['201', '9001'], audience: AUDIENCE })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const attach = attachExistingAudience.mock.calls.at(-1)?.[1];
       expect(attach.suppressionListIds).toEqual(['201']);
@@ -3622,7 +4160,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       composeAudienceMaster.mockReturnValue(NEVER);
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const compose = composeAudienceMaster.mock.calls.at(-1)?.[1];
       expect(compose.excludeListIds).toEqual(['201']);
@@ -3638,7 +4176,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master, suppression: STANDING, sourceListIds: ['101'], suppressionListIds: ['300', '9001'], recorded: false })
       );
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const text = host().querySelector('[data-testid="campaigns-audience-compose-suppression"]')?.textContent ?? '';
       expect(text).toContain('It excludes 2 suppression list(s).');
@@ -3654,7 +4192,7 @@ describe('AudienceBuilderTabComponent', () => {
         of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, suppression: STANDING, sourceListIds: ['101'], recorded: false })
       );
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-result"]')).not.toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-suppression"]'), 'nothing known, nothing claimed').toBeNull();
@@ -3743,7 +4281,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null; attachedExclusions: () => readonly string[] };
       expect(getAudienceSuppressionLists.mock.calls.length, 'the post-attach reload ran').toBeGreaterThan(1);
@@ -3768,7 +4306,7 @@ describe('AudienceBuilderTabComponent', () => {
       const message = 'the master would carry 2,601 filter conditions (51 lists x 51); the limit is 2,500';
       composeAudienceMaster.mockReturnValue(throwError(() => refusal(message)));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]')?.textContent?.trim()).toBe(message);
       expect(
@@ -3781,7 +4319,7 @@ describe('AudienceBuilderTabComponent', () => {
       await discover();
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
     });
@@ -3791,7 +4329,7 @@ describe('AudienceBuilderTabComponent', () => {
       const message = 'list 300 (LFX Standard Suppressions - tlf) is in both the send and its suppressions';
       attachExistingAudience.mockReturnValue(throwError(() => refusal(message)));
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')?.textContent?.trim()).toBe(message);
     });
@@ -3804,7 +4342,7 @@ describe('AudienceBuilderTabComponent', () => {
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const text = host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent ?? '';
       expect(text).toContain('Legacy suppression');
@@ -3820,10 +4358,204 @@ describe('AudienceBuilderTabComponent', () => {
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')).not.toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial-suppression-link"]')).toBeNull();
+    });
+  });
+
+  describe('attach confirmation, compose withdrawal and reach label (review fixes)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const AUDIENCE: CampaignAudience = { id: 'aud-9', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '101', status: 'built', version: 1 };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    function note(): string {
+      return host().querySelector('[data-testid="campaigns-audience-use-direct-note"]')?.textContent ?? '';
+    }
+
+    it('says nothing is created only when nothing is, and asks before an attach that creates lists', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS] }));
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+          suppressionListIds: ['300', '9001'],
+          standardSuppression: STANDING,
+          audience: AUDIENCE,
+        })
+      );
+
+      expect(note()).not.toContain('Nothing new is created');
+      expect(note()).toContain("the project's shared standard suppression list");
+      expect(note()).toContain('"Synthetic Summit 2026 - Current Registrants"');
+
+      click('campaigns-audience-use-direct');
+      expect(attachExistingAudience, 'an attach that creates lists ran without asking').not.toHaveBeenCalled();
+      const confirming = host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]')?.textContent ?? '';
+      expect(confirming).toContain('Synthetic Summit 2026 - Current Registrants');
+
+      click('campaigns-audience-use-direct-confirm');
+      expect(attachExistingAudience).toHaveBeenCalledTimes(1);
+    });
+
+    it('attaches straight away when nothing would be created', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(NEVER);
+
+      expect(note()).toContain('Nothing new is created in HubSpot');
+      click('campaigns-audience-use-direct');
+      expect(attachExistingAudience).toHaveBeenCalledTimes(1);
+    });
+
+    it('withdraws an open attach confirmation when the suppression ticks change', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS] }));
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-use-direct');
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]')).not.toBeNull();
+
+      click('audience-suppression-grid-toggle-current_registrants');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]'), 'confirmed a request that changed').toBeNull();
+    });
+
+    it('withdraws an open compose confirmation when a reload fills in a suppression id', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS] }));
+      await discover();
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+      const creates = host().querySelector('[data-testid="campaigns-audience-compose-confirm-creates"]')?.textContent ?? '';
+      expect(creates, 'the confirmation did not name the lists compose creates').toContain('Synthetic Summit 2026 - Current Registrants');
+
+      // A reload (e.g. after another write created it) resolves the registrants list's id.
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, { ...REGISTRANTS, listId: '9001', willCreate: undefined }] }));
+      (fixture.componentInstance as unknown as { reloadSuppressionRows: () => void }).reloadSuppressionRows();
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-confirming"]'), 'confirmed a compose whose request changed').toBeNull();
+    });
+
+    it('asks before a step-4 master attach that creates lists, and says so in the reuse note', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([{ listId: '501', name: 'Synthetic Summit - Master', size: 3000, hubspotUrl: 'u' }]));
+      await discover('brief-1');
+      attachExistingAudience.mockReturnValue(NEVER);
+
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).toContain('Synthetic Summit 2026 - Current Registrants');
+
+      click('audience-last-sent-master-use-501');
+      expect(attachExistingAudience, 'a reuse attach that creates a list ran without asking').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')?.textContent).toContain('Synthetic Summit - Master');
+
+      click('campaigns-audience-reuse-attach-confirm');
+      expect(attachExistingAudience).toHaveBeenCalledTimes(1);
+      expect(attachExistingAudience.mock.calls[0][1]).toMatchObject({ masterListId: '501', currentRegistrantsEvent: 'Synthetic Summit 2026' });
+    });
+
+    it('attaches a step-4 master straight away when nothing would be created', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([{ listId: '501', name: 'Synthetic Summit - Master', size: 3000, hubspotUrl: 'u' }]));
+      await discover('brief-1');
+      attachExistingAudience.mockReturnValue(NEVER);
+
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).toContain('nothing new is created');
+      click('audience-last-sent-master-use-501');
+      expect(attachExistingAudience).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts the standard rows as the one standing list in the compose confirmation', async () => {
+      const optOut: AudienceSuppressionList = { ...GDPR, key: 'global_opt_out', listId: '202', name: 'Global Opt-out' };
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, optOut, REGISTRANTS], standardList: STANDING }));
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-compose');
+
+      // Upstream reports [standing, registrants]: two lists, not the three rows ticked.
+      expect(host().querySelector('#audience-compose-confirm-title')?.textContent).toContain('excluding 2?');
+    });
+
+    it('shows the excluded count as a dash while the suppression rows load', async () => {
+      const pending = new Subject<AudienceSuppressionList[]>();
+      getAudienceSuppressionLists.mockReturnValue(pending);
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('—');
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-excluded"]')?.textContent?.trim()).toBe('—');
+
+      pending.next([GDPR]);
+      pending.complete();
+      fixture.detectChanges();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('1');
+    });
+
+    it('labels the summary bar by what the reach figure is', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      const label = (): string => host().querySelector('[data-testid="campaigns-audience-summary-bar-reach-label"]')?.textContent?.trim() ?? '';
+      expect(label(), 'every included list reported a size, so the sum is an upper bound').toBe('Reach (at most)');
+
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 1200, count: 1200, reason: '' }));
+      click('campaigns-audience-preview-count');
+      expect(label()).toBe('Reach before exclusions');
+
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 1200, count: 0, reason: 'degraded' }));
+      click('campaigns-audience-preview-count');
+      expect(label()).toBe('Reach estimate before exclusions');
+    });
+
+    it('labels the review summary the same way as the summary bar, never an estimate as exact', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      const summaryLabel = (): string => host().querySelector('[data-testid="campaigns-audience-summary-reach-label"]')?.textContent?.trim() ?? '';
+      const barLabel = (): string => host().querySelector('[data-testid="campaigns-audience-summary-bar-reach-label"]')?.textContent?.trim() ?? '';
+
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 1200, count: 0, reason: 'degraded' }));
+      click('campaigns-audience-preview-count');
+      expect(summaryLabel()).toBe('Reach estimate before exclusions');
+      expect(summaryLabel()).toBe(barLabel());
+
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 1200, count: 1200, reason: '' }));
+      click('campaigns-audience-preview-count');
+      expect(summaryLabel()).toBe('Reach before exclusions');
+    });
+
+    it('calls a sum over only some lists partial, not a reach', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      (fixture.componentInstance as unknown as { add: (id: string, name: string) => void }).add('555', 'Unsized list');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-reach-label"]')?.textContent?.trim()).toBe('Known sizes (1 of 2 lists)');
     });
   });
 
@@ -3870,7 +4602,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null };
       expect(tab.attachedMasterId(), 'the saved audience read as stale after a failed reload').toBe('101');
@@ -3946,7 +4678,7 @@ describe('AudienceBuilderTabComponent', () => {
       const partial: AudienceComposeMasterPartial = { error: 'Master list create failed', suppression: { ...STANDING, name: 'Renamed standing list' } };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent).toContain("project's shared standard suppression list");
     });
@@ -4101,6 +4833,271 @@ describe('AudienceBuilderTabComponent', () => {
       ).toHaveLength(0);
       click('campaigns-audience-mode-reuse');
       expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/a');
+    });
+  });
+
+  describe('PR review fixes (#4462)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const OPT_OUT: AudienceSuppressionList = { ...GDPR, key: 'global_opt_out', listId: '202', name: 'Global Opt-out' };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const AUDIENCE: CampaignAudience = { id: 'aud-9', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '101', status: 'built', version: 1 };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    function barText(testId: string): string {
+      return host().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
+    }
+
+    it('moves focus into the compose confirmation, and back to Compose on cancel', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-compose');
+      await fixture.whenStable();
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-compose-cancel');
+
+      click('campaigns-audience-compose-cancel');
+      await fixture.whenStable();
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-compose');
+    });
+
+    it('keeps the compose disclosure a working toggle after a compose', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(NEVER);
+      composeMaster();
+      const options = (): HTMLElement | null => host().querySelector('#audience-compose-options');
+      expect(options()?.classList.contains('hidden')).toBe(false);
+
+      click('campaigns-audience-compose-toggle');
+
+      expect(options()?.classList.contains('hidden'), 'the toggle did nothing once a compose was attempted').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('shows the same excluded count in the summary bar as the compose confirmation', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, OPT_OUT], standardList: STANDING }));
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      // Upstream excludes the two standard rows as ONE standing list.
+      expect(barText('campaigns-audience-summary-bar-excluded')).toBe('1');
+      expect(barText('campaigns-audience-summary-excluded')).toBe('1');
+    });
+
+    it('stops reading as attached once the selection on screen differs from the recorded one', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'fixture precondition').toBeNull();
+
+      (fixture.componentInstance as unknown as { add: (id: string, name: string) => boolean }).add('102', 'Another list');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'an edited selection read as attached').not.toBeNull();
+    });
+
+    it('reads an attach of a copied standing-list exclusion beside the ticked standard row as attached', async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-9',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-9/performance',
+        includedLists: [{ listId: '101', name: 'Registrants', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-last-sent-copy-em-9');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'the unchanged audience just attached read as a change').toBeNull();
+    });
+
+    it('stops reading as attached when a registrants list still to be created is ticked after the attach', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-suppression-grid-toggle-current_registrants');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'fixture precondition').toBeNull();
+
+      click('audience-suppression-grid-toggle-current_registrants');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]')).not.toBeNull();
+    });
+
+    it('withdraws an open confirmation when the email it was opened for changes', async () => {
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-use-direct');
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]'),
+        'a confirmation for one email stayed open for another'
+      ).toBeNull();
+    });
+
+    it('asks before a past-send attach whose own exclusions complete the standard set', async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-9',
+        emailName: 'Synthetic Summit 2026 - Last call',
+        sentAt: '2026-02-20T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-9/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '202', name: 'Global Opt-out', size: 900, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, OPT_OUT] }));
+      await discover('brief-1');
+      toggleStandardRow('global_opt_out');
+      attachExistingAudience.mockReturnValue(NEVER);
+      expect((fixture.componentInstance as unknown as { writeCreates: () => readonly string[] }).writeCreates(), 'fixture precondition').toEqual([]);
+
+      click('audience-last-sent-use-em-9');
+
+      expect(attachExistingAudience, 'the attach created the standing list without asking').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')?.textContent).toContain(
+        "the project's shared standard suppression list"
+      );
+    });
+
+    it('names the suppression step by its heading, not a fixed number', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await discover('brief-1');
+      toggleStandardRow('lf_events_gdpr');
+      const tab = fixture.componentInstance as unknown as { attachUnavailableMessage: () => string };
+
+      expect(tab.attachUnavailableMessage()).toContain('under Standard suppressions');
+      expect(tab.attachUnavailableMessage()).not.toContain('step 3');
+    });
+  });
+
+  describe('PR review fixes, round 2 (#4462)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const MASTER = { listId: '501', name: 'Synthetic Summit - Master', size: 3000, hubspotUrl: 'u' };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    it('returns focus to the step-4 button a cancelled reuse confirmation was opened from', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+
+      click('campaigns-audience-reuse-attach-cancel');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('audience-last-sent-master-use-501');
+    });
+
+    it("counts a copied past send's standing-list id as the one standing list", async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-8',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-8/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover();
+
+      click('audience-last-sent-copy-em-8');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('1');
+    });
+
+    it('moves focus to the review step from the summary bar', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-summary-bar-review');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-step-compose');
+    });
+
+    it('withdraws a reuse confirmation once attaching is no longer possible', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')).toBeNull();
+    });
+
+    it('does not promise step 4 creates nothing while the standing list does not exist', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await discover('brief-1');
+      toggleStandardRow('lf_events_gdpr');
+
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).not.toContain('nothing new is created');
     });
   });
 });
