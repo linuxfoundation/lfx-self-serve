@@ -3,8 +3,8 @@
 
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NAV_TOOLTIP_HIDE_DELAY_MS, NAV_TOOLTIP_SHOW_DELAY_MS } from '@lfx-one/shared/constants';
-import type { NavTooltipItem } from '@lfx-one/shared/interfaces';
+import { NAV_TOOLTIP_HIDE_DELAY_MS, NAV_TOOLTIP_OFFSET_PX, NAV_TOOLTIP_RAIL_OFFSET_PX, NAV_TOOLTIP_SHOW_DELAY_MS } from '@lfx-one/shared/constants';
+import type { NavTooltipItem, NavTooltipPlacement } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NavTooltipDirective } from './nav-tooltip.directive';
@@ -14,11 +14,12 @@ import { NavTooltipDirective } from './nav-tooltip.directive';
   imports: [NavTooltipDirective],
   template: `<button type="button" data-testid="first" lfxNavTooltip="First" [lfxNavTooltipItems]="items()" (lfxNavTooltipItemSelected)="selected.set($event)">
       First</button
-    ><button type="button" data-testid="second" lfxNavTooltip="Second">Second</button>`,
+    ><button type="button" data-testid="second" lfxNavTooltip="Second" [lfxNavTooltipPlacement]="secondPlacement()">Second</button>`,
 })
 class HostComponent {
   public readonly items = signal<NavTooltipItem[]>([]);
   public readonly selected = signal<NavTooltipItem | null>(null);
+  public readonly secondPlacement = signal<NavTooltipPlacement>('top');
 }
 
 const tooltips = (): HTMLElement[] => Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="nav-tooltip"]'));
@@ -289,5 +290,50 @@ describe('NavTooltipDirective', () => {
     vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS * 2);
 
     expect(tooltips()).toHaveLength(1);
+  });
+
+  describe('right placement (the collapsed rail)', () => {
+    const viewport = { width: 1280, height: 800 };
+    const card = { width: 90, height: 40 };
+
+    beforeEach(() => {
+      host.secondPlacement.set('right');
+      TestBed.tick();
+      vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(viewport.width);
+      vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(viewport.height);
+      const original = HTMLElement.prototype.getBoundingClientRect;
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('lfxn-tooltip') ? new DOMRect(0, 0, card.width, card.height) : original.call(this);
+      });
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const showOver = (trigger: DOMRect): HTMLElement => {
+      vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(trigger);
+      second.dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+      return tooltips()[0];
+    };
+
+    it('opens beside the trigger, vertically centred on it', () => {
+      const tooltip = showOver(new DOMRect(12, 100, 24, 24));
+
+      expect(tooltip.classList).toContain('lfxn-tooltip--right');
+      expect(tooltip.style.left).toBe(`${12 + 24 + NAV_TOOLTIP_RAIL_OFFSET_PX}px`);
+      expect(tooltip.style.top).toBe(`${100 + 12 - card.height / 2}px`);
+    });
+
+    it('stays inside the viewport for a trigger at its bottom or top edge', () => {
+      const low = showOver(new DOMRect(12, viewport.height - 20, 24, 24));
+      expect(low.style.top).toBe(`${viewport.height - card.height - NAV_TOOLTIP_OFFSET_PX}px`);
+      second.dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
+
+      const high = showOver(new DOMRect(12, 0, 24, 8));
+      expect(high.style.top).toBe(`${NAV_TOOLTIP_OFFSET_PX}px`);
+    });
   });
 });

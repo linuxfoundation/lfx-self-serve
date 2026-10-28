@@ -71,3 +71,36 @@ export const NAVBAR_NO_ACCESS_GHOST_ITEMS: readonly NavbarGhostItem[] = [
   { label: 'Votes', icon: 'fa-light fa-check-to-slot' },
   { label: 'Surveys', icon: 'fa-light fa-clipboard-list' },
 ];
+
+/** Gap between a `right`-placed navbar tooltip (the collapsed rail's) and its trigger, in px. */
+export const NAV_TOOLTIP_RAIL_OFFSET_PX = 10;
+
+/** Below this viewport width (px) a non-touch desktop keeps the navbar collapsed to its rail; it can only peek open. */
+export const NAVBAR_NARROW_MAX_WIDTH_PX = 1200;
+
+/** `localStorage` key holding the viewer's docked-collapsed navbar preference. */
+export const NAVBAR_COLLAPSED_STORAGE_KEY = 'lfx-navbar-collapsed';
+
+/** Hover on the rail's sidebar toggle before the navbar peeks open over the page (ms). */
+export const NAVBAR_PEEK_OPEN_DELAY_MS = 80;
+
+/** Grace period after the pointer leaves a hover-opened peek before it closes; re-entering cancels it (ms). */
+export const NAVBAR_PEEK_CLOSE_DELAY_MS = 150;
+
+/** After a menu, panel or dialog opened from a peek closes, wait this long before checking whether the pointer left (ms). */
+export const NAVBAR_PEEK_RECHECK_DELAY_MS = 250;
+
+/** How long a closing peek keeps its overlay positioning while the panel shrinks back to the rail (ms). */
+export const NAVBAR_PEEK_OUT_MS = 260;
+
+/** Docked collapse / expand morph (ms) — matches the `.lfxn` width transition in `_navbar.scss`. */
+export const NAVBAR_DOCK_MORPH_MS = 340;
+
+/** Peek open / close morph (ms) — matches the overlay width transition in `_navbar.scss`. */
+export const NAVBAR_PEEK_MORPH_MS = 220;
+
+/** Easing shared by the navbar's width transitions and its FLIP-animated header buttons. */
+export const NAVBAR_MORPH_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+/** After a collapse / expand, re-fit anything that measured the navbar or page width mid-morph (ms). */
+export const NAVBAR_MORPH_SETTLE_MS = 400;
