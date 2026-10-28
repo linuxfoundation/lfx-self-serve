@@ -466,12 +466,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'brand_kit_answers', startTime, { answers: validAnswers.length });
       const response: BrandKitAnswersResponse = { success: true };
       res.json(response);
@@ -783,12 +779,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
       const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
@@ -1068,12 +1060,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'boilerplates_answers', startTime, { answers: validAnswers.length });
       const response: BoilerplatesAnswersResponse = { success: true };
       res.json(response);
@@ -1585,12 +1573,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'faq_answers', startTime, { answers: validAnswers.length });
       const response: FaqAnswersResponse = { success: true };
       res.json(response);
@@ -1704,8 +1688,8 @@ export class MktgAgentsController {
         throw ServiceValidationError.forField('answers', checked.errors.join('; ') || 'Valid answers are required.');
       if (await this.redrafts.forSession(req, run.sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       const answers = body.answers.map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+      await this.documentRuns.claimAnswers(req, run.project, run.runId, body.questionsId);
       await adapter.send(req, run.sessionId, answers, handle);
-      await this.documentRuns.resumeAfterQuestions(req, run.project, run.sessionId, body.questionsId);
       logger.success(req, operation, started, { agent: run.agentKey, count: answers.length });
       const response: MktgPublicRunAnswersResponse = { runId: run.runId, state: 'writing' };
       res.json(response);
@@ -1772,11 +1756,14 @@ export class MktgAgentsController {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }
 
-  private async answersProject(req: Request): Promise<string | undefined> {
-    if (req.body.questionsId !== undefined && (typeof req.body.questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(req.body.questionsId))) {
-      throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
-    }
-    return req.body.project === undefined ? undefined : this.documentRuns.resolveProject(req, req.body.project);
+  /** The four creator-token transports share the public writer route's exact-turn CAS, before Guild. */
+  private async claimOwnerAnswers(req: Request, sessionId: string, agentId: string): Promise<void> {
+    const questionsId: unknown = req.body.questionsId;
+    if (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))
+      throw ServiceValidationError.forField('questionsId', 'A valid questions block is required.');
+    const project = await this.documentRuns.resolveProject(req, req.body.project);
+    if (await this.redrafts.forSession(req, sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+    await this.documentRuns.claimSessionAnswers(req, project, sessionId, questionsId, agentId);
   }
 
   private async trackResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {

@@ -49,8 +49,8 @@ import {
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants/mktg-run.constants';
-import { isMktgRunPendingQuestions } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { isMktgRunPendingQuestions, mktgRunClaimAnswers } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
@@ -66,7 +66,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError, PreconditionFailedError } from '../errors';
+import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
@@ -575,7 +575,7 @@ export class MktgDocumentRunService {
   }
 
   /** Resolve the private session only after canonical project-writer authorization; public IDs cannot select another partition. */
-  public async questionsForAnswers(req: Request, rawProject: unknown, runId: string, questionsId: string): Promise<MktgStartedRunRecord> {
+  public async questionsForAnswers(req: Request, rawProject: unknown, runId: string, questionsId: string, creatorOnly = false): Promise<MktgStartedRunRecord> {
     if (!MKTG_STARTED_RUN_ID_REGEX.test(runId)) throw ServiceValidationError.forField('runId', 'A valid opaque run id is required.');
     const requestedProject = typeof rawProject === 'string' ? rawProject.trim() : '';
     const project = await this.resolveProject(req, requestedProject);
@@ -583,12 +583,60 @@ export class MktgDocumentRunService {
     const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
     if (!stored) throw new ResourceNotFoundError('Marketing OS run', runId);
     const run = stored.record;
-    if (MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.kind !== 'living')
+    if (
+      MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.kind !== 'living' &&
+      (!creatorOnly || !run.creatorSubject || run.creatorSubject !== getEffectiveSub(req))
+    )
       throw new AuthorizationError('Only the writer who started this run can answer it.');
-    if (run.state !== 'questions') throw new PreconditionFailedError('This run is not waiting for answers. Refresh its progress.');
-    if (!run.pendingQuestions || run.pendingQuestions.questionsId !== questionsId)
-      throw new ConflictError('These questions have changed. Refresh the run before answering.', 'MKTG_RUN_QUESTIONS_CHANGED');
+    if (run.state !== 'questions' || run.pendingQuestions?.questionsId !== questionsId || run.answeredQuestionsId === questionsId)
+      throw await this.answeredConflict(req, run, questionsId);
     return run;
+  }
+
+  /** Commit the exact questions-to-writing transition before any Guild send. Only one ETag can win. */
+  public async claimAnswers(req: Request, project: string, runId: string, questionsId: string, creatorOnly = false): Promise<MktgStartedRunRecord> {
+    await this.questionsForAnswers(req, project, runId, questionsId, creatorOnly);
+    const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
+    if (!stored) throw new ResourceNotFoundError('Marketing OS run', runId);
+    const subject = getEffectiveSub(req);
+    if (!subject) throw new AuthenticationError('A signed-in writer subject is required to answer.');
+    const claim = mktgRunClaimAnswers(stored.record, questionsId, subject, new Date().toISOString());
+    if (!claim) throw await this.answeredConflict(req, stored.record, questionsId);
+    if (!stored.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token. Refresh before answering.');
+    const written = await this.store.putConditionalObject(
+      req,
+      'marketing-os-artifacts',
+      stored.key,
+      {
+        body: Buffer.from(JSON.stringify(claim)),
+        contentType: 'application/json; charset=utf-8',
+        cacheControl: 'private',
+        ifMatch: stored.etag,
+        metadata: {
+          ...stored.metadata,
+          state: 'writing',
+          'answered-questions-id': questionsId,
+          'retry-at': claim.retryAt ?? claim.startedAt,
+          'persist-retries': '0',
+        },
+      },
+      true
+    );
+    MktgDocumentRunService.terminalCache.delete(stored.key);
+    if (!written) {
+      const winner = await this.read(req, project, stored.key);
+      throw await this.answeredConflict(req, winner?.record ?? stored.record, questionsId);
+    }
+    logger.info(req, 'mktg_run_answers_claim', 'Claimed the waiting questions turn', { project, run: runId });
+    return claim;
+  }
+
+  /** Creator-token endpoints select only their catalog agent's session, then use the same writer CAS. */
+  public async claimSessionAnswers(req: Request, project: string, sessionId: string, questionsId: string, agentId: string): Promise<void> {
+    const run = await this.questionsForAnswers(req, project, this.hash(sessionId), questionsId, true);
+    if (run.sessionId !== sessionId || findMktgRunIntake(run.agentKey, true)?.agentId !== agentId)
+      throw new AuthorizationError('The recorded run does not match this agent session.');
+    await this.claimAnswers(req, project, run.runId, questionsId, true);
   }
 
   /** Caller validates before sending answers; invalid internal input is DEBUG, never a storage WARN. */
@@ -605,6 +653,16 @@ export class MktgDocumentRunService {
     } catch (error) {
       logger.warning(req, 'mktg_run_answers_resume', 'Answers accepted; tracking renewal failed, do not resend', { project, err: error });
     }
+  }
+
+  /** Attribution is resolved only after writer authorization; an unavailable name never exposes a subject. */
+  private async answeredConflict(req: Request, run: MktgStartedRunRecord, questionsId: string): Promise<ConflictError> {
+    const author = await this.authors.resolveAuthor(req, run.answeredBy);
+    const name = author?.name?.trim();
+    const answeredBy = name && !/[|@]/.test(name) && name !== run.answeredBy ? name : null;
+    return new ConflictError(answeredBy ? `Already answered by ${answeredBy}` : 'Already answered', MKTG_RUN_ANSWERED, {
+      details: { runId: run.runId, questionsId, answeredBy, answeredAt: run.answeredAt ?? null },
+    });
   }
 
   /** Questions are project-writer data, never inferred from creator identity or a caller-provided capability. */
@@ -805,7 +863,7 @@ export class MktgDocumentRunService {
     }
   }
 
-  /** HEAD/check/PUT is not atomic across writers; see the accepted conditional-metadata follow-up beside start. */
+  /** Fence stale result polls with the same record version used by answer claims; start admission remains separate. */
   private async mark(
     req: Request,
     stored: MktgStoredStartedRun,
@@ -820,8 +878,17 @@ export class MktgDocumentRunService {
   ): Promise<MktgStartedRunRecord> {
     const run = stored.record;
     const turn = state === 'questions' ? pendingQuestions : null;
-    const body =
-      JSON.stringify(run.pendingQuestions ?? null) === JSON.stringify(turn) ? stored.body : JSON.stringify({ ...run, pendingQuestions: turn ?? undefined });
+    // State must change the bytes/ETag too: metadata-only replacements can retain an S3 ETag.
+    const body = JSON.stringify({
+      ...run,
+      state,
+      retryAt,
+      answeredQuestionsId: questionsId,
+      persistRetries,
+      failureText,
+      failureReason,
+      pendingQuestions: turn ?? undefined,
+    });
     const written = await this.put(
       req,
       stored.key,
@@ -853,7 +920,8 @@ export class MktgDocumentRunService {
           (state === 'storing' && current === state && (persistRetries ?? 0) > Number(metadata['persist-retries'] ?? 0)) ||
           (state === 'questions' && current === state && JSON.stringify(run.pendingQuestions ?? null) !== JSON.stringify(pendingQuestions))
         );
-      }
+      },
+      stored
     );
     if (written && isMktgRunTerminal(state)) {
       logger.info(req, 'mktg_run_mark', 'Recorded terminal run state', { project: run.project, run: run.runId, state });
@@ -870,9 +938,27 @@ export class MktgDocumentRunService {
     key: string,
     body: string,
     metadata: Record<string, string>,
-    refreshMetadataWhen: (value: Record<string, string>) => boolean
+    refreshMetadataWhen: (value: Record<string, string>) => boolean,
+    snapshot?: MktgStoredStartedRun
   ): Promise<boolean> {
     MktgDocumentRunService.terminalCache.delete(key);
+    if (snapshot) {
+      if (!snapshot.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token.');
+      if (!refreshMetadataWhen(snapshot.metadata)) return Promise.resolve(false);
+      return this.store.putConditionalObject(
+        req,
+        'marketing-os-artifacts',
+        key,
+        {
+          body: Buffer.from(body),
+          contentType: 'application/json; charset=utf-8',
+          cacheControl: 'private',
+          metadata,
+          ifMatch: snapshot.etag,
+        },
+        true
+      );
+    }
     return this.store.putContentAddressedObject(req, 'marketing-os-artifacts', key, Buffer.from(body), 'application/json; charset=utf-8', 'private', metadata, {
       refreshMetadataWhen,
     });
@@ -988,6 +1074,8 @@ export class MktgDocumentRunService {
       if (
         record.schema !== MKTG_STARTED_RUN_SCHEMA ||
         (record.pendingQuestions !== undefined && !isMktgRunPendingQuestions(record.pendingQuestions)) ||
+        (record.answeredBy !== undefined && (typeof record.answeredBy !== 'string' || !record.answeredBy.trim())) ||
+        (record.answeredAt !== undefined && (typeof record.answeredAt !== 'string' || !Number.isFinite(Date.parse(record.answeredAt)))) ||
         record.project !== project ||
         !findMktgRunIntake(record.agentKey, true) ||
         record.documentId !== this.documentId(record.agentKey, record.sessionId) ||
@@ -1012,6 +1100,8 @@ export class MktgDocumentRunService {
       return {
         key,
         body: object.body,
+        etag: object.etag,
+        metadata: m,
         record: {
           ...record,
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,

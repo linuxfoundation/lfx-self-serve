@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
   attribution: vi.fn(),
   track: vi.fn(),
   record: vi.fn(),
-  resume: vi.fn(),
+  claim: vi.fn(),
   share: vi.fn(),
   answer: vi.fn(),
   start: vi.fn(),
@@ -41,7 +41,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public ownedOneOffResult = mocks.ownedResult;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
-    public resumeAfterQuestions = mocks.resume;
+    public claimSessionAnswers = mocks.claim;
   },
 }));
 vi.mock('../services/mktg-last-intake.service', () => ({
@@ -79,6 +79,7 @@ vi.mock('../services/project.service', () => ({
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: mocks.startOperation, success: vi.fn(), warning: vi.fn() } }));
 import { LinkedinPostController } from './linkedin-post.controller';
 import { logger } from '../services/logger.service';
+import { ConflictError } from '../errors';
 
 function request(body: unknown, sub = 'subject-one', username = 'initial-user'): Request {
   return Object.assign({} as Request, { method: 'POST', body, oidc: { user: { sub, 'https://sso.linuxfoundation.org/claims/username': username } } });
@@ -152,6 +153,26 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
 
+  it('never sends a second one-off answers message after a lost conditional claim', async () => {
+    const details = { runId: 'a'.repeat(64), questionsId: 'b'.repeat(64), answeredBy: null, answeredAt: '2026-10-28T21:15:00Z' };
+    const failure = new ConflictError('Already answered', 'MKTG_RUN_ANSWERED', { details });
+    mocks.claim.mockRejectedValueOnce(failure);
+    const next = vi.fn();
+    await new LinkedinPostController().answer(
+      request({
+        sessionId: 'session-one',
+        ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+        project: 'project-one',
+        questionsId: details.questionsId,
+        answers: [{ key: 'tendency', text: 'Direct and practical', origin: 'requester' }],
+      }),
+      response(),
+      next
+    );
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.answer).not.toHaveBeenCalled();
+  });
+
   it('binds gap answers to the owner and writer grant, validates ids, and continues the same session', async () => {
     const body = {
       sessionId: 'session-one',
@@ -167,7 +188,8 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).not.toHaveBeenCalled();
     expect(mocks.answer).toHaveBeenCalledWith(expect.anything(), 'session-one', body.questionsId, body.answers, 'linkedin-post');
     expect(res.json).toHaveBeenCalledWith({ success: true });
-    expect(mocks.resume).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId);
+    expect(mocks.claim).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId, 'linkedin-post');
+    expect(mocks.claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.answer.mock.invocationCallOrder[0]);
     mocks.answer.mockClear();
     await controller.answer(request({ ...body, ownerToken: 'forged' }), res, next);
     expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 403 }));

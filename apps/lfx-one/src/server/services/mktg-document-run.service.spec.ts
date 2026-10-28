@@ -44,6 +44,9 @@ const flows = vi.hoisted(() => ({
   get: vi.fn(),
   head: vi.fn(),
   beforePut: vi.fn(),
+  beforeClaim: vi.fn(),
+  beforeMark: vi.fn(),
+  claim: vi.fn(),
   active: 0,
   max: 0,
 }));
@@ -130,7 +133,26 @@ vi.mock('./object-store.service', () => ({
       flows.max = Math.max(flows.max, flows.active);
       await Promise.resolve();
       flows.active--;
-      return objects.get(key) ?? null;
+      const object = objects.get(key);
+      return object ? { ...object, metadata: { ...object.metadata }, etag: hash(object.body) } : null;
+    }
+    public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      const previous = objects.get(key);
+      if (
+        previous?.metadata['state'] === 'questions' &&
+        input.metadata?.['state'] === 'writing' &&
+        JSON.parse(Buffer.from(input.body).toString('utf8')).answeredBy
+      ) {
+        flows.claim(input);
+        await flows.beforeClaim(input);
+      } else {
+        await flows.beforeMark(input);
+        await flows.beforePut(input.metadata);
+      }
+      const object = objects.get(key);
+      if (!object || input.ifMatch !== hash(object.body)) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date() });
+      return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
       return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -160,9 +182,10 @@ vi.mock('./object-store.service', () => ({
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
-import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot } from '@lfx-one/shared/interfaces';
+import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
+const writerRequest = (sub: string): Request => Object.assign({}, req, { oidc: { ...req.oidc, user: { sub } } });
 const project = 'synthetic-project';
 const session = 'synthetic-session';
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -198,6 +221,8 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
+    flows.beforeClaim.mockReset();
+    flows.beforeMark.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.events.mockReset().mockResolvedValue([]);
     flows.interrupt.mockReset().mockResolvedValue(undefined);
@@ -290,11 +315,120 @@ describe('MktgDocumentRunService core', () => {
       await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
       expect(flows.get).not.toHaveBeenCalled();
     });
-    it('rejects a stale question turn with409 and a non-questions state with412', async () => {
+    it('rejects both stale turns and non-waiting records with the answered conflict', async () => {
       await waiting();
       await expect(service.questionsForAnswers(req, project, hash(session), 'd'.repeat(64))).rejects.toMatchObject({ statusCode: 409 });
       stored().metadata['state'] = 'writing';
-      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 412 });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_ANSWERED' });
+    });
+    it('conditionally claims the exact turn, persists attribution, and exposes writing without private fields', async () => {
+      await waiting();
+      const writer = writerRequest('synthetic-answer-writer');
+      const etag = hash(stored().body);
+      const result = await service.claimAnswers(writer, project, hash(session), questionsId);
+      expect(flows.claim).toHaveBeenCalledWith(expect.objectContaining({ ifMatch: etag, metadata: expect.objectContaining({ state: 'writing' }) }));
+      expect(result).toMatchObject({
+        state: 'writing',
+        answeredQuestionsId: questionsId,
+        answeredBy: 'synthetic-answer-writer',
+        answeredAt: new Date().toISOString(),
+      });
+      expect(JSON.parse(stored().body)).toEqual(JSON.parse(JSON.stringify(result)));
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      const progress = (await service.readProgress(writer, project)).runs[0];
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(progress).not.toHaveProperty('answeredBy');
+      expect(progress).not.toHaveProperty('answeredAt');
+    });
+    it('fences a held questions poll so it cannot overwrite and reopen an accepted answer claim', async () => {
+      await waiting();
+      let release = (): void => undefined;
+      let entered = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      flows.beforeMark.mockImplementationOnce(async () => {
+        entered();
+        await held;
+      });
+      flows.result.mockResolvedValue({ status: 'questions', questionsId: 'd'.repeat(64), questions });
+      const polling = service.readProgress(req, project);
+      await reached;
+      const writer = writerRequest('synthetic-claim-writer');
+      await service.claimAnswers(writer, project, hash(session), questionsId);
+      release();
+      const result = await polling;
+      expect(result.runs[0]?.state).toBe('writing');
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId, answeredBy: 'synthetic-claim-writer' });
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+    });
+    it('allows exactly one of two concurrent writers to claim an observed ETag', async () => {
+      await waiting();
+      let release = (): void => undefined;
+      let arrived = 0;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      flows.beforeClaim.mockImplementation(async () => {
+        if (++arrived === 2) release();
+        await barrier;
+      });
+      flows.author.mockResolvedValue({ name: 'Synthetic Writer' });
+      const writers = ['synthetic-writer-a', 'synthetic-writer-b'].map(writerRequest);
+      const results = await Promise.allSettled(writers.map((writer) => new MktgDocumentRunService().claimAnswers(writer, project, hash(session), questionsId)));
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const loser = results.find((result) => result.status === 'rejected');
+      expect(loser?.status === 'rejected' ? loser.reason : null).toMatchObject({
+        statusCode: 409,
+        code: 'MKTG_RUN_ANSWERED',
+        message: 'Already answered by Synthetic Writer',
+        details: { runId: hash(session), questionsId, answeredBy: 'Synthetic Writer', answeredAt: new Date().toISOString() },
+      });
+      expect(flows.claim).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(stored().body).answeredBy).toMatch(/^synthetic-writer-[ab]$/);
+    });
+    it.each([null, 'synthetic-writer@example.test', 'synthetic-private-subject'])(
+      'uses null fallback for unavailable or non-display claimant name %s',
+      async (name) => {
+        await waiting();
+        const writer = writerRequest('synthetic-private-subject');
+        await service.claimAnswers(writer, project, hash(session), questionsId);
+        flows.author.mockResolvedValue({ name });
+        await expect(service.claimAnswers(writer, project, hash(session), questionsId)).rejects.toMatchObject({
+          statusCode: 409,
+          code: 'MKTG_RUN_ANSWERED',
+          message: 'Already answered',
+          details: { runId: hash(session), questionsId, answeredBy: null, answeredAt: new Date().toISOString() },
+        });
+        expect(flows.claim).toHaveBeenCalledTimes(1);
+        expect(flows.author).toHaveBeenCalledWith(writer, 'synthetic-private-subject');
+      }
+    );
+    it('allows only the recorded one-off creator through the owner transport, never the public writer route', async () => {
+      const owner = writerRequest('synthetic-linkedin-creator');
+      const other = writerRequest('synthetic-other-writer');
+      await service.startForOneOff(owner, 'linkedin-post', project, session);
+      flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
+      await service.readProgress(owner, project);
+      await expect(service.claimSessionAnswers(other, project, session, questionsId, 'linkedin-post')).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.claimAnswers(owner, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.claim).not.toHaveBeenCalled();
+      await service.claimSessionAnswers(owner, project, session, questionsId, 'linkedin-post');
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredBy: 'synthetic-linkedin-creator' });
+    });
+    it('binds creator transports to their catalog agent before using the same conditional claim', async () => {
+      await waiting();
+      const writer = writerRequest('synthetic-original-writer');
+      await expect(service.claimSessionAnswers(writer, project, session, questionsId, 'synthetic-wrong-agent')).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.claim).not.toHaveBeenCalled();
+      await service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '');
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
     });
     it('cannot select a record in another project using a known run id', async () => {
       await waiting();
@@ -403,6 +537,7 @@ describe('MktgDocumentRunService core', () => {
     await service.start(req, project, types[0].agentKey, session);
     redraft.forSession.mockImplementationOnce(async () => {
       Object.assign(stored().metadata, { state: 'questions', 'retry-at': '2026-10-19T12:00:00.001Z' });
+      stored().body = JSON.stringify({ ...JSON.parse(stored().body), state: 'questions', retryAt: '2026-10-19T12:00:00.001Z' });
       return null;
     });
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).rejects.toMatchObject({
@@ -902,7 +1037,7 @@ describe('MktgDocumentRunService core', () => {
     expect(stored()).toBe(before);
   });
 
-  it.each(['failed', 'storing'] as const)('reproduces the accepted non-atomic limitation: stale %s PUT can replace completion', async (state) => {
+  it.each(['failed', 'storing'] as const)('fences a stale %s transition so it cannot replace a completed record', async (state) => {
     await service.start(req, project, types[0].agentKey, session);
     let release: () => void = () => {
       throw new Error('Missing suspended conditional failure');
@@ -927,16 +1062,14 @@ describe('MktgDocumentRunService core', () => {
     flows.result.mockResolvedValueOnce(stale).mockResolvedValueOnce(ready());
     const failure = service.recordResult(req, session, stale, project);
     await paused;
-    const before = stored().body;
     await service.recordResult(req, session, ready(), project);
     const completed = stored();
-    expect(completed.body).toBe(before);
+    expect(JSON.parse(completed.body).state).toBe('completed');
     expect(completed.metadata).toMatchObject({ state: 'completed', 'revision-id': location().revision_id });
     release();
     await failure;
-    // Known limitation, NOT a claimed atomic guarantee: a separate conditional-store WorkItem must fix it.
-    expect(stored().metadata['state']).toBe(state);
-    expect(stored().metadata['revision-id']).toBeUndefined();
+    expect(stored().body).toBe(completed.body);
+    expect(stored().metadata).toEqual(completed.metadata);
   });
 
   it('rejects ledger overflow instead of evicting an accepted ACK', async () => {
@@ -1097,9 +1230,11 @@ describe('MktgDocumentRunService core', () => {
     flows.result.mockResolvedValue(ready(type.agentKey));
     await service.recordResult(req, session, ready(type.agentKey), project);
     expect(stored().metadata['state']).toBe('completed');
+    const completedBody = stored().body;
+    expect(JSON.parse(completedBody).startedAt).toBe(JSON.parse(body).startedAt);
     vi.advanceTimersByTime(120_000);
     await service.start(req, project, type.agentKey, session, 0, 'renewed-turn');
-    expect(stored().body).toBe(body);
+    expect(stored().body).toBe(completedBody);
     expect(stored().metadata).toMatchObject({ state: 'writing', 'prior-version': '0', 'started-at': '2026-10-19T12:00:00.000Z', 'attempt-id': 'renewed-turn' });
     await service.recordResult(req, session, ready(type.agentKey), project);
     expect(stored().metadata['state']).toBe('writing');

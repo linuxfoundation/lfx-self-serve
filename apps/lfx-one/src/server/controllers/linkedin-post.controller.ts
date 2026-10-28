@@ -161,8 +161,8 @@ export class LinkedinPostController {
       if (typeof questionsId !== 'string' || !/^[a-f0-9]{64}$/.test(questionsId) || !validLinkedinAnswers(answers))
         throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
       const project = await this.writableProject(req, body['project']);
+      await this.runs.claimSessionAnswers(req, project.uid, sessionId, questionsId, LINKEDIN_POST_INTAKE.agentId);
       await this.posts.sendAnswers(req, sessionId, questionsId, answers, this.routingHandle());
-      await this.runs.resumeAfterQuestions(req, project.uid, sessionId, questionsId);
       logger.success(req, operation, start, { answers: answers.length });
       res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {

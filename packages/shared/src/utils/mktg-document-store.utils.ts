@@ -196,6 +196,29 @@ export function isMktgRunPendingQuestions(value: unknown): value is MktgRunPendi
   );
 }
 
+/** Build a claim only for the exact unclaimed turn; the store commits it with the observed ETag. */
+export function mktgRunClaimAnswers(run: MktgStartedRunRecord, questionsId: string, answeredBy: string, answeredAt: string): MktgStartedRunRecord | null {
+  if (
+    run.state !== 'questions' ||
+    run.pendingQuestions?.questionsId !== questionsId ||
+    run.answeredQuestionsId === questionsId ||
+    !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId) ||
+    !answeredBy.trim() ||
+    !Number.isFinite(Date.parse(answeredAt))
+  )
+    return null;
+  return {
+    ...run,
+    state: 'writing',
+    pendingQuestions: undefined,
+    answeredQuestionsId: questionsId,
+    answeredBy,
+    answeredAt,
+    retryAt: mktgRunRenewAt(run, Date.parse(answeredAt)),
+    persistRetries: 0,
+  };
+}
+
 /** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
 export function mktgRunProgress(
   run: MktgStartedRunRecord,
@@ -210,16 +233,17 @@ export function mktgRunProgress(
   // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
   const failureText =
     run.agentKey === 'linkedin-post' && (!run.creatorSubject || readerSubject !== run.creatorSubject) ? MKTG_ONE_OFF_STOPPED_MESSAGE : fullReply;
+  const state = run.state === 'questions' && !!run.answeredQuestionsId && run.pendingQuestions?.questionsId === run.answeredQuestionsId ? 'writing' : run.state;
   const progress: MktgDocumentRunProgress = {
     runId: run.runId,
     project: run.project,
     agentKey: run.agentKey,
     documentId: run.documentId,
     startedAt: run.startedAt,
-    state: run.state,
+    state,
     ...(activity && { activity }),
     ...(readerIsWriter &&
-      run.state === 'questions' &&
+      state === 'questions' &&
       isMktgRunPendingQuestions(run.pendingQuestions) &&
       MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living') && {
         pendingQuestions: {

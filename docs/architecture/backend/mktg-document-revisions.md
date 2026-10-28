@@ -305,15 +305,16 @@ Owner tokens are never written; legacy missing subjects mean unattributed writes
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
 `failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
-`revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
-concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
-This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
-conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
+`revision-id` and state. Result transitions now use the ETag captured with the record GET and a
+conditional replacement of both body and metadata. State/budget changes also change the JSON bytes,
+so a metadata-only S3 update cannot leave a stale claim token valid. A losing result poll re-reads the
+winner instead of replacing its completion or reopening answered questions. Start admission and ACK-ledger
+updates retain their separate HEAD/check/PUT limitation; this does not make the one-active-run guard atomic.
 The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
 current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
 `suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
 the existing schema and acquire the field on their next observed question turn. Question-body writes
-share the metadata refresh predicate and the same documented cross-writer limitation, not a new atomic store.
+retain the existing transition predicate and use the same conditional record replacement as result transitions.
 Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
 with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
 The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
@@ -329,9 +330,19 @@ redactor to activity labels/details before returning them, including to the crea
 
 `POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
 A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
-private session from the project-scoped record, checks questions state (412) and turn identity (409),
-then uses the registered intake's existing answer validator and domain sender before renewing writing
-and recording the answered turn. No client owner token or session id is trusted or returned; the ACK is
+private session from the project-scoped record and validates the answers through the registered intake.
+Before sending to Guild it conditionally claims the exact `questions` state and matching questions id,
+writing `state: 'writing'`, `answeredQuestionsId`, private effective-subject `answeredBy` and ISO `answeredAt`.
+Only one observed ETag wins. A lost/stale claim is 409 `MKTG_RUN_ANSWERED`, with response-only
+`{ runId, questionsId, answeredBy, answeredAt }`: `answeredBy` is a resolved display name or null, never
+the stored subject, and `answeredAt` is ISO or null for unknown legacy attribution. The message is
+“Already answered by <name>”, or “Already answered” when no name is available. Public progress immediately
+reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
+back the claim because delivery may be uncertain; it must not invite a second answers message.
+The four kit creator-token answer endpoints require project and questions id and use this same claim
+before their existing domain senders. LinkedIn's dedicated route also claims first, but additionally
+requires the recorded one-off creator; the public writer route still refuses one-offs.
+No client owner token or session id is trusted or returned by the public route; the ACK is
 only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
 creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
 question turn only after a current canonical writer grant, never for a viewer or a one-off; creator

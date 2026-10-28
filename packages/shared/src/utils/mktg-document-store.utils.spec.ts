@@ -24,6 +24,7 @@ import {
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
+  mktgRunClaimAnswers,
   isMktgRunPendingQuestions,
   mktgRunResultIdentity,
   findMktgRunIntake,
@@ -106,6 +107,39 @@ describe('mktg-document-store utils', () => {
         },
       ],
     };
+    it('builds a private exact-turn claim without mutating its source and projects writing immediately', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn });
+      const at = '2026-10-19T00:02:00.000Z';
+      const claim = mktgRunClaimAnswers(run, SHA, 'synthetic-claim-subject', at);
+      expect(claim).toMatchObject({
+        state: 'writing',
+        answeredQuestionsId: SHA,
+        answeredBy: 'synthetic-claim-subject',
+        answeredAt: at,
+        retryAt: at,
+        persistRetries: 0,
+      });
+      expect(run).toMatchObject({ state: 'questions', pendingQuestions: turn });
+      expect(run).not.toHaveProperty('answeredBy');
+      expect(claim?.pendingQuestions).toBeUndefined();
+      if (!claim) throw new Error('Missing synthetic claim');
+      const progress = mktgRunProgress(claim, undefined, undefined, 'synthetic-other-writer', true);
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(JSON.stringify(progress)).not.toContain('synthetic-claim-subject');
+      expect(progress).not.toHaveProperty('answeredAt');
+    });
+    it.each(['writing', 'storing', 'failed', 'completed', 'superseded', 'discarded'] as const)('cannot claim a %s record even with a cached turn', (state) => {
+      expect(mktgRunClaimAnswers(startedRun({ state, pendingQuestions: turn }), SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+    });
+    it('cannot claim changed, missing, malformed or unattributed turns', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn });
+      expect(mktgRunClaimAnswers(run, 'f'.repeat(64), 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers({ ...run, pendingQuestions: undefined }, SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers({ ...run, answeredQuestionsId: SHA }, SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers(run, SHA, ' ', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers(run, SHA, 'synthetic-writer', 'invalid')).toBeNull();
+    });
     it('projects the complete existing question payload to another project writer without private extras', () => {
       const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
       const progress = mktgRunProgress(run, undefined, undefined, 'synthetic-other-writer', true);
@@ -125,6 +159,13 @@ describe('mktg-document-store utils', () => {
       });
       expect(JSON.stringify(progress)).not.toContain('PRIVATE');
       expect(progress).not.toHaveProperty('creatorSubject');
+    });
+    it('projects an already-answered cached turn as writing without projecting its questions', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn, answeredQuestionsId: SHA });
+      const progress = mktgRunProgress(run, undefined, undefined, 'synthetic-writer', true);
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(mktgRunProgress(startedRun({ state: 'questions' }))?.state).toBe('questions');
     });
     it('defaults to denying questions even to the creator without a verified writer grant', () => {
       const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });

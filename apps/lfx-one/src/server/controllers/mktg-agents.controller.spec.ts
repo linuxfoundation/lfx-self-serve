@@ -21,6 +21,8 @@ const runMocks = vi.hoisted(() => ({
   recordResultBestEffort: vi.fn(),
   resumeAfterQuestions: vi.fn(),
   questionsForAnswers: vi.fn(),
+  claimAnswers: vi.fn(),
+  claimSessionAnswers: vi.fn(),
 }));
 const lastIntakeMocks = vi.hoisted(() => ({ read: vi.fn(), recordStartBestEffort: vi.fn() }));
 vi.mock('../services/mktg-last-intake.service', () => ({
@@ -38,6 +40,8 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public recordResultBestEffort = runMocks.recordResultBestEffort;
     public resumeAfterQuestions = runMocks.resumeAfterQuestions;
     public questionsForAnswers = runMocks.questionsForAnswers;
+    public claimAnswers = runMocks.claimAnswers;
+    public claimSessionAnswers = runMocks.claimSessionAnswers;
   },
 }));
 const projectMocks = vi.hoisted(() => ({
@@ -200,7 +204,7 @@ import {
 import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../../../../../packages/shared/src/constants/mktg-intake.constants';
 import { validateIcpIntakeAnswers as validateRealIcpIntakeAnswers } from '../../../../../packages/shared/src/utils/icp.utils';
 
-import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -292,6 +296,8 @@ describe('MktgAgentsController', () => {
     runMocks.startForCatalogAgent.mockResolvedValue(publicRunId);
     runMocks.recordResultBestEffort.mockResolvedValue(undefined);
     runMocks.resumeAfterQuestions.mockResolvedValue(undefined);
+    runMocks.claimAnswers.mockReset().mockResolvedValue(undefined);
+    runMocks.claimSessionAnswers.mockReset().mockResolvedValue(undefined);
     guildMocks.createSession.mockReset().mockResolvedValue('synthetic-chat-session');
     guildMocks.sendFollowUp.mockReset().mockResolvedValue(undefined);
     validatorMocks.validateIcpIntakeAnswers.mockImplementation(validateRealIcpIntakeAnswers);
@@ -348,10 +354,22 @@ describe('MktgAgentsController', () => {
         handle?.status === 'active' ? handle.guildAgentHandle : undefined
       );
       expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
-      expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'synthetic-project', 'private-original-session', 'c'.repeat(64));
-      expect(adapter.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
+      expect(runMocks.claimAnswers).toHaveBeenCalledWith(req, 'synthetic-project', publicRunId, 'c'.repeat(64));
+      expect(runMocks.claimAnswers.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({ runId: publicRunId, state: 'writing' });
       expect(JSON.stringify(res.json.mock.calls)).not.toContain('private-original');
+    });
+    it.each(['Synthetic Writer', null])('forwards the answered conflict body with claimant %s and never sends after a lost claim', async (answeredBy) => {
+      const message = answeredBy ? `Already answered by ${answeredBy}` : 'Already answered';
+      const details = { runId: publicRunId, questionsId: 'c'.repeat(64), answeredBy, answeredAt: '2026-10-28T21:15:00Z' };
+      const failure = new ConflictError(message, 'MKTG_RUN_ANSWERED', { details });
+      runMocks.claimAnswers.mockRejectedValueOnce(failure);
+      await controller.runAnswers(request(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(failure.toResponse()).toMatchObject({ ...details, code: 'MKTG_RUN_ANSWERED', message, error: message });
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
     });
     it('never sends or resumes after a scoped authorization/state failure', async () => {
       const failure = new AuthorizationError('Synthetic writer access required.');
@@ -369,11 +387,13 @@ describe('MktgAgentsController', () => {
       expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
     });
-    it('does not renew the run when the existing sender rejects a stale question turn', async () => {
+    it('does not reopen the committed claim when a sender fails or its delivery is uncertain', async () => {
       const failure = ServiceValidationError.forField('answers', 'Synthetic question turn changed.');
       foundationMessageMocks.sendAnswers.mockRejectedValueOnce(failure);
       await controller.runAnswers(request(), buildRes(), next);
       expect(next).toHaveBeenCalledWith(failure);
+      expect(runMocks.claimAnswers).toHaveBeenCalledTimes(1);
+      expect(runMocks.claimAnswers.mock.invocationCallOrder[0]).toBeLessThan(foundationMessageMocks.sendAnswers.mock.invocationCallOrder[0]);
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
     });
     it('preserves the comments-only redraft refusal without sending', async () => {
@@ -496,16 +516,35 @@ describe('MktgAgentsController', () => {
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
       expect(tokenMocks.verifySessionOwnerToken.mock.invocationCallOrder[0]).toBeLessThan(redraftContext.mock.invocationCallOrder[0]);
     });
-    it(`${method}: resolves canonical scope before answers and resumes only after accepted send`, async () => {
+    it(`${method}: resolves canonical scope and claims the exact questions before sending`, async () => {
       runMocks.resolveProject.mockResolvedValueOnce('resolved-project');
       const req = answersRequest();
       const res = buildRes();
       await controller[method](req, res, next);
       expect(next).not.toHaveBeenCalled();
       expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'requested-project');
-      expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567');
-      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
-      expect(adapter.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
+      expect(runMocks.claimSessionAnswers).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567', expect.any(String));
+      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(runMocks.claimSessionAnswers.mock.invocationCallOrder[0]);
+      expect(runMocks.claimSessionAnswers.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it(`${method}: requires a questions id even with a valid creator token`, async () => {
+      const req = answersRequest();
+      delete req.body.questionsId;
+      await controller[method](req, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(runMocks.claimSessionAnswers).not.toHaveBeenCalled();
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+    });
+    it(`${method}: refuses an already claimed turn with 409 and attribution before Guild`, async () => {
+      const details = { runId: publicRunId, questionsId: 'a1234567', answeredBy: null, answeredAt: '2026-10-28T21:15:00Z' };
+      const failure = new ConflictError('Already answered', 'MKTG_RUN_ANSWERED', { details });
+      runMocks.claimSessionAnswers.mockRejectedValueOnce(failure);
+      await controller[method](answersRequest(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(failure.toResponse()).toMatchObject({ ...details, code: 'MKTG_RUN_ANSWERED' });
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
     });
     it(`${method}: malformed questions and failed preflight never reach Guild`, async () => {
       await controller[method](answersRequest('../bad'), buildRes(), next);
@@ -906,6 +945,8 @@ describe('MktgAgentsController', () => {
       const req = buildIcpReq('/api/mktg-agents/brand-kit/answers', {
         sessionId: 'sess-bk',
         ownerToken: 'token-1',
+        project: 'synthetic-project',
+        questionsId: 'a1234567',
         answers: [{ key: 'voice', text: ' Open standards for orbital computing ', origin: 'accepted' }],
       });
       const res = buildRes();
@@ -1322,7 +1363,11 @@ describe('MktgAgentsController', () => {
       foundationMessageMocks.sendAnswers.mockResolvedValue(undefined);
       const res = buildRes();
 
-      await controller.foundationMessageAnswers(answersReq({ sessionId: ' sess-1 ', ownerToken: 'token-1', answers }), res, next);
+      await controller.foundationMessageAnswers(
+        answersReq({ sessionId: ' sess-1 ', ownerToken: 'token-1', project: 'synthetic-project', questionsId: 'a1234567', answers }),
+        res,
+        next
+      );
 
       expect(next).not.toHaveBeenCalled();
       expect(tokenMocks.verifySessionOwnerToken).toHaveBeenCalledWith('token-1', 'auth0|user-1', 'sess-1');
@@ -1658,6 +1703,8 @@ describe('MktgAgentsController', () => {
       const req = buildIcpReq(path, {
         sessionId: 'sess-bp',
         ownerToken: 'token-1',
+        project: 'synthetic-project',
+        questionsId: 'a1234567',
         answers: [{ key: 'domain', text: ' testorbit.example.org ', origin: 'edited' }],
       });
       const res = buildRes();
@@ -1789,7 +1836,13 @@ describe('MktgAgentsController', () => {
 
     it('sends the answers on the same session for its creator only', async () => {
       faqMocks.sendAnswers.mockResolvedValue(undefined);
-      const body = { sessionId: 'sess-1', ownerToken: 'owner-token', answers: [{ key: 'membership-cost', text: ' Free. ', origin: 'requester' }] };
+      const body = {
+        sessionId: 'sess-1',
+        ownerToken: 'owner-token',
+        project: 'synthetic-project',
+        questionsId: 'a1234567',
+        answers: [{ key: 'membership-cost', text: ' Free. ', origin: 'requester' }],
+      };
       const res = buildRes();
 
       await controller.faqAnswers(faqReq('answers', body), res, next);
