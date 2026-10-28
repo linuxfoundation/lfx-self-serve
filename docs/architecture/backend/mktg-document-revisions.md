@@ -309,7 +309,12 @@ retry/answers budget origin, answered questions id, prior revision, persist retr
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
-The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+The record's identity stays bound; the optional `pendingQuestions` body field captures a living document's
+current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
+`suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
+the existing schema and acquire the field on their next observed question turn. Question-body writes
+share the metadata refresh predicate and the same documented cross-writer limitation, not a new atomic store.
+The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
 Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
@@ -319,6 +324,16 @@ Activity is read from the domain result's existing sanitized feed, not retained 
 and is projected only when the effective reader is the stored original creator. Other project writers
 see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
 redactor to activity labels/details before returning them, including to the creator.
+
+`POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
+A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
+private session from the project-scoped record, checks questions state (412) and turn identity (409),
+then uses the registered intake's existing answer validator and domain sender before renewing writing
+and recording the answered turn. No client owner token or session id is trusted or returned; the ACK is
+only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
+creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
+question turn only after a current canonical writer grant, never for a viewer or a one-off; creator
+identity alone is not a grant. Unknown access omits the payload rather than disclosing it.
 
 The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
 object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes

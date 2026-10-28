@@ -214,6 +214,106 @@ describe('MktgDocumentRunService core', () => {
     vi.useRealTimers();
   });
 
+  describe('durable kit questions and scoped writer answers', () => {
+    const questionsId = 'c'.repeat(64);
+    const questions = [
+      {
+        key: 'goal',
+        label: 'Goal',
+        question: 'Which synthetic goal?',
+        why: 'No selected goal.',
+        suggestedAnswer: 'Synthetic adoption',
+        basis: ['Synthetic framework'],
+      },
+    ];
+    async function waiting(): Promise<void> {
+      await service.start(req, project, types[0].agentKey, session);
+      const object = stored();
+      object.body = JSON.stringify({ ...JSON.parse(object.body), creatorSubject: 'synthetic-original-writer' });
+      flows.result.mockResolvedValue({ status: 'questions', questionsId, questions });
+      await service.readProgress(req, project);
+    }
+    it('stores the entire turn once, survives a new service instance, and preserves askedAt on repeated polls', async () => {
+      await waiting();
+      const turn = { questionsId, questions, askedAt: new Date().toISOString() };
+      expect(JSON.parse(stored().body).pendingQuestions).toEqual(turn);
+      const originalBody = stored().body;
+      vi.advanceTimersByTime(1000);
+      expect((await new MktgDocumentRunService().readProgress(req, project)).runs[0]?.pendingQuestions).toEqual(turn);
+      expect(stored().body).toBe(originalBody);
+      expect((await service.questionsForAnswers(req, project, hash(session), questionsId)).creatorSubject).toBe('synthetic-original-writer');
+    });
+    it('backfills an absent legacy questions payload without changing the existing schema', async () => {
+      await service.start(req, project, types[0].agentKey, session);
+      const schema = JSON.parse(stored().body).schema;
+      stored().metadata['state'] = 'questions';
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      flows.result.mockResolvedValue({ status: 'questions', questionsId, questions });
+      const progress = await service.readProgress(req, project);
+      expect(progress.runs[0]?.pendingQuestions).toMatchObject({ questionsId, questions });
+      expect(JSON.parse(stored().body).schema).toBe(schema);
+    });
+    it.each(['answered', 'failed', 'completed', 'discarded'] as const)('clears the stored turn when %s', async (exit) => {
+      await waiting();
+      if (exit === 'answered') await service.resumeAfterQuestions(req, project, session, questionsId);
+      else if (exit === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+      else {
+        flows.result.mockResolvedValue(exit === 'failed' ? { status: 'failed', failureText: 'Synthetic stopped run.' } : ready());
+        await service.readProgress(req, project);
+      }
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      if (exit === 'answered') {
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionsId });
+        expect((await service.readProgress(req, project)).runs[0]?.pendingQuestions).toBeUndefined();
+      }
+    });
+    it('projects only to a currently verified canonical writer, not a viewer or a mismatched project', async () => {
+      await waiting();
+      flows.project.mockResolvedValue({ uid: project, writer: false });
+      expect((await service.readProgress(req, project)).runs[0]).not.toHaveProperty('pendingQuestions');
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      expect((await service.readProgress(req, project)).runs[0]).not.toHaveProperty('pendingQuestions');
+      flows.project.mockResolvedValue({ uid: project, writer: true });
+      expect((await service.readProgress(req, project)).runs[0]?.pendingQuestions).toMatchObject({ questionsId, questions });
+    });
+    it('denies a viewer before fetching the private record', async () => {
+      await waiting();
+      flows.get.mockClear();
+      flows.project.mockResolvedValue({ uid: project, writer: false });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.get).not.toHaveBeenCalled();
+    });
+    it('denies a different canonical project before fetching the private record', async () => {
+      await waiting();
+      flows.get.mockClear();
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.get).not.toHaveBeenCalled();
+    });
+    it('rejects a stale question turn with409 and a non-questions state with412', async () => {
+      await waiting();
+      await expect(service.questionsForAnswers(req, project, hash(session), 'd'.repeat(64))).rejects.toMatchObject({ statusCode: 409 });
+      stored().metadata['state'] = 'writing';
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 412 });
+    });
+    it('cannot select a record in another project using a known run id', async () => {
+      await waiting();
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      await expect(service.questionsForAnswers(req, 'synthetic-other-project', hash(session), questionsId)).rejects.toMatchObject({ statusCode: 404 });
+    });
+    it('refuses one-offs with the plain creator-only reason even for a project writer', async () => {
+      await service.startForOneOff(req, 'linkedin-post', project, session);
+      flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
+      const progress = await service.readProgress(req, project);
+      expect(progress.runs[0]).not.toHaveProperty('pendingQuestions');
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({
+        statusCode: 403,
+        message: 'Only the writer who started this run can answer it.',
+      });
+    });
+  });
+
   it.each(['writing', 'questions', 'storing'] as const)('refuses another start while %s with safe conflict facts', async (state) => {
     await service.start(req, project, types[0].agentKey, session);
     stored().metadata['state'] = state;
