@@ -42,6 +42,7 @@ import {
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_IMAGE_MAX_BYTES,
+  MICROSOFT_IMAGE_PIXEL_BOUNDS,
   MICROSOFT_IMAGE_TOO_LARGE_MESSAGE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
@@ -948,6 +949,12 @@ export class ImplementationTabComponent implements OnInit {
     )
   );
   private microsoftImageUploadSub: Subscription | null = null;
+  /** Whether the picked Microsoft image's pixel size is being read, which holds Create like an upload does. */
+  protected readonly microsoftImageChecking = signal(false);
+  /** Bumped by every pick and every clear, so a size read that finishes after either is ignored. */
+  private microsoftImagePick = 0;
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly microsoftImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -2050,6 +2057,7 @@ export class ImplementationTabComponent implements OnInit {
   );
   protected readonly microsoftImageAssetBlockMessage = computed(() => this.microsoftImageAssetBlock()?.message ?? '');
   protected readonly microsoftImageUploadStatusMessage = computed(() => {
+    if (this.microsoftImageChecking()) return 'Checking image…';
     if (this.microsoftImageUploadStatus() === 'uploading') return 'Uploading image…';
     return this.microsoftImageAssetForThisBrief() ? `Uploaded: ${this.microsoftImageAssetName() || 'image'}` : '';
   });
@@ -2251,7 +2259,12 @@ export class ImplementationTabComponent implements OnInit {
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
-    if (this.showMicrosoftSection() && this.microsoftAssetUploadAvailable() && this.microsoftImageUploadStatus() === 'uploading') return false;
+    if (
+      this.showMicrosoftSection() &&
+      this.microsoftAssetUploadAvailable() &&
+      (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking())
+    )
+      return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2824,8 +2837,26 @@ export class ImplementationTabComponent implements OnInit {
       return;
     }
 
-    this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
-    this.emitDraft();
+    // The pixel bounds are read from the image itself, which is asynchronous. A size that cannot be
+    // read (no decoder in this browser, or an image it cannot decode) is left to campaign-service,
+    // which checks the same bounds before anything is created.
+    const pick = ++this.microsoftImagePick;
+    this.microsoftImageChecking.set(true);
+    void this.readImageSize(file).then((size) => {
+      if (pick !== this.microsoftImagePick) return;
+      this.microsoftImageChecking.set(false);
+      const bounds = MICROSOFT_IMAGE_PIXEL_BOUNDS;
+      if (size && (size.width < bounds.minWidth || size.height < bounds.minHeight || size.width > bounds.maxWidth || size.height > bounds.maxHeight)) {
+        this.failMicrosoftImageUpload(
+          `Microsoft Advertising accepts images from ${bounds.minWidth}x${bounds.minHeight} to ${bounds.maxWidth}x${bounds.maxHeight} pixels; this one is ${size.width}x${size.height}.`,
+          briefId
+        );
+        this.emitDraft();
+        return;
+      }
+      this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
+      this.emitDraft();
+    });
   }
 
   /** Forget the uploaded Microsoft image (the stored asset stays upstream, unused). */
@@ -4065,6 +4096,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private clearMicrosoftImageAsset(): void {
+    this.microsoftImagePick++;
+    this.microsoftImageChecking.set(false);
     this.microsoftImageUploadSub?.unsubscribe();
     this.microsoftImageUploadSub = null;
     if (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageUploadPendingName() !== '') {
@@ -4084,6 +4117,18 @@ export class ImplementationTabComponent implements OnInit {
     this.microsoftImageUploadStatus.set('error');
     this.microsoftImageUploadError.set(message);
     this.microsoftImageUploadFailedBriefId.set(briefId);
+  }
+  /** The image's pixel size, or `null` when this browser cannot read it. Only ever called from a file pick, so never on the server. */
+  private async readImageSize(file: Blob): Promise<{ width: number; height: number } | null> {
+    if (typeof createImageBitmap !== 'function') return null;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return size;
+    } catch {
+      return null;
+    }
   }
 
   /**

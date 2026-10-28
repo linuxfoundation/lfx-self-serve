@@ -2328,12 +2328,14 @@
                 type="file"
                 [attr.accept]="creativeAssetAccept"
                 (change)="onMicrosoftImageFileChange($event)"
+                [disabled]="microsoftImagePickerDisabled()"
                 [attr.aria-describedby]="microsoftImageFileDescribedBy()"
                 [attr.aria-invalid]="microsoftImageUploadStatus() === 'error' ? 'true' : null"
                 class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
                 data-testid="implementation-microsoft-image-file" />
               <p id="microsoft-image-file-hint" class="text-xs text-gray-500">
-                PNG or JPEG, up to 75 KB (76,800 bytes) and 40x20 to 2592x2048 pixels. Attached to the campaign as an image extension.
+                PNG or JPEG, up to 75 KB (76,800 bytes) and 40x20 to 2592x2048 pixels. Attached to the campaign as an image extension. Available once the brief
+                is saved.
               </p>
               <p id="microsoft-image-file-status" class="text-xs text-gray-700" data-testid="implementation-microsoft-image-status">
                 {{ microsoftImageUploadStatusMessage() }}

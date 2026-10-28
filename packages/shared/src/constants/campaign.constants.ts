@@ -2911,6 +2911,13 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
  */
 export const MICROSOFT_IMAGE_MAX_BYTES = 76_800;
 
+/**
+ * The pixel bounds Microsoft takes for an image ad extension (GenericImage: 40x20 minimum, 2592x2048
+ * maximum), which campaign-service checks at dispatch (`microsoft.ValidateImage`). The Implement tab
+ * reads the picked image's size and refuses one outside them before uploading.
+ */
+export const MICROSOFT_IMAGE_PIXEL_BOUNDS = { minWidth: 40, minHeight: 20, maxWidth: 2592, maxHeight: 2048 } as const;
+
 /** Shown when a Microsoft image exceeds `MICROSOFT_IMAGE_MAX_BYTES`. */
 export const MICROSOFT_IMAGE_TOO_LARGE_MESSAGE =
   'Microsoft Advertising accepts images up to 75 KB (76,800 bytes), far smaller than other platforms. Choose a smaller or more compressed PNG or JPEG.';
