@@ -226,14 +226,6 @@
               data-testid="mktg-linkedin-share-link"
               dataTest="mktg-linkedin-share-link" />
             <p id="linkedin-share-hint" class="text-sm text-gray-500">{{ shareLinkHint }}</p>
-            <p
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              [attr.aria-busy]="linkSaving()"
-              class="text-sm text-gray-500"
-              data-testid="mktg-linkedin-share-status"
-              [textContent]="linkError() ? '' : linkStatus()"></p>
             @if (linkError()) {
               <p role="alert" class="text-sm text-red-700" data-testid="mktg-linkedin-share-error">{{ linkError() }}</p>
             }

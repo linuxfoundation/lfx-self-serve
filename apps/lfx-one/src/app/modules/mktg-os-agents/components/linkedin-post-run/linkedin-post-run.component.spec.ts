@@ -49,10 +49,6 @@ describe('LinkedIn profile and post surface', () => {
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
-    api.pending.mockReset().mockReturnValue(null);
-    api.start.mockReset();
-    api.wait.mockReset();
-    api.answer.mockReset().mockReturnValue(of({ success: true }));
     context.set({ uid: 'project-one', slug: 'example-project', name: 'Example project' });
     api.profile.mockReturnValue(of({ profile: null }));
     api.save.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -389,7 +385,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-selected-file"]')).toBeNull();
     await component['onDraft']();
     expect(component['error']()).toContain('Choose a text file');
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it.each(['missing', 'oversized'])('uses the configured byte limit for a %s file without reading or starting a run', async (kind) => {
     const component = (await savedIntake()).componentInstance;
@@ -452,7 +448,7 @@ describe('LinkedIn profile and post surface', () => {
     component['profileForm'].controls['tone'].setValue('direct');
     component['onProfileSubmit']();
     expect(api.save).toHaveBeenCalledWith({ setup: expect.objectContaining({ tone: 'direct' }) });
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('opens the saved personal profile in edit mode from the document link without running an agent', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -608,7 +604,7 @@ describe('LinkedIn profile and post surface', () => {
     });
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
     expect(api.save).not.toHaveBeenCalled();
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('loads a content source URL, pushes source switches and restores the prior source without another write', async () => {
@@ -652,7 +648,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['questions']()).toHaveLength(1);
     expect(component['previousAnswers']()).toEqual({ tendency: 'A clear, technical voice for maintainers.' });
     expect(component['error']()).toContain('kept');
-    expect(api.start).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('shows the safe stale-question server message and keeps the edited answers', async () => {
     const component = (await questionsIntake()).componentInstance;
