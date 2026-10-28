@@ -146,7 +146,9 @@ test('Download PDF prints the existing family document under its body class, nev
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
   await expect(page.getByTestId('family-export-print-document').locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(page.getByTestId('family-export-print-document')).toBeHidden();
-  await expect(page.getByTestId('family-export-pdf-note')).toContainText('Boilerplates and FAQ do not have print layouts yet');
+  await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
+  await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
+  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.');
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });

@@ -59,7 +59,9 @@ describe('Family export slot', () => {
   it('eagerly checks last export and starts create only when there is no earlier deck', async () => {
     const { fixture, root, button } = await setup();
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, false);
-    expect(root.textContent).toContain('Boilerplates and FAQ do not have print layouts yet');
+    expect(root.querySelector('h2')?.textContent).toBe('Export the family');
+    expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
+    expect(root.textContent).toContain('PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.');
     for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
     button('slides')?.click();
     await fixture.whenStable();
