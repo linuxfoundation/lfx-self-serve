@@ -68,7 +68,7 @@ Yes, if you're registered for an upcoming meeting. Select **Remove Myself** on t
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 
-On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. You need to be signed in and have access to the meeting. For a **public, non-restricted** meeting, any signed-in visitor has access. Otherwise, you need to be an organizer, invited, someone who attended, or a member of a group linked to the meeting. See [Past Meetings](../past-meetings/).
+On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. You need to be signed in and able to open the meeting. The organizer's **Who can access recordings & summaries** setting also decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. See [Past Meetings](../past-meetings/) for who can see them.
 
 ## Why can't I see the AI summary?
 
@@ -76,7 +76,7 @@ The organizer may have turned on **Requires host approval before sharing with gu
 
 ## Where can I find meeting materials?
 
-On the meeting's join page, in the **Meeting Materials** panel, and on the meeting's card in the Meetings list. You need to be **signed in** and have access to the meeting. For a public meeting with no join restriction, any signed-in user can see them. For a private or restricted meeting, only invited guests and organizers can. Organizers can add materials to a single occurrence of a recurring meeting, or to all of them. See [Meeting Materials](../meeting-materials/).
+On the meeting's join page, in the **Meeting Materials** panel, and on the meeting's card in the Meetings list. You need to be **signed in** and have access to the meeting. For a public meeting with no join restriction, any signed-in user can see them. For a private or restricted meeting, only invited guests and organizers can. After the meeting runs, people who attended can see them too. Organizers can add materials to a single occurrence of a recurring meeting, or to all of them. See [Meeting Materials](../meeting-materials/).
 
 ## Where do I find the Zoom host key?
 

@@ -42,7 +42,7 @@ The page also shows the meeting's **Agenda** and its **Resources**, which are th
 
 The **Participants** table lists everyone who was invited or attended. For each person, it shows:
 
-- **Name**, with an **Organizer** tag for people marked as hosts
+- **Name**, with an **Organizer** tag on guests an organizer marked as a Meeting Host. The tag marks hosts. It doesn't mean the person can manage the meeting
 - **Email**, **Organization**, and **Title**
 - **Voting Status**, when the meeting was linked to a group that uses voting
 - **Attendance**: **Attended** or **Absent**
@@ -66,12 +66,20 @@ The recording, transcript, and AI summary exist only if the organizer turned the
 
 ### Who can see them
 
-You need to be **signed in** and have access to the meeting.
+You need to be **signed in** and able to open the meeting. Two things then decide who can use the recording, transcript, and AI summary.
 
-- For a **public meeting with no join restriction**, any signed-in user has access.
-- Otherwise, organizers, people who were invited, people who attended, and members of a group linked to the meeting have access.
+**Who can open the meeting.**
 
-Organizers also choose **Who can access recordings & summaries** when they turn these features on: **Meeting Hosts Only**, **Meeting Guests** (the default), or **Public**. This setting applies in addition to the access above.
+- For a **public meeting with no join restriction**, any signed-in user.
+- Otherwise, organizers, people who were invited, people who attended, and members of a group linked to the meeting.
+
+**The organizer's setting.** Organizers choose **Who can access recordings & summaries** when they turn these features on:
+
+- **Meeting Hosts Only**: only organizers and Meeting Hosts.
+- **Meeting Guests** (the default): organizers, Meeting Hosts, and guests.
+- **Public**: publicly accessible. Think twice before choosing this for a Private or Restricted meeting, because it makes the recording, transcript, and summary available to people outside the meeting.
+
+So a public meeting's recording isn't open to every signed-in user when its setting is **Meeting Hosts Only**.
 
 ### Read the transcript
 

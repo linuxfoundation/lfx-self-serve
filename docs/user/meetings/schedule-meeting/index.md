@@ -79,7 +79,7 @@ To make the meeting recurring, turn on the repeat option ("This meeting repeats 
 - **Auto-upload to YouTube**: automatically publish recordings to your project's YouTube channel. This needs **Recording** to be on. The meeting date is added to the video's title when it uploads, so the title can be at most 87 characters. If it's longer, you'll see a "Meeting title too long for YouTube" warning with a link back to **Details & Access** to shorten it.
 - **Reminder email**: automatically send a reminder email to all participants before the meeting starts. Set how long before the start it goes out, from 2 to 24 hours (plus 0 to 59 minutes). It defaults to 24 hours.
 
-When **Recording** or **AI meeting summary** is on, **Who can access recordings & summaries** appears. Choose **Meeting Hosts Only**, **Meeting Guests** (the default), or **Public**.
+When **Recording** or **AI meeting summary** is on, **Who can access recordings & summaries** appears. Choose **Meeting Hosts Only** (organizers and Meeting Hosts), **Meeting Guests** (the default, which adds guests), or **Public** (publicly accessible). Think twice before choosing **Public** for a Private or Restricted meeting. See [Past Meetings](../past-meetings/).
 
 ### Invite guests
 

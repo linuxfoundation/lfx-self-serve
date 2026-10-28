@@ -37,7 +37,7 @@ An organizer sets two things when scheduling a meeting. **Visibility** is **Publ
 
 - **Public, with no join restriction**: anyone can open the join page and see the meeting's details and how to join. You need to sign in to see materials, the organizer's contact link, and recordings.
 - **Private**: hidden from the public calendar and from calendar feeds. Anyone with the meeting link can join, because the link carries the meeting's password, and they don't need an LFX account. People who aren't invited see only the title and what they need to join. They don't see the agenda, materials, or the date and time.
-- **Restricted**: you need to **sign in**, and your account has to match someone on the guest list. Organizers and members of a linked group are on that list too. There's no passcode to type and no form to get past it. If you need access, ask the organizer to add you, then sign in.
+- **Restricted**: you need to **sign in**, and your account has to match someone on the guest list. Organizers can also join, and members of a linked group are on the list. There's no passcode to type and no form to get past it. If you need access, ask the organizer to add you, then sign in. Without access, the link shows **Meeting Not Found**.
 
 See [Join a Meeting](join-meeting/) for the steps. A **Board** meeting is Private and Restricted by default, and it never shows its guest list to guests.
 

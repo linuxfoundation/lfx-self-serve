@@ -22,7 +22,7 @@ Organizers need a **maintainer**, **board-member**, or **executive-director** pe
 4. Under **Links**, select **Add link**. Enter a **Title** and a full URL that starts with `https://`, then select **Add link**.
 5. Save the meeting.
 
-When you edit only one occurrence of a recurring meeting, this section doesn't include documents or links. To change them, edit the entire series, or use **Manage materials** below.
+When you edit only one occurrence of a recurring meeting, this section doesn't include documents or links. To change them, edit the entire series, or use [the Manage Materials panel](#manage-materials-on-an-existing-meeting).
 
 ## Manage materials on an existing meeting
 

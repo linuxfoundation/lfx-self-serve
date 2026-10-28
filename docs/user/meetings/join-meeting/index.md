@@ -14,11 +14,11 @@ Every project meeting has a join page. Opening its link takes you straight to th
 
 Open the link your meeting organizer shared. It looks like `https://app.lfx.dev/meetings/{meeting-id}`. Use **Copy meeting link** if you want to save or forward it. A link to a private meeting carries the meeting's password, so share it only with people who should have it.
 
-The page shows the meeting's title, date and time, and the join button. If you're signed in, it also shows who is organizing the meeting.
+The page shows the meeting's title and the join button. If you have access to the meeting, it also shows the date and time, the agenda, and the materials. If you're signed in, it also shows who is organizing the meeting.
 
 ## Join the meeting
 
-You can join from **10 minutes before the start time**, or earlier if the organizer set a longer early join time, until **40 minutes after the scheduled end**. Before then, the page says "You may only join the meeting up to 10 minutes before the start time." Once the meeting is open, it says "The meeting is in progress."
+You can join from **10 minutes before the start time**, or earlier if the organizer set a longer early join time, until **40 minutes after the scheduled end**. Before then, the page says "You may only join the meeting up to N minutes before the start time," where N is the meeting's early join time. Once the meeting is open, it says "The meeting is in progress."
 
 ### If you're signed in
 
@@ -39,7 +39,7 @@ To join quickly with your saved information, use **Sign In** and **Sign in with 
 What the page shows depends on the meeting's access settings and on who you are:
 
 - **A public meeting with no join restriction**: everyone sees the full details, the agenda, and the date and time.
-- **A Private or Restricted meeting**: people who are invited, and organizers, see the full details after signing in. Anyone else sees "This is a private meeting," with the title and what they need to join. They don't see the agenda, materials, or the date and time. This is true even if they joined with the password link.
+- **A Private or Restricted meeting**: people who are invited, and organizers, see the full details after signing in. Anyone else who opens a link that includes the meeting's password sees "This is a private meeting," with the title and what they need to join. They don't see the agenda, materials, or the date and time, even if they're signed in. Someone who isn't invited and opens a link without the password sees **Meeting Not Found**.
 
 The organizer's name and contact link are only shown to signed-in visitors, even on a public meeting.
 
@@ -88,7 +88,7 @@ Once the meeting has ended, the page says "This meeting has ended" and can show 
 - **AI Summary** opens the summary, with an **Approved** or **Pending Review** badge. If there's no summary, it shows "AI Summary Not Available."
 - **View Transcript** opens the transcript. If there's none, it shows "Transcript Unavailable."
 
-You need to be signed in and have access to the meeting. A public meeting with no join restriction is open to any signed-in visitor. Otherwise, organizers, invited people, people who attended, and members of a linked group have access. See [Past Meetings](../past-meetings/) for how recordings, summaries, and attendance work.
+You need to be signed in and have access to the meeting. The organizer's **Who can access recordings & summaries** setting also decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. See [Past Meetings](../past-meetings/) for who can see them and how recordings, summaries, and attendance work.
 
 ## Meeting not found
 

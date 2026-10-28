@@ -10,7 +10,7 @@ intercom_collection: Meetings
 
 This article applies to users with **maintainer**, **board-member**, or **executive-director** personas, or anyone granted **Meeting Coordinator** access for the project. It explains how to control who is invited to a meeting. If you were invited to a meeting, see [Join a Meeting](../join-meeting/) instead.
 
-The guest list matters beyond invitations. For a **Restricted** meeting, it is exactly the list of people who can get past the registrant check on the join page.
+The guest list matters beyond invitations. For a **Restricted** meeting, the guest list, together with the meeting's organizers, decides who can get past the registrant check on the join page.
 
 ## Open the guest list
 
