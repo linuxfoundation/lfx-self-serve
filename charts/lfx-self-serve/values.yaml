@@ -575,6 +575,24 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
     value:
 
+  # Applies the create flow's flight dates to Microsoft Ads: the form sends them as
+  # `microsoftConfig.startDate` / `endDate` ("YYYY-MM-DD", the same keys and format as Meta's), and
+  # campaign-service sets them on the Microsoft ad group.
+  #
+  # A CAPABILITY flag, like BIDDING: "does the DEPLOYED campaign-service understand Microsoft
+  # flight dates?" REQUIRES linuxfoundation/lfx-v2-campaign-service#409 DEPLOYED — v1.0.21 and
+  # earlier drop the unknown keys and create the campaign with NO flight while the job reports
+  # success. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator
+  # does not read the dates either.
+  #
+  # Off (the default), the form sends no Microsoft dates and keeps its warning that Microsoft
+  # campaigns ignore the flight dates, and the create route refuses a request carrying either key
+  # with a 400 rather than dropping it. Turning it back off strands nothing: existing campaigns keep
+  # their flight. Order: deploy campaign-service #409, confirm it, THEN set this. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE:
+    value:
+
   # Offers an image UPLOAD in the Reddit section of the create flow (decision D3): the operator
   # picks a PNG/JPEG (up to 10 MB), it is stored by campaign-service against the brief, and the
   # create sends its id as `redditConfig.imageAssetId` instead of a pasted `imageUrl`. The pasted
