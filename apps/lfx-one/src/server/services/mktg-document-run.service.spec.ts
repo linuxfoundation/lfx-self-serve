@@ -360,6 +360,26 @@ describe('MktgDocumentRunService core', () => {
     expect(Buffer.from(stored().metadata['failure-text'], 'base64').toString()).toBe(text); // Stored privately, not projected to visitors.
   });
 
+  it.each(['recordResult', 'Documents reconciliation'] as const)(
+    'preserves a settled ICP provider failure through %s with the real dispatcher',
+    async (path) => {
+      await service.startForCatalogAgent(req, 'icp', project, session);
+      const startedAt = new Date().toISOString();
+      vi.advanceTimersByTime(61_000);
+      flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
+      const visitor = Object.assign({}, req, { originalUrl: '/api/mktg-agents/documents/icp/living' });
+      if (path === 'recordResult') await service.recordResult(visitor, session, { status: 'failed' }, project);
+      const progress = await new MktgDocumentRunService().readProgress(visitor, project, 'icp', 'living');
+      expect(flows.result).toHaveBeenCalled();
+      expect(flows.events).toHaveBeenCalled();
+      expect(stored().metadata['state']).toBe('failed');
+      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+      expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
+      expect(progress.runs[0]).not.toHaveProperty('persistenceFailed');
+      expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/icp/living');
+    }
+  );
+
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
     await service.startForOneOff(req, 'member-360', project, 'second-session');
@@ -666,6 +686,7 @@ describe('MktgDocumentRunService core', () => {
     for (let attempt = 0; attempt <= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS; attempt++) await service.recordResult(req, session, result, project);
     expect(stored().metadata['state']).toBe('failed');
     expect(redraft.settle).toHaveBeenLastCalledWith(req, context, expect.objectContaining({ status: 'failed' }));
+    expect((await service.readProgress(req, project, agent)).runs[0]).toMatchObject({ state: 'failed', persistenceFailed: true });
   });
 
   it('settles an older redraft before a second send or Generate supersedes it', async () => {

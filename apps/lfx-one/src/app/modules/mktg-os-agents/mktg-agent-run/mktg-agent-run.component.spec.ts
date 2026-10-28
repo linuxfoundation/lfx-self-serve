@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
+  ICP_INTAKE,
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENT_INTAKES,
@@ -943,6 +944,62 @@ describe('MktgAgentRunComponent', () => {
       }
     });
   }
+
+  it.each([false, true])(
+    'restores an ICP failure without rechecking the dead session; explicit Retry creates a fresh handoff (reattach=%s)',
+    async (reattach) => {
+      await configure('browser', ICP_INTAKE.agentId);
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const request: MktgGenerateRequest = {
+        projectUid: PROJECT_1.uid,
+        agentId: ICP_INTAKE.agentId,
+        intake: ICP_INTAKE,
+        answers: { project_name: 'Retained synthetic ICP', github_url: 'https://github.com/synthetic-org/synthetic-orbit' },
+        feedback: 'Keep this synthetic retry feedback',
+      };
+      attempts.save({
+        request,
+        state: 'failed',
+        requiresReattachment: reattach,
+        updatedAt: new Date().toISOString(),
+        attempt: {
+          runId: 'b'.repeat(64),
+          priorVersion: 0,
+          session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' },
+        },
+        pendingQuestions: {
+          questionsId: 'a'.repeat(64),
+          questions: [],
+          attempt: { priorVersion: 0, session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' } },
+        },
+      });
+      const token = attempts.prepare(request, true);
+      queryParams.next(convertToParamMap({ questions: token, project: PROJECT_1.slug }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component['phase']()).toBe('form');
+      expect(component['intakeForm'].get('project_name')?.value).toBe(request.answers['project_name']);
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      if (reattach) {
+        expect(query('mktg-agent-run-retry')).toBeNull();
+        expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach');
+      } else {
+        const prepare = vi.spyOn(attempts, 'prepare');
+        const navigate = vi.mocked(TestBed.inject(Router).navigate);
+        navigate.mockClear();
+        query('mktg-agent-run-retry')?.querySelector('button')?.click();
+        await fixture.whenStable();
+        expect(prepare).toHaveBeenCalledExactlyOnceWith(request);
+        const generation = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['generation'];
+        const fresh = attempts.consume(generation, PROJECT_1.uid, ICP_INTAKE.agentId)?.pending;
+        expect(fresh).toMatchObject({ state: 'draft', request });
+        expect(fresh?.attempt).toBeUndefined();
+        expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+      }
+    }
+  );
 
   it('restores an intake-only transport signal to the form, never a document or automatic submission', async () => {
     await configure();
