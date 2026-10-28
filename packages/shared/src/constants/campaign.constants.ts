@@ -1296,24 +1296,23 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 };
 
 /**
- * How many countries the Implementation tab's picker will add to one campaign.
+ * Upstream's bound on the TARGETED Google Ads geo list (`geo.go`'s `maxGeoTargets`, 60).
  *
- * This is THIS APPLICATION'S bound, not upstream's, and the two are no longer the same number:
- * `geo.go`'s `maxGeoTargets` was raised from 30 to 60 in campaign-service #239, while the picker
- * still offers exactly the {@link GOOGLE_ADS_GEO_TARGET_MAP} countries — 30 of them — so a
- * UI-built request cannot reach even this bound, let alone upstream's.
+ * The list holds country codes AND raw geo target constant ids together — the Implementation tab
+ * puts the countries picked from {@link GOOGLE_ADS_GEO_TARGET_MAP} and the postal-code ids typed
+ * beside them into the one `geoTargets` array, because that is the one list upstream's
+ * `resolveGeoList` reads both spellings from. So the bound is the combined count, and it is
+ * upstream's own number rather than the 30 it used to be: that 30 dated from when every entry had
+ * to be a key of the 30-entry country map, and a list longer than it could only repeat a country.
+ * Once postal ids ride in the same list, keeping 30 would refuse creates upstream accepts.
  *
- * Keeping the stricter number costs nothing REACHABLE: every entry the geo guard accepts must be a
- * key of that 30-entry map, so a list longer than 30 can only be one that repeats a country. Such a
- * list is refused here and would be accepted upstream (which checks its cap BEFORE de-duplication,
- * then collapses the repeat), which is a narrow over-refusal on a request no picker produces. It is
- * recorded here rather than silently fixed because raising this value changes what the picker's own
- * clamp means, which is a separate change from the one this constant serves.
+ * Checked BEFORE de-duplication upstream, so the guard that mirrors it counts the submitted
+ * entries, not the surviving ones.
  *
- * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} carries upstream's real per-list bound, and the
- * exclusion list is judged against that rather than against this one.
+ * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} is the same number for the exclusion list, which
+ * upstream counts separately.
  */
-export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 60;
 
 /**
  * Upstream's own bound on ONE Google Ads geo target list (`geo.go`'s `maxGeoTargets`, 60).

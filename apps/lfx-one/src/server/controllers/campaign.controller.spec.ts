@@ -2979,17 +2979,76 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toHaveLength(30);
   });
 
-  it('refuses a 31-code list even when the 31st is a repeat, because upstream caps before it de-duplicates', async () => {
+  /** Thirty canonical postal-code constant ids — with `ALL_MAPPED_GEOS`, the targeted cap exactly. */
+  const THIRTY_POSTAL_IDS = Array.from({ length: 30 }, (_, i) => String(9031900 + i));
+
+  it('refuses a list over the cap even when the extra entry is a repeat, because upstream caps before it de-duplicates', async () => {
     // `validateGeoTargets` checks `len(geoTargets) > maxGeoTargets` on the raw slice, so a list
-    // that is only over the cap because it repeats a code is still refused there. Judging the
+    // that is only over the cap because it repeats an entry is still refused there. Judging the
     // de-duplicated length here would accept a create Go then kills.
-    await controller.createCampaign(buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
 
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('countryCode');
-    expect(error.message).toContain('31');
+    expect(error.message).toContain('61');
+  });
+
+  /**
+   * Postal-code targets: raw numeric geo target constant ids in the SAME `geoTargets` list as the
+   * countries, which is the only place upstream's wire takes them. Judged for shape only — there is
+   * no lookup from a postal code to its id anywhere on this road, upstream's or this one's.
+   */
+  it('dispatches postal-code ids after the countries, up to the combined cap upstream applies', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, ...THIRTY_POSTAL_IDS] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets'] as string[];
+    expect(sent).toHaveLength(60);
+    expect(sent.slice(30)).toEqual(THIRTY_POSTAL_IDS);
+  });
+
+  it('dispatches a postal-only list, trimmed, with no country beside it', async () => {
+    // The builder's shape test used to be alpha-2 only, so a numeric entry made it return null and
+    // the create was refused as "No configuration was built for: google-ads".
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: [' 9031945 '] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toEqual(['9031945']);
+  });
+
+  it.each([['02840'], ['0'], ['123456789012345678901']])('names the non-canonical postal-code id %s rather than calling it a country', async (id) => {
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', id] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('geoTargets');
+    expect(error.message).toContain('canonical');
+  });
+
+  it('refuses a postal-code id that the event also excludes, compared by resolved id', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['9031945'], excludedGeoTargets: ['9031945'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('excludedGeoTargets');
   });
 
   /**
@@ -3177,6 +3236,25 @@ describe('CampaignController.createCampaign cutover', () => {
    * over-refusing.
    */
   const SYDNEY = { latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' };
+
+  /**
+   * The Implementation tab's own shape: a postal-code id in `geoTargets` and a radius beside it, the
+   * two halves of one location plan. Both must reach `googleAdsConfig` under upstream's keys.
+   */
+  it('dispatches postal-code ids and radius targets together, under the keys upstream reads', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000001a', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ geoTargets: ['US', '9031945'], proximityTargets: [SYDNEY] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['geoTargets']).toEqual(['US', '9031945']);
+    expect(sent['proximityTargets']).toEqual([SYDNEY]);
+  });
 
   it('dispatches radius targets at both unit ceilings, which is exactly what upstream accepts', async () => {
     // The contrast for every radius refusal below, and the boundary itself: `validateProximityTargets`

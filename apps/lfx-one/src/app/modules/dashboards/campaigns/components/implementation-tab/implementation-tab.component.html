@@ -314,11 +314,15 @@
         still names the event's own country and still feeds the campaign name, the Meta, Microsoft
         and Reddit fallbacks and the draft. This list says where the GOOGLE campaign runs, and empty
         means "the event country", which is what this path sent before the list existed.
+
+        The postal-code and radius sub-sections below share this card because they are the same
+        location plan upstream (`validateGeoPlan`): postal-code ids ride in the SAME `geoTargets`
+        list as the countries, and Google serves the union of every location criterion.
       -->
       @if (showGoogleSection()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-geo-section">
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-geo-add">
-            Google Geo Targets ({{ googleGeoTargets().length }}/{{ googleMaxGeoTargets }})
+            Google Geo Targets ({{ googleGeoTargetCount() }}/{{ googleMaxGeoTargets }})
           </label>
           <div class="flex flex-wrap items-center gap-2">
             @for (geo of googleGeoTargets(); track geo; let i = $index) {
@@ -334,7 +338,7 @@
                 </button>
               </span>
             }
-            @if (googleGeoTargets().length < googleMaxGeoTargets) {
+            @if (!googleGeoTargetsFull()) {
               <!--
                 A select, unlike Meta's and Microsoft's free-text boxes. Google resolves every code
                 against a curated 30-entry map before its first mutate and hard-errors on a miss, so
@@ -362,8 +366,11 @@
             the request falls back to it, and the line names the country so it is not an invisible
             default. A blank list with no country code is the hazard: the create is refused, and
             saying so here is cheaper than finding out after the other platforms have been created.
+
+            Neither applies once a postal code or radius will be sent: the fallback is skipped then,
+            so the line says what the campaign targets instead.
           -->
-          @if (googleGeoTargets().length === 0) {
+          @if (googleGeoUsesEventCountry()) {
             @if (googleGeoFallbackCode() !== '') {
               <span class="mt-2 block text-xs text-gray-400" data-testid="implementation-google-geo-default">
                 No countries added — this campaign targets {{ googleGeoFallbackCode() }}, the event country.
@@ -374,8 +381,230 @@
                 ad account allows.
               </p>
             }
+          } @else if (googleGeoTargets().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-geo-finer-only">
+              No countries added — this campaign targets only the postal codes and radius targets below, not the event country.
+            </span>
+          }
+
+          <!--
+            Postal-code targets, as Google geo target constant ids.
+
+            Ids, not postal codes, because that is all the wire takes: upstream reads a numeric
+            `geoTargets` entry as a constant id from Google's geo-targets table, and nothing on this
+            road looks a postal code up. Free text for the reason the callout box is free text — the
+            table is ~100k rows and changes, so there is no closed set to offer. Off on the legacy
+            road (`googlePostalGeoAvailable`), whose creator drops any entry outside the country map.
+          -->
+          @if (googlePostalGeoAvailable()) {
+            <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="implementation-google-postal-section">
+              <label class="block text-xs font-medium text-gray-700" for="google-postal-add">Postal-code targets</label>
+              <div class="flex flex-wrap items-center gap-2">
+                @for (id of googlePostalGeoTargets(); track id; let i = $index) {
+                  <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    {{ id }}
+                    <button
+                      type="button"
+                      (click)="removeGooglePostalGeoTarget(i)"
+                      class="ml-0.5 text-blue-600 hover:text-blue-800"
+                      [attr.aria-label]="'Remove postal-code target ' + id"
+                      [attr.data-testid]="'implementation-google-postal-remove-' + id">
+                      <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                }
+                @if (!googleGeoTargetsFull()) {
+                  <input
+                    id="google-postal-add"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="+ Add geo target id"
+                    [value]="googlePostalGeoDraft()"
+                    (input)="onGooglePostalGeoDraftInput($event)"
+                    (change)="onGooglePostalGeoAdd($event)"
+                    (keydown.enter)="onGooglePostalGeoAdd($event); $event.preventDefault()"
+                    [attr.aria-invalid]="googlePostalGeoDraftErrorId() ? 'true' : null"
+                    [attr.aria-describedby]="googlePostalGeoDraftErrorId() ?? 'google-postal-hint'"
+                    class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                    data-testid="implementation-google-postal-add" />
+                } @else {
+                  <span class="text-xs text-gray-500" data-testid="implementation-google-postal-full">
+                    Maximum of {{ googleMaxGeoTargets }} countries and postal codes reached — remove one to add another.
+                  </span>
+                }
+              </div>
+              <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
+                Enter the postal code's numeric criterion id from Google's geo-targets table, not the postal code itself — there is no lookup here, and Google
+                refuses an id that names nothing only after the campaign is created.
+              </span>
+              @if (googlePostalGeoDraftNotId()) {
+                <p id="google-postal-not-id" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-id">
+                  A geo target id is digits only — look the postal code up in Google's geo-targets table and enter its id.
+                </p>
+              } @else if (googlePostalGeoDraftNotCanonical()) {
+                <p id="google-postal-not-canonical" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-canonical">
+                  Enter the id with no leading zeros — Google refuses any other spelling.
+                </p>
+              } @else if (googlePostalGeoDraftDuplicate()) {
+                <p id="google-postal-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-duplicate">
+                  That postal-code target is already on the list.
+                </p>
+              }
+            </div>
+          }
+
+          <!--
+            Radius targets: a point and a distance around it.
+
+            Rendered against `googleProximityChannel()` — every channel but Demand Gen, which
+            `validateGeoPlan` refuses proximity on. A latitude and longitude rather than an address,
+            because `googleAdsProximityConfig` upstream carries those four fields and nothing else.
+            The unit has no default, upstream's rule: 50 miles and 50 km are different campaigns.
+          -->
+          @if (googleProximityChannel()) {
+            <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="implementation-google-proximity-section">
+              <label class="block text-xs font-medium text-gray-700" for="google-proximity-latitude">
+                Radius targets ({{ googleProximityTargets().length }}/{{ googleMaxProximityTargets }})
+              </label>
+              @if (googleProximityTargets().length > 0) {
+                <div class="flex flex-wrap items-center gap-2">
+                  @for (target of googleProximityTargets(); track $index; let i = $index) {
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                      [attr.data-testid]="'implementation-google-proximity-chip-' + i">
+                      {{ target.radius }} {{ target.radiusUnit | lowercase }} around {{ target.latitude }}, {{ target.longitude }}
+                      <button
+                        type="button"
+                        (click)="removeGoogleProximityTarget(i)"
+                        class="ml-0.5 text-blue-600 hover:text-blue-800"
+                        [attr.aria-label]="'Remove radius target ' + (i + 1)"
+                        [attr.data-testid]="'implementation-google-proximity-remove-' + i">
+                        <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  }
+                </div>
+              }
+              @if (!googleProximityFull()) {
+                <!--
+                  Text inputs rather than `type="number"`, so a half-typed `-33.` is shown back as
+                  typed and judged by the warnings below instead of being blanked by the browser.
+                  The section's `<label for>` names the latitude box; the other three carry an
+                  `aria-label`, as the sitelink sub-form's do.
+                -->
+                <div class="flex flex-wrap items-center gap-2">
+                  <input
+                    id="google-proximity-latitude"
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="Latitude"
+                    [value]="googleProximityDraft().latitude"
+                    (input)="onGoogleProximityDraftInput('latitude', $event)"
+                    [attr.aria-invalid]="googleProximityLatitudeInvalid() ? 'true' : null"
+                    [attr.aria-describedby]="googleProximityLatitudeInvalid() ? 'google-proximity-latitude-invalid' : null"
+                    class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-proximity-latitude" />
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="Longitude"
+                    aria-label="Radius target longitude"
+                    [value]="googleProximityDraft().longitude"
+                    (input)="onGoogleProximityDraftInput('longitude', $event)"
+                    [attr.aria-invalid]="googleProximityLongitudeInvalid() ? 'true' : null"
+                    [attr.aria-describedby]="googleProximityLongitudeInvalid() ? 'google-proximity-longitude-invalid' : null"
+                    class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-proximity-longitude" />
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="Radius"
+                    aria-label="Radius target distance"
+                    [value]="googleProximityDraft().radius"
+                    (input)="onGoogleProximityDraftInput('radius', $event)"
+                    [attr.aria-invalid]="googleProximityRadiusErrorId() ? 'true' : null"
+                    [attr.aria-describedby]="googleProximityRadiusErrorId()"
+                    class="w-20 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-proximity-radius" />
+                  <select
+                    aria-label="Radius target unit"
+                    [value]="googleProximityDraft().radiusUnit"
+                    (change)="onGoogleProximityDraftInput('radiusUnit', $event)"
+                    class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                    data-testid="implementation-google-proximity-unit">
+                    <option value="">Unit</option>
+                    @for (unit of googleRadiusUnits; track unit) {
+                      <option [value]="unit">{{ unit | lowercase }}</option>
+                    }
+                  </select>
+                  <button
+                    type="button"
+                    (click)="onGoogleProximityAdd()"
+                    [disabled]="googleProximityAddDisabled()"
+                    class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                    data-testid="implementation-google-proximity-add">
+                    + Add radius
+                  </button>
+                </div>
+              } @else {
+                <span class="text-xs text-gray-500" data-testid="implementation-google-proximity-full">
+                  Maximum of {{ googleMaxProximityTargets }} radius targets reached — remove one to add another.
+                </span>
+              }
+              <!--
+                One line per refusal `validateProximityTargets` would make, named while the sub-form is
+                still editable. Each is a whole-create refusal upstream, before the budget mutate.
+              -->
+              @if (googleProximityLatitudeInvalid()) {
+                <p
+                  id="google-proximity-latitude-invalid"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-latitude-invalid">
+                  Latitude must be a number from -90 to 90, in decimal degrees.
+                </p>
+              }
+              @if (googleProximityLongitudeInvalid()) {
+                <p
+                  id="google-proximity-longitude-invalid"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-longitude-invalid">
+                  Longitude must be a number from -180 to 180, in decimal degrees.
+                </p>
+              }
+              @if (googleProximityRadiusInvalid()) {
+                <p id="google-proximity-radius-invalid" role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-radius-invalid">
+                  Radius must be a number greater than 0.
+                </p>
+              } @else if (googleProximityRadiusOverMax()) {
+                <p
+                  id="google-proximity-radius-too-large"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-radius-too-large">
+                  Google's maximum radius is {{ googleProximityMaxRadius() }} {{ googleProximityDraft().radiusUnit | lowercase }}.
+                </p>
+              }
+              @if (googleProximityDuplicate()) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-duplicate">
+                  That radius target is already on the list.
+                </p>
+              }
+            </div>
           }
         </div>
+      }
+
+      <!--
+        Radius targets picked under one channel and then withheld because the dispatched channel
+        refuses them. Held, not sent — said here rather than left to the section disappearing.
+      -->
+      @if (googleProximityWithheldOn(); as channelLabel) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-proximity-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take radius targets, so the
+          {{ googleProximityTargets().length }} you added will not be sent. Switch the channel back to keep them.
+        </p>
       }
 
       <!--
