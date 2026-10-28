@@ -51,6 +51,10 @@ The panel on the right shows where you stand:
 - **If the survey closed and you didn't respond:** "You didn't respond to this survey. You were invited but didn't submit a response before the survey closed."
 - **If your answer is on file but the details aren't shown yet:** "Your response is on file but the detailed answers aren't available yet. Try again later or use the survey link to review your submission."
 
+## Who can see your response
+
+Responses aren't anonymous. People who manage the survey can see who responded, along with the score and any comment you gave.
+
 ## Related
 
 - [Surveys overview](../)

@@ -10,7 +10,7 @@ intercom_collection: Surveys
 
 This article is for people who can manage surveys for a project, or who are a writer of the group they want to survey. If you don't see **Create Survey**, you don't have permission to create surveys there. Contact your project administrator.
 
-A survey is an NPS (Net Promoter Score) survey sent by email to the members of the groups you choose. You pick the groups, pick a template, set when the survey goes out and when it closes, and write the email. You don't write the questions yourself. They come from the template.
+A survey is an NPS (Net Promoter Score) survey sent by email to the members of a group. You pick the group, pick a template, set when the survey goes out and when it closes, and write the email. You don't write the questions yourself. They come from the template.
 
 ## Open the survey form
 
@@ -19,14 +19,14 @@ There are two ways in:
 - **From the Surveys page.** Switch to the project or foundation you want, select **Surveys** in the sidebar, then select **Create Survey**.
 - **From a group.** Open the group, select its **Surveys** tab, then select **Create Survey**. The group is filled in and locked, and a banner reads "This survey will be created for" followed by the group's name. **Cancel** and a successful send both return you to the group's **Surveys** tab.
 
-The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing & Reminders**, **Email Draft**, and **Review & Confirm**. Select **Next** to move forward and **Previous** to go back. **Next** stays disabled until the current step is complete, so you move through the steps in order. **Cancel** leaves the form without sending anything.
+The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing & Reminders**, **Email Draft**, and **Review & Confirm**. Select **Next** to move forward and **Previous** to go back. **Next** stays disabled until the current step is complete, so you move through the steps in order. **Cancel** leaves the form without sending anything. The form also shows a **Save as Draft** button, but it doesn't save your work yet, so finish the survey in one sitting.
 
 ## Step 1: Audience & Type
 
-1. Under **Target Audience**, select the groups to survey. Use the **Search groups…** box to find a group. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
+1. Under **Target Audience**, select the group to survey. Use the **Search groups…** box to find it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
 2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
 
-The survey goes to the members of the groups you select. For Board groups, it goes only to voting representatives. The survey is named after the first group you select, for example "Technical Advisory Committee Survey".
+The form lets you tick more than one group, but a survey is currently created for the first group you select only, and it is named after that group, for example "Technical Advisory Committee Survey". To survey several groups, create one survey for each. The form also notes that for Board groups, surveys are sent only to voting representatives.
 
 ## Step 2: Timing & Reminders
 
@@ -40,7 +40,7 @@ The survey goes to the members of the groups you select. For Board groups, it go
 **How should reminders be sent?**
 
 - **Automatic.** Reminders go to people who haven't responded. Choose **Reminder Frequency**: **Every 3 days**, **Every 7 days** (the default), or **Every 14 days**. Reminders continue until the survey closes.
-- **Manual.** No reminders are sent automatically.
+- **Manual.** You don't choose a frequency. The form doesn't confirm that reminders are switched off, so don't rely on **Manual** to prevent them.
 
 ## Step 3: Email Draft
 
@@ -71,10 +71,9 @@ The last step summarizes the survey before it is sent:
 
 Each section has an **Edit** control that jumps back to that step.
 
-When everything looks right, select **Send Survey**. If you chose a scheduled date, the button reads **Schedule Survey** instead. A confirmation dialog summarizes when the survey will be sent and how reminders work:
+When everything looks right, select **Send Survey**. If you chose a scheduled date, the button reads **Schedule Survey** instead. A confirmation dialog opens, titled **Send Survey** or **Schedule Survey**. It reads "This survey will be sent immediately…" or "This survey will be sent on" followed by the date, and then summarizes the reminders and the cutoff date. It also mentions a number of participants across a number of groups. As on the review step, that participant number is the number of groups, not people.
 
-- **Send Survey**: "Are you sure…" with **Yes, send survey** and **Cancel**. Once sent, emails are delivered to all recipients.
-- **Schedule Survey**: the same, with **Yes, schedule survey**. Emails are delivered on the scheduled date.
+Select **Yes, send survey** (or **Yes, schedule survey** for a scheduled survey) to confirm, or **Cancel** to go back.
 
 After you confirm, you see "Survey sent successfully" or "Survey scheduled successfully", and you return to the Surveys page. If something goes wrong, you see "Failed to create survey. Please try again." and stay on the form.
 

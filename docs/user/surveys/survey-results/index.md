@@ -21,6 +21,8 @@ If you received a survey and want to see your own answer, see [Respond to a Surv
 
 The panel opens on the right. The header shows the survey name, the group it was sent to, its status, and its close date ("Closes" followed by the date while it is open, or "Closed" followed by the date once it has ended). Use the **Overview** tab for totals and the NPS breakdown. If you can manage the survey, there is also a **Responses** tab with one row per recipient.
 
+On the **Surveys** page, the **Responses** tab is available to people with permission to manage surveys for the project. If you are a writer of a group but not of the project, open the survey from the group's **Surveys** tab instead. The results panel there includes **Responses** for you.
+
 ## Overview
 
 ### Participation
@@ -79,7 +81,9 @@ Use the controls above the list to narrow it down:
 - **NPS Score**: **All**, **Promoters (9-10)**, **Passives (7-8)**, or **Detractors (0-6)**
 - **Comment**: **All**, **With comment**, or **Without comment**
 - **Delivery Status**: **All**, **Responded**, **Clicked**, **Opened**, **Delivered**, **Failed**, or **Pending**
-- **Search Respondents**: find someone by name
+- **Search Respondents**: find someone by name, email address, or organization
+
+Filters and search only look at the responses that are already loaded. If the list is long, select **Load more responses** until it is fully loaded before you rely on a filter or a search. Otherwise a person on a later page won't appear, and you may see "No respondents match your filters." even though a match exists.
 
 **Delivery Status** helps you find people who haven't responded yet. **Delivered**, **Opened**, and **Clicked** are stages of the invitation email, and **Responded** means they submitted a response. Check **Failed** and **Pending** rows to find invitations that didn't reach someone, so you can follow up another way.
 

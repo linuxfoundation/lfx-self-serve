@@ -57,6 +57,14 @@ The list shows 10 surveys per page. When you have more, you can switch to 25 or 
 
 A survey can't be changed or closed early once it has been sent. If you need a different audience, email, or dates, create a new survey. See [Create a Survey](../create-survey/).
 
+### Controls that don't work yet
+
+A few controls appear in the app but don't take effect yet. You may see them, but don't rely on them:
+
+- **Close Survey** and **Duplicate Survey** in the menu at the top of the results panel
+- **Save as Draft** in the create form
+- **Edit** and **Delete** on a **Draft** row
+
 ## Switch project context
 
 Surveys are scoped to a project. Use the lens switcher and project picker to change the project, and the list updates automatically.
