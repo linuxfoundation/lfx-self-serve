@@ -10266,7 +10266,40 @@ describe('ImplementationTabComponent google stored images', () => {
     c['onGoogleImagePick'](SLOT, WIDE_LOGO);
     display.logoImages.setValue(['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n'));
 
-    expect(c['googleCreativeError']()).toContain('has 6 entries in Logo images (4:1) — at most 5.');
+    expect(c['googleCreativeError']()).toBe(
+      'Display creative has 6 entries in Logo images (4:1) (pasted URLs and stored images together) — 1 over the cap of 5.'
+    );
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  const FIVE_LOGO_URLS = ['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n');
+  const DISPLAY_COPY = { headlines: 'H1', longHeadline: 'Long', descriptions: 'D1', businessName: 'LF', marketingImages: 'https://cdn.example.org/m.png' };
+
+  /** A draft can carry an over-cap slot the controls could not have produced; Create must still refuse it. */
+  it('refuses a restored draft whose slot is over its cap', async () => {
+    const { c } = await mount(true, {
+      googleCreatives: { displayCreative: { ...DISPLAY_COPY, logoImages: FIVE_LOGO_URLS } },
+      googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] },
+    });
+
+    expect(c['googleCreativeError']()).toContain('1 over the cap of 5');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** An upload started before the slot filled lands after it did: the cap is judged on what is held, not on what was offered. */
+  it('refuses a slot an upload completed into after it filled', async () => {
+    const upload$ = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(upload$);
+    const { c } = await mount(true, { googleCreatives: { displayCreative: { ...DISPLAY_COPY, logoImages: '' } } });
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'late.png', { type: 'image/png' }));
+    c['campaignForm'].controls.displayCreative.controls.logoImages.setValue(FIVE_LOGO_URLS);
+    expect(c['googleCreativeError']()).toBeNull();
+
+    upload$.next({ id: UPLOADED, mimeType: 'image/png', byteSize: 16, checksum: 'ab', created: true });
+    upload$.complete();
+
+    expect(c['googleHeldImages']()[SLOT]).toEqual([{ id: UPLOADED, name: 'late.png', briefId: BRIEF_ID }]);
+    expect(c['googleCreativeError']()).toContain('6 entries in Logo images (4:1)');
     expect(c['canSubmit']()).toBe(false);
   });
 

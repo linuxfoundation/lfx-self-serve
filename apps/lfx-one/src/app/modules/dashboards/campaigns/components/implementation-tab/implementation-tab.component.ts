@@ -6143,7 +6143,7 @@ export class ImplementationTabComponent implements OnInit {
       // URLs would otherwise reach upstream as six. `max` on a marketing shape is the channel's
       // combined cap, so a single field over it is over the combined cap too — never tighter.
       if (field.image && field.max !== undefined && count > field.max) {
-        return `has ${count} entries in ${field.label} — at most ${field.max}.`;
+        return `has ${count} entries in ${field.label} (pasted URLs and stored images together) — ${count - field.max} over the cap of ${field.max}.`;
       }
       if (field.min === undefined) continue;
       if (count < field.min) {
