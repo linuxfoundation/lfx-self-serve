@@ -105,6 +105,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
             getRedditMonitor: vi.fn().mockReturnValue(of(null)),
             getMetaMonitor: vi.fn().mockReturnValue(of(null)),
@@ -335,6 +336,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -583,6 +585,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
@@ -849,6 +852,142 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy');
       expect(el('linkedin-error')).toBeNull();
       expect(el('platform-microsoft')).toBeNull();
+    });
+  });
+
+  describe('Google Ads account discovery', () => {
+    it('reads nothing and lists nothing while the flag is off', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+
+      expect(service['getGoogleAdsAccounts']).not.toHaveBeenCalled();
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it("lists the accounts the project's connection can reach on the Google Ads panel", async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        of([
+          { key: '1000000001', label: 'CNCF Search' },
+          { key: '1000000002', label: '1000000002' },
+        ])
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledWith('cncf');
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+      // An account with no label of its own is shown by id once, not as "id (id)".
+      expect(text('monitoring-google-account-1000000002')).toBe('1000000002');
+    });
+
+    it('says so when the connection reaches no account', async () => {
+      await setup(allConnected);
+
+      expect(text('monitoring-google-accounts-empty')).toBe('This connection reaches no Google Ads accounts.');
+      expect(el('monitoring-google-accounts-list')).toBeNull();
+    });
+
+    it('states a failed read, and retries it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'no Google Ads connection configured for this project' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('no Google Ads connection configured for this project');
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('re-checks the source on Retry, so a rollback since the tab opened clears the error instead of repeating it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'not found' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      const reads = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('asks again on a fresh foundation load, since a refusal can come from an outage the root check failed closed on', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadForActiveFoundation']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts'].mock.calls.length).toBeGreaterThan(calls);
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('clears a previous error when a load is skipped for a caller known to be restricted', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-error')).not.toBeNull();
+
+      fixture.componentInstance['googleRestricted'].set(true);
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+    });
+
+    it('does not ask again once the caller is known to be refused, since the refusal is about the caller', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(calls);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('drops the list when the cutover turns off', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-list')).not.toBeNull();
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      fixture.componentInstance['loadMonitorConnections']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
     });
   });
 
@@ -1964,6 +2103,7 @@ describe.each([
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2111,6 +2251,7 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2157,6 +2298,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),

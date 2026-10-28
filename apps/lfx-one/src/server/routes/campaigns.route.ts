@@ -114,6 +114,9 @@ router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccount
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
+// campaign-service account discovery for the project's Google Ads connection, behind
+// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
+router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
