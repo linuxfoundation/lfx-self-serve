@@ -3,13 +3,14 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
+import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
+  CommentResponseView,
   MyVoteBallot,
   MyVoteResponse,
   PollCommentResult,
@@ -30,6 +31,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteDetailComponent } from './vote-detail.component';
@@ -101,11 +103,7 @@ describe('VoteDetailComponent', () => {
   let reqContext: ServerRequestContext;
   const impersonating = signal(false);
 
-  async function setup(
-    platform: 'browser' | 'server' = 'browser',
-    includeRealHeader = false,
-    includeRealSummary = false
-  ): Promise<ComponentFixture<VoteDetailComponent>> {
+  async function setup(platform: 'browser' | 'server' = 'browser', realImports: Type<unknown>[] = []): Promise<ComponentFixture<VoteDetailComponent>> {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
@@ -124,7 +122,7 @@ describe('VoteDetailComponent', () => {
       // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : []), ...(includeRealSummary ? [StatCardGridComponent] : [])],
+          imports: [NgTemplateOutlet, ...realImports],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -142,6 +140,11 @@ describe('VoteDetailComponent', () => {
     (fixture.componentInstance as unknown as Record<string, (...a: unknown[]) => void>)[key](...args);
   const testId = (fixture: ComponentFixture<VoteDetailComponent>, id: string): HTMLElement | null =>
     fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  /** Responses bound to the Overview comment preview's items. */
+  const previewComments = (fixture: ComponentFixture<VoteDetailComponent>): CommentResponseView[] =>
+    fixture.debugElement
+      .queryAll(By.css('[data-testid="vote-detail-overview-comment"] lfx-vote-comment-item'))
+      .map((item) => item.properties['response'] as CommentResponseView);
 
   beforeEach(() => {
     impersonating.set(false);
@@ -705,7 +708,7 @@ describe('VoteDetailComponent', () => {
       } else {
         voteService.getVoteResults.mockReturnValueOnce(of(makeResults())).mockReturnValueOnce(failedResults);
       }
-      const fixture = await setup('browser', false, true);
+      const fixture = await setup('browser', [StatCardGridComponent]);
       const buttons = (): HTMLButtonElement[] =>
         Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-summary"] button'));
 
@@ -1184,7 +1187,7 @@ describe('VoteDetailComponent', () => {
       );
       voteService.getVoteResults.mockImplementation((id: string) => (id === 'vote-1' ? of(previousResults) : nextResults));
       const fixture = await setup();
-      expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Synthetic comment for the previous vote');
+      expect(previewComments(fixture).map((response) => response.comment_text)).toEqual(['Synthetic comment for the previous vote']);
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe(1);
 
       paramMap.next(convertToParamMap({ id: 'vote-2' }));
@@ -1201,6 +1204,121 @@ describe('VoteDetailComponent', () => {
       TestBed.tick();
 
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe(6);
+      expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
+    });
+  });
+
+  describe('overview comment preview (#4448)', () => {
+    const prompts = [
+      { prompt_id: 'prompt-1', prompt: 'Any concerns?' },
+      { prompt_id: 'prompt-2', prompt: 'Anything else?' },
+    ];
+    const named = (voteId: string, day: number) => ({
+      vote_id: voteId,
+      comment_text: `Synthetic comment ${voteId}`,
+      user_name: `Synthetic Voter ${voteId}`,
+      vote_creation_time: `2026-10-${day}T12:00:00Z`,
+      abstained: false,
+    });
+    const namedResults = (): VoteResultsResponse => ({
+      ...makeResults(),
+      comment_results: [
+        { prompt: prompts[0], responses: [named('r-1', 20), named('r-3', 22)] },
+        { prompt: prompts[1], responses: [named('r-2', 21), named('r-4', 23)] },
+      ],
+    });
+    const items = (fixture: ComponentFixture<VoteDetailComponent>): HTMLElement[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-overview-comment"] lfx-vote-comment-item')] as HTMLElement[];
+    const meta = (fixture: ComponentFixture<VoteDetailComponent>): Element | null =>
+      testId(fixture, 'vote-detail-overview-comment')?.querySelector('[data-testid="vote-results-comment-meta"]') ?? null;
+
+    it('shows a manager the three newest comments across prompts, with names and ballot links', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: prompts })));
+      voteService.getVoteResults.mockReturnValue(of(namedResults()));
+      const fixture = await setup('browser', [VoteCommentItemComponent]);
+
+      const rendered = items(fixture);
+      expect(rendered.map((item) => item.querySelector('lfx-expandable-text')?.textContent?.trim())).toEqual([
+        'Synthetic comment r-4',
+        'Synthetic comment r-3',
+        'Synthetic comment r-2',
+      ]);
+      expect(rendered[0].querySelector('[data-testid="vote-results-comment-meta"]')?.textContent).toContain('Synthetic Voter r-4');
+      expect(testId(fixture, 'vote-detail-overview-all-comments')).not.toBeNull();
+
+      testId(fixture, 'vote-results-comment-view-ballot-r-4')!.querySelector('button')!.click();
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: 'r-4' } })
+      );
+    });
+
+    it('renders answers from the same ballot across prompts without duplicate tracking keys', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: prompts })));
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...makeResults(),
+          comment_results: [
+            { prompt: prompts[0], responses: [{ ...named('r-1', 22), comment_text: 'First answer' }, named('r-2', 21)] },
+            { prompt: prompts[1], responses: [{ ...named('r-1', 22), comment_text: 'Second answer' }] },
+          ],
+        })
+      );
+
+      try {
+        const fixture = await setup('browser', [VoteCommentItemComponent]);
+
+        expect(items(fixture).map((item) => item.querySelector('lfx-expandable-text')?.textContent?.trim())).toEqual([
+          'First answer',
+          'Second answer',
+          'Synthetic comment r-2',
+        ]);
+        expect(warn.mock.calls.flat().join('\n')).not.toContain('NG0955');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('shows text only on a pseudo-anonymous vote, in the server order', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true, poll_comment_prompts: prompts })));
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...makeResults(),
+          comment_results: [
+            { prompt: prompts[0], responses: [{ comment_text: 'Alpha' }, { comment_text: 'Charlie' }] },
+            { prompt: prompts[1], responses: [{ comment_text: 'Bravo' }] },
+          ],
+        })
+      );
+      const fixture = await setup('browser', [VoteCommentItemComponent]);
+
+      expect(items(fixture).map((item) => item.textContent?.trim())).toEqual(['Alpha', 'Charlie', 'Bravo']);
+      expect(meta(fixture)).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-comment-view-ballot-"]')).toBeNull();
+    });
+
+    it('shows a voter on a closed named vote text only', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: prompts })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getVoteResults.mockReturnValue(
+        of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [{ comment_text: 'Synthetic voter-view comment' }] }] })
+      );
+      const fixture = await setup('browser', [VoteCommentItemComponent]);
+
+      expect(read(fixture, 'audience')).toBe('voter');
+      expect(items(fixture).map((item) => item.textContent?.trim())).toEqual(['Synthetic voter-view comment']);
+      expect(meta(fixture)).toBeNull();
+    });
+
+    it('hides the card when there are no comments', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false })));
+      const fixture = await setup('browser', [VoteCommentItemComponent]);
+
       expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
     });
   });
@@ -1249,7 +1367,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
-      expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Second synthetic comment');
+      expect(previewComments(fixture).map((response) => response.comment_text)).toEqual(['Second synthetic comment', 'First synthetic comment']);
       expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Optional written responses');
       expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
@@ -1560,7 +1678,7 @@ describe('VoteDetailComponent', () => {
         voteService.fetchVote.mockReturnValue(of(namedClosedVote()));
         voteService.getMyVoteResponse.mockReturnValue(of(response));
         queryParamMap.next(convertToParamMap({ tab: 'comments' }));
-        const fixture = await setup('browser', true);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
         expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
         expect(testId(fixture, 'vote-detail-header-status')?.textContent).toContain('Ended');
@@ -1577,7 +1695,7 @@ describe('VoteDetailComponent', () => {
         voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status, total_voting_request_invitations: 12 })));
         voteService.getMyVoteResponse.mockReturnValue(httpError(failureStatus));
         queryParamMap.next(convertToParamMap({ tab: 'comments' }));
-        const fixture = await setup('browser', true);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
         expect(read(fixture, 'accessLoading')).toBe(false);
         expect(read(fixture, 'myResponseError')).toBe(true);
@@ -1604,7 +1722,7 @@ describe('VoteDetailComponent', () => {
         projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
         voteService.fetchVote.mockReturnValue(of(makeVote({ ...namedClosedVote(), status })));
         voteService.getMyVoteResponse.mockReturnValue(httpError(503));
-        const fixture = await setup('browser', true);
+        const fixture = await setup('browser', [VoteDetailHeaderComponent]);
 
         expect(read(fixture, 'showVoteDetails')).toBe(true);
         expect(testId(fixture, 'vote-detail-header-tabs')).not.toBeNull();

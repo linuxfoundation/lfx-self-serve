@@ -46,6 +46,7 @@ import {
   computeVoteRowParticipation,
   countVoteParticipationByStatus,
   countVoteVotersByStatus,
+  getRecentCommentResponses,
   getVoteVisibilityRules,
   getVoteVoterStatus,
   isRankedPollType,
@@ -766,6 +767,47 @@ describe('mergeCommentResults', () => {
   it('does not mutate the API payload', () => {
     mergeCommentResults(commentResults, undefined);
     expect(commentResults[0].responses).toEqual([older, newer]);
+  });
+});
+
+describe('getRecentCommentResponses', () => {
+  function response(voteId: string, createdAt: string): PollCommentResponse {
+    return { vote_id: voteId, comment_text: `Comment ${voteId}\n\nSecond paragraph`, vote_creation_time: createdAt, abstained: false };
+  }
+
+  function result(promptId: string, responses: PollCommentResponse[]): PollCommentResult {
+    return { prompt: { prompt_id: promptId, prompt: `Prompt ${promptId}` }, responses };
+  }
+
+  it('orders timestamped responses newest-first across prompts and decorates them for display', () => {
+    const recent = getRecentCommentResponses(
+      [
+        result('p1', [response('a', '2025-06-04T00:00:00Z'), response('b', '2025-06-01T00:00:00Z')]),
+        result('p2', [response('c', '2025-06-05T00:00:00Z'), response('d', '2025-06-02T00:00:00Z')]),
+      ],
+      3
+    );
+    expect(recent.map((r) => r.vote_id)).toEqual(['c', 'a', 'd']);
+    expect(recent.map((r) => r.position)).toEqual([0, 1, 2]);
+    expect(recent[0].paragraphs).toEqual(['Comment c', 'Second paragraph']);
+  });
+
+  it('keeps the input order for text-only responses', () => {
+    const recent = getRecentCommentResponses(
+      [result('p1', [{ comment_text: 'Apple' }, { comment_text: 'Cherry' }]), result('p2', [{ comment_text: 'Banana' }])],
+      3
+    );
+    expect(recent.map((r) => r.comment_text)).toEqual(['Apple', 'Cherry', 'Banana']);
+  });
+
+  it('respects the limit', () => {
+    const responses = ['a', 'b', 'c', 'd'].map((id, i) => response(id, `2025-06-0${i + 1}T00:00:00Z`));
+    expect(getRecentCommentResponses([result('p1', responses)], 2).map((r) => r.vote_id)).toEqual(['d', 'c']);
+  });
+
+  it('returns an empty list when there are no responses', () => {
+    expect(getRecentCommentResponses([], 3)).toEqual([]);
+    expect(getRecentCommentResponses([result('p1', [])], 3)).toEqual([]);
   });
 });
 

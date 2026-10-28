@@ -1,22 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
 import { Component, computed, input, model, output, Signal } from '@angular/core';
-import { ButtonComponent } from '@components/button/button.component';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { VOTE_COMMENT_ANONYMOUS_NOTICES, VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import { CommentResultPageView, PollCommentResult, VoteCommentAnonymityReason } from '@lfx-one/shared/interfaces';
 import { splitIntoParagraphs } from '@lfx-one/shared/utils';
-import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
+
+import { VoteCommentItemComponent } from '../vote-comment-item/vote-comment-item.component';
 
 /** Paginated comment-results list, one block per prompt. Page state is a model so the host can keep it when this component is destroyed and recreated (e.g. a drawer swapping in its loading skeleton on reopen). */
 @Component({
   selector: 'lfx-vote-comment-results',
-  imports: [DatePipe, ButtonComponent, ExpandableTextComponent, LinkifyPipe, PaginatorModule],
+  imports: [PaginatorModule, VoteCommentItemComponent],
   templateUrl: './vote-comment-results.component.html',
-  styleUrl: './vote-comment-results.component.scss',
   host: { class: 'contents' },
 })
 export class VoteCommentResultsComponent {

@@ -17,13 +17,14 @@ import {
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import {
+  CommentResponseView,
   MyVoteBallot,
   MyVoteResponse,
   PollCommentPrompt,
-  PollCommentResponse,
   PollCommentResult,
   RankedQuestionView,
   ServerRequestContext,
@@ -45,6 +46,7 @@ import {
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
   formatVoteDeadline,
+  getRecentCommentResponses,
   getUserTimezone,
   isRankedPollType,
   mergeCommentResults,
@@ -64,6 +66,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filte
 import { NotFoundComponent } from '../../not-found/not-found.component';
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
+import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteCommentResultsComponent } from '../components/vote-comment-results/vote-comment-results.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
@@ -110,6 +113,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     TagComponent,
     VoteAbstainResultComponent,
     VoteCastDrawerComponent,
+    VoteCommentItemComponent,
     VoteCommentResultsComponent,
     VoteDetailFactsComponent,
     VoteDetailHeaderComponent,
@@ -255,8 +259,9 @@ export class VoteDetailComponent {
   protected readonly commentCount: Signal<number> = computed(() =>
     this.commentResults().reduce((sum, result) => sum + (result.total_responses ?? result.responses.length), 0)
   );
-  protected readonly firstComment: Signal<PollCommentResponse | null> = computed(
-    () => this.commentResults().find((result) => result.responses.length > 0)?.responses[0] ?? null
+  /** Overview preview: newest first across prompts where timestamps exist, else the server's text order (#4448). */
+  protected readonly recentComments: Signal<CommentResponseView[]> = computed(() =>
+    getRecentCommentResponses(this.commentResults(), VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT)
   );
   protected readonly hasZeroVotes: Signal<boolean> = this.initHasZeroVotes();
   /** Generic results render as live tallies for an open vote's manager, final otherwise; voters only ever see final results. */

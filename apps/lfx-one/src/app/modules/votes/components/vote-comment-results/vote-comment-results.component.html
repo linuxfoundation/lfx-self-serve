@@ -12,35 +12,7 @@
     <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt.prompt }}</h3>
     <!-- Pseudo-anonymous responses carry no vote_id (#3916); absolute list positions keep expansion state from crossing pages. -->
     @for (response of commentResult.responses; track response.vote_id ?? response.position) {
-      <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
-        <lfx-expandable-text [maxHeight]="150" class="comment-text">
-          <div class="flex flex-col gap-3 whitespace-normal text-sm text-slate-700">
-            @for (paragraph of response.paragraphs; track $index) {
-              <p class="whitespace-pre-line" [innerHTML]="paragraph | linkify"></p>
-            }
-          </div>
-        </lfx-expandable-text>
-        @if (!anonymous()) {
-          <div class="flex items-center gap-2 text-xs text-slate-500" data-testid="vote-results-comment-meta">
-            <span>{{ response.user_name || 'Anonymous' }}</span>
-            <span>•</span>
-            <span>{{ response.vote_creation_time | date: 'MMM d, y' }}</span>
-            @if (response.abstained) {
-              <span class="text-slate-400">(Abstained)</span>
-            }
-            @if (showBallotLinks() && response.vote_id; as voteId) {
-              <lfx-button
-                label="View ballot"
-                [text]="true"
-                size="small"
-                styleClass="ml-auto"
-                [ariaLabel]="'View ballot of ' + (response.user_name || 'this voter')"
-                (onClick)="viewBallot.emit(voteId)"
-                [attr.data-testid]="'vote-results-comment-view-ballot-' + voteId" />
-            }
-          </div>
-        }
-      </div>
+      <lfx-vote-comment-item [response]="response" [anonymous]="anonymous()" [showBallotLink]="showBallotLinks()" (viewBallot)="viewBallot.emit($event)" />
     } @empty {
       <p class="text-sm text-slate-500 italic" [attr.data-testid]="'vote-results-comments-empty-' + commentResult.prompt.prompt_id">No responses yet.</p>
     }

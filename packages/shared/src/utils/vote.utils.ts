@@ -25,11 +25,12 @@ import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, Vo
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
-import { truncateToUtf16Units } from './string.utils';
+import { splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
   CommentPromptFormValue,
+  CommentResponseView,
   CommentResponseFormData,
   CommentResponseInput,
   CreatePollCommentPrompt,
@@ -405,6 +406,26 @@ export function mergeCommentResults(commentResults: PollCommentResult[], detailP
       total_responses: result?.total_responses,
     };
   });
+}
+
+/**
+ * Picks the comments the vote detail Overview previews (#4448)
+ * @description Flattens responses across every prompt. Timestamped responses (named votes read by a vote manager)
+ * sort newest-first across prompts; text-only responses carry no timestamp, so they keep the input order — the
+ * server's comment-text order — rather than implying a recency nobody may know.
+ * @param commentResults - Per-prompt comment results, e.g. from {@link mergeCommentResults}
+ * @param limit - Maximum number of responses to return
+ * @returns Up to `limit` responses decorated for display, `position` being the index in the preview
+ */
+export function getRecentCommentResponses(commentResults: PollCommentResult[], limit: number): CommentResponseView[] {
+  const responses = commentResults.flatMap((cr) => cr.responses);
+  const ordered = responses.some((response) => response.vote_creation_time) ? sortCommentResponsesByRecency(responses) : responses;
+
+  return ordered.slice(0, limit).map((response, index) => ({
+    ...response,
+    paragraphs: splitIntoParagraphs(response.comment_text),
+    position: index,
+  }));
 }
 
 /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
