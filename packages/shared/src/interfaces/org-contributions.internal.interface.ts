@@ -49,8 +49,14 @@ export interface ContributionsProjectOptionRow {
   PROJECT_ID: string;
   PROJECT_SLUG: string | null;
   PROJECT_NAME: string | null;
-  PARENT_SLUG: string | null;
+  FOUNDATION_ID: string | null;
   COMMITS: number;
+}
+
+/** Foundation filter option in the window and project type. */
+export interface ContributionsFoundationOptionRow {
+  FOUNDATION_ID: string;
+  FOUNDATION_NAME: string;
 }
 
 /** Employee filter option with its count in the window. */
@@ -65,6 +71,7 @@ export interface ContributionsRaw {
   kpiRows: ContributionsKpiRow[];
   repoRows: ContributionsRepoRow[];
   commitRows: ContributionsCommitRow[];
+  foundationOptionRows: ContributionsFoundationOptionRow[];
   projectOptionRows: ContributionsProjectOptionRow[];
   employeeOptionRows: ContributionsEmployeeOptionRow[];
 }

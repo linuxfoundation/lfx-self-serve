@@ -624,6 +624,17 @@ export function canUseRedditCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry a per-campaign `conversionPixelId` override (#3484).
+ *
+ * Needs only the campaign-service create path, which passes the field to the Reddit client as its
+ * preferred pixel. The LEGACY creator never reads it, so there it would be accepted and silently
+ * dropped, and the campaign would use (or fail for want of) the connection's pixel instead.
+ */
+export function canSetRedditConversionPixel(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -890,6 +901,7 @@ export class CampaignServiceClient {
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+        redditConversionPixelEnabled: canSetRedditConversionPixel(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -959,6 +971,7 @@ export class CampaignServiceClient {
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+      redditConversionPixelEnabled: canSetRedditConversionPixel(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),

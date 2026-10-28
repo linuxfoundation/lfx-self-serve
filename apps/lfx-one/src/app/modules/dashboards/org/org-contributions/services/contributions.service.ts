@@ -19,7 +19,7 @@ export class ContributionsService {
   }
 }
 
-/** Serialize the composed filter/pagination state to URL query params. Empty multi-selects are omitted. */
+/** Serialize the composed filter/pagination state to URL query params. An empty foundation and empty multi-selects are omitted. */
 function buildQueryParams(query: OrgContributionsQuery): HttpParams {
   let params = new HttpParams()
     .set('view', query.view)
@@ -35,6 +35,9 @@ function buildQueryParams(query: OrgContributionsQuery): HttpParams {
     .set('size', String(query.size));
   if (query.search) {
     params = params.set('q', query.search);
+  }
+  if (query.foundation) {
+    params = params.set('foundation', query.foundation);
   }
   if (query.projects.length) {
     params = params.set('projects', query.projects.join(','));

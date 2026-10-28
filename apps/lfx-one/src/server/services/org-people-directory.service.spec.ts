@@ -136,6 +136,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   };
 });
 
+import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
 import { toColumnar } from '@lfx-one/shared/utils';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -1080,10 +1081,44 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     }
     expect(nonLf).toStrictEqual(picker);
   });
+
+  // lfx-self-serve#4160: the page default is LF projects, and a picker request (no range, no filters) parses to it. The
+  // unranged roster must not follow it: the pickers keep every seat, key contact, access principal and stored employee.
+  it('serves the pickers the full unranged roster under the LF projects default', async () => {
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([
+        storedRow(),
+        // A current employee with no LF code: still on the roster and assignable.
+        storedRow({
+          personKey: 'non-lf-coder',
+          lfid: 'nonlfcoder',
+          lfUsername: 'nonlfcoder',
+          name: 'Nina Coder',
+          email: 'nina@lfx-partner.example',
+          emails: ['nina@lfx-partner.example'],
+          seatsCount: 0,
+          boardSeatsCount: 0,
+          committeeSeatsCount: 0,
+        }),
+      ])
+    );
+
+    const picker = await run(null, DEFAULT_ORG_COMMIT_FILTERS);
+
+    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('lf');
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
+    expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
+    expect(picker.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Nina Coder', 'Sam Seat']);
+    expect(picker.rows.find((row) => row.name === 'Sam Seat')?.seatsCount).toBe(1);
+    expect(picker.rows.find((row) => row.name === 'Kay Cee')?.sources).toEqual(['keyContact']);
+    expect(picker.rows.find((row) => row.name === 'Nina Coder')?.sources).toEqual(['snowflake']);
+    expect(picker.rows.flatMap((row) => row.sources)).toContain('access');
+  });
 });
 
-describe('OrgPeopleDirectoryService.getLive — the active tile does not follow the code-count option', () => {
-  it('counts code activity for the active tile while the code tile counts the picked count', async () => {
+describe('OrgPeopleDirectoryService.getLive — the tiles do not follow the code-count option', () => {
+  it('counts Code Contributors on the code tile under every option, the commits measure included (lfx-self-serve#4160)', async () => {
     getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow({
@@ -1112,16 +1147,19 @@ describe('OrgPeopleDirectoryService.getLive — the active tile does not follow 
       ])
     );
 
-    const tiles = await Promise.all(
-      [FILTERS, { ...FILTERS, commitScope: 'merged' as const }, { ...FILTERS, metric: 'code' as const }].map(async (filters) => {
-        const { stats } = await run('365d', filters);
-        return [stats.activeInOss, stats.codeContributors];
-      })
+    const results = await Promise.all(
+      [FILTERS, { ...FILTERS, commitScope: 'merged' as const }, { ...FILTERS, metric: 'code' as const }].map((filters) => run('365d', filters))
     );
 
-    expect(tiles).toEqual([
-      [2, 1],
-      [2, 1],
+    // The table's count follows the option: the reviewer has no commit, so the commits measure shows them 0.
+    expect(results.map(({ rows }) => rows.map((row) => row.commitsCount))).toEqual([
+      [2, 0],
+      [1, 0],
+      [6, 3],
+    ]);
+    expect(results.map(({ stats }) => [stats.activeInOss, stats.codeContributors])).toEqual([
+      [2, 2],
+      [2, 2],
       [2, 2],
     ]);
   });

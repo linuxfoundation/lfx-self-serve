@@ -476,6 +476,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
 
   /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override
+   * (`CampaignListResult.redditConversionPixelEnabled`, #3484). Only campaign-service reads the
+   * field; the legacy creator would drop it. `null` until the parent has an answer, which withholds
+   * the control.
+   */
+  public readonly redditConversionPixelEnabled = input<boolean | null>(null);
+
+  /** @see redditConversionPixelEnabled — an explicit yes, never a `null`. */
+  protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
+
+  /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
    * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
    * sibling; the pasted image URL stays offered whatever this answers.
@@ -877,6 +888,16 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly metaInstagramDsaForm = this.fb.nonNullable.group({ instagramUserId: '', dsaBeneficiary: '', dsaPayor: '' });
   private readonly metaInstagramDsaDraft = this.initFormDraft(this.metaInstagramDsaForm);
+
+  /**
+   * The Reddit per-campaign conversion pixel override (#3484), on the wrapper's form-control API.
+   * Its own group for the reason `metaInstagramDsaForm` is. The raw text goes to the draft so a value
+   * stays on screen as typed; the request reads the trimmed `redditConversionPixelId`, where blank
+   * means "use the connection's pixel".
+   */
+  protected readonly redditConversionPixelForm = this.fb.nonNullable.group({ conversionPixelId: '' });
+  private readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
+  protected readonly redditConversionPixelId = computed<string>(() => this.redditConversionPixelDraft().conversionPixelId.trim());
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
@@ -3248,6 +3269,11 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+    // Nor is the Reddit pixel group.
+    this.redditConversionPixelForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
 
     // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
     // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
@@ -4732,6 +4758,10 @@ export class ImplementationTabComponent implements OnInit {
               // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
               ...this.redditImageField(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
+              // Omitted when blank — upstream reads empty as "use the connection's pixel", the same
+              // thing an absent key means — and gated on the capability, because the legacy
+              // creator never reads it and the create route refuses it there (#3484).
+              ...(this.redditConversionPixelAvailable() && this.redditConversionPixelId() ? { conversionPixelId: this.redditConversionPixelId() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('reddit-ads'),
             },
@@ -6156,6 +6186,11 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
+    // An emitting patch, as `metaInstagramDsaForm`'s restore is: `redditConversionPixelDraft` follows
+    // the group's `valueChanges`, and the draft subscription honours `seeding`, so it cannot loop.
+    if (typeof draft.redditConversionPixelId === 'string') {
+      this.redditConversionPixelForm.patchValue({ conversionPixelId: draft.redditConversionPixelId });
+    }
     if (draft.redditImageAssetId !== undefined) {
       this.redditImageAssetId.set(draft.redditImageAssetId);
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
@@ -6413,6 +6448,7 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
+      redditConversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
@@ -6463,6 +6499,11 @@ export class ImplementationTabComponent implements OnInit {
     this.results.set([]);
     this.platformResults.set([]);
     this.errors.set([]);
+    // Cleared here because nothing else clears it: the group is standalone, and `applyDraft` only
+    // patches it when the draft holds a pixel. Without this, a brief switch on a live mount carries
+    // the previous brief's pixel into the new brief's draft and create (#3484). Inside `seeding`,
+    // so the reset does not emit a draft of its own.
+    this.redditConversionPixelForm.reset();
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,

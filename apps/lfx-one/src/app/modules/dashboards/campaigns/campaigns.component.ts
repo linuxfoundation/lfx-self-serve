@@ -1015,6 +1015,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an ad image — `CampaignListResult.metaCreativeEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
+  /** Whether the Reddit section offers a conversion pixel override — `CampaignListResult.redditConversionPixelEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsRedditConversionPixelEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the Google image slots offer the brief's stored-image library — `CampaignListResult.googleAssetUploadEnabled`, read and cleared like the capabilities above. */
@@ -2820,6 +2822,7 @@ export class CampaignsComponent {
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
         this.briefCampaignsMetaCreativeEnabled.set(null);
+        this.briefCampaignsRedditConversionPixelEnabled.set(null);
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsGoogleAssetUploadEnabled.set(null);
         this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
@@ -5269,6 +5272,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
           this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+          this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
@@ -5295,6 +5299,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
           this.briefCampaignsMetaCreativeEnabled.set(null);
+          this.briefCampaignsRedditConversionPixelEnabled.set(null);
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsGoogleAssetUploadEnabled.set(null);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
@@ -5367,6 +5372,7 @@ export class CampaignsComponent {
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
     this.briefCampaignsMetaCreativeEnabled.set(null);
+    this.briefCampaignsRedditConversionPixelEnabled.set(null);
     this.briefCampaignsMetaAssetUploadEnabled.set(null);
     this.briefCampaignsGoogleAssetUploadEnabled.set(null);
     this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
@@ -5409,6 +5415,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
             this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+            this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
@@ -5441,6 +5448,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
             this.briefCampaignsMetaCreativeEnabled.set(null);
+            this.briefCampaignsRedditConversionPixelEnabled.set(null);
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsGoogleAssetUploadEnabled.set(null);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(null);

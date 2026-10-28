@@ -26,9 +26,9 @@ export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, Contrib
   code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution' },
 };
 
-/** Project-scope phrase in the KPI caption (empty for every project). */
+/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, since the default is LF projects (lfx-self-serve#4160). */
 export const CONTRIBUTIONS_PROJECT_SCOPE_PHRASE: Readonly<Record<OrgProjectScope, string>> = {
-  all: '',
+  all: ' in LF and non-LF projects',
   lf: ' in LF projects',
   non_lf: ' outside LF projects',
 };
@@ -38,7 +38,7 @@ export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
 
 /**
  * Most distinct values accepted per `projects` / `employees` filter.
- * @description Each value becomes Snowflake bind variables (three per project, one per employee), so the
+ * @description Each value becomes Snowflake bind variables (two per project, one per employee), so the
  * server rejects a longer list with a 400 before building SQL, and the filter dropdowns stop selection here.
  */
 export const CONTRIBUTIONS_MAX_FILTER_VALUES = 50;
@@ -49,6 +49,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
   view: 'repositories',
   dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
   search: '',
+  foundation: '',
   projects: [],
   employees: [],
   sort: 'commits',
@@ -73,6 +74,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_RESPONSE: OrgContributionsResponse = {
   kpis: EMPTY_ORG_CONTRIBUTIONS_KPIS,
   repositories: [],
   commits: [],
+  foundationOptions: [],
   projectOptions: [],
   employeeOptions: [],
   totalRecords: 0,
