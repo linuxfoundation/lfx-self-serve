@@ -2779,7 +2779,7 @@ describe('MktgDocumentViewComponent', () => {
     const readiness = query('mktg-document-view-readiness');
     expect(readiness?.textContent).toBe(expected);
     expect(readiness?.closest('[hidden], .sr-only')).toBeNull();
-    expect(query('mktg-document-view-header')?.contains(readiness)).toBe(true);
+    expect(query('mktg-document-view-title-card')?.contains(readiness)).toBe(true);
   });
 
   it.each(['empty', 'missing', 'invalid', 'question', 'path'])('keeps unanswered FAQ visible with a %s report', async (state) => {

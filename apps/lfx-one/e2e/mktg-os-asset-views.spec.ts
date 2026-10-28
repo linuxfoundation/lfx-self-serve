@@ -23,7 +23,7 @@ function cleanFaqResponse() {
     ...base,
     markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }),
     sidecar: { ...base.sidecar, report: { sources_read: ['Docs'], sources_failed: [], gaps: [], notes: '' } },
-  }; // openAssetDocument and the other openers call suppressCookieBanner before navigation.
+  };
 }
 
 test.describe('Native FAQ document approval and header', () => {
