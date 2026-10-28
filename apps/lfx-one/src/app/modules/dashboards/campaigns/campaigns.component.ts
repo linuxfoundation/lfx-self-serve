@@ -737,6 +737,9 @@ export class CampaignsComponent {
   /** Start-over counts for this page's lifetime, used when sessionStorage is unavailable. */
   private readonly seriesRestartFallback = new Map<string, number>();
 
+  /** Bumped on every start-over, so the computeds that read the restart count re-read it. */
+  private readonly seriesRestartVersion = signal(0);
+
   /**
    * Guards a late variant-B copy response against a stage the operator has since changed.
    *
@@ -2268,7 +2271,18 @@ export class CampaignsComponent {
   );
 
   /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
-  protected readonly surveySeriesMode = computed(() => this.surveySupportsSeries() && this.surveyEmailCount() > 1);
+  protected readonly surveySeriesMode = computed(() => (this.surveySupportsSeries() && this.surveyEmailCount() > 1) || this.surveySeriesRestarted());
+
+  /**
+   * Whether this survey's series was started over. Its emails then live on NEW briefs (`-rN`),
+   * so even a one-email survey or report stages through the series path: the single Stage button
+   * addresses the page's ORIGINAL brief, whose draft campaign-service would hand back unchanged.
+   */
+  protected readonly surveySeriesRestarted = computed(() => {
+    this.seriesRestartVersion();
+    const brief = this.emailBriefOutput();
+    return this.isSurvey() && brief !== null && this.readSeriesRestart(this.activeFoundationSlug(), brief.eventDetails?.slug ?? '') > 0;
+  });
 
   /** Whether a survey series is staging, or holds a send, so the single Stage button must wait. */
   protected readonly sequenceLocksSingleSend = computed(() => this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend());
@@ -4322,7 +4336,10 @@ export class CampaignsComponent {
       this.emailAudienceWriteInFlight() ||
       this.emailStaging() === 'staging' ||
       this.emailStagingUnresolved() ||
-      this.sequenceLocksSingleSend()
+      this.sequenceLocksSingleSend() ||
+      // Hidden in series mode; refused here too, so nothing can stage a restarted survey's
+      // ORIGINAL brief.
+      this.surveySeriesMode()
     ) {
       return;
     }
@@ -7770,6 +7787,7 @@ export class CampaignsComponent {
       return;
     }
     this.seriesRestartFallback.set(`${projectSlug}:${baseSlug}`, restart);
+    this.seriesRestartVersion.update((n) => n + 1);
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }

@@ -8964,6 +8964,41 @@ describe('CampaignsComponent — email delivery channel', () => {
       reloaded.destroy();
     });
 
+    it('stages a restarted one-email survey on its new brief, never the original single-send brief', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(['brief-primary']);
+      const seriesMode = (): boolean => (fixture.componentInstance as unknown as { surveySeriesMode(): boolean }).surveySeriesMode();
+      // Read BEFORE the start-over, so the assertion after it proves the mode follows the restart.
+      expect(seriesMode(), 'a one-email survey before any restart').toBe(false);
+      seq().onStartSeriesOver();
+      expect(seriesMode(), 'after a restart, the series path').toBe(true);
+
+      persistBrief.mockImplementation(
+        (brief: CampaignBriefOutput) => of({ enabled: true, briefId: `new-${brief.eventDetails.slug}`, etag: '"1"', approved: true, created: true }) as never
+      );
+      await seq().onGenerateSurveySequence();
+      const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'em-1' }] }) as never
+      );
+
+      // The single Stage button addresses the ORIGINAL brief: hidden, and refused if reached.
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-btn"]')).toBeNull();
+      await (fixture.componentInstance as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(create).not.toHaveBeenCalled();
+
+      await seq().onStageSequenceSends();
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][2]).toBe('new-cloud-native-2026-r2');
+    });
+
     it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
