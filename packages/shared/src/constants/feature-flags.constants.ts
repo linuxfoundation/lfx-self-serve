@@ -244,14 +244,3 @@ export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-
  * (fail closed) and the SDK keeps connecting in the background.
  */
 export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;
-
-/**
- * Dark-launch gate for the Org Lens **All Organizations roll-up** (lfx-self-serve#4125). Default
- * false.
- *
- * The frontend lands before the BFF does: no `:orgUid` / `:accountId` endpoint accepts the reserved
- * `all` sentinel until #4127, and `ORG_ACCOUNT_ID_PATTERN` is deliberately left strict so they all
- * reject it. Without this gate every multi-organization caller would see a pinned entry whose pages
- * then fail closed section by section. Flip it on once #4126–#4128 are deployed.
- */
-export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';

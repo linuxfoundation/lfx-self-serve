@@ -100,9 +100,9 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     // primary segment and keeps child segments, query and fragment — the address the viewer asked
     // for, re-pointed, rather than a bounce to overview.
     //
-    // The service owns which organization that is, whether the stored roll-up choice survives, and
-    // the address pin: it is the same decision `demoteFromRollUp` makes when eligibility changes
-    // under a page that is already open, and the two must not drift (#4415 review 9).
+    // The service owns which organization that is, and the address pin: it is the same decision
+    // `demoteFromRollUp` makes when eligibility changes under a page that is already open, and the
+    // two must not drift (#4415 review 9).
     const fallback = accountContext.demoteAddressedRollUp();
     return fallback ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
   }
