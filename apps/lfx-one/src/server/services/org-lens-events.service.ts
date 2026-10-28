@@ -279,9 +279,7 @@ export class OrgLensEventsService {
     // Names only. Matching `er.EMAIL` made this an existence oracle — a caller could test whether a
     // given address registered for an event without ever being shown it. The shipped drawer filters
     // client-side on name and job title and never sends `searchQuery`, so nothing in the UI regresses.
-    const searchFilter = searchQuery
-      ? `AND UPPER(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) LIKE UPPER(?)`
-      : '';
+    const searchFilter = searchQuery ? `AND UPPER(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) LIKE UPPER(?)` : '';
 
     /**
      * The drawer in TWO spellings, not three: scoped, and unscoped for the address table being
