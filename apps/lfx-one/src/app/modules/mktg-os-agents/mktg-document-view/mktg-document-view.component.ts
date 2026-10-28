@@ -806,7 +806,11 @@ export class MktgDocumentViewComponent {
     if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
       return;
     this.redirectedRun = run.runId;
-    const failedNavigation = () => this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    const failedNavigation = () => {
+      if (this.redirectedRun !== run.runId) return;
+      this.redirectedRun = '';
+      this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    };
     void this.router
       .navigate(commands, { queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, run: run.runId }, replaceUrl: true })
       .then((opened) => {

@@ -1467,6 +1467,32 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
+  it.each(['cancelled', 'rejected'])('retries the same public run redirect after navigation is %s', async (outcome) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const response = { ...detail, runs: [started('writing')] };
+    store.getDocument.mockReturnValue(of(response));
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    navigate.mockClear();
+    if (outcome === 'rejected') navigate.mockRejectedValueOnce(new Error('Synthetic cancelled route'));
+    else navigate.mockResolvedValueOnce(false);
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['errorText']()).toContain('The run page could not be opened');
+    expect(component['redirectedRun']).toBe('');
+    component['onPublicProgress']({ detail: response, view: null });
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith(
+      ['/mktg-os-agents', BRAND_KIT.catalogAgentId],
+      expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ run: 'b'.repeat(64) }) })
+    );
+    component['onPublicProgress']({ detail: response, view: null });
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(query('mktg-document-view-run')).toBeNull();
+  });
+
   it('keeps a Started run with no stored revision headless until the stored document lands', async () => {
     const runId = 'b'.repeat(64);
     store.getDocument.mockReturnValue(

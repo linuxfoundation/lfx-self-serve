@@ -11,7 +11,6 @@ import {
   DOCUMENT_PROJECT,
   DOCUMENT_VIEW_URL,
   DOCUMENT_TYPE,
-  DOCUMENT_PROJECT,
   documentFixture,
   fulfillDocumentJson,
   openDocuments,
