@@ -1,9 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { COMBINED_SURVEY_STATUS } from '../constants/survey.constants';
+import { COMBINED_SURVEY_STATUS, SURVEY_RESPONSE_FUNNEL_RANK } from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import type { CombinedSurveyStatus, NpsBand, SurveyDisplayStatusInput, SurveyResponseItem, SurveyStatusInput } from '../interfaces/survey.interface';
+import type {
+  CombinedSurveyStatus,
+  NpsBand,
+  RenderedSurveyEmail,
+  Survey,
+  SurveyDisplayStatusInput,
+  SurveyEmailRenderContext,
+  SurveyEngagementRates,
+  SurveyResponseItem,
+  SurveyStatusInput,
+} from '../interfaces/survey.interface';
+import { escapeHtml } from './html-utils';
 
 /**
  * Sentinel value the API uses on `response_status` to signal that responses
@@ -168,4 +179,163 @@ export function getResponseComment(item: SurveyResponseItem): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a recipient has submitted a response.
+ * @param item - The per-recipient survey response
+ */
+export function hasSurveyResponse(item: SurveyResponseItem): boolean {
+  return typeof item.response_datetime === 'string' && item.response_datetime.trim() !== '';
+}
+
+function percentOf(count: number, total: number): number {
+  return total > 0 ? Math.round((count / total) * 100) : 0;
+}
+
+/**
+ * Aggregate delivery, open, click, response and comment counts across every response row.
+ * @description A recipient counts for a stage when SES flagged it or when their delivery
+ * status is that stage or later (a "Clicked" row was also opened and delivered). Delivery
+ * rate is over all recipients; open and click rates are over delivered; comment rate is
+ * over responded.
+ * @param rows - Every per-recipient response row for the survey (all pages)
+ * @returns Counts and whole-percentage rates
+ */
+export function getSurveyEngagementRates(rows: readonly SurveyResponseItem[]): SurveyEngagementRates {
+  let delivered = 0;
+  let opened = 0;
+  let clicked = 0;
+  let responded = 0;
+  let commented = 0;
+
+  for (const row of rows) {
+    const rank = SURVEY_RESPONSE_FUNNEL_RANK[(row.response_status ?? '').toLowerCase()] ?? 0;
+    const hasResponded = hasSurveyResponse(row);
+    if (row.ses_delivery_successful === true || rank >= 1 || hasResponded) delivered++;
+    if (row.ses_email_opened === true || rank >= 2) opened++;
+    if (row.ses_link_clicked === true || rank >= 3) clicked++;
+    if (hasResponded) {
+      responded++;
+      if (getResponseComment(row) !== null) commented++;
+    }
+  }
+
+  return {
+    recipients: rows.length,
+    delivered,
+    opened,
+    clicked,
+    responded,
+    commented,
+    deliveryRate: percentOf(delivered, rows.length),
+    openRate: percentOf(opened, delivered),
+    clickRate: percentOf(clicked, delivered),
+    commentRate: percentOf(commented, responded),
+  };
+}
+
+/** Formats a survey cutoff date as e.g. "November 30, 2026" (UTC), or '' when absent or invalid. */
+function formatSurveyCutoffDate(value: string | null | undefined): string {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '';
+}
+
+/** Matches `{{.Name}}` (ITX/Go templates, used by board surveys) and `{{Name}}` (Self Serve's wizard). */
+const SURVEY_EMAIL_PLACEHOLDER = /\{\{\s*\.?([A-Za-z]+)\s*\}\}/g;
+
+/**
+ * Render a survey's sent email as one recipient received it.
+ * @description Replaces the template placeholders with the recipient's values. Values are
+ * HTML-escaped in the body (quotes included, so a value inside an attribute stays inert);
+ * the subject is plain text. Unknown placeholders are left as-is.
+ * @param survey - Survey detail carrying `email_subject` / `email_body`
+ * @param item - The recipient's response row
+ * @param context - Project-level values the row does not carry
+ * @returns The rendered subject and HTML body
+ */
+export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyResponseItem, context: SurveyEmailRenderContext = {}): RenderedSurveyEmail {
+  const committee = survey.committees?.find((c) => c.committee_uid === item.committee_uid);
+  const surveyLink = item.survey_link || '#';
+  const values: Record<string, string> = {
+    FirstName: item.first_name ?? '',
+    LastName: item.last_name ?? '',
+    EmailAddress: item.email ?? '',
+    ProjectName: item.project?.name || committee?.project_name || context.projectName || '',
+    CommitteeName: committee?.committee_name ?? '',
+    CommitteeType: survey.committee_category ?? '',
+    OrganizationName: item.organization?.name ?? '',
+    MembershipTier: item.membership_tier ?? '',
+    SurveyLink: surveyLink,
+    CutoffDate: formatSurveyCutoffDate(survey.survey_cutoff_date),
+    ExecutiveDirectorName: context.executiveDirectorName ?? '',
+    ProgramManagerName: context.programManagerName ?? '',
+    ProjectLogo: context.projectLogo ?? '',
+    TrackerAlertPartial: '',
+  };
+
+  const render = (template: string, escape: boolean): string =>
+    template.replace(SURVEY_EMAIL_PLACEHOLDER, (match, name: string) => {
+      // {{SurveyButton}} (Self Serve wizard) is markup, not a value: a link to the recipient's survey.
+      if (name === 'SurveyButton') {
+        return escape ? `<a href="${escapeHtml(surveyLink)}" target="_blank" rel="noopener noreferrer">Take the survey</a>` : 'Take the survey';
+      }
+      if (!(name in values)) return match;
+      return escape ? escapeHtml(values[name]) : values[name];
+    });
+
+  return {
+    subject: render(survey.email_subject ?? '', false),
+    html: render(survey.email_body ?? '', true),
+  };
+}
+
+/**
+ * Build a `mailto:` link that opens a follow-up email to one recipient with their personal link.
+ * @param survey - The survey being followed up
+ * @param item - The recipient's response row
+ * @returns The mailto URL, or null when the recipient has no email address
+ */
+export function buildSurveyFollowUpMailto(survey: Survey, item: SurveyResponseItem): string | null {
+  if (!item.email) return null;
+
+  const greeting = item.first_name ? `Hi ${item.first_name},` : 'Hi,';
+  const cutoff = formatSurveyCutoffDate(survey.survey_cutoff_date);
+  const deadline = cutoff ? ` by ${cutoff}` : '';
+  const linkLine = item.survey_link ? `\n\nYour personal survey link:\n${item.survey_link}` : '';
+  const body = `${greeting}\n\nA quick reminder to share your feedback in the "${survey.survey_title}" survey${deadline}.${linkLine}\n\nThank you!`;
+
+  return `mailto:${encodeURIComponent(item.email)}?subject=${encodeURIComponent(`Reminder: ${survey.survey_title}`)}&body=${encodeURIComponent(body)}`;
+}
+
+/**
+ * Build CSV rows (header first) for a survey's responses. Personal survey links are deliberately excluded.
+ * @param survey - The survey, used for committee labels
+ * @param rows - Every per-recipient response row
+ * @returns Rows ready for `downloadCsv`
+ */
+export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly SurveyResponseItem[]): (string | number)[][] {
+  const header = ['Name', 'Email', 'Organization', 'Committee', 'Role', 'Delivery Status', 'Delivered', 'Opened', 'Clicked', 'Responded At', 'NPS', 'Comment'];
+  const yesNo = (value: boolean | undefined): string => (value ? 'Yes' : 'No');
+
+  const body = rows.map((row) => {
+    const committee = survey.committees?.find((c) => c.committee_uid === row.committee_uid);
+    const responded = hasSurveyResponse(row);
+    return [
+      `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.username || '',
+      row.email ?? '',
+      row.organization?.name ?? '',
+      [committee?.project_name, committee?.committee_name].filter(Boolean).join(' | '),
+      row.role ?? '',
+      row.response_status ?? '',
+      yesNo(row.ses_delivery_successful),
+      yesNo(row.ses_email_opened),
+      yesNo(row.ses_link_clicked),
+      responded ? (row.response_datetime ?? '') : '',
+      responded && typeof row.nps_value === 'number' ? row.nps_value : '',
+      getResponseComment(row) ?? '',
+    ];
+  });
+
+  return [header, ...body];
 }

@@ -4,7 +4,7 @@ description: How to view, edit, and analyze surveys in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, manage, responses, nps, analytics]
-last_updated: 2026-05-22
+last_updated: 2026-10-27
 intercom_collection: Surveys
 ---
 
@@ -20,6 +20,22 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View survey responses
 
 Select a survey to open its detail view and see response data.
+
+If you have **Manage** access on the project, the detail view also shows:
+
+- **Delivery, open, click and comment rates** next to the response rate on the **Overview** tab. Open and click rates are out of delivered emails; the comment rate is out of responses.
+- **Participant comments** on the **Overview** tab.
+- A **Responses** tab with every recipient's delivery status, response date, NPS score and comment. Filters and search cover all recipients.
+
+## Follow up with recipients
+
+These actions need **Manage** access on the project. On the **Responses** tab:
+
+- Select **Download CSV** to export every recipient's delivery status, response and comment. The file does not include personal survey links.
+- Open the **⋮** menu on a recipient's row to:
+  - **Copy personal link** — copy the recipient's own survey link. Anyone with this link can answer as that recipient, so share it only with them.
+  - **Email recipient** — open your mail app with a reminder that includes their personal link.
+  - **View sent email** — see the survey email as that recipient received it, with their name, project and link filled in.
 
 ## View NPS analytics
 

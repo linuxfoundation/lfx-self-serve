@@ -293,8 +293,27 @@ export const SURVEY_EMAIL_TEMPLATE_VARIABLES = {
 
 /**
  * Page size for the per-recipient survey responses list.
+ * The results drawer pages through every response so filters, rates and the CSV
+ * cover all recipients; 200 is the BFF's per_page cap.
  */
-export const SURVEY_RESPONSES_PAGE_SIZE = 25;
+export const SURVEY_RESPONSES_PAGE_SIZE = 200;
+
+/**
+ * Upper bound on response pages fetched for one survey (50 × 200 = 10,000 recipients),
+ * so a looping upstream page token can never fetch forever.
+ */
+export const SURVEY_RESPONSES_MAX_PAGES = 50;
+
+/**
+ * Position of each delivery status in the email funnel (higher = further along).
+ * A row at a later stage counts toward every earlier stage's rate.
+ */
+export const SURVEY_RESPONSE_FUNNEL_RANK: Readonly<Record<string, number>> = {
+  delivered: 1,
+  opened: 2,
+  clicked: 3,
+  responded: 4,
+};
 
 /**
  * Survey template options (NPS surveys)

@@ -135,6 +135,12 @@ export interface Survey {
   survey_link?: string;
   /** survey_response UID — present only in the Me lens; identifies the specific response record this row was built from (one row per survey × committee) */
   response_uid?: string;
+  /** Subject of the email sent to recipients, with template placeholders (detail API only) */
+  email_subject?: string;
+  /** HTML body of the email sent to recipients, with template placeholders such as `{{.FirstName}}` (detail API only) */
+  email_body?: string;
+  /** Plain-text body of the email sent to recipients (detail API only) */
+  email_body_text?: string;
 }
 
 /**
@@ -396,16 +402,51 @@ export interface SurveyParticipationStats {
 }
 
 /**
- * Detailed survey results for the results drawer
- * @description Extended survey data including NPS results and comments for display in results drawer
+ * Recipient engagement counts and rates for a survey
+ * @description Aggregated from every per-recipient response row. Rates are whole
+ * percentages (0-100): delivery over recipients, open and click over delivered,
+ * comment over responded.
  */
-export interface SurveyResultsDetail extends Survey {
-  /** NPS score (-100 to +100) - only for NPS surveys */
-  nps_score?: number;
-  /** NPS response breakdown - only for NPS surveys */
-  nps_breakdown?: NpsBreakdown;
-  /** Additional comments from participants */
-  additional_comments?: SurveyComment[];
+export interface SurveyEngagementRates {
+  recipients: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  responded: number;
+  commented: number;
+  deliveryRate: number;
+  openRate: number;
+  clickRate: number;
+  commentRate: number;
+}
+
+/**
+ * Project-level values substituted into a sent survey email
+ * @description Values the survey row does not carry: staff names come from project settings.
+ */
+export interface SurveyEmailRenderContext {
+  projectName?: string;
+  executiveDirectorName?: string;
+  programManagerName?: string;
+  projectLogo?: string;
+}
+
+/**
+ * A survey email rendered for one recipient
+ */
+export interface RenderedSurveyEmail {
+  /** Plain-text subject */
+  subject: string;
+  /** HTML body with recipient values HTML-escaped */
+  html: string;
+}
+
+/**
+ * Data handed to the sent-email dialog
+ */
+export interface SurveySentEmailDialogData {
+  survey: Survey;
+  response: SurveyResponseItem;
 }
 
 /**

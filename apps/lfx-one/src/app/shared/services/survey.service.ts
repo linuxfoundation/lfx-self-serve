@@ -3,9 +3,9 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { SURVEY_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
+import { SURVEY_DETAIL_CACHE_TTL_MS, SURVEY_RESPONSES_MAX_PAGES, SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { CreateSurveyRequest, MySurveyResponse, Survey, SurveyResponseItem, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -96,31 +96,38 @@ export class SurveyService {
   }
 
   /**
-   * Returns a paginated page of individual per-recipient responses for a survey.
-   * Used by the PMO results drawer's Responses tab. Errors degrade to an empty
-   * page so the tab renders an empty state instead of breaking the drawer.
+   * Returns every per-recipient response for a survey, following page tokens to the end.
+   * Used by the PMO results drawer: filters, engagement rates, comments and the CSV must
+   * cover all recipients, not just a first page. A 404 (upstream release not deployed)
+   * degrades to no rows; any other failure errors so the caller can say the list is incomplete.
    */
-  public getSurveyResponses(surveyUid: string, pageSize?: number, pageToken?: string, projectUid?: string): Observable<SurveyResponsesPage> {
-    let params = new HttpParams();
-    if (pageSize) {
-      params = params.set('per_page', pageSize.toString());
-    }
-    if (pageToken) {
-      params = params.set('page_token', pageToken);
-    }
-    if (projectUid) {
-      params = params.set('project_uid', projectUid);
-    }
+  public getAllSurveyResponses(surveyUid: string, projectUid?: string): Observable<SurveyResponseItem[]> {
+    const fetchPage = (pageToken?: string): Observable<SurveyResponsesPage> => {
+      let params = new HttpParams().set('per_page', SURVEY_RESPONSES_PAGE_SIZE.toString());
+      if (pageToken) {
+        params = params.set('page_token', pageToken);
+      }
+      if (projectUid) {
+        params = params.set('project_uid', projectUid);
+      }
+      return this.http.get<SurveyResponsesPage>(`/api/surveys/${encodeURIComponent(surveyUid)}/responses`, { params });
+    };
 
-    return this.http.get<SurveyResponsesPage>(`/api/surveys/${surveyUid}/responses`, { params }).pipe(
-      catchError((error) => {
-        // 404 is expected when the upstream service release is not yet deployed —
-        // degrade quietly. Log unexpected statuses so real failures surface in DevTools.
-        if (error?.status !== 404) {
-          console.error(`Failed to load responses for survey ${surveyUid}:`, error);
+    return fetchPage().pipe(
+      expand((page) => (page.meta?.page_token ? fetchPage(page.meta.page_token) : EMPTY)),
+      take(SURVEY_RESPONSES_MAX_PAGES),
+      reduce((acc, page) => ({ rows: [...acc.rows, ...(page.data ?? [])], nextToken: page.meta?.page_token }), {
+        rows: [] as SurveyResponseItem[],
+        nextToken: undefined as string | undefined,
+      }),
+      // Still holding a token after the page cap means the list is cut short — fail rather than return a partial list.
+      map(({ rows, nextToken }) => {
+        if (nextToken) {
+          throw new Error(`Survey ${surveyUid} has more than ${SURVEY_RESPONSES_MAX_PAGES} pages of responses`);
         }
-        return of({ data: [], meta: {} } as SurveyResponsesPage);
-      })
+        return rows;
+      }),
+      catchError((error) => (error?.status === 404 ? of([] as SurveyResponseItem[]) : throwError(() => error)))
     );
   }
 

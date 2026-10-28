@@ -116,9 +116,10 @@
 
       @if (activeTab() === 'responses') {
         <lfx-survey-responses-list
-          [surveyId]="surveyData.uid"
           [survey]="surveyData"
-          [projectUid]="projectUid()"
+          [responses]="responses()"
+          [loading]="responsesLoading()"
+          [loadError]="responsesLoadError()"
           data-testid="survey-results-drawer-responses" />
       } @else {
         @if (loading()) {
@@ -176,6 +177,8 @@
                 <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                   <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
                 </div>
+
+                <ng-container *ngTemplateOutlet="engagementRatesTpl" />
               </div>
             </div>
 
@@ -283,8 +286,11 @@
                 <!-- Scrollable comments container -->
                 <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
                   @for (comment of comments(); track comment.id) {
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 flex flex-col gap-1" [attr.data-testid]="'survey-comment-' + comment.id">
                       <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
+                      @if (comment.submitted_at) {
+                        <p class="text-xs text-slate-500">{{ comment.submitted_at | date: 'MMM d, y' }}</p>
+                      }
                     </div>
                   }
                 </div>
@@ -319,6 +325,8 @@
                 <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                   <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
                 </div>
+
+                <ng-container *ngTemplateOutlet="engagementRatesTpl" />
               </div>
             </div>
 
@@ -426,8 +434,11 @@
                 <!-- Scrollable comments container -->
                 <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
                   @for (comment of comments(); track comment.id) {
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 flex flex-col gap-1" [attr.data-testid]="'survey-comment-' + comment.id">
                       <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
+                      @if (comment.submitted_at) {
+                        <p class="text-xs text-slate-500">{{ comment.submitted_at | date: 'MMM d, y' }}</p>
+                      }
                     </div>
                   }
                 </div>
@@ -444,3 +455,35 @@
     </div>
   }
 </p-drawer>
+
+<!-- Delivery, open, click and comment rates (Manage users only — derived from per-recipient rows) -->
+<ng-template #engagementRatesTpl>
+  @if (responsesLoadError()) {
+    <p class="pt-3 border-t border-slate-200 text-sm text-red-700" data-testid="survey-engagement-error">
+      Delivery rates and participant comments couldn't be loaded. Close and reopen the survey to try again.
+    </p>
+  } @else if (engagementRates(); as rates) {
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200" data-testid="survey-engagement-rates">
+      <div class="text-center">
+        <p class="text-xs text-slate-500">Delivery Rate</p>
+        <p class="font-semibold text-slate-900" data-testid="survey-engagement-delivery-rate">{{ rates.deliveryRate }}%</p>
+        <p class="text-xs text-slate-500">{{ rates.delivered }} / {{ rates.recipients }}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-slate-500">Open Rate</p>
+        <p class="font-semibold text-slate-900" data-testid="survey-engagement-open-rate">{{ rates.openRate }}%</p>
+        <p class="text-xs text-slate-500">{{ rates.opened }} / {{ rates.delivered }}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-slate-500">Click Rate</p>
+        <p class="font-semibold text-slate-900" data-testid="survey-engagement-click-rate">{{ rates.clickRate }}%</p>
+        <p class="text-xs text-slate-500">{{ rates.clicked }} / {{ rates.delivered }}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-slate-500">Comment Rate</p>
+        <p class="font-semibold text-slate-900" data-testid="survey-engagement-comment-rate">{{ rates.commentRate }}%</p>
+        <p class="text-xs text-slate-500">{{ rates.commented }} / {{ rates.responded }}</p>
+      </div>
+    </div>
+  }
+</ng-template>

@@ -180,10 +180,16 @@ export class SurveyService {
   }
 
   /**
-   * Fetches a paginated page of individual per-recipient responses for a survey.
-   * Thin passthrough to the upstream survey service — forwards only the supported
-   * query params (pagination + project scoping) and returns the page as-is.
+   * Fetches a page of per-recipient responses from the upstream survey service,
+   * forwarding only the supported query params (pagination + project scoping),
+   * and gates each row's personal link on managing that row's committee.
    * The upstream maps V2 project UUIDs to V1 identifiers before forwarding to ITX.
+   *
+   * Upstream gates this list on `survey#viewer`, but each row's `survey_link` is the
+   * recipient's personal link (anyone holding it can answer as them). A row keeps its
+   * link only when the caller manages that row's committee (see getManagedCommitteeUids)
+   * and the link passes SURVEY_LINK_ALLOWLIST; every other row, including on a failed
+   * access check, is returned without one (#4340).
    */
   public async getSurveyResponses(req: Request, surveyUid: string, query: Record<string, any> = {}): Promise<SurveyResponsesPage> {
     logger.debug(req, 'get_survey_responses', 'Fetching survey responses', {
@@ -203,20 +209,50 @@ export class SurveyService {
     if (query['project_uid'] !== undefined) params['project_uid'] = query['project_uid'];
     if (query['project_uids'] !== undefined) params['project_uids'] = query['project_uids'];
 
-    const page = await this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params);
+    const [page, managedCommitteeUids] = await Promise.all([
+      this.microserviceProxy.proxyRequest<SurveyResponsesPage>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}/responses`, 'GET', params),
+      this.getManagedCommitteeUids(req, surveyUid).catch(() => new Set<string>()),
+    ]);
 
     // Defensive normalization: upstream is contractually { data, meta }, but guard
     // against a malformed body so the frontend always receives a consumable shape.
     // Upstream signals the last page with an empty-string page_token — normalize it
     // to undefined here so consumers can treat "no more pages" as a falsy token.
     const pageToken = page?.meta?.page_token;
+    const rows = Array.isArray(page?.data) ? page.data : [];
     return {
-      data: Array.isArray(page?.data) ? page.data : [],
+      data: rows.map(({ survey_link: surveyLink, ...row }) => {
+        const canManage = !!row.committee_uid && managedCommitteeUids.has(row.committee_uid);
+        const link = canManage && surveyLink ? validateAndSanitizeUrl(surveyLink.trim(), SURVEY_LINK_ALLOWLIST) : null;
+        return link ? { ...row, survey_link: link } : row;
+      }),
       meta: {
         ...(page?.meta ?? {}),
         page_token: pageToken && pageToken.trim() !== '' ? pageToken : undefined,
       },
     };
+  }
+
+  /**
+   * The survey's committees whose project the caller can write (`project#writer_guard`, the
+   * relation behind Manage access). Upstream grants `survey#writer` to a writer of ANY project
+   * the survey was sent to, so on a multi-foundation board survey that grant alone would let
+   * one foundation's ED reach every other foundation's recipients; this narrows it per committee.
+   * Fails closed: a failed project check counts as not managed.
+   */
+  public async getManagedCommitteeUids(req: Request, surveyUid: string): Promise<Set<string>> {
+    const survey = await this.microserviceProxy.proxyRequest<Pick<Survey, 'committees'>>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
+    const committees = (survey?.committees ?? []).filter((c) => c.committee_uid && c.project_uid);
+    const projectUids = [...new Set(committees.map((c) => c.project_uid))];
+    if (projectUids.length === 0) {
+      return new Set();
+    }
+
+    const grants = await this.accessCheckService.checkAccess(
+      req,
+      projectUids.map((id) => ({ resource: 'project', id, access: 'writer_guard' }))
+    );
+    return new Set(committees.filter((c) => grants.get(`${c.project_uid}#writer_guard`) === true).map((c) => c.committee_uid));
   }
 
   /**
