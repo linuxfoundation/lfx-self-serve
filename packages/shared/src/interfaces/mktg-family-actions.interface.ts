@@ -28,6 +28,15 @@ export interface MktgFamilyHeaderAction {
   link: { commands: string[]; queryParams: Record<string, string> } | null;
 }
 
+/** Next-step presentation shared by Kit home and empty document types; commands are relative to the Kit root. */
+export interface MktgFamilyNextStep {
+  header: MktgFamilyHeaderAction;
+  commands: string[];
+  queryParams: Record<string, string>;
+  sentence: string;
+  hint: string;
+}
+
 export interface MktgFamilyActions {
   header: MktgFamilyHeaderAction | null;
   rows: Record<string, { row: MktgKitAssetRow; action: MktgFamilyRunAction | null }>;

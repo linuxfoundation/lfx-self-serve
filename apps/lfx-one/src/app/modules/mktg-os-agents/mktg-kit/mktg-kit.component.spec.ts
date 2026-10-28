@@ -64,6 +64,85 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-level"]')?.textContent).toBe('—');
     expect(root.querySelector('[data-testid="mktg-kit-level-empty"]')?.textContent).toContain('No approved assets yet');
   });
+  it('keeps Coming soon cards plain and uses a quiet selected filter', async () => {
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    for (const view of families()) {
+      const card = root.querySelector(`[data-testid="mktg-kit-family-${view.family.id}"]`);
+      expect(card?.querySelectorAll('a')).toHaveLength(view.live ? 1 : 0);
+      // Angular merges static classes, the class-map binding and individual class properties.
+      for (const token of ['relative', 'flex', 'rounded-xl', 'border', 'bg-white', 'p-5']) {
+        expect(card?.classList.contains(token)).toBe(true);
+      }
+      expect(card?.classList.contains('hover:shadow-md')).toBe(view.live);
+      expect(card?.classList.contains('border-blue-600')).toBe(view === families()[0]);
+      if (!view.live) {
+        expect(card?.classList.contains('border-dashed')).toBe(true);
+        expect(card?.className).not.toContain('hover:');
+      }
+    }
+    const filters = root.querySelector('lfx-filter-pills');
+    expect(filters?.className).toContain('[&_button[aria-pressed=true]]:!bg-blue-100');
+    expect(filters?.className).toContain('[&_button[aria-pressed=true]]:!text-blue-700');
+  });
+  it.each(['create', 'blocked', 'review', 'rebuild', 'export'] as const)('presents the %s family header as the one Next step', async (kind) => {
+    if (kind !== 'create')
+      families.update((views) =>
+        views.map((view, index) =>
+          index
+            ? view
+            : {
+                ...view,
+                rows: view.rows.map((row, i) => ({
+                  ...row,
+                  state: kind === 'rebuild' && i === 0 ? 'needs-rebuild' : 'draft',
+                  document:
+                    row.asset.agentKey && (kind !== 'blocked' || i === 0)
+                      ? {
+                          agentKey: row.asset.agentKey,
+                          documentId: 'living',
+                          revisionCount: 1,
+                          latestRevisionId: 'synthetic',
+                          approvedCurrent: null,
+                          createdAt: null,
+                          updatedAt: null,
+                        }
+                      : null,
+                })),
+              }
+        )
+      );
+    if (kind === 'export') families.update((views) => views.map((view) => ({ ...view, rows: view.rows.map((row) => ({ ...row, state: 'approved' })) })));
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const step = root.querySelector('[data-testid="mktg-kit-next-step"]');
+    const action = step?.querySelector('lfx-button a');
+    expect(step).not.toBeNull();
+    const sentence = step?.querySelector('p');
+    for (const token of ['text-[15.75px]', 'font-semibold', 'leading-[1.4]', 'text-gray-900']) {
+      expect(sentence?.classList.contains(token)).toBe(true);
+    }
+    expect(root.querySelectorAll('[data-testid="mktg-kit-next-step-action"]')).toHaveLength(1);
+    if (kind === 'create') {
+      expect(action?.getAttribute('href')).toContain('foundation-setup');
+      expect(action?.getAttribute('href')).toContain('mode=new');
+      expect(step?.textContent).toContain('Nothing in the kit yet');
+    } else if (kind === 'export') {
+      expect(action?.textContent).toContain('Export the kit');
+      expect(step?.textContent).toContain('The kit is complete; export it.');
+      expect(step?.textContent).toContain('Opens Positioning & brand, where the kit can be exported.');
+      expect(action?.getAttribute('href')).toContain('families/positioning-brand');
+    } else if (kind === 'rebuild') {
+      expect(step?.textContent).toContain('1 asset is stale');
+      expect(action?.getAttribute('href')).toContain('families/positioning-brand');
+    } else {
+      expect(action?.getAttribute('href')).toContain('documents/foundation-message/living');
+      expect(step?.textContent).toContain('The messaging framework is drafted');
+    }
+    expect(action?.getAttribute('href')).toContain('project=synthetic');
+  });
   it('filters asset rows, retains all family cards, and supports future approved/stale fixtures', async () => {
     families.update((value) => {
       value[0].rows[0] = { ...value[0].rows[0], state: 'approved', version: 3 };
@@ -179,6 +258,7 @@ describe('Marketing kit home', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="mktg-kit-loading"]')).not.toBeNull();
     expect(root.querySelectorAll('article')).toHaveLength(0);
+    expect(root.querySelector('[data-testid="mktg-kit-next-step"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent?.trim()).toBe('—');
     loading.set(false);
     error.set('You need write access to this project.');

@@ -136,7 +136,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });
 
-  test('retains current selection on a transient non-poll reload and offers manual refresh', async ({ page }) => {
+  test('retains current selection on a transient type refetch and offers manual refresh', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
@@ -148,13 +148,12 @@ test.describe('Marketing OS current revisions', () => {
       }
       return route.fallback();
     });
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-notice')).toContainText('Revision 1 is now current');
+    await page.getByTestId('mktg-documents-nav-faq').click();
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded');
-    await expect(page.getByTestId('mktg-documents-current-1')).toBeVisible();
     await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-documents-current-1')).toBeVisible();
+    await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+    await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
   });
 
@@ -314,30 +313,25 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 7 of 9');
   });
 
-  test('a table Make current 404 shows not-found without moving the badge', async ({ page }) => {
-    await setupDocuments(page, { writeStatus: 404 });
-    await openDocuments(page);
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-error')).toContainText('This document could not be found.');
-    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-revision-1')).not.toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-restore-1')).toBeEnabled();
-  });
-
-  test('table Make current moves the badge and keeps all three revisions', async ({ page }) => {
+  test('opens older revisions rather than making them current from the table', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
-    await page.getByTestId('mktg-documents-restore-1').click();
-    await expect(page.getByTestId('mktg-documents-notice')).toContainText('No revision was added');
-    await expect(page.getByTestId('mktg-documents-revision-1')).toContainText('Current');
-    await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
+    await expect(page.getByTestId('mktg-documents-revisions').getByRole('button')).toHaveCount(0);
+    await expect(page.getByText('To switch back to an older one, open it and choose Make current there;', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-run-again-' + DOCUMENT_TYPE.agentKey)).toHaveText('Create a new version');
+    await expect(page.getByTestId('mktg-documents-view-latest').getByRole('link')).toHaveAccessibleName('Open');
+    await page.getByTestId('mktg-documents-view-1').click();
+    await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toBeVisible();
   });
 
-  test('empty documents link to the agent without running a live session', async ({ page }) => {
-    await setupDocuments(page, { empty: true });
-    await openDocuments(page);
+  test('empty documents follow their family header without starting a live session', async ({ page }) => {
+    const framework = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    if (!framework) throw new Error('Framework type must exist');
+    await setupDocuments(page, { empty: true, documentType: framework });
+    await openDocuments(page, DOCUMENTS_URL.replace(`type=${DOCUMENT_TYPE.agentKey}`, `type=${framework.agentKey}`));
     await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
-    const run = page.locator('[data-testid^="mktg-documents-run-agent-"]');
+    const run = page.locator('[data-testid^="mktg-documents-run-agent-"]').getByRole('link');
+    await expect(run).toHaveAccessibleName('Create messaging framework');
     await expect(run).toHaveAttribute('href', /mktg-os-agents\//);
     await run.click();
     await expect(page).not.toHaveURL(/\/documents\?/);

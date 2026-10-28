@@ -10,11 +10,11 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '../../../../packages/shared/src/constants';
-import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
-import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
-import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '@lfx-one/shared/utils/linkedin-post-run.utils';
-import type { LinkedinEnvelope, MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
-import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils/linkedin-post.utils';
+import { LINKEDIN_RECORDED_CASES } from '../../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '../../../../packages/shared/src/constants/linkedin-post-questions.fixture';
+import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '../../../../packages/shared/src/utils/linkedin-post-run.utils';
+import type { LinkedinEnvelope, MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary } from '../../../../packages/shared/src/interfaces';
+import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '../../../../packages/shared/src/utils/linkedin-post.utils';
 import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
 import { ApiMockHelper } from './api-mock.helper';

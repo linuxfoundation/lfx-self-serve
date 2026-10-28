@@ -8,7 +8,13 @@ import { MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.con
 import type { MktgFamilyActionContext } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 import { resolveMktgKit } from './mktg-kit.utils';
-import { isMktgFamilyAgentAvailable, mktgFamilyRowAction, mktgRunModeFor, resolveMktgFamilyActions } from './mktg-family-actions.utils';
+import {
+  isMktgFamilyAgentAvailable,
+  mktgFamilyRowAction,
+  mktgRunModeFor,
+  resolveMktgFamilyActions,
+  resolveMktgFamilyNextStep,
+} from './mktg-family-actions.utils';
 
 const context: MktgFamilyActionContext = { loaded: true, canWrite: true, approvedFramework: false };
 function family(id = 'positioning-brand'): MktgKitFamilyView {
@@ -202,6 +208,60 @@ describe('One rule for every family action', () => {
     expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('');
     view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: ' ', number: 0 } } };
     expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('after the framework is approved');
+    view.rows[0] = { ...view.rows[0], document: { ...doc, approvedCurrent: { revisionId: 42 as unknown as string, number: 1 } } };
+    expect(resolveMktgFamilyActions(view, context).rows['boilerplates'].action?.blockedReason).toBe('after the framework is approved');
+  });
+  it('presents create destinations relative to Kit, with fresh run mode and honest copy', () => {
+    const step = resolveMktgFamilyNextStep(family(), context);
+    expect(step).toMatchObject({
+      header: { kind: 'create', label: 'Create messaging framework' },
+      commands: ['foundation-setup'],
+      queryParams: { mode: 'new' },
+      sentence: 'Nothing in the kit yet; create the messaging framework to start.',
+      hint: 'Opens the Messaging Framework Agent run page in Positioning & brand.',
+    });
+    const view = built(family());
+    view.rows[1].document = null;
+    expect(resolveMktgFamilyNextStep(view, { ...context, approvedFramework: true })?.sentence).toBe('Create the boilerplates next.');
+  });
+  it('presents blocked framework approval without creating a second action policy', () => {
+    const view = family();
+    view.rows[0] = { ...built(view).rows[0], state: 'draft' };
+    const step = resolveMktgFamilyNextStep(view, context);
+    expect(step?.header).toEqual(resolveMktgFamilyActions(view, context).header);
+    expect(step?.commands).toEqual(['documents', 'foundation-message', 'living']);
+    expect(step?.sentence).toBe('The messaging framework is drafted; approve it so boilerplates, FAQ and the brand kit can be created.');
+    expect(step?.hint).toBe('Opens the messaging framework document in Positioning & brand.');
+  });
+  it('presents review and rebuild and hides steps when none are actionable', () => {
+    const view = built(family());
+    view.rows[0].state = 'draft';
+    expect(resolveMktgFamilyNextStep(view, context)).toMatchObject({ header: { kind: 'review' }, commands: ['documents', 'foundation-message', 'living'] });
+    view.rows[1].state = 'needs-rebuild';
+    expect(resolveMktgFamilyNextStep(view, context)).toMatchObject({
+      header: { kind: 'rebuild' },
+      sentence: '1 asset is stale; rebuild it.',
+      hint: 'Opens Positioning & brand, where the stale assets are rebuilt.',
+      commands: ['families', view.family.id],
+    });
+    view.rows[2].state = 'needs-rebuild';
+    expect(resolveMktgFamilyNextStep(view, context)?.sentence).toBe('2 assets are stale; rebuild them.');
+    expect(resolveMktgFamilyNextStep(view, { ...context, loaded: false })).toBeNull();
+    expect(resolveMktgFamilyNextStep(view, { ...context, canWrite: false })).toBeNull();
+    expect(resolveMktgFamilyNextStep(family('content-video'), context)).toBeNull();
+  });
+  it('presents the export header with an honest destination, without starting an export', () => {
+    const view = built(family());
+    for (const row of view.rows) row.state = 'approved';
+    const step = resolveMktgFamilyNextStep(view, context);
+    expect(step?.header).toEqual(resolveMktgFamilyActions(view, context).header);
+    expect(step).toMatchObject({
+      header: { kind: 'export', label: 'Export the kit' },
+      sentence: 'The kit is complete; export it.',
+      hint: 'Opens Positioning & brand, where the kit can be exported.',
+      commands: ['families', view.family.id],
+      queryParams: {},
+    });
   });
   it('is deterministic and leaves the input family and catalogs untouched', () => {
     const view = family();

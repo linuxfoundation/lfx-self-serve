@@ -221,13 +221,13 @@ test.describe('Marketing OS Documents structure', () => {
         const scroller = page.getByTestId('mktg-documents-revisions-scroll');
         const visible = await scroller.boundingBox();
         const actionsCell = await page.getByTestId('mktg-documents-revision-actions-3').boundingBox();
-        const makeCurrent = await page.getByTestId('mktg-documents-restore-3').boundingBox();
-        if (!visible || !actionsCell || !makeCurrent) throw new Error('Desktop table actions must be rendered before measuring');
+        const open = await page.getByTestId('mktg-documents-view-3').boundingBox();
+        if (!visible || !actionsCell || !open) throw new Error('Desktop table actions must be rendered before measuring');
         expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(0);
         expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
         expect(actionsCell.x).toBeGreaterThanOrEqual(visible.x);
         expect(actionsCell.x + actionsCell.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
-        expect(makeCurrent.x + makeCurrent.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
+        expect(open.x + open.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
       }
       if (width === 390) {
         const pageWidth = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));
