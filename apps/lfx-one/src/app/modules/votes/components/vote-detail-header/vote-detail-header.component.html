@@ -36,7 +36,14 @@
             data-testid="vote-detail-header-send-reminder" />
         }
         @if (canCastVote() && !limited()) {
-          <lfx-button label="Cast vote" icon="fa-light fa-check-to-slot" size="small" (onClick)="castVote.emit()" data-testid="vote-detail-header-cast-vote" />
+          <lfx-button
+            label="Cast vote"
+            icon="fa-light fa-check-to-slot"
+            size="small"
+            [severity]="canSendReminder() ? 'secondary' : undefined"
+            [outlined]="canSendReminder()"
+            (onClick)="castVote.emit()"
+            data-testid="vote-detail-header-cast-vote" />
         }
         <!-- Managers reach results from the Results tab; Send reminder is their primary action (#4447). -->
         @if (!limited() && audience() !== 'creator') {

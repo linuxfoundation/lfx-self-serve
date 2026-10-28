@@ -31,6 +31,7 @@ import {
   Vote,
   VoteCommentAnonymityReason,
   VoteDetailState,
+  VoteDetailSummaryCardAction,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStats,
@@ -335,7 +336,7 @@ export class VoteDetailComponent {
   /** Routes a summary card click; clicks while results load or after they fail are ignored, as the cards' figures are not real yet. */
   protected onSummaryCardClick(action: string): void {
     if (this.loadingVoteResults() || this.voteResultsError()) return;
-    switch (action) {
+    switch (action as VoteDetailSummaryCardAction) {
       case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES:
         this.switchTab('voters');
         return;

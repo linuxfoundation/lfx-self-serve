@@ -119,6 +119,25 @@ describe('VoteDetailHeaderComponent', () => {
       expect(reminder.severity()).toBeUndefined();
     });
 
+    it('demotes Cast vote to secondary when a manager is also an invited voter, keeping one primary action (#4447)', () => {
+      render({ audience: 'creator', canCastVote: true });
+      const button = (id: string): ButtonComponent =>
+        fixture.debugElement.query(By.css(`[data-testid="vote-detail-header-${id}"]`)).componentInstance as ButtonComponent;
+
+      expect(button('send-reminder').outlined()).toBe(false);
+      expect(button('send-reminder').severity()).toBeUndefined();
+      expect(button('cast-vote').outlined()).toBe(true);
+      expect(button('cast-vote').severity()).toBe('secondary');
+    });
+
+    it('keeps Cast vote primary for a voter', () => {
+      render({ audience: 'voter', canCastVote: true });
+      const cast = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-cast-vote"]')).componentInstance as ButtonComponent;
+
+      expect(cast.outlined()).toBe(false);
+      expect(cast.severity()).toBeUndefined();
+    });
+
     it('emits each manager action', () => {
       render({ audience: 'creator', canCastVote: true });
       const emitted: string[] = [];
