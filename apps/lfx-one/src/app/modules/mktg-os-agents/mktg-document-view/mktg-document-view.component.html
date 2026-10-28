@@ -593,68 +593,61 @@
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
-              @for (row of visibleRevisionRows(); track row.revision.id) {
+              @for (revision of visibleRevisionRows(); track revision.id) {
                 <li
                   class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
-                  [ngClass]="row.revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
-                  [attr.data-testid]="'mktg-document-view-revision-' + row.revision.number">
+                  [ngClass]="revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [attr.data-testid]="'mktg-document-view-revision-' + revision.number">
                   <div class="min-w-0 flex-1 break-words">
-                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + row.revision.number">
-                      <span class="font-mono" [textContent]="'v' + row.revision.number"></span>
-                      <span [textContent]="row.revision.approval ? ' · Approved' : ' · Draft'"></span>
-                      @if (row.revision.createdAt) {
-                        <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
+                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + revision.number">
+                      <span class="font-mono" [textContent]="'v' + revision.number"></span>
+                      <span [textContent]="revision.approval ? ' · Approved' : ' · Draft'"></span>
+                      @if (revision.createdAt) {
+                        <span [textContent]="' · ' + (revision.createdAt | date: 'd MMM')"></span>
                       }
-                      @if (row.revision.latest) {
+                      @if (revision.latest) {
                         <span [textContent]="' · '"></span>
                         <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
                         <span
                           class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
-                          [attr.data-testid]="'mktg-document-view-current-' + row.revision.number"
+                          [attr.data-testid]="'mktg-document-view-current-' + revision.number"
                           >Current</span
                         >
                       }
-                      <span [textContent]="' · ' + row.how + ' · ' + row.authorLabel"></span>
-                      @if (row.revision.approval; as approval) {
-                        <span [textContent]="' · approved by ' + (approval.approvedBy?.name || 'a project writer')"></span>
-                      }
                     </span>
-                    @if (row.revision.latest && current.current?.revisionId === row.revision.id) {
-                      @if (current.current; as selection) {
-                        <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'mktg-document-view-current-since-' + row.revision.number">
-                          <span [textContent]="'Current since ' + (selection.changedAt | date: 'd MMM y, HH:mm')"></span>
-                          <span [textContent]="' · ' + currentSelectorLabel()"></span>
-                        </p>
-                      }
-                    }
                   </div>
-                  @if (row.revision.id === current.revision.id) {
+                  @if (revision.id === current.revision.id) {
                     <span class="shrink-0 text-gray-500">here</span>
                   } @else {
                     <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
                     <span
                       class="flex w-16 shrink-0 flex-col items-end gap-1 text-right font-normal"
-                      [attr.data-testid]="'mktg-document-view-row-actions-' + row.revision.number">
+                      [attr.data-testid]="'mktg-document-view-row-actions-' + revision.number">
                       <a
                         [routerLink]="submittingGeneration() ? null : []"
                         [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
                         [attr.tabindex]="submittingGeneration() ? -1 : null"
-                        [queryParams]="{ revision: row.revision.id }"
+                        [queryParams]="{ revision: revision.id }"
                         queryParamsHandling="merge"
                         class="text-blue-600 hover:text-blue-800"
-                        [attr.aria-label]="'Open revision ' + row.revision.number"
-                        [attr.data-testid]="'mktg-document-view-open-' + row.revision.number"
+                        [attr.aria-label]="'Open revision ' + revision.number"
+                        [attr.data-testid]="'mktg-document-view-open-' + revision.number"
                         >Open</a
                       >
-                      @if (!row.revision.latest && current.type.kind === 'living') {
+                      @if (!revision.latest && current.type.kind === 'living') {
                         <button
                           type="button"
                           class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
                           [disabled]="writePending()"
-                          [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
-                          [attr.data-testid]="'mktg-document-view-restore-' + row.revision.number"
-                          (click)="onRestore(row.revision)">
-                          {{ restoringId() === row.revision.id ? 'Saving…' : 'Make current' }}
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [attr.data-testid]="'mktg-document-view-restore-' + revision.number"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          {{ restoringId() === revision.id ? 'Saving…' : 'Make current' }}
                         </button>
                       }
                     </span>
@@ -673,7 +666,7 @@
                 {{ showAllRevisions() ? 'Show fewer ▴' : 'Show all ' + revisionRows().length + ' ▾' }}
               </button>
             }
-            <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>
+            <p id="mktg-document-view-make-current-help" class="sr-only">{{ makeCurrentHint }}</p>
           </div>
 
           @if (current.type.agentKey === frameworkKey) {
@@ -692,12 +685,6 @@
               <dd>{{ current.type.agentName }}</dd>
               <dt class="text-gray-500">Stored</dt>
               <dd>{{ current.revision.createdAt | date: 'd MMM y, HH:mm' }}</dd>
-              <dt class="text-gray-500">Content hash</dt>
-              <dd class="relative font-mono" data-testid="mktg-document-view-hash">
-                <!-- The full hash is for screen readers; a title tooltip would be unreachable by keyboard on a <dd>. -->
-                <span aria-hidden="true">{{ shortHash() }}</span>
-                <span class="sr-only">{{ current.revision.contentSha256 }}</span>
-              </dd>
             </dl>
           </div>
         </section>

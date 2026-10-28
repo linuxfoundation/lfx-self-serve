@@ -14,20 +14,22 @@
       <lfx-mktg-comment-thread [comment]="thread" [labelContext]="labelContext()" />
     }
     @if (!comments.threads().length) {
-      <p class="text-sm text-gray-500" data-testid="mktg-comments-empty">No comments on this revision yet.</p>
+      <p class="text-sm text-gray-500" data-testid="mktg-comments-empty">No comments yet. To ask for a change, hover a field and choose Comment.</p>
     }
   }
-  <lfx-button
-    [label]="sendLabel()"
-    size="small"
-    [disabled]="!maySend()"
-    [ariaDescribedBy]="disabledReason() ? reasonId : undefined"
-    [loading]="runPending()"
-    (onClick)="send()"
-    data-testid="mktg-comments-send" />
-  <p [id]="reasonId" class="text-xs text-gray-600" [class.sr-only]="!disabledReason()" data-testid="mktg-comments-disabled-reason">
-    {{ disabledReason() }}
-  </p>
+  @if (!comments.loaded() || comments.loading() || comments.loadError() || openCount() > 0) {
+    <lfx-button
+      [label]="sendLabel()"
+      size="small"
+      [disabled]="!maySend()"
+      [ariaDescribedBy]="disabledReason() ? reasonId : undefined"
+      [loading]="runPending()"
+      (onClick)="send()"
+      data-testid="mktg-comments-send" />
+    <p [id]="reasonId" class="text-xs text-gray-600" [class.sr-only]="!disabledReason()" data-testid="mktg-comments-disabled-reason">
+      {{ disabledReason() }}
+    </p>
+  }
   @if (accepted() || activity().length) {
     <lfx-mktg-run-activity
       [activity]="activity()"
@@ -47,7 +49,4 @@
       data-testid="mktg-comments-release" />
     <p class="text-xs text-gray-500">Release permits a later explicit send. An already accepted run may still finish; nothing is sent automatically.</p>
   }
-  <p class="text-xs leading-relaxed text-gray-500">
-    Hover or focus a field and choose Comment. The thread stays with that field and is listed here. Comments are the only way to change an asset.
-  </p>
 </section>

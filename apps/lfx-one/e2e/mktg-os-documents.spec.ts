@@ -198,7 +198,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
   });
 
-  test('shows attribution, real comment counts, base and the non-newest Current badge', async ({ page }) => {
+  test('keeps table attribution but simplifies the document side panel and Make current help', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-revision-3')).toContainText('The writer');
@@ -208,12 +208,22 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('name unavailable');
     await page.getByTestId('mktg-documents-view-latest').click();
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
-    await expect(page.getByTestId('mktg-document-view-revision-3')).toContainText(/revised from 4 comments · based on v1\s*· The writer/);
-    await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('no name (stored before names were recorded)');
-    await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('name unavailable');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('Current since 14 Oct 2026');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toContainText('The writer');
-    await expect(page.getByTestId('mktg-document-view-current-since-3')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-revision-label-3')).toHaveText('v3 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-1')).toHaveText('v1 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-2')).toHaveText('v2 · Draft · 13 Oct · Current');
+    await expect(page.getByTestId('mktg-document-view-current-2')).toHaveText('Current');
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
+    await expect(page.getByText('Make current selects the revision agents read.', { exact: false })).toHaveCount(0);
+    const makeCurrent = page.getByTestId('mktg-document-view-restore-1');
+    const hint = 'Agents read the current version. Nothing is added or deleted.';
+    await makeCurrent.hover();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await makeCurrent.focus();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.screenshot({ path: test.info().outputPath('document-side-panel-focus-help.png'), fullPage: true });
   });
 
   test('historical documents default to newest without inventing current-selection attribution', async ({ page }) => {
@@ -232,9 +242,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-notice')).toContainText('No revision was added');
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 1 of 3');
     await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('Current');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('Current since 15 Oct 2026');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('The writer');
-    await expect(page.getByTestId('mktg-document-view-current-since-2')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-open-3').click();
     await expect(page.getByTestId('mktg-document-view-notice')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
