@@ -10905,12 +10905,18 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(logos(c)).toEqual([{ imageAssetId: UPLOADED }]);
   });
 
-  it('refuses a file that is not a PNG or JPEG before any upload, naming it on the slot', async () => {
-    const { c } = await mount(true);
+  it('refuses a file that is not a PNG or JPEG before any upload, blocking Create until it is removed', async () => {
+    const { c, latest } = await mount(true);
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(4)], 'logo.gif', { type: 'image/gif' }));
 
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
     expect(c['googleImageSlots']()[SLOT].error).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+    // The operator chose a file for this slot: its refusal holds Create and survives a tab switch.
+    expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
+    expect(latest()?.googleImageUploadFailedMessage).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+    expect(latest()?.googleImageUploadFailedSlot).toBe(SLOT);
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleImageAssetBlock']()).toBeNull();
   });
 
   it('holds Create while an upload runs, and Cancel aborts the Google upload', async () => {
@@ -11068,6 +11074,7 @@ describe('ImplementationTabComponent google stored images', () => {
     c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(6 * 1024 * 1024)], 'big.png', { type: 'image/png' }));
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
     expect(c['googleImageSlots']()[SLOT].error).toContain('up to 5 MB');
+    expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
   });
 
   it('stops holding Create for a running upload once its section is un-ticked', async () => {

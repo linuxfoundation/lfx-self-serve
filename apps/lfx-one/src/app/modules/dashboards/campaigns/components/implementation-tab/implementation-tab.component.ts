@@ -3260,24 +3260,30 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected onGoogleImageUpload(slotKey: string, file: File): void {
     this.clearGoogleImageUpload();
-    this.emitDraft();
 
+    // A file refused before upload is still one the operator chose for this slot, so the refusal
+    // is recorded against the open brief — it blocks Create (`uploadFailed`) and survives a tab
+    // switch until they remove it or choose again — rather than leaving the slot without it unsaid.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const refuse = (message: string): void => {
+      this.failGoogleImageUpload(message, briefId, slotKey);
+      this.emitDraft();
+    };
     if (!isCreativeAssetMimeType(file.type)) {
-      this.failGoogleImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, '', slotKey);
+      refuse(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
       return;
     }
     // Google's own cap, tighter than the library's: an image stored at 6 MB would be refused at
     // dispatch, so it is refused before it is uploaded.
     if (file.size > GOOGLE_CREATIVE_IMAGE_MAX_BYTES) {
-      this.failGoogleImageUpload(`Google takes images of up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB. Choose a smaller file.`, '', slotKey);
+      refuse(`Google takes images of up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB. Choose a smaller file.`);
       return;
     }
-    const briefId = this.briefPersistence().briefId ?? '';
     // `activeFoundationSlug`, the same source the library read keys on, so an upload lands in the
     // library the slot then reads.
     const projectSlug = this.activeFoundationSlug();
     if (!briefId || !projectSlug) {
-      this.failGoogleImageUpload('Save the brief before uploading an image for it.', '', slotKey);
+      refuse('Save the brief before uploading an image for it.');
       return;
     }
 
