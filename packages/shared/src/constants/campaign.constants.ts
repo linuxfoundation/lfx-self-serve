@@ -3058,6 +3058,9 @@ export const TWITTER_TCO_URL_WEIGHT = 23;
  */
 export const TWITTER_MAX_TWEET_RAW_BYTES = 8 * 1024;
 
+/** How far ahead of now X's UTC-midnight start must be, in ms (`minStartLead`, five minutes). */
+export const TWITTER_MIN_START_LEAD_MS = 5 * 60 * 1000;
+
 /**
  * Upper bound on an X daily budget (`maxBudgetUsd`, `internal/platform/twitter/client.go`), in the
  * ad ACCOUNT's currency. Refused by the client before any request, so a larger value is a dead job

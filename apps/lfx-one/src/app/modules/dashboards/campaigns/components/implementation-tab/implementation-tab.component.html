@@ -3609,14 +3609,35 @@
                 }
                 @case ('loaded') {
                   @switch (twitterAccountState().result?.connection?.state) {
+                    <!--
+                      Stated as the project connection's account, not as THE account: a deployment
+                      with LFX_FORCE_SYSTEM_ADS_ACCOUNT creates every paid campaign on the LF system
+                      connection instead, which this app cannot see. So an unbound connection warns
+                      rather than blocking Create, and offers Retry for after it is bound.
+                    -->
                     @case ('connected') {
                       <p class="text-sm text-gray-900" data-testid="implementation-twitter-account-connected">{{ twitterAccountLabel() }}</p>
+                      <p class="text-gray-500">
+                        The project's X connection is bound to this account. A deployment that forces the LF system account creates there instead.
+                      </p>
                     }
                     @case ('no_account') {
-                      <p role="alert" class="rounded-md bg-amber-50 px-3 py-2 text-amber-800" data-testid="implementation-twitter-account-unbound">
-                        This project's X connection has no ad account chosen, so campaign-service will refuse the create. Bind one of the
-                        {{ twitterAccountState().result?.accounts?.length ?? 0 }} accounts its credential reaches to the connection, then create again.
-                      </p>
+                      <div
+                        class="flex flex-col items-start gap-1 rounded-md bg-amber-50 px-3 py-2 text-amber-800"
+                        data-testid="implementation-twitter-account-unbound">
+                        <p role="alert">
+                          This project's X connection has no ad account chosen. Unless this deployment creates on the LF system account, campaign-service will
+                          refuse the create. Bind one of the {{ twitterAccountState().result?.accounts?.length ?? 0 }} accounts its credential reaches to the
+                          connection, then check again.
+                        </p>
+                        <lfx-button
+                          label="Check again"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onTwitterAccountRetry()"
+                          data-testid="implementation-twitter-account-unbound-retry" />
+                      </div>
                     }
                     @case ('no_connection') {
                       <p class="text-gray-700" data-testid="implementation-twitter-account-shared">

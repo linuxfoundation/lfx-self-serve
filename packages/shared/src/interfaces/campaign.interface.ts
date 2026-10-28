@@ -2086,7 +2086,9 @@ export interface TwitterCreateCapability {
  * project's X connection (`account_id`), and refuses the create with `ErrAccountNotSelected` when
  * that is empty. So `connection` is the answer that matters — `connected` names the account,
  * `no_account` is a create that will be refused, and `no_connection` means campaign-service falls
- * back to the LF system X connection. `accounts` is `list-twitter-ads-accounts`, the choices an
+ * back to the LF system X connection. One case this cannot see: a campaign-service running with
+ * `LFX_FORCE_SYSTEM_ADS_ACCOUNT` creates every paid campaign on the LF system connection whatever
+ * the project's says, so the UI states the project connection's account and never blocks on it. `accounts` is `list-twitter-ads-accounts`, the choices an
  * administrator can bind the connection to.
  */
 export interface TwitterAdsAccountsResult {

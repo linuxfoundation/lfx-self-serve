@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TWITTER_MAX_TWEET_WEIGHTED_CHARS, TWITTER_TCO_URL_WEIGHT } from '../constants/campaign.constants';
-import { twitterComposedTweetLength, twitterTweetTextError, twitterWeightedLength } from './campaign-twitter.utils';
+import { twitterComposedTweetLength, twitterStartDateTooSoon, twitterTweetTextError, twitterWeightedLength } from './campaign-twitter.utils';
 
 describe('twitterWeightedLength', () => {
   it('counts Latin text one per character', () => {
@@ -87,5 +87,15 @@ describe('twitterTweetTextError', () => {
 
   it('judges the trimmed copy, as campaign-service does', () => {
     expect(twitterComposedTweetLength('  hello  ')).toBe(5 + 1 + TWITTER_TCO_URL_WEIGHT);
+  });
+});
+
+describe('twitterStartDateTooSoon', () => {
+  it('refuses today, and tomorrow within five minutes of midnight UTC, as campaign-service does', () => {
+    expect(twitterStartDateTooSoon('2099-01-01', Date.parse('2099-01-01T10:00:00Z'))).toBe(true);
+    expect(twitterStartDateTooSoon('2099-01-02', Date.parse('2099-01-01T23:56:00Z'))).toBe(true);
+    expect(twitterStartDateTooSoon('2099-01-02', Date.parse('2099-01-01T23:55:00Z'))).toBe(true);
+    expect(twitterStartDateTooSoon('2099-01-02', Date.parse('2099-01-01T23:54:59Z'))).toBe(false);
+    expect(twitterStartDateTooSoon('not-a-date', Date.parse('2099-01-01T10:00:00Z'))).toBe(false);
   });
 });

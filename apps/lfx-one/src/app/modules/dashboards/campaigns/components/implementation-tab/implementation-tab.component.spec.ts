@@ -12379,6 +12379,23 @@ describe('ImplementationTabComponent x create', () => {
     expect(q(fixture, 'implementation-twitter-preview-link')?.textContent).not.toContain('edited-here');
   });
 
+  it('re-checks the X start at submit, refusing a start the clock has since made too soon', async () => {
+    const { fixture } = await mount(true);
+    fill(fixture);
+    expect(c(fixture)['canSubmit']()).toBe(true);
+
+    // Four minutes before the start's midnight UTC: inside campaign-service's five-minute lead.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2099-08-31T23:56:00Z'));
+    try {
+      c(fixture)['submit']();
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(createCampaign).not.toHaveBeenCalled();
+    expect(c(fixture)['errors']()[0]).toContain('more than five minutes ahead');
+  });
+
   it('accepts tweet text exactly at the cap once the link is appended', async () => {
     const { fixture } = await mount(true);
     fill(fixture, { twitterTweetText: 'a'.repeat(256) });
@@ -12467,13 +12484,35 @@ describe('ImplementationTabComponent x create', () => {
       expect(getTwitterAdsAccounts).not.toHaveBeenCalled();
     });
 
-    it('blocks Create when the connection has no account bound, which campaign-service refuses', async () => {
+    it('warns, without blocking Create, when the project connection has no account bound', async () => {
+      // Not a block: a deployment forcing the LF system account creates there regardless.
       getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_account', accountId: null, label: null }));
       const { fixture } = await mount(true);
       fill(fixture);
 
       expect(q(fixture, 'implementation-twitter-account-unbound')?.textContent).toContain('no ad account chosen');
-      expect(c(fixture)['canSubmit']()).toBe(false);
+      expect(c(fixture)['canSubmit']()).toBe(true);
+    });
+
+    it('re-reads the account from the unbound warning, so binding it elsewhere shows here', async () => {
+      getTwitterAdsAccounts.mockReturnValueOnce(accounts({ state: 'no_account', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+
+      (q(fixture, 'implementation-twitter-account-unbound-retry')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getTwitterAdsAccounts).toHaveBeenCalledTimes(2);
+      expect(q(fixture, 'implementation-twitter-account-connected')).not.toBeNull();
+    });
+
+    it('treats a connection campaign-service could not read as a failed read, with Retry', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'unavailable', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+
+      expect(q(fixture, 'implementation-twitter-account-error')).not.toBeNull();
+      expect(q(fixture, 'implementation-twitter-account-retry')).not.toBeNull();
     });
 
     it('says the LF shared account is used when the project has no X connection, and lets Create through', async () => {

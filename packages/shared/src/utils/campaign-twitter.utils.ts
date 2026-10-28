@@ -1,7 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TWITTER_MAX_TWEET_RAW_BYTES, TWITTER_MAX_TWEET_WEIGHTED_CHARS, TWITTER_TCO_URL_WEIGHT } from '../constants/campaign.constants';
+import {
+  TWITTER_MAX_TWEET_RAW_BYTES,
+  TWITTER_MAX_TWEET_WEIGHTED_CHARS,
+  TWITTER_MIN_START_LEAD_MS,
+  TWITTER_TCO_URL_WEIGHT,
+} from '../constants/campaign.constants';
+
+/**
+ * Whether campaign-service would refuse `startDate` as too soon at `nowMs`: it sends the date as
+ * UTC midnight and requires that instant to be MORE than `TWITTER_MIN_START_LEAD_MS` ahead
+ * (`minStartLead`, `CreateCampaign`). Today is always too soon, and tomorrow is too soon in the
+ * last five minutes before midnight UTC. A date that does not parse is left to the other checks.
+ */
+export function twitterStartDateTooSoon(startDate: string, nowMs: number): boolean {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  if (Number.isNaN(start)) return false;
+  return start <= nowMs + TWITTER_MIN_START_LEAD_MS;
+}
 
 /**
  * X tweet length, the client-side mirror of campaign-service's `weightedTweetLen` and

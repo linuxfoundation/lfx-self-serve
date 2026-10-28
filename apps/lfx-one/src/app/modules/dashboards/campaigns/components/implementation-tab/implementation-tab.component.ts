@@ -241,6 +241,7 @@ import {
   googlePromotionRefusal,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
+  twitterStartDateTooSoon,
   twitterTweetTextError,
 } from '@lfx-one/shared/utils';
 
@@ -2710,19 +2711,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly twitterTweetError = computed(() => twitterTweetTextError(this.twitterTweetText()));
 
   /**
-   * Why the flight cannot be sent to X, or `null`. X needs the line item's start in the FUTURE and
-   * campaign-service sends the start date as UTC midnight, so today's date is always refused: the
-   * earliest start is tomorrow, UTC. The end must be after the start, as for Meta and Reddit.
+   * Why the flight cannot be sent to X, or `null` — `twitterFlightErrorAt` at the time of the last
+   * form edit. A memo cannot see the clock move, so `submit` asks again at the moment it sends.
    */
   protected readonly twitterFlightError = computed<string | null>(() => {
     void this.campaignFormRevision();
-    const { startDate, endDate } = this.campaignForm.controls;
-    if (!startDate.value || !endDate.value) return null;
-    if (startDate.value <= new Date().toISOString().slice(0, 10)) {
-      return 'X needs a start date after today (UTC): it starts the campaign at midnight UTC on the start date, which must still be ahead.';
-    }
-    if (endDate.value <= startDate.value) return 'X needs an end date after the start date.';
-    return null;
+    return this.twitterFlightErrorAt(Date.now());
   });
 
   /** Bumped by the X account Retry; joins the read's key below, so a click re-reads. */
@@ -2735,13 +2729,6 @@ export class ImplementationTabComponent implements OnInit {
    * `switchMap` drops an answer for a foundation or attempt the operator has moved past.
    */
   protected readonly twitterAccountState: Signal<CampaignTwitterAccountState> = this.initTwitterAccountState();
-
-  /**
-   * Whether the read says the create will certainly be refused: the project's own X connection
-   * exists but has no ad account bound, which campaign-service refuses as `ErrAccountNotSelected`.
-   * Every other answer, including a failed or restricted read, leaves the create to campaign-service.
-   */
-  protected readonly twitterAccountUnbound = computed(() => this.twitterAccountState().result?.connection.state === 'no_account');
 
   /** The bound account's label, when the connection names one the credential also lists. */
   protected readonly twitterAccountLabel = computed(() => {
@@ -2953,7 +2940,6 @@ export class ImplementationTabComponent implements OnInit {
     // with its message on screen in the X section.
     if (this.twitterCreateBlock() !== null) return false;
     // An X connection with no ad account bound: campaign-service refuses that create outright.
-    if (twitterSelected && this.twitterAccountUnbound()) return false;
     if (twitterSelected && (this.twitterBudgetError() !== null || this.twitterTweetError() !== null || this.twitterFlightError() !== null)) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
@@ -4601,6 +4587,13 @@ export class ImplementationTabComponent implements OnInit {
 
   protected submit(): void {
     if (!this.canSubmit()) return;
+    // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
+    // open across midnight UTC would otherwise send a start campaign-service now refuses.
+    const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;
+    if (twitterFlightError !== null) {
+      this.errors.set([twitterFlightError]);
+      return;
+    }
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
@@ -5358,7 +5351,12 @@ export class ImplementationTabComponent implements OnInit {
         switchMap(({ slug, offered }) => {
           if (!offered || slug === '') return of(idle);
           return this.campaignService.getTwitterAdsAccounts(slug).pipe(
-            map((result): CampaignTwitterAccountState => ({ status: 'loaded', result })),
+            // A connection campaign-service could not read comes back inside a 200 as
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
+            map(
+              (result): CampaignTwitterAccountState =>
+                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
+            ),
             catchError((err: unknown) =>
               of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
             ),
@@ -5368,6 +5366,22 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: idle }
     );
+  }
+
+  /**
+   * Why the flight cannot be sent to X at `nowMs`, or `null`. campaign-service sends the start date
+   * as UTC midnight and refuses one not more than `TWITTER_MIN_START_LEAD_MS` ahead
+   * (`twitterStartDateTooSoon`), so near midnight UTC even tomorrow can be too soon. The end must be
+   * after the start, as for Meta and Reddit.
+   */
+  private twitterFlightErrorAt(nowMs: number): string | null {
+    const { startDate, endDate } = this.campaignForm.controls;
+    if (!startDate.value || !endDate.value) return null;
+    if (twitterStartDateTooSoon(startDate.value, nowMs)) {
+      return 'X needs the start date more than five minutes ahead of now: it starts the campaign at midnight UTC on that date. Pick a later start date.';
+    }
+    if (endDate.value <= startDate.value) return 'X needs an end date after the start date.';
+    return null;
   }
 
   /** `initBiddingCapabilityBlock`'s sibling for X as a whole, on the same capability read. */
