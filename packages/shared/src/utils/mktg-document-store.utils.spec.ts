@@ -24,6 +24,7 @@ import {
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
+  isMktgRunPendingQuestions,
   mktgRunResultIdentity,
   findMktgRunIntake,
   isMktgRunFailureReason,
@@ -87,6 +88,72 @@ describe('mktg-document-store utils', () => {
     expect(mktgRunProgress(run)).not.toHaveProperty('creatorSubject');
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
+  });
+  describe('writer-only pending questions', () => {
+    const turn = {
+      questionsId: SHA,
+      askedAt: '2026-10-19T00:01:00Z',
+      ownerToken: 'PRIVATE synthetic token',
+      questions: [
+        {
+          key: 'goal',
+          label: 'Goal',
+          question: 'Which synthetic goal?',
+          why: 'No selected goal.',
+          suggestedAnswer: 'Synthetic adoption',
+          basis: ['Synthetic framework'],
+          sessionId: 'PRIVATE synthetic session',
+        },
+      ],
+    };
+    it('projects the complete existing question payload to another project writer without private extras', () => {
+      const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
+      const progress = mktgRunProgress(run, undefined, undefined, 'synthetic-other-writer', true);
+      expect(progress?.pendingQuestions).toEqual({
+        questionsId: SHA,
+        askedAt: turn.askedAt,
+        questions: [
+          {
+            key: 'goal',
+            label: 'Goal',
+            question: 'Which synthetic goal?',
+            why: 'No selected goal.',
+            suggestedAnswer: 'Synthetic adoption',
+            basis: ['Synthetic framework'],
+          },
+        ],
+      });
+      expect(JSON.stringify(progress)).not.toContain('PRIVATE');
+      expect(progress).not.toHaveProperty('creatorSubject');
+    });
+    it('defaults to denying questions even to the creator without a verified writer grant', () => {
+      const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
+      expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator')).not.toHaveProperty('pendingQuestions');
+      expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator', false)).not.toHaveProperty('pendingQuestions');
+    });
+    it.each(MKTG_DOCUMENT_TYPES.filter((type) => type.kind === 'run'))('never exposes one-off questions for $agentKey even to a writer', (type) => {
+      expect(
+        mktgRunProgress(startedRun({ state: 'questions', agentKey: type.agentKey, pendingQuestions: turn }), undefined, undefined, 'synthetic-creator', true)
+      ).not.toHaveProperty('pendingQuestions');
+    });
+    it.each(['writing', 'storing', 'failed', 'completed', 'superseded', 'discarded'] as const)('omits a stale payload outside questions (%s)', (state) => {
+      expect(mktgRunProgress(startedRun({ state, pendingQuestions: turn }), undefined, undefined, 'synthetic-writer', true)?.pendingQuestions).toBeUndefined();
+    });
+    it('accepts typed suggestions/basis while rejecting malformed persisted turns', () => {
+      expect(isMktgRunPendingQuestions(turn)).toBe(true);
+      for (const invalid of [
+        undefined,
+        null,
+        {},
+        { ...turn, questionsId: '../private' },
+        { ...turn, askedAt: 'not-a-date' },
+        { ...turn, questions: {} },
+        { ...turn, questions: [{ ...turn.questions[0], basis: [{}] }] },
+        { ...turn, questions: [{ ...turn.questions[0], why: {} }] },
+      ]) {
+        expect(isMktgRunPendingQuestions(invalid)).toBe(false);
+      }
+    });
   });
   it('projects LinkedIn failure prose only to its known creator, while Member redacted text stays public', () => {
     const run = startedRun({

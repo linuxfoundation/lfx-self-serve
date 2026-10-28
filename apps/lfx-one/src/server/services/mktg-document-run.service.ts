@@ -45,10 +45,12 @@ import {
   MktgOneOffRunContext,
   MktgDocumentRunStartOptions,
   MktgRunActivity,
+  MktgRunPendingQuestions,
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
 import { MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { isMktgRunPendingQuestions } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
@@ -64,7 +66,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError, PreconditionFailedError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
@@ -83,7 +85,7 @@ import { MktgDocumentRedraftContextService } from './mktg-document-redraft-conte
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
-/** Private session-keyed starts. Existing metadata operations only; the terminal cache is disposable. */
+/** Private session-keyed starts and question turns; the terminal cache is disposable. */
 export class MktgDocumentRunService {
   private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
@@ -422,12 +424,12 @@ export class MktgDocumentRunService {
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
             }
-            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity, getEffectiveSub(req) ?? undefined);
+            return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
             if (coverage) coverage.lookupFailed = true;
-            return stored ? mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined) : null;
+            return stored ? this.publicProgress(req, stored.record) : null;
           }
         })
       );
@@ -505,8 +507,7 @@ export class MktgDocumentRunService {
               return;
             }
             const stored = await this.read(req, project, key);
-            const row =
-              stored && matchesMktgRunProgress(mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined), agentKey, documentId);
+            const row = stored && matchesMktgRunProgress(await this.publicProgress(req, stored.record), agentKey, documentId);
             if (row && stored) {
               rows.set(id, row);
               staleWindow ||=
@@ -527,15 +528,34 @@ export class MktgDocumentRunService {
     };
   }
 
+  /** Questions are project-writer data, never inferred from creator identity or a caller-provided capability. */
+  private async publicProgress(
+    req: Request,
+    run: MktgStartedRunRecord,
+    reply = run.failureText,
+    activity?: MktgRunActivity[]
+  ): Promise<MktgDocumentRunProgress | null> {
+    let writer = false;
+    if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
+      try {
+        const project = await this.projects.getProjectById(req, run.project, true);
+        writer = project.writer === true && project.uid === run.project;
+      } catch (err) {
+        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted because writer access could not be verified', { project: run.project, err });
+      }
+    }
+    return mktgRunProgress(run, reply, activity, getEffectiveSub(req) ?? undefined, writer);
+  }
+
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
   public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
-      return mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined);
+      return this.publicProgress(req, stored.record);
     }
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
-    return mktgRunProgress(record, result.failureText ?? result.reply, undefined, getEffectiveSub(req) ?? undefined);
+    return this.publicProgress(req, record, result.failureText ?? result.reply);
   }
 
   /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */
@@ -568,6 +588,23 @@ export class MktgDocumentRunService {
       await this.assertSingleActiveRun(req, project, stored.record.agentKey, { documentId: stored.record.documentId });
       await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, stored.record.answeredQuestionsId, 0);
     }
+  }
+
+  /** Resolve the private session only after canonical project-writer authorization; public IDs cannot select another partition. */
+  public async questionsForAnswers(req: Request, rawProject: unknown, runId: string, questionsId: string): Promise<MktgStartedRunRecord> {
+    if (!MKTG_STARTED_RUN_ID_REGEX.test(runId)) throw ServiceValidationError.forField('runId', 'A valid opaque run id is required.');
+    const requestedProject = typeof rawProject === 'string' ? rawProject.trim() : '';
+    const project = await this.resolveProject(req, requestedProject);
+    if (project !== requestedProject) throw new AuthorizationError('You need write access to this project to answer its run.');
+    const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
+    if (!stored) throw new ResourceNotFoundError('Marketing OS run', runId);
+    const run = stored.record;
+    if (MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.kind !== 'living')
+      throw new AuthorizationError('Only the writer who started this run can answer it.');
+    if (run.state !== 'questions') throw new PreconditionFailedError('This run is not waiting for answers. Refresh its progress.');
+    if (!run.pendingQuestions || run.pendingQuestions.questionsId !== questionsId)
+      throw new ConflictError('These questions have changed. Refresh the run before answering.', 'MKTG_RUN_QUESTIONS_CHANGED');
+    return run;
   }
 
   /** Caller validates before sending answers; invalid internal input is DEBUG, never a storage WARN. */
@@ -692,7 +729,15 @@ export class MktgDocumentRunService {
       );
     }
     if (result.status === 'questions' && (!result.questionsId || result.questionsId !== run.answeredQuestionsId)) {
-      return run.state === 'questions' ? run : this.mark(req, stored, 'questions', run.retryAt, undefined, run.answeredQuestionsId, 0, result.failureText);
+      const candidate = {
+        questionsId: result.questionsId,
+        questions: result.questions,
+        askedAt: run.pendingQuestions && run.pendingQuestions.questionsId === result.questionsId ? run.pendingQuestions.askedAt : new Date().toISOString(),
+      };
+      const pending =
+        MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living') && isMktgRunPendingQuestions(candidate) ? candidate : null;
+      if (run.state === 'questions' && JSON.stringify(run.pendingQuestions ?? null) === JSON.stringify(pending)) return run;
+      return this.mark(req, stored, 'questions', run.retryAt, undefined, run.answeredQuestionsId, 0, result.failureText, run.failureReason, pending);
     }
     if (run.state === 'questions' || (run.state === 'storing' && !staleReceipt)) {
       return run;
@@ -765,13 +810,17 @@ export class MktgDocumentRunService {
     questionsId = stored.record.answeredQuestionsId,
     persistRetries = stored.record.persistRetries,
     failureText = stored.record.failureText,
-    failureReason = stored.record.failureReason
+    failureReason = stored.record.failureReason,
+    pendingQuestions: MktgRunPendingQuestions | null = state === 'questions' ? (stored.record.pendingQuestions ?? null) : null
   ): Promise<MktgStartedRunRecord> {
     const run = stored.record;
+    const turn = state === 'questions' ? pendingQuestions : null;
+    const body =
+      JSON.stringify(run.pendingQuestions ?? null) === JSON.stringify(turn) ? stored.body : JSON.stringify({ ...run, pendingQuestions: turn ?? undefined });
     const written = await this.put(
       req,
       stored.key,
-      stored.body,
+      body,
       {
         state,
         'started-at': run.startedAt,
@@ -796,7 +845,8 @@ export class MktgDocumentRunService {
         }
         return (
           MKTG_STARTED_RUN_STATE_ORDER[state] > (MKTG_STARTED_RUN_STATE_ORDER[current] ?? -1) ||
-          (state === 'storing' && current === state && (persistRetries ?? 0) > Number(metadata['persist-retries'] ?? 0))
+          (state === 'storing' && current === state && (persistRetries ?? 0) > Number(metadata['persist-retries'] ?? 0)) ||
+          (state === 'questions' && current === state && JSON.stringify(run.pendingQuestions ?? null) !== JSON.stringify(pendingQuestions))
         );
       }
     );
@@ -932,6 +982,7 @@ export class MktgDocumentRunService {
       const attemptId = m['attempt-id'] ?? record.attemptId ?? 'initial';
       if (
         record.schema !== MKTG_STARTED_RUN_SCHEMA ||
+        (record.pendingQuestions !== undefined && !isMktgRunPendingQuestions(record.pendingQuestions)) ||
         record.project !== project ||
         !findMktgRunIntake(record.agentKey, true) ||
         record.documentId !== this.documentId(record.agentKey, record.sessionId) ||
@@ -966,6 +1017,7 @@ export class MktgDocumentRunService {
           acceptedAttemptIds: this.acceptedAttempts(m, attemptId),
           retryAt: m['retry-at'],
           answeredQuestionsId: m['answered-questions-id'],
+          pendingQuestions: state === 'questions' ? record.pendingQuestions : undefined,
           priorRevisionId: m['prior-revision-id'],
           persistRetries: Number(m['persist-retries'] ?? 0),
           failureText: m['failure-text'] === undefined ? undefined : Buffer.from(m['failure-text'], 'base64').toString('utf8'),

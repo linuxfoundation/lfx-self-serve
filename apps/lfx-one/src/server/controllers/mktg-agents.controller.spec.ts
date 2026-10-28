@@ -20,6 +20,7 @@ const runMocks = vi.hoisted(() => ({
   startForCatalogAgent: vi.fn(),
   recordResultBestEffort: vi.fn(),
   resumeAfterQuestions: vi.fn(),
+  questionsForAnswers: vi.fn(),
 }));
 const lastIntakeMocks = vi.hoisted(() => ({ read: vi.fn(), recordStartBestEffort: vi.fn() }));
 vi.mock('../services/mktg-last-intake.service', () => ({
@@ -36,6 +37,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public startForCatalogAgent = runMocks.startForCatalogAgent;
     public recordResultBestEffort = runMocks.recordResultBestEffort;
     public resumeAfterQuestions = runMocks.resumeAfterQuestions;
+    public questionsForAnswers = runMocks.questionsForAnswers;
   },
 }));
 const projectMocks = vi.hoisted(() => ({
@@ -192,6 +194,7 @@ import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   MKTG_AGENT_INTAKES,
+  MKTG_DOCUMENT_TYPES,
   MKTG_CHAT_MESSAGE_MAX_CHARS,
 } from '@lfx-one/shared/constants';
 import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../../../../../packages/shared/src/constants/mktg-intake.constants';
@@ -295,6 +298,99 @@ describe('MktgAgentsController', () => {
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  describe('public run answers POST', () => {
+    const request = (extra: Record<string, unknown> = {}) =>
+      ({
+        ...buildIcpReq(`/api/mktg-agents/runs/${publicRunId}/answers`, {
+          project: 'synthetic-project',
+          questionsId: 'c'.repeat(64),
+          answers: [{ key: 'voice', text: ' Synthetic answer ', origin: 'requester' }],
+          ...extra,
+        }),
+        params: { runId: publicRunId },
+      }) as Request;
+    beforeEach(() => {
+      authMocks.getEffectiveSub.mockReturnValue('auth0|user-1');
+      runMocks.questionsForAnswers.mockReset().mockResolvedValue({
+        runId: publicRunId,
+        agentKey: 'foundation-message',
+        sessionId: 'private-original-session',
+        project: 'synthetic-project',
+        creatorSubject: 'synthetic-original-writer',
+      });
+      for (const adapter of [brandKitMocks, foundationMessageMocks, boilerplatesMocks, faqMocks]) adapter.sendAnswers.mockReset().mockResolvedValue(undefined);
+    });
+    it.each([
+      { agentKey: 'foundation-message', adapter: foundationMessageMocks },
+      { agentKey: 'faq', adapter: faqMocks },
+    ])('answers another writer’s $agentKey through its existing domain sender without an owner token', async ({ agentKey, adapter }) => {
+      runMocks.questionsForAnswers.mockResolvedValue({
+        runId: publicRunId,
+        agentKey,
+        project: 'synthetic-project',
+        sessionId: 'private-original-session',
+        creatorSubject: 'synthetic-original-writer',
+      });
+      const req = request();
+      const res = buildRes();
+      await controller.runAnswers(req, res, next);
+      const handle = (await import('@lfx-one/shared/constants')).MKTG_AGENTS.find(
+        (agent) => agent.id === MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === agentKey)?.catalogAgentId
+      );
+      expect(next).not.toHaveBeenCalled();
+      expect(runMocks.questionsForAnswers).toHaveBeenCalledWith(req, 'synthetic-project', publicRunId, 'c'.repeat(64));
+      expect(adapter.sendAnswers).toHaveBeenCalledWith(
+        req,
+        'private-original-session',
+        [{ key: 'voice', text: 'Synthetic answer', origin: 'requester' }],
+        handle?.status === 'active' ? handle.guildAgentHandle : undefined
+      );
+      expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'synthetic-project', 'private-original-session', 'c'.repeat(64));
+      expect(adapter.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
+      expect(res.json).toHaveBeenCalledWith({ runId: publicRunId, state: 'writing' });
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain('private-original');
+    });
+    it('never sends or resumes after a scoped authorization/state failure', async () => {
+      const failure = new AuthorizationError('Synthetic writer access required.');
+      runMocks.questionsForAnswers.mockRejectedValueOnce(failure);
+      const res = buildRes();
+      await controller.runAnswers(request(), res, next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+    it('retains the domain answer validators and refuses blank answers', async () => {
+      await controller.runAnswers(request({ answers: [{ key: 'voice', text: ' ', origin: 'requester' }] }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it('does not renew the run when the existing sender rejects a stale question turn', async () => {
+      const failure = ServiceValidationError.forField('answers', 'Synthetic question turn changed.');
+      foundationMessageMocks.sendAnswers.mockRejectedValueOnce(failure);
+      await controller.runAnswers(request(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it('preserves the comments-only redraft refusal without sending', async () => {
+      redraftContext.mockResolvedValueOnce({ runId: publicRunId });
+      await controller.runAnswers(request(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+    it('rejects malformed ids before private storage and requires an identified caller', async () => {
+      await controller.runAnswers(request({ questionsId: '../private' }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(runMocks.questionsForAnswers).not.toHaveBeenCalled();
+      authMocks.getEffectiveSub.mockReturnValueOnce(null);
+      await controller.runAnswers(request(), buildRes(), next);
+      expect(next).toHaveBeenLastCalledWith(expect.any(AuthenticationError));
+      expect(runMocks.questionsForAnswers).not.toHaveBeenCalled();
+    });
   });
 
   describe('last intake GET', () => {

@@ -8,11 +8,16 @@
 // every sha with node:crypto.
 
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '../constants/mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_QUESTIONS_ID_REGEX } from '../constants/mktg-run.constants';
 import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
 import type { Member360FailureReason } from '../interfaces/member-360.interface';
-import type { MktgDocumentRunProgress, MktgStartedRunRecord, MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
+import type {
+  MktgDocumentRunProgress,
+  MktgStartedRunRecord,
+  MktgStoredDocumentRunState,
+  MktgRunPendingQuestions,
+} from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_ID_REGEX,
@@ -169,12 +174,35 @@ export function findMktgRunIntake(key: string, includeOneOff = false) {
     : undefined;
 }
 
+/** Absent legacy turns are allowed; present turns contain only the existing typed question payload. */
+export function isMktgRunPendingQuestions(value: unknown): value is MktgRunPendingQuestions {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const turn = value as Record<string, unknown>;
+  return (
+    typeof turn['questionsId'] === 'string' &&
+    MKTG_RUN_QUESTIONS_ID_REGEX.test(turn['questionsId']) &&
+    typeof turn['askedAt'] === 'string' &&
+    Number.isFinite(Date.parse(turn['askedAt'])) &&
+    Array.isArray(turn['questions']) &&
+    turn['questions'].every((value: unknown) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+      const question = value as Record<string, unknown>;
+      return (
+        ['key', 'label', 'question', 'why', 'suggestedAnswer'].every((key) => typeof question[key] === 'string') &&
+        Array.isArray(question['basis']) &&
+        question['basis'].every((basis: unknown) => typeof basis === 'string')
+      );
+    })
+  );
+}
+
 /** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
 export function mktgRunProgress(
   run: MktgStartedRunRecord,
   fullReply = run.failureText,
   activity?: MktgRunActivity[],
-  readerSubject?: string
+  readerSubject?: string,
+  readerIsWriter = false
 ): MktgDocumentRunProgress | null {
   if (run.state === 'completed' || run.state === 'superseded' || run.state === 'discarded') {
     return null;
@@ -190,6 +218,23 @@ export function mktgRunProgress(
     startedAt: run.startedAt,
     state: run.state,
     ...(activity && { activity }),
+    ...(readerIsWriter &&
+      run.state === 'questions' &&
+      isMktgRunPendingQuestions(run.pendingQuestions) &&
+      MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living') && {
+        pendingQuestions: {
+          questionsId: run.pendingQuestions.questionsId,
+          askedAt: run.pendingQuestions.askedAt,
+          questions: run.pendingQuestions.questions.map(({ key, label, question, why, suggestedAnswer, basis }) => ({
+            key,
+            label,
+            question,
+            why,
+            suggestedAnswer,
+            basis,
+          })),
+        },
+      }),
     ...(run.state === 'failed' && failureText !== undefined && { failureText }),
     ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
     ...(run.state === 'failed' && (run.persistRetries ?? 0) >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS && { persistenceFailed: true }),
