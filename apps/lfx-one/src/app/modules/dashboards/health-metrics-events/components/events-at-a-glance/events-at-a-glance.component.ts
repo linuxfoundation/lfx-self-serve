@@ -13,7 +13,12 @@ import { combineLatest } from 'rxjs';
 import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceStatus,
+  HealthMetricsEventsAtAGlanceView,
+  HealthMetricsRange,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * `#kpi` — reach across every event in the period. The Events tab owns the read, since the same
@@ -33,21 +38,36 @@ export class EventsAtAGlanceComponent {
 
   /** Fires as the read starts, so the L2 shell knows this section's height is about to move. */
   public readonly reading = output<void>();
-  /** Fires once the read lands and on every period change — this section's height moves either way. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the read lands and on every period change — this section's height moves either way — `true`
+   * when the period was never measured.
+   */
+  public readonly settled = output<boolean>();
 
   protected readonly footnote = HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE;
 
   protected readonly view: Signal<HealthMetricsEventsAtAGlanceView> = computed(() =>
     buildHealthMetricsEventsAtAGlanceView(this.glance(), this.chrome.selectedRange())
   );
+  /** The period was never measured or held nothing; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => this.status() === 'ready' && isEmptyPeriod(this.glance(), this.chrome.selectedRange()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
       // A period change re-projects the loaded read, so it re-settles like a landed read.
       combineLatest([toObservable(this.status), toObservable(this.chrome.selectedRange)])
         .pipe(takeUntilDestroyed())
-        .subscribe(([status]) => (status === 'loading' ? this.reading.emit() : this.settled.emit()));
+        .subscribe(([status]) =>
+          status === 'loading' ? this.reading.emit() : this.settled.emit(status === 'ready' && isEmptyPeriod(this.glance(), this.chrome.selectedRange()))
+        );
     }
   }
+}
+
+/** The period was never measured, or none of its activity counts nor an upcoming event shows anything; a quiet one is zero-filled. */
+function isEmptyPeriod(glance: HealthMetricsEventsAtAGlance, range: HealthMetricsRange): boolean {
+  const period = glance.periods.find((candidate) => candidate.range === range);
+  const upcoming = range === 'YTD' ? glance.upcomingEvents : 0;
+  const counts = period && [period.events, period.pastEvents, period.registrations, period.attendees, period.organizations, period.speakers, period.countries];
+  return !counts || (!upcoming && !counts.some(Boolean));
 }

@@ -5,11 +5,10 @@ import { Component, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_TRAINING_NO_PROGRAMME, HEALTH_METRICS_TRAINING_SECTIONS } from '@lfx-one/shared/constants';
-import { AnalyticsService } from '@services/analytics.service';
+import { HEALTH_METRICS_TRAINING_BLANK, HEALTH_METRICS_TRAINING_SECTIONS } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -17,13 +16,10 @@ import { TrainingCoursesComponent } from './components/training-courses/training
 import { TrainingEnrollComponent } from './components/training-enroll/training-enroll.component';
 import { HealthMetricsTrainingComponent } from './health-metrics-training.component';
 
-import type { HealthMetricsTrainingPresence } from '@lfx-one/shared/interfaces';
-import type { Observable } from 'rxjs';
-
 /** Stands in for Enrollment & revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-enroll', template: '<div data-testid="training-enroll-stub"></div>' })
 class EnrollStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -31,25 +27,21 @@ class EnrollStubComponent {
 @Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
 class CoursesStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-// Covers the presence gate and what Training wires into the shell; scroll-spy is the shell's own spec.
+// Covers what Training wires into the shell; scroll-spy and the empty states are the shell's own spec.
 describe('HealthMetricsTrainingComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsTrainingComponent>;
-  let getTrainingPresence: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
-  async function setup(presence: Observable<HealthMetricsTrainingPresence> = of({ hasProgramme: true }), initialFragment: string | null = null): Promise<void> {
-    getTrainingPresence = vi.fn().mockReturnValue(presence);
-
+  async function setup(initialFragment: string | null = null): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsTrainingComponent],
       providers: [
         HealthMetricsChromeService,
-        { provide: AnalyticsService, useValue: { getTrainingPresence } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
@@ -88,13 +80,6 @@ describe('HealthMetricsTrainingComponent', () => {
 
   afterEach(() => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
-  });
-
-  it('reads presence for the selected foundation only', async () => {
-    await setup();
-
-    expect(getTrainingPresence).toHaveBeenCalledTimes(1);
-    expect(getTrainingPresence).toHaveBeenCalledWith({ foundationSlug: 'acme' });
   });
 
   it('renders both sections in order, each anchored with its design copy', async () => {
@@ -138,68 +123,46 @@ describe('HealthMetricsTrainingComponent', () => {
   });
 
   it('re-lands a held deep link as each data section settles, releasing it once both have', async () => {
-    await setup(of({ hasProgramme: true }), 'courses');
+    await setup('courses');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
 
     const enroll = stub(EnrollStubComponent);
-    enroll.settled.emit();
+    enroll.settled.emit(false);
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(CoursesStubComponent).settled.emit();
+    stub(CoursesStubComponent).settled.emit(false);
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('training-sub-nav-courses');
 
     scrollIntoView.mockClear();
-    enroll.settled.emit();
+    enroll.settled.emit(false);
     await flush();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
-  it('holds the skeleton while presence is reading, then renders the shell', async () => {
-    const presence = new Subject<HealthMetricsTrainingPresence>();
-    await setup(presence);
-
-    expect(testId('training-loading')).not.toBeNull();
-    expect(testId('health-metrics-training-page')).toBeNull();
-
-    presence.next({ hasProgramme: true });
-    await flush();
-    expect(testId('training-loading')).toBeNull();
-    expect(testId('health-metrics-training-page')).not.toBeNull();
-  });
-
-  it('replaces the sections with one empty card when the foundation runs no training', async () => {
-    await setup(of({ hasProgramme: false }));
-    const card = testId('training-no-programme') as HTMLElement;
-
-    expect(card.textContent).toContain(HEALTH_METRICS_TRAINING_NO_PROGRAMME.title);
-    expect(card.textContent).toContain(HEALTH_METRICS_TRAINING_NO_PROGRAMME.body);
-    expect(testId('training-no-programme-hint')?.textContent).toContain(HEALTH_METRICS_TRAINING_NO_PROGRAMME.hint);
-    expect(testId('health-metrics-training-page')).toBeNull();
-  });
-
-  it('shows an error, not the no-training card, when the presence read fails', async () => {
-    await setup(throwError(() => new Error('boom')));
-
-    expect(testId('training-error')?.textContent).toContain('Training unavailable');
-    expect(testId('training-no-programme')).toBeNull();
-    expect(testId('health-metrics-training-page')).toBeNull();
-  });
-
-  it('re-reads when the foundation changes and holds the skeleton while none is selected', async () => {
+  it('swaps the sections for the Training blank card once both settle empty', async () => {
     await setup();
 
-    selectedFoundation.set(null);
+    stub(EnrollStubComponent).settled.emit(true);
+    stub(CoursesStubComponent).settled.emit(true);
     await flush();
-    expect(testId('training-loading')).not.toBeNull();
 
-    getTrainingPresence.mockReturnValue(of({ hasProgramme: false }));
-    selectedFoundation.set({ slug: 'globex' });
+    expect(testId('training-blank')?.querySelector('h2')?.textContent).toBe('No training data yet');
+    expect(testId('training-blank-lead')?.textContent).toBe(HEALTH_METRICS_TRAINING_BLANK.lead);
+    expect(testId('health-metrics-training-page')?.className).toContain('hidden');
+  });
+
+  it('keeps the sections when one of them has data', async () => {
+    await setup();
+
+    stub(EnrollStubComponent).settled.emit(true);
+    stub(CoursesStubComponent).settled.emit(false);
     await flush();
-    expect(getTrainingPresence).toHaveBeenLastCalledWith({ foundationSlug: 'globex' });
-    expect(testId('training-no-programme')).not.toBeNull();
+
+    expect(testId('training-blank')).toBeNull();
+    expect(testId('training-section-empty-enroll')).not.toBeNull();
   });
 });

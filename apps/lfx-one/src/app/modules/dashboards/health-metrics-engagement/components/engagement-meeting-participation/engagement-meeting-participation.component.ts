@@ -63,8 +63,8 @@ export class EngagementMeetingParticipationComponent {
 
   /** The hero's cross-links; the L2 shell owns scrolling, so both land the same way. */
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -93,6 +93,8 @@ export class EngagementMeetingParticipationComponent {
     const total = this.response().total;
     return total ? selectHealthMetricsEngagementParticipationPeriod(total, this.chrome.selectedRange()) : null;
   });
+  /** No meetings were recorded for the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.totalPeriod());
   /** `null` when the roll-up row itself carries no group total — kept distinct from a measured 0. */
   protected readonly totalGroups = computed(() => this.response().total?.totalGroups ?? null);
   /** Shared "12 / 27" ratio cell — "—" when the roll-up hasn't measured either side. */
@@ -229,13 +231,15 @@ export class EngagementMeetingParticipationComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
               // the hero cannot report an unread period as having no meetings.
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && !(response.total && selectHealthMetricsEngagementParticipationPeriod(response.total, query.range)));
+              }
             })
           )
         )
