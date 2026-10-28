@@ -70,11 +70,11 @@ export class OrgPeopleContributorsService {
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope),
         isMaintainerRoleRows,
-        // `null` (roles table missing) is served as no roles and never stored.
+        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored.
         (value) => value !== null
       ),
     ]);
-    return buildResponse(accountId, timeRange, filters, rows, roles ?? []);
+    return buildResponse(accountId, timeRange, filters, rows, roles);
   }
 
   /**
@@ -145,16 +145,17 @@ function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
  * Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active by the
  * metric), stats, foundationOptions[], projectOptions[]. `commits` is the commit scope's column (authored or merged).
  * A person is a Maintainer when they hold a role in `roles`; a project row, when they hold one on that project.
+ * `roles` is `null` when the roles table is missing: nobody is badged and the Maintainer roles stat is `null`.
  */
 function buildResponse(
   accountId: string,
   timeRange: OrgLensTimeRange,
   filters: OrgCommitFilters,
   raw: ContributorPersonProjectRow[],
-  roles: OrgContributorMaintainerRoleRow[]
+  roles: OrgContributorMaintainerRoleRow[] | null
 ): OrgContributorsResponse {
-  const maintainerPeople = new Set(roles.map((role) => role.PERSON_KEY));
-  const maintainerPersonProjects = new Set(roles.map((role) => tupleKey([role.PERSON_KEY, role.PROJECT_ID])));
+  const maintainerPeople = new Set((roles ?? []).map((role) => role.PERSON_KEY));
+  const maintainerPersonProjects = new Set((roles ?? []).map((role) => tupleKey([role.PERSON_KEY, role.PROJECT_ID])));
   const commitsColumn: ContributorCountColumn = filters.commitScope === 'merged' ? 'MERGED_COMMITS' : 'COMMITS';
   const mostActiveColumn: ContributorCountColumn = filters.metric === 'code' ? 'CODE_ACTIVITIES' : commitsColumn;
   const projects: OrgContributorProjectRow[] = [];
@@ -263,13 +264,17 @@ function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonP
 
 /**
  * Item 3 lock: all over the BFF response, not the active filter. Maintainer roles are distinct (member, Insights
- * project) pairs overlapping the window, with or without code; Contributors are everyone with code in it.
+ * project) pairs overlapping the window, with or without code (`null` when the roles are unavailable); Contributors
+ * are everyone with code in it.
  */
-function computeStats(roles: OrgContributorMaintainerRoleRow[], contributors: number, projects: number, foundations: number): OrgContributorStatsBaseline {
-  const maintainerRoles = new Set(roles.map((role) => tupleKey([role.MEMBER_ID, role.SEGMENT_ID]))).size;
+function computeStats(
+  roles: OrgContributorMaintainerRoleRow[] | null,
+  contributors: number,
+  projects: number,
+  foundations: number
+): OrgContributorStatsBaseline {
   return {
-    maintainerRoles,
-    maintainers: maintainerRoles,
+    maintainerRoles: roles === null ? null : new Set(roles.map((role) => tupleKey([role.MEMBER_ID, role.SEGMENT_ID]))).size,
     contributors,
     projects,
     foundations,

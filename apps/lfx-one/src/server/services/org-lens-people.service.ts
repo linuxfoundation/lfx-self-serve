@@ -179,7 +179,8 @@ export class OrgLensPeopleService {
    * from a live warehouse view that takes seconds, so callers render activity without waiting for it. A code
    * project carries the Maintainer pill when the person holds a maintainer role on it overlapping
    * `maintainerRange` (lfx-self-serve#4482) — the page range for the All Employees row, the opener's range or the
-   * past 365 days for the drawer.
+   * past 365 days for the drawer. When the roles table is missing no project is pilled and the detail says so with
+   * `maintainerRolesUnavailable`.
    */
   public async getEmployeeDetail(
     req: Request,
@@ -197,7 +198,7 @@ export class OrgLensPeopleService {
       this.fetchEmployeeActivityRaw(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
     ]);
-    const maintainerProjects = new Set(maintainerProjectIds);
+    const maintainerProjects = new Set(maintainerProjectIds ?? []);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -218,6 +219,7 @@ export class OrgLensPeopleService {
       totalCommits: codeRows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
       events,
       training,
+      ...(maintainerProjectIds === null ? { maintainerRolesUnavailable: true } : {}),
     };
   }
 
@@ -672,13 +674,13 @@ export class OrgLensPeopleService {
 
   /**
    * Projects in which the person holds a maintainer role overlapping the range; cached per (person, range) like the
-   * activity rows. `null` (roles table missing) shows no pill and is never stored.
+   * activity rows. `null` (roles table missing) is unavailable — no pill — and is never stored.
    */
-  private async fetchMaintainerProjectIds(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
+  private async fetchMaintainerProjectIds(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[] | null> {
     if (!isFilterSafeIdentifier(personKey)) {
-      return (await this.runMaintainerProjectIdsFetch(accountId, personKey, range)) ?? [];
+      return this.runMaintainerProjectIdsFetch(accountId, personKey, range);
     }
-    const projectIds = await withOrgCache(
+    return withOrgCache(
       accountId,
       `people-detail-roles:v1:${personKey}:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
@@ -686,7 +688,6 @@ export class OrgLensPeopleService {
       (value) => Array.isArray(value) && value.every((projectId) => typeof projectId === 'string'),
       (value) => value !== null
     );
-    return projectIds ?? [];
   }
 
   private async runMaintainerProjectIdsFetch(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[] | null> {

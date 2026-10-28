@@ -74,8 +74,8 @@ interface RawFoundationProjectRow {
   PROJECT_NAME: string | null;
   IS_LF_PROJECT: boolean;
   INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket;
-  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482), merged in from their own read. */
-  MAINTAINER_ROLES: number;
+  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482), merged in from their own read; `null` when the roles table is missing. */
+  MAINTAINER_ROLES: number | null;
   CONTRIBUTORS_COUNT: number;
   COLLABORATORS_COUNT: number;
   COMMITS_COUNT: number;
@@ -231,7 +231,7 @@ export class OrgLensMembershipsService {
       projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
       isLfProject: raw.IS_LF_PROJECT === true,
       influence: raw.INFLUENCE_MAX_BUCKET,
-      maintainers: raw.IS_LF_PROJECT === true ? (raw.MAINTAINER_ROLES ?? 0) : 0,
+      maintainers: raw.IS_LF_PROJECT === true ? raw.MAINTAINER_ROLES : 0,
       contributors: raw.CONTRIBUTORS_COUNT ?? 0,
       collaborators: raw.COLLABORATORS_COUNT ?? 0,
       commits: raw.COMMITS_COUNT ?? 0,
@@ -389,7 +389,7 @@ export class OrgLensMembershipsService {
     );
   }
 
-  /** The foundation's project rows with their LF maintainer roles, which come from their own read so a missing roles table leaves them at zero. */
+  /** The foundation's project rows with their LF maintainer roles, which come from their own read so a missing roles table leaves them unavailable (`null`). */
   private async fetchFoundationProjectRows(accountId: string, foundationId: string): Promise<{ rows: RawFoundationProjectRow[]; rolesMissing: boolean }> {
     const query = `
       SELECT
@@ -412,7 +412,7 @@ export class OrgLensMembershipsService {
       fetchLfProjectMaintainerRoles(this.snowflakeService, accountId),
     ]);
     return {
-      rows: result.rows.map((row) => ({ ...row, MAINTAINER_ROLES: roles?.get(row.PROJECT_ID) ?? 0 })),
+      rows: result.rows.map((row) => ({ ...row, MAINTAINER_ROLES: roles === null ? null : (roles.get(row.PROJECT_ID) ?? 0) })),
       rolesMissing: roles === null,
     };
   }

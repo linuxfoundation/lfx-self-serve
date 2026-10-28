@@ -170,6 +170,11 @@ interface RosterProvider {
   orderBy: string;
   /** Map one fetched row to its drawer cells. */
   map: (row: Record<string, unknown>) => OrgLensCardDetailRow;
+  /**
+   * Paged instead — served, never stored — when the statement fails only because `missingObject` (an optional
+   * enrichment join) does not exist; a missing table of the fallback itself still degrades to an empty roster.
+   */
+  fallback?: { missingObject: string; provider: RosterProvider };
 }
 
 /**
@@ -532,33 +537,22 @@ export class OrgLensProjectDetailService {
       if (cached !== null) return cached;
     }
 
-    const slugColumn = provider.slugColumn ?? 'PROJECT_SLUG';
-    const whereExtra = provider.where ? ` AND ${provider.where}` : '';
-    const binds = [orgUid, slug, ...(provider.whereBinds ?? [])];
-    let result: OrgLensCardRosterPage;
+    let result: OrgLensCardRosterPage | null = null;
     let degradedMissingObject = false;
     try {
-      const [pageResult, countResult] = await Promise.all([
-        this.snowflakeService.execute<Record<string, unknown>>(
-          `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ${safeSize} OFFSET ${offset}`,
-          binds,
-          { expectMissingObject: true }
-        ),
-        this.snowflakeService.execute<{ N: number }>(
-          `SELECT ${provider.countExpression ?? 'COUNT(*)'} AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra}`,
-          binds,
-          { expectMissingObject: true }
-        ),
-      ]);
-      result = {
-        rows: pageResult.rows.map((row) => provider.map(row)),
-        total: this.num(countResult.rows[0]?.N ?? 0),
-      };
+      result = await this.fetchRosterPage(provider, orgUid, slug, safeSize, offset);
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
       degradedMissingObject = true;
-      result = { rows: [], total: 0 };
+      const fallback = provider.fallback;
+      if (fallback && SnowflakeService.isMissingObjectError(error, fallback.missingObject)) {
+        result = await this.fetchRosterPage(fallback.provider, orgUid, slug, safeSize, offset).catch((fallbackError: unknown) => {
+          if (!SnowflakeService.isMissingObjectError(fallbackError)) throw fallbackError;
+          return null;
+        });
+      }
     }
+    result ??= { rows: [], total: 0 };
     if (key !== null && !degradedMissingObject) {
       await valkeyService.setJson(key, result, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -621,7 +615,7 @@ export class OrgLensProjectDetailService {
     const cards = cardRows[0] ?? null;
 
     const block: OrgLensInfluenceBlock = {
-      technical: this.buildTechnicalCards(cards, maintainerRoles ?? 0, sparkData.index, sparkData.axis),
+      technical: this.buildTechnicalCards(cards, maintainerRoles, sparkData.index, sparkData.axis),
       ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparkData.index, sparkData.axis),
       isNonLfProject: isNonLf,
       levels: {
@@ -632,7 +626,7 @@ export class OrgLensProjectDetailService {
       // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
-    // A block read while the roles table is missing (its maintainers card at zero) is served, never stored.
+    // A block read while the roles table is missing (its maintainers card unavailable) is served, never stored.
     if (key !== null && maintainerRoles !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -1452,6 +1446,29 @@ export class OrgLensProjectDetailService {
     return details;
   }
 
+  /** One roster page and its total; a missing table rejects (`expectMissingObject`) so the caller can degrade. */
+  private async fetchRosterPage(provider: RosterProvider, orgUid: string, slug: string, pageSize: number, offset: number): Promise<OrgLensCardRosterPage> {
+    const slugColumn = provider.slugColumn ?? 'PROJECT_SLUG';
+    const whereExtra = provider.where ? ` AND ${provider.where}` : '';
+    const binds = [orgUid, slug, ...(provider.whereBinds ?? [])];
+    const [pageResult, countResult] = await Promise.all([
+      this.snowflakeService.execute<Record<string, unknown>>(
+        `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ${pageSize} OFFSET ${offset}`,
+        binds,
+        { expectMissingObject: true }
+      ),
+      this.snowflakeService.execute<{ N: number }>(
+        `SELECT ${provider.countExpression ?? 'COUNT(*)'} AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra}`,
+        binds,
+        { expectMissingObject: true }
+      ),
+    ]);
+    return {
+      rows: pageResult.rows.map((row) => provider.map(row)),
+      total: this.num(countResult.rows[0]?.N ?? 0),
+    };
+  }
+
   /** Per-card roster provider (wrapper table + projection + optional predicate + order + row mapping); null when a card has no roster. */
   private rosterProvider(cardKey: string, range: OrgLensLeaderboardTimeRange): RosterProvider | null {
     switch (cardKey) {
@@ -1572,21 +1589,12 @@ export class OrgLensProjectDetailService {
       case 'maintainers': {
         // One row per maintainer role (person × Insights project unit) overlapping the toggle's range, totalled with the
         // card's own distinct count. The avatar comes from the person's row on this project in ORG_LENS_PROJECT_PEOPLE,
-        // as on the Projects page; a missing roles table degrades to an empty roster like every other card's.
+        // as on the Projects page; when that table is missing the roster is paged without avatars rather than emptied,
+        // while a missing roles table degrades to an empty roster like every other card's.
         const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
-        return {
-          table: `(
-            SELECT r.ACCOUNT_ID, r.INSIGHTS_PROJECT_SLUG, r.MEMBER_ID, r.SEGMENT_ID, r.MAINTAINER_NAME, r.ROLE_START_DATE, r.ROLE_END_DATE,
-                   pp.PERSON_AVATAR_URL
-            FROM ${this.maintainerRolesTable()} r
-            LEFT JOIN (
-              SELECT ACCOUNT_ID, LOWER(PROJECT_SLUG) AS PROJECT_SLUG, PARTICIPANT_ID, MAX(PARTICIPANT_AVATAR_URL) AS PERSON_AVATAR_URL
-              FROM ${this.projectPeopleTable()}
-              GROUP BY ACCOUNT_ID, LOWER(PROJECT_SLUG), PARTICIPANT_ID
-            ) pp
-              ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID
-          )`,
-          select: 'MAINTAINER_NAME, PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
+        const withoutAvatars: RosterProvider = {
+          table: this.maintainerRolesTable(),
+          select: 'MAINTAINER_NAME, NULL AS PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
           slugColumn: 'INSIGHTS_PROJECT_SLUG',
           where: overlap.sql,
           whereBinds: overlap.binds,
@@ -1605,6 +1613,22 @@ export class OrgLensProjectDetailService {
               { text: r['ROLE_END_DATE'] === null || r['ROLE_END_DATE'] === undefined ? 'Current' : this.formatDrawerDate(this.dateVal(r['ROLE_END_DATE'])) },
             ],
           }),
+        };
+        return {
+          ...withoutAvatars,
+          table: `(
+            SELECT r.ACCOUNT_ID, r.INSIGHTS_PROJECT_SLUG, r.MEMBER_ID, r.SEGMENT_ID, r.MAINTAINER_NAME, r.ROLE_START_DATE, r.ROLE_END_DATE,
+                   pp.PERSON_AVATAR_URL
+            FROM ${this.maintainerRolesTable()} r
+            LEFT JOIN (
+              SELECT ACCOUNT_ID, LOWER(PROJECT_SLUG) AS PROJECT_SLUG, PARTICIPANT_ID, MAX(PARTICIPANT_AVATAR_URL) AS PERSON_AVATAR_URL
+              FROM ${this.projectPeopleTable()}
+              GROUP BY ACCOUNT_ID, LOWER(PROJECT_SLUG), PARTICIPANT_ID
+            ) pp
+              ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID
+          )`,
+          select: 'MAINTAINER_NAME, PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
+          fallback: { missingObject: 'ORG_LENS_PROJECT_PEOPLE', provider: withoutAvatars },
         };
       }
       case 'collaboration':
@@ -1977,7 +2001,8 @@ export class OrgLensProjectDetailService {
     return category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : null;
   }
 
-  private buildTechnicalCards(cards: CardsRow | null, maintainerRoles: number, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
+  /** `maintainerRoles` is `null` when the roles table is missing: the card shows the no-data caption, never "no maintainer roles". */
+  private buildTechnicalCards(cards: CardsRow | null, maintainerRoles: number | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
     const mergePct = cards?.TECH_AVG_MERGE_TIME_SPEED_PCT;
     const mergeCategory = cards?.TECH_AVG_MERGE_TIME_SPEED_CATEGORY;
     // The warehouse returns NULL speed % + category when there is no merged-PR data for the project

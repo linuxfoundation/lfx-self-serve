@@ -663,6 +663,23 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:90d`)!)).toBe(true);
   });
 
+  it('flags the roles unavailable, shows no pill, and stores no roles, when the roles table is missing', async () => {
+    const warehouse = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[]) => {
+      if (query.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return warehouse(query, binds);
+    });
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.maintainerRolesUnavailable).toBe(true);
+    expect(detail.code.length).toBeGreaterThan(0);
+    expect(detail.code.every((row) => row.isMaintainer === false)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:365d`)!)).toBe(false);
+  });
+
   it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);

@@ -40,8 +40,6 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482)', ()
     expect(response).toEqual({
       accountId: 'acc-1',
       maintainerRoles: 764,
-      // The pre-#4482 field, carrying the same value for browsers still on the old client.
-      totalMaintainersYearly: 764,
       monthlyData: [12, 0],
       monthlyLabels: ['Jan 2030', 'Feb 2030'],
     });
@@ -63,7 +61,6 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482)', ()
     expect(await new OrgInvolvementService().getMaintainersMonthly('acc-1')).toEqual({
       accountId: 'acc-1',
       maintainerRoles: 0,
-      totalMaintainersYearly: 0,
       monthlyData: [],
       monthlyLabels: [],
     });
@@ -80,6 +77,20 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482)', ()
     const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
     expect(response).toMatchObject({ maintainerRoles: 764, monthlyData: [], monthlyLabels: [] });
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it('answers an unavailable (null) headline, not zero, when the roles table is missing, and does not store the card', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES_MONTHLY')) {
+        return { rows: [{ METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] };
+      }
+      throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+    });
+
+    const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
+
+    expect(response).toEqual({ accountId: 'acc-1', maintainerRoles: null, monthlyData: [12], monthlyLabels: ['Jan 2030'] });
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 });

@@ -249,8 +249,8 @@ export class OrgOverviewInvolvementComponent {
     return {
       ...metric,
       loading: this.maintainersLoading(),
-      // A response from a server still on the pre-#4482 shape has no `maintainerRoles`: show a dash, never throw.
-      value: Number.isFinite(data.maintainerRoles) ? String(data.maintainerRoles) : '—',
+      // `null` means the roles are unavailable (roles table missing or the read failed): a dash, never zero.
+      value: data.maintainerRoles === null ? '—' : String(data.maintainerRoles),
       subtitle: 'In LF projects over the past 365 days',
       tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
       chartOptions: this.createBarChartOptions(ORG_MAINTAINER_ROLES_LABEL),

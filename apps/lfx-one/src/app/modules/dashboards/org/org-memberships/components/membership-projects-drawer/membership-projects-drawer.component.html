@@ -124,11 +124,11 @@
                 <span class="text-xs text-gray-500 truncate">{{ project.influence }}</span>
               </div>
               <div class="flex items-center gap-4 flex-shrink-0 text-xs text-gray-500">
-                <!-- LF maintainer roles only: a non-LF project shows a dash, not a misleading zero. -->
+                <!-- LF maintainer roles only: a non-LF project, or roles that are unavailable (null), show a dash, not a misleading zero. -->
                 <span
                   class="flex flex-col items-end"
                   [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles'">
-                  <span class="text-sm text-gray-900">{{ project.isLfProject ? (project.maintainers | number) : '—' }}</span>
+                  <span class="text-sm text-gray-900">{{ project.isLfProject ? ((project.maintainers | number) ?? '—') : '—' }}</span>
                   <span class="inline-flex items-center gap-1">
                     {{ maintainerRolesLabel }}
                     <button

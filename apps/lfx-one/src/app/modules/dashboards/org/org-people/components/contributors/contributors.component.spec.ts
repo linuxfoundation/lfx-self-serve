@@ -362,14 +362,12 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(text('org-people-contributors-empty')).toContain('Choose LF and non-LF projects');
   });
 
-  // lfx-self-serve#4482: during a rolling deploy an old server answers without `maintainerRoles`.
-  it('shows a dash on the Maintainer roles tile when the response predates maintainer roles, and the count otherwise', async () => {
+  it('shows a dash on the Maintainer roles tile when the roles are unavailable, and the count otherwise', async () => {
     const response = contributorsResponse();
-    const legacyStats: Partial<OrgContributorsResponse['stats']> = { ...response.stats };
-    delete legacyStats.maintainerRoles;
-    getContributors = vi.fn(() => of({ ...response, stats: legacyStats as OrgContributorsResponse['stats'] }));
+    getContributors = vi.fn(() => of({ ...response, stats: { ...response.stats, maintainerRoles: null } }));
     await mount();
     expect(text('org-people-contributors-stat-maintainers')).toContain('—');
+    expect(text('org-people-contributors-stat-maintainers')).not.toMatch(/\d/);
 
     TestBed.resetTestingModule();
     getContributors = vi.fn(() => of({ ...response, stats: { ...response.stats, maintainerRoles: 1234 } }));

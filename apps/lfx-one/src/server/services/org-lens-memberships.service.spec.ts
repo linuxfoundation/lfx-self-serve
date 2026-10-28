@@ -86,17 +86,25 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     expect(rolesBinds).toEqual(['acc-1', 365]);
   });
 
-  it('keeps listing the projects, at zero roles and uncached, when the roles table is missing', async () => {
+  it('keeps listing the projects, with unavailable (null) roles and uncached, when the roles table is missing', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('ORG_MAINTAINER_ROLES')) {
         throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
       }
-      return { rows: [{ PROJECT_ID: 'p-1', IS_LF_PROJECT: true, INFLUENCE_MAX_BUCKET: 'Leading' }] };
+      return {
+        rows: [
+          { PROJECT_ID: 'p-1', IS_LF_PROJECT: true, INFLUENCE_MAX_BUCKET: 'Leading' },
+          { PROJECT_ID: 'p-2', IS_LF_PROJECT: false, INFLUENCE_MAX_BUCKET: 'Silent' },
+        ],
+      };
     });
 
     const { projects } = await new OrgLensMembershipsService().getFoundationProjects('acc-1', 'cncf');
 
-    expect(projects.map((project) => [project.projectId, project.maintainers])).toEqual([['p-1', 0]]);
+    expect(projects.map((project) => [project.projectId, project.maintainers])).toEqual([
+      ['p-1', null],
+      ['p-2', 0],
+    ]);
     const storable = (withOrgCacheMock.mock.calls[0] as unknown[] | undefined)?.[5] as ((value: unknown) => boolean) | undefined;
     expect(storable?.([])).toBe(false);
   });

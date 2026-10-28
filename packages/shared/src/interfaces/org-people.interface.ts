@@ -205,6 +205,8 @@ export interface OrgAllEmployeeDetail {
   totalCommits: number;
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
+  /** Set when the maintainer roles are unavailable (roles table missing): no `code[].isMaintainer` pill is set, which is not "holds no roles". */
+  maintainerRolesUnavailable?: true;
 }
 
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';

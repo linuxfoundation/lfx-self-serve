@@ -78,10 +78,11 @@ export interface OrgContributorProjectOption {
 
 /** Stats baseline — anchored to the BFF response per Item 3 lock; filter trio does NOT recompute. Time-window changes do (because the BFF refetches). */
 export interface OrgContributorStatsBaseline {
-  /** Distinct maintainer roles — (member, Insights project) pairs — of the account overlapping the window in the project scope, with or without code. */
-  maintainerRoles: number;
-  /** @deprecated Same value as `maintainerRoles`, for browsers still on the pre-#4482 client during one release. */
-  maintainers?: number;
+  /**
+   * Distinct maintainer roles — (member, Insights project) pairs — of the account overlapping the window in the project scope, with or without code.
+   * `null` when the roles table is unavailable (never shown as zero).
+   */
+  maintainerRoles: number | null;
   /** Everyone in the response: people with code in the window, maintainers included. Equals `contributors[].length`. */
   contributors: number;
   /** Distinct `project_id` count over the projects array. */

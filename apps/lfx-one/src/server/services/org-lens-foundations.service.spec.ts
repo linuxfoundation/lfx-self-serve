@@ -70,15 +70,18 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     expect(mainBinds).toEqual(['acc-1']);
   });
 
-  it('serves the section at zero roles, and never stores it, when the roles table is missing', async () => {
+  it('serves the section with unavailable (null) roles, not zero, and never stores it, when the roles table is missing', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('ORG_MAINTAINER_ROLES')) throw new Error(MISSING_ROLES);
-      return { rows: [projectRow('lf-project', true)] };
+      return { rows: [projectRow('lf-project', true), projectRow('non-lf-project', false)] };
     });
 
     const response = await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
 
-    expect(response.rows[0]?.projects[0]?.maintainers).toBe(0);
+    expect(response.rows[0]?.projects.map((project) => [project.projectId, project.maintainers])).toEqual([
+      ['lf-project', null],
+      ['non-lf-project', 0],
+    ]);
     const storable = withOrgCache.mock.calls[0]?.[5];
     expect(storable?.(response)).toBe(false);
   });

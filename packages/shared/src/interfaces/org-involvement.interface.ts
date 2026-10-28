@@ -26,10 +26,11 @@ export interface OrgInvolvementContributorsMonthlyResponse {
 /** GET /api/analytics/org-involvement-maintainers-monthly — the account's maintainer roles in LF projects (lfx-self-serve#4482). */
 export interface OrgInvolvementMaintainersMonthlyResponse {
   accountId: string;
-  /** LF maintainer roles overlapping the past 365 days to today — the same count as People -> Contributors at its defaults with LF projects. */
-  maintainerRoles: number;
-  /** @deprecated Same value as `maintainerRoles`, for browsers still on the pre-#4482 client during one release. */
-  totalMaintainersYearly?: number;
+  /**
+   * LF maintainer roles overlapping the past 365 days to today — the same count as People -> Contributors at its defaults with LF projects.
+   * `null` when the roles table is unavailable (never shown as zero).
+   */
+  maintainerRoles: number | null;
   /** LF maintainer roles held in each month, oldest first. */
   monthlyData: number[];
   monthlyLabels: string[];

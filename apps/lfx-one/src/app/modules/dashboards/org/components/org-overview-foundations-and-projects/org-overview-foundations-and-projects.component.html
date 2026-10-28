@@ -154,8 +154,12 @@
                                   <span class="text-gray-900">{{ project.projectName }}</span>
                                 </span>
                               </td>
-                              <!-- LF maintainer roles only: a non-LF project shows a dash, not a misleading zero. -->
-                              <td class="py-2 text-right text-gray-700">{{ project.isLfProject ? (project.maintainers | number) : '—' }}</td>
+                              <!-- LF maintainer roles only: a non-LF project, or roles that are unavailable (null), show a dash, not a misleading zero. -->
+                              <td
+                                class="py-2 text-right text-gray-700"
+                                [attr.data-testid]="'org-overview-foundations-and-projects-project-' + project.projectId + '-maintainers'">
+                                {{ project.isLfProject ? ((project.maintainers | number) ?? '—') : '—' }}
+                              </td>
                               <td class="py-2 text-right text-gray-700">{{ project.contributors | number }}</td>
                               <td class="py-2 text-right text-gray-700">{{ project.collaborators | number }}</td>
                               <td class="py-2 text-right text-gray-700">{{ project.commits | number }}</td>

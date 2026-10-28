@@ -100,18 +100,21 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
     expect(card?.chartData?.datasets[0]?.data).toEqual([12, 15]);
   });
 
-  // lfx-self-serve#4482: during a rolling deploy an old server answers with the pre-roles shape.
-  it('shows a dash, without throwing, when the response predates maintainer roles', async () => {
-    const legacy = {
-      accountId: ACCOUNT_ID,
-      accountName: 'Acme Motors',
-      totalMaintainersYearly: 20,
-      totalProjectsYearly: 30,
-      monthlyData: [20],
-      monthlyLabels: ['Jan 2030'],
-    };
-    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] }, legacy);
+  it('shows a dash, not zero, when the maintainer roles are unavailable', async () => {
+    const metrics = await buildMetrics(
+      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
+      { accountId: ACCOUNT_ID, maintainerRoles: null, monthlyData: [], monthlyLabels: [] }
+    );
 
     expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('—');
+  });
+
+  it('shows zero when the account holds no maintainer roles', async () => {
+    const metrics = await buildMetrics(
+      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
+      { accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }
+    );
+
+    expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('0');
   });
 });

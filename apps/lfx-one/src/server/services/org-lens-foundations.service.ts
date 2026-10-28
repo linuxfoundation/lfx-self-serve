@@ -185,10 +185,11 @@ export class OrgLensFoundationsService {
       return { response: this.emptyResponse(accountId), rolesMissing };
     }
 
-    return { response: this.shapeResponse(accountId, result.rows, roles ?? new Map()), rolesMissing };
+    return { response: this.shapeResponse(accountId, result.rows, roles), rolesMissing };
   }
 
-  private shapeResponse(accountId: string, rawRows: RawRow[], maintainerRoles: ReadonlyMap<string, number>): OrgLensFoundationsAndProjectsResponse {
+  /** `maintainerRoles` is `null` when the roles table is missing: every LF project's count is then unavailable (`null`). */
+  private shapeResponse(accountId: string, rawRows: RawRow[], maintainerRoles: ReadonlyMap<string, number> | null): OrgLensFoundationsAndProjectsResponse {
     const accountName = rawRows[0].ACCOUNT_NAME ?? 'Unknown Account';
 
     // Group rows by foundation_id; the first raw row per foundation_id
@@ -263,13 +264,14 @@ export class OrgLensFoundationsService {
       }
 
       if (raw.PROJECT_ID && raw.PROJECT_INFLUENCE_MAX_BUCKET) {
+        const projectRoles = maintainerRoles === null ? null : (maintainerRoles.get(raw.PROJECT_ID) ?? 0);
         const project: OrgLensFoundationProject = {
           projectId: raw.PROJECT_ID,
           projectSlug: raw.PROJECT_SLUG ?? raw.PROJECT_ID,
           projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
           isLfProject: raw.PROJECT_IS_LF_PROJECT === true,
           influence: raw.PROJECT_INFLUENCE_MAX_BUCKET,
-          maintainers: raw.PROJECT_IS_LF_PROJECT === true ? (maintainerRoles.get(raw.PROJECT_ID) ?? 0) : 0,
+          maintainers: raw.PROJECT_IS_LF_PROJECT === true ? projectRoles : 0,
           contributors: raw.PROJECT_CONTRIBUTORS_COUNT ?? 0,
           collaborators: raw.PROJECT_COLLABORATORS_COUNT ?? 0,
           commits: raw.PROJECT_COMMITS_COUNT ?? 0,

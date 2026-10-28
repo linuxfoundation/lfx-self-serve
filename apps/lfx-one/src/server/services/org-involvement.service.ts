@@ -232,18 +232,17 @@ export class OrgInvolvementService {
       ORDER BY METRIC_MONTH ASC
     `;
 
-    // Each part degrades on its own: a missing table answers zero roles or an empty trend, never an error.
+    // Each part degrades on its own: a missing roles table answers an unavailable (null) headline, a missing monthly
+    // table an empty trend — never an error.
     const [headline, trend] = await Promise.all([
       readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', headlineQuery, [accountId, ...overlap.binds]),
       readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_MONTHLY', trendQuery, [accountId]),
     ]);
-    const maintainerRoles = headline?.[0]?.MAINTAINER_ROLES ?? 0;
 
     return {
       response: {
         accountId,
-        maintainerRoles,
-        totalMaintainersYearly: maintainerRoles,
+        maintainerRoles: headline === null ? null : (headline[0]?.MAINTAINER_ROLES ?? 0),
         monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
         monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
       },
