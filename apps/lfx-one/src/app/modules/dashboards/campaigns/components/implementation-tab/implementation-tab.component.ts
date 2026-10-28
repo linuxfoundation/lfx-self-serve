@@ -2526,13 +2526,14 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly twitterCreateBlockMessage = computed(() => this.twitterCreateBlock()?.message ?? '');
 
   /**
-   * The X daily budget as a number, or `null` when the field is blank or not a number. Read through
-   * `campaignFormRevision` because the control is not a signal.
+   * The X daily budget as a number, or `null` when the field is blank or not a plain decimal. Read
+   * through `campaignFormRevision` because the control is not a signal. The shape is checked before
+   * `Number`, which would otherwise read `1e3` as 1000 and `0x10` as 16 — a typo spent as a budget.
    */
   protected readonly twitterBudgetAmount = computed<number | null>(() => {
     void this.campaignFormRevision();
     const raw = this.campaignForm.controls.twitterBudget.value.trim();
-    if (raw === '') return null;
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
   });
@@ -2599,11 +2600,13 @@ export class ImplementationTabComponent implements OnInit {
     return listed ? `${listed.label} (${listed.key})` : (result.connection.label ?? result.connection.accountId);
   });
 
-  /** The registration link campaign-service appends to the tweet, as the preview shows it. */
-  protected readonly twitterDestinationUrl = computed(() => {
-    void this.campaignFormRevision();
-    return this.campaignForm.controls.registrationUrl.value.trim();
-  });
+  /**
+   * The registration link campaign-service appends to the tweet, as the preview shows it: the SAVED
+   * brief's, not the form's. campaign-service reads the destination from the stored brief, and an
+   * edit to Registration URL here is never saved to it, so the form value could name a link the
+   * tweet will not carry.
+   */
+  protected readonly twitterDestinationUrl = computed(() => (this.briefData()?.eventDetails?.registrationUrl ?? '').trim());
 
   /** Why Create is blocked for an X image this tab holds but cannot send, or `null` — `linkedInImageAssetBlock`'s sibling. */
   protected readonly twitterImageAssetBlock: Signal<CampaignTwitterImageAssetBlock | null> = this.initTwitterImageAssetBlock();

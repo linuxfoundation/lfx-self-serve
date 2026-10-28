@@ -18,7 +18,7 @@ import type {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, Observable, Subject, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
@@ -1231,8 +1231,8 @@ describe('PlanningTabComponent delivery-type mode', () => {
 
   /**
    * X in the picker (`twitterCreateEnabled`). `CAMPAIGN_PLATFORMS` keeps it `disabled: true`; only an
-   * explicit yes makes the tile selectable, and a chosen X is kept in the brief but left out of the
-   * generator's request, which refuses `twitter-ads`.
+   * explicit yes makes the tile selectable, and a chosen X travels to the generator, which serves it
+   * with no copy or keywords.
    */
   describe('X tile', () => {
     const tile = (): HTMLButtonElement =>
@@ -1252,7 +1252,7 @@ describe('PlanningTabComponent delivery-type mode', () => {
       expect((fixture.componentInstance as unknown as { isPlatformSelected(p: string): boolean }).isPlatformSelected('twitter-ads')).toBe(false);
     });
 
-    it('makes X selectable on an explicit yes, and keeps it out of the generate request only', async () => {
+    it('makes X selectable on an explicit yes, and sends it to the generator with the rest', async () => {
       await build('paid-marketing');
       fixture.componentRef.setInput('twitterCreateEnabled', true);
       fixture.detectChanges();
@@ -1265,9 +1265,33 @@ describe('PlanningTabComponent delivery-type mode', () => {
       (fixture.componentInstance as unknown as { generate(): void }).generate();
       await fixture.whenStable();
 
-      expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
+      expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads', 'twitter-ads']);
       const selected = (fixture.componentInstance as unknown as { selectedPlatforms(): Set<string> }).selectedPlatforms();
       expect([...selected]).toEqual(['google-ads', 'twitter-ads']);
+    });
+
+    /**
+     * Before any brief exists the parent has no per-brief answer, so the picker reads the
+     * deployment's own (`GET /api/campaigns/twitter/create-capability`), and the parent's wins once it has one.
+     */
+    it.each([
+      [{ enabled: true }, null, false],
+      [{ enabled: false }, null, true],
+      [{ enabled: true }, false, true],
+    ])('reads the deployment answer %o with a parent answer of %s, leaving the tile disabled: %s', async (deployment, parent, disabled) => {
+      vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of(deployment));
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', parent);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(disabled);
+    });
+
+    it('keeps X disabled when the deployment read fails and the parent has no answer', async () => {
+      vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(throwError(() => new Error('down')));
+      await build('paid-marketing');
+
+      expect(tile().disabled).toBe(true);
     });
 
     it('lets a selected X be cleared after the capability is withdrawn, and not chosen again', async () => {

@@ -58,6 +58,7 @@ import type {
   GoogleAdsAccountOption,
   TwitterAdsAccountOption,
   TwitterAdsAccountsResult,
+  TwitterCreateCapability,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   GoogleCreativeFieldSpec,
@@ -3448,6 +3449,19 @@ export class CampaignController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Whether this deployment can create X campaigns at all (`canCreateTwitter`), with no brief.
+   *
+   * The Plan picker needs the answer BEFORE a brief exists: `CampaignListResult.twitterCreateEnabled`
+   * rides on a brief's campaign list, so a fresh Plan page would keep X "Coming soon" until a brief
+   * without X had been saved. The answer is deployment-wide — flags only, no project or brief —
+   * which is why it can be read up front. Answered as `{ enabled }` and never refused.
+   */
+  public getTwitterCreateCapability(_req: Request, res: Response): void {
+    const result: TwitterCreateCapability = { enabled: canCreateTwitter() };
+    res.json(result);
   }
 
   /**

@@ -592,6 +592,21 @@ describe('CampaignController.getGoogleAdsAccounts', () => {
  * connection. Gated on X creation (cutover + TWITTER_CREATE), and root-only because a project with
  * no X connection of its own is answered from the LF system credential.
  */
+describe('CampaignController.getTwitterCreateCapability', () => {
+  it.each([
+    ['off', () => false, false],
+    ['on with the create cutover', () => true, true],
+    ['on without the create cutover', (f: unknown) => f === ServerFeatureFlag.CampaignServiceTwitterCreate, false],
+  ])('answers X creation %s as the deployment-wide capability', (_label, flags, enabled) => {
+    isServerFeatureEnabled.mockImplementation(flags);
+    const res = buildRes();
+
+    new CampaignController().getTwitterCreateCapability(buildReq({}), res);
+
+    expect(res.json).toHaveBeenCalledWith({ enabled });
+  });
+});
+
 describe('CampaignController.getTwitterAdsAccounts', () => {
   const twitterOn = (): void => {
     isServerFeatureEnabled.mockImplementation((f) => f !== ServerFeatureFlag.CampaignServiceMonitor);

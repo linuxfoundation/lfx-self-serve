@@ -11662,6 +11662,8 @@ describe('ImplementationTabComponent x create', () => {
     ['a blank budget', { twitterBudget: '' }, 'implementation-twitter-budget-error'],
     ['a budget below 1', { twitterBudget: '0.5' }, 'implementation-twitter-budget-error'],
     ['a budget that is not a number', { twitterBudget: 'lots' }, 'implementation-twitter-budget-error'],
+    ['an exponent budget, which Number would read as 1000', { twitterBudget: '1e3' }, 'implementation-twitter-budget-error'],
+    ['a hex budget, which Number would read as 16', { twitterBudget: '0x10' }, 'implementation-twitter-budget-error'],
     ['blank tweet text', { twitterTweetText: '  ' }, 'implementation-twitter-tweet-error'],
     ['tweet text over the cap once the link is appended', { twitterTweetText: 'a'.repeat(257) }, 'implementation-twitter-tweet-error'],
     ['a start date of today, which X refuses', { startDate: new Date().toISOString().slice(0, 10) }, 'implementation-twitter-flight-error'],
@@ -11672,6 +11674,14 @@ describe('ImplementationTabComponent x create', () => {
 
     expect(c(fixture)['canSubmit']()).toBe(false);
     expect(q(fixture, errorId)).not.toBeNull();
+  });
+
+  it("previews the saved brief's registration link, not an unsaved edit of the form field", async () => {
+    const { fixture } = await mount(true);
+    fill(fixture, { registrationUrl: 'https://example.com/edited-here' });
+
+    expect(q(fixture, 'implementation-twitter-preview-link')?.textContent).toContain('https://example.com/kubecon');
+    expect(q(fixture, 'implementation-twitter-preview-link')?.textContent).not.toContain('edited-here');
   });
 
   it('accepts tweet text exactly at the cap once the link is appended', async () => {

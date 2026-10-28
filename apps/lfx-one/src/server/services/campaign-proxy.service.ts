@@ -1370,13 +1370,18 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  * brief-derived input it consumes is the KEYWORD list, which is generated for every paid brief
  * regardless of platform. So it is a legitimate member of this set that adds nothing to the prompt.
  *
+ * `twitter-ads` is here on the same terms as Microsoft, with no copy key and no keywords: the tweet
+ * is typed on the Implement tab. It joined when X create landed behind
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`, because the Plan tab sends the selection here and a
+ * refusal would fail the first step of an X campaign. An X-only brief therefore skips the copy and
+ * keyword stages rather than falling back to the Google default.
+ *
  * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`' create flag or from
- * the pause/resume set (`TOGGLEABLE_CAMPAIGN_PLATFORMS`, which admits adopted X campaigns): this
- * one answers "can the brief generator serve it", which is a property of THIS service, not of
- * whether the channel is offered or its campaigns can be paused. `twitter-ads` is absent for that
- * reason and would stay absent even if its create were enabled.
+ * the pause/resume set (`TOGGLEABLE_CAMPAIGN_PLATFORMS`): this one answers "can the brief generator
+ * serve it", which is a property of THIS service, not of whether the channel is offered or its
+ * campaigns can be paused.
  */
-const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
 // DERIVED from the shared constant, not a second hand-written list. AGENTS.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
@@ -2650,13 +2655,16 @@ function extractEventNameFromUrl(url: string): string {
  * schema — and, worse, a failure of that pointless call `return`s from the stream BEFORE keyword
  * generation, so the one stage Microsoft actually needs never ran.
  *
+ * `twitter-ads` contributes none either: the authored tweet is typed on the Implement tab, so an
+ * X-only brief skips the stage exactly as a Microsoft-only one does.
+ *
  * Deliberately a predicate rather than a second list of keys: `buildCopyPrompt` and
  * `buildRefinePrompt` each build their own key list, and a third copy here could disagree with
- * both. Anything that is not Microsoft contributes copy today, so the rule is stated that way and
- * a new copy-less platform is a one-line change here.
+ * both. Anything that is not Microsoft or X contributes copy today, so the rule is stated that way
+ * and a new copy-less platform is a one-line change here.
  */
 function contributesAdCopy(platform: string): boolean {
-  return platform !== 'microsoft-ads';
+  return platform !== 'microsoft-ads' && platform !== 'twitter-ads';
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

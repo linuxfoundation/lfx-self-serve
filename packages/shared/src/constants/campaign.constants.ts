@@ -79,17 +79,6 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
 ] as const;
 
 /**
- * Selectable platforms the brief GENERATOR does not serve, so the Plan tab leaves them out of the
- * generate and refine requests while keeping them in the brief's `selectedPlatforms`.
- *
- * X is the one: the generator writes no X copy (the tweet is typed on the Implement tab) and its
- * `SUPPORTED_PLATFORMS` refuses `twitter-ads` with "Unsupported platforms", so sending it would fail
- * the whole brief over a platform that needs nothing from it. Only reachable while
- * `CampaignListResult.twitterCreateEnabled` makes X selectable.
- */
-export const CAMPAIGN_PLATFORMS_WITHOUT_BRIEF_GENERATION: ReadonlySet<string> = new Set<string>(['twitter-ads'] satisfies CampaignPlatform[]);
-
-/**
  * Whether the Monitoring tab offers this platform's monitor.
  *
  * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits

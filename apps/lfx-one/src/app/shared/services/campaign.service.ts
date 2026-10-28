@@ -83,6 +83,7 @@ import {
   ReportBackedMonitorResponse,
   SSEEvent,
   TwitterAdsAccountsResult,
+  TwitterCreateCapability,
 } from '@lfx-one/shared/interfaces';
 import type {
   CampaignAdoptableBriefsResponse,
@@ -519,6 +520,11 @@ export class CampaignService {
    * (LFXV2-3319). 404 while X creation is off on the server, and a 403 for a non-root caller: with
    * no X connection of its own, the project is answered from the LF's shared credential.
    */
+  /** Whether X creation is open on this deployment, with no brief — the Plan picker's answer before one exists. */
+  public getTwitterCreateCapability(): Observable<TwitterCreateCapability> {
+    return this.http.get<TwitterCreateCapability>('/api/campaigns/twitter/create-capability');
+  }
+
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
   }

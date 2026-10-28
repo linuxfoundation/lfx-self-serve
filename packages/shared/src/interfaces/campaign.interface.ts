@@ -2044,6 +2044,11 @@ export interface TwitterAdsAccountOption {
   label: string;
 }
 
+/** `GET /api/campaigns/twitter/create-capability`: the deployment-wide `canCreateTwitter` answer, with no brief. */
+export interface TwitterCreateCapability {
+  enabled: boolean;
+}
+
 /**
  * `GET /api/campaigns/twitter/accounts` (LFXV2-3319): which X ad account an X create will use, and
  * what the credential can reach.
@@ -5512,12 +5517,7 @@ export interface CampaignTwitterImageAssetBlock {
   message: string;
 }
 
-/**
- * Why Create is blocked while the Implement tab holds X (`twitter-ads`) but this deployment has not
- * said, with an explicit yes, that it can create there (`CampaignListResult.twitterCreateEnabled`).
- * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
- * brief is saved, or answered no.
- */
+/** The X section's read of which ad account an X create uses (LFXV2-3319). */
 export interface CampaignTwitterAccountState {
   /**
    * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
@@ -5528,6 +5528,12 @@ export interface CampaignTwitterAccountState {
   result: TwitterAdsAccountsResult | null;
 }
 
+/**
+ * Why Create is blocked while the Implement tab holds X (`twitter-ads`) but this deployment has not
+ * said, with an explicit yes, that it can create there (`CampaignListResult.twitterCreateEnabled`).
+ * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
+ * brief is saved, or answered no.
+ */
 export interface CampaignTwitterCreateBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
