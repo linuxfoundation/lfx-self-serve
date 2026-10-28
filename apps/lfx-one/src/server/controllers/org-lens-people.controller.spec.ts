@@ -106,14 +106,20 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', DEFAULT_FILTERS);
   });
 
-  it('passes a valid range through to the stored, live and former reads', async () => {
+  it('passes a valid range through to the stored, live, former and contributors reads', async () => {
     await controller.getAllEmployees(buildRosterReq({ range: '30d' }), buildRes(), vi.fn());
+    await controller.getAllEmployees(buildRosterReq({ range: '730d' }), buildRes(), vi.fn());
     await controller.getAllEmployees(buildRosterReq({ live: 'true', range: 'all' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({ range: '90d' }), buildRes(), vi.fn());
+    await controller.getFormerEmployees(buildRosterReq({ range: '730d' }), buildRes(), vi.fn());
+    await controller.getContributors(buildRosterReq({ timeRange: '730d' }), buildRes(), vi.fn());
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS);
+    expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS);
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all', DEFAULT_FILTERS);
     expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '90d', DEFAULT_FILTERS);
+    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS);
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS);
   });
 
   it('reads the legacy 12mo, still sent by tabs opened before the new ranges, as 365d', async () => {

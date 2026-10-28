@@ -935,8 +935,29 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditCreativeEnabled = signal<boolean | null>(null);
   /** Whether the Reddit section offers an image upload — `CampaignListResult.redditAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsRedditAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers an ad image — `CampaignListResult.metaCreativeEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the Google image slots offer the brief's stored-image library — `CampaignListResult.googleAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsGoogleAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers an image upload — `CampaignListResult.linkedInAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsLinkedInAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMicrosoftAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
+  /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
+  /** Whether a Meta create carries the Instagram id and EU DSA disclosures — `CampaignListResult.metaInstagramDsaEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
+  /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsGoogleGeoSearchEnabled = signal<boolean | null>(null);
+  /**
+   * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
+   * read and cleared like the capabilities above. Per caller, not per deployment: root only.
+   */
+  protected readonly briefCampaignsGoogleAudienceSegmentsEnabled = signal<boolean | null>(null);
   /**
    * Where `loadCreateCapabilitiesFor`'s read stands, so the Implementation tab can tell "still
    * checking" from "the check failed" while any capability it set is still `null`. ONE read fills
@@ -2494,7 +2515,16 @@ export class CampaignsComponent {
         this.briefCampaignsGoogleCreativeEnabled.set(null);
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
+        this.briefCampaignsMetaCreativeEnabled.set(null);
+        this.briefCampaignsMetaAssetUploadEnabled.set(null);
+        this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+        this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+        this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
+        this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+        this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+        this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+        this.briefCampaignsGoogleGeoSearchEnabled.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
@@ -4589,7 +4619,16 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
+          this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+          this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
+          this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
+          this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
+          this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+          this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+          this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+          this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+          this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
           this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
@@ -4605,7 +4644,16 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(null);
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
+          this.briefCampaignsMetaCreativeEnabled.set(null);
+          this.briefCampaignsMetaAssetUploadEnabled.set(null);
+          this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+          this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+          this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
+          this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+          this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+          this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+          this.briefCampaignsGoogleGeoSearchEnabled.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
       });
@@ -4667,7 +4715,16 @@ export class CampaignsComponent {
     this.briefCampaignsGoogleCreativeEnabled.set(null);
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
+    this.briefCampaignsMetaCreativeEnabled.set(null);
+    this.briefCampaignsMetaAssetUploadEnabled.set(null);
+    this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+    this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+    this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
+    this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+    this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+    this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+    this.briefCampaignsGoogleGeoSearchEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
     this.briefCampaignsCapabilityRead.set('unknown');
 
@@ -4699,7 +4756,16 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
+            this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+            this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
+            this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
+            this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
+            this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+            this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+            this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
+            this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+            this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
             this.briefCampaignsCapabilityRead.set('ready');
           }
         },
@@ -4721,7 +4787,16 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(null);
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
+            this.briefCampaignsMetaCreativeEnabled.set(null);
+            this.briefCampaignsMetaAssetUploadEnabled.set(null);
+            this.briefCampaignsGoogleAssetUploadEnabled.set(null);
+            this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
+            this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
+            this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+            this.briefCampaignsMetaInstagramDsaEnabled.set(null);
+            this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+            this.briefCampaignsGoogleGeoSearchEnabled.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }
         },

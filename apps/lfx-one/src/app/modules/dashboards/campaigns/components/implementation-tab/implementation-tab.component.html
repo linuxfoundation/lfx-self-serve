@@ -85,7 +85,7 @@
 </div>
 
 <!--
-  Google callouts, sitelinks and structured snippets withheld, announced. Top-level for the same reason as the three regions above:
+  Google ad extensions withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -98,12 +98,41 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
   {{ googleStructuredSnippetsWithheldWarning() }}
 </div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-call-extensions-withheld-live">
+  {{ googleCallExtensionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-promotions-withheld-live">
+  {{ googlePromotionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-prices-withheld-live">
+  {{ googlePricesWithheldWarning() }}
+</div>
+<!-- Audience segments withheld after a channel switch, announced on the same terms as the extensions above. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-withheld-live">
+  {{ googleAudienceSegmentsWithheldWarning() }}
+</div>
+<!-- Retained audience segments Create is held for (root-only, or the capability unanswered). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-block-live">
+  {{ googleAudienceSegmentsBlockMessage() }}
+</div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
   same politeness: the campaign is still created, it just carries no extensions.
 -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-extensions-capability-live">
   {{ googleExtensionsCapabilityMessage() }}
+</div>
+<!--
+  Radius targets held by a channel that refuses them (Demand Gen), announced. Top-level for the reason
+  the callout regions above are: the visible notice is created by the switch that gives it its text.
+  Polite, because the campaign is still created; the visible `<p>` carries no role.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-proximity-withheld-live">
+  {{ googleProximityWithheldMessage() }}
+</div>
+<!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
+  {{ googleLocationsCapabilityMessage() }}
 </div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
@@ -314,11 +343,15 @@
         still names the event's own country and still feeds the campaign name, the Meta, Microsoft
         and Reddit fallbacks and the draft. This list says where the GOOGLE campaign runs, and empty
         means "the event country", which is what this path sent before the list existed.
+
+        The postal-code and radius sub-sections below share this card because they are the same
+        location plan upstream (`validateGeoPlan`): postal-code ids ride in the SAME `geoTargets`
+        list as the countries, and Google serves the union of every location criterion.
       -->
       @if (showGoogleSection()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-geo-section">
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-geo-add">
-            Google Geo Targets ({{ googleGeoTargets().length }}/{{ googleMaxGeoTargets }})
+            Google Geo Targets ({{ googleGeoTargetCount() }}/{{ googleMaxGeoTargets }})
           </label>
           <div class="flex flex-wrap items-center gap-2">
             @for (geo of googleGeoTargets(); track geo; let i = $index) {
@@ -334,7 +367,7 @@
                 </button>
               </span>
             }
-            @if (googleGeoTargets().length < googleMaxGeoTargets) {
+            @if (!googleGeoTargetsFull()) {
               <!--
                 A select, unlike Meta's and Microsoft's free-text boxes. Google resolves every code
                 against a curated 30-entry map before its first mutate and hard-errors on a miss, so
@@ -362,8 +395,17 @@
             the request falls back to it, and the line names the country so it is not an invisible
             default. A blank list with no country code is the hazard: the create is refused, and
             saying so here is cheaper than finding out after the other platforms have been created.
+
+            Neither applies once a postal code or radius will be sent: the fallback is skipped then,
+            so the line says what the campaign targets instead.
           -->
-          @if (googleGeoTargets().length === 0) {
+          @if (googleGeoTargetsOverCap()) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-geo-over-cap">
+              {{ googleGeoTargetCount() }} countries and postal codes are on this campaign — Google accepts at most {{ googleMaxGeoTargets }}. Remove some to
+              create it.
+            </p>
+          }
+          @if (googleGeoUsesEventCountry()) {
             @if (googleGeoFallbackCode() !== '') {
               <span class="mt-2 block text-xs text-gray-400" data-testid="implementation-google-geo-default">
                 No countries added — this campaign targets {{ googleGeoFallbackCode() }}, the event country.
@@ -374,8 +416,366 @@
                 ad account allows.
               </p>
             }
+          } @else if (googleGeoTargets().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-geo-finer-only">
+              No countries added — this campaign targets only the postal codes and radius targets below, not the event country.
+            </span>
+          }
+
+          <!--
+            Postal-code targets, as Google geo target constant ids.
+
+            Ids, not postal codes, because that is all the wire takes: upstream reads a numeric
+            `geoTargets` entry as a constant id from Google's geo-targets table, and nothing on this
+            road looks a postal code up. Free text for the reason the callout box is free text — the
+            table is ~100k rows and changes, so there is no closed set to offer. Off on the legacy
+            road (`googlePostalGeoAvailable`), whose creator drops any entry outside the country map.
+          -->
+          @if (googlePostalGeoAvailable()) {
+            <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="implementation-google-postal-section">
+              <label class="block text-xs font-medium text-gray-700" for="google-postal-add">Postal-code targets</label>
+              <div class="flex flex-wrap items-center gap-2">
+                @for (chip of googlePostalGeoChips(); track chip.id; let i = $index) {
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                    [attr.title]="chip.label === chip.id ? null : chip.id"
+                    [attr.data-testid]="'implementation-google-postal-chip-' + chip.id">
+                    {{ chip.label }}
+                    <button
+                      type="button"
+                      (click)="removeGooglePostalGeoTarget(i)"
+                      class="ml-0.5 text-blue-600 hover:text-blue-800"
+                      [attr.aria-label]="'Remove postal-code target ' + chip.label"
+                      [attr.data-testid]="'implementation-google-postal-remove-' + chip.id">
+                      <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                }
+                @if (!googleGeoTargetsFull() && googleGeoSearchAvailable()) {
+                  <!--
+                    The location picker, when campaign-service can search Google's geo target table
+                    (#411, `googleGeoSearchAvailable`). `lfx-autocomplete` per frontend-checklist 14.1,
+                    `[delay]="0"` because the component debounces the search itself, the
+                    org-search-field pattern. A row whose id is already a chip is listed but disabled.
+                  -->
+                  <lfx-autocomplete
+                    [form]="googleGeoSearchForm"
+                    control="location"
+                    inputId="google-postal-add"
+                    [suggestions]="googleGeoSearchOptions()"
+                    optionLabel="canonicalName"
+                    optionDisabled="disabled"
+                    placeholder="Search a postal code or place"
+                    [delay]="0"
+                    [forceSelection]="true"
+                    [invalid]="googleGeoSearchFailed()"
+                    [describedBy]="googleGeoSearchDescribedBy()"
+                    styleClass="w-72"
+                    dataTestId="implementation-google-geo-search-input"
+                    (completeMethod)="onGoogleGeoSearch($event)"
+                    (onSelect)="onGoogleGeoSearchSelect($event)"
+                    (onClear)="onGoogleGeoSearchClear()"
+                    class="block"
+                    data-testid="implementation-google-geo-search">
+                    <ng-template #item let-option>
+                      <div class="flex flex-col" [attr.data-testid]="'implementation-google-geo-search-option-' + option.id">
+                        <span class="text-xs font-medium text-gray-900">{{ option.name }}</span>
+                        <span class="text-[10px] text-gray-500"
+                          >{{ option.canonicalName }} · {{ option.targetType }}
+                          @if (option.disabled) {
+                            · already added
+                          }
+                        </span>
+                      </div>
+                    </ng-template>
+                    <ng-template #empty>
+                      <span class="text-xs text-gray-500" data-testid="implementation-google-geo-search-empty">{{ googleGeoSearchEmptyMessage() }}</span>
+                    </ng-template>
+                  </lfx-autocomplete>
+                } @else if (!googleGeoTargetsFull()) {
+                  <!--
+                    `lfx-input-text` over `googlePostalGeoForm`, as frontend-checklist 14.1 requires.
+                    `change` and `keydown.enter` are listened for on the HOST: both bubble from the
+                    wrapper's own input, so the callout box's enter-to-add and blur-to-add survive.
+                  -->
+                  <lfx-input-text
+                    [form]="googlePostalGeoForm"
+                    control="postalId"
+                    inputId="google-postal-add"
+                    type="text"
+                    size="small"
+                    placeholder="+ Add geo target id"
+                    styleClass="!text-xs"
+                    [invalid]="googlePostalGeoDraftErrorId() !== null"
+                    [describedBy]="googlePostalGeoDraftDescribedBy()"
+                    dataTest="implementation-google-postal-add-input"
+                    (change)="onGooglePostalGeoAdd()"
+                    (keydown.enter)="onGooglePostalGeoAdd(); $event.preventDefault()"
+                    class="block w-44"
+                    data-testid="implementation-google-postal-add" />
+                } @else {
+                  <span class="text-xs text-gray-500" data-testid="implementation-google-postal-full">
+                    Maximum of {{ googleMaxGeoTargets }} countries and postal codes reached — remove one to add another.
+                  </span>
+                }
+              </div>
+              @if (googleGeoSearchAvailable()) {
+                <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
+                  Search Google's location table by postal code or place name, then pick a result — its id is what the campaign targets.
+                </span>
+                <!--
+                  Always mounted, so "Searching…" is announced as it appears rather than with the next
+                  change. Screen-reader only: the popup's empty template already shows it on screen.
+                -->
+                <span role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-geo-search-status">
+                  @if (googleGeoSearchPending()) {
+                    Searching…
+                  }
+                </span>
+                @if (googleGeoSearchFailed()) {
+                  <p id="google-geo-search-failed" role="alert" class="text-xs text-red-600" data-testid="implementation-google-geo-search-failed">
+                    The location search did not come back. Try again in a moment.
+                  </p>
+                } @else if (googleGeoSearchTruncated()) {
+                  <span class="text-xs text-gray-500" data-testid="implementation-google-geo-search-truncated">
+                    More locations match than are listed — add a postal code or region to narrow the search.
+                  </span>
+                }
+              } @else {
+                <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
+                  Enter the postal code's numeric criterion id from Google's geo-targets table, not the postal code itself — there is no lookup here, and Google
+                  refuses an id that names nothing only after the campaign is created.
+                </span>
+              }
+              <!--
+                The typed-id box's own lines, shown only while that box is: under the picker they would
+                describe text in a control that is no longer on screen.
+              -->
+              @if (!googleGeoSearchAvailable() && googlePostalGeoDraftNotId()) {
+                <p id="google-postal-not-id" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-id">
+                  A geo target id is digits only — look the postal code up in Google's geo-targets table and enter its id.
+                </p>
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftNotCanonical()) {
+                <p id="google-postal-not-canonical" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-canonical">
+                  Enter the id with no leading zeros — Google refuses any other spelling.
+                </p>
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftDuplicate()) {
+                <p id="google-postal-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-duplicate">
+                  That postal-code target is already on the list.
+                </p>
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftLooksLikePostalCode()) {
+                <!-- A warning, not an error: upstream accepts the entry, so the add stays allowed. -->
+                <p id="google-postal-looks-like-code" class="text-xs text-amber-700" data-testid="implementation-google-postal-looks-like-code">
+                  This looks like a postal code, not a geo target id — postal-code ids in Google's table are {{ googlePostalGeoIdMinDigits }} digits or longer.
+                  Adding it targets whatever criterion that number names, if any.
+                </p>
+              }
+            </div>
+          }
+
+          <!--
+            Radius targets: a point and a distance around it.
+
+            Rendered against `googleProximityChannel()` — every channel but Demand Gen, which
+            `validateGeoPlan` refuses proximity on. A latitude and longitude rather than an address,
+            because `googleAdsProximityConfig` upstream carries those four fields and nothing else.
+            The unit has no default, upstream's rule: 50 miles and 50 km are different campaigns.
+          -->
+          @if (googleProximityChannel()) {
+            <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="implementation-google-proximity-section">
+              <label class="block text-xs font-medium text-gray-700" for="google-proximity-latitude">
+                Radius targets ({{ googleProximityTargets().length }}/{{ googleMaxProximityTargets }})
+              </label>
+              @if (googleProximityTargets().length > 0) {
+                <div class="flex flex-wrap items-center gap-2">
+                  @for (target of googleProximityTargets(); track $index; let i = $index) {
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                      [attr.data-testid]="'implementation-google-proximity-chip-' + i">
+                      {{ target.radius }} {{ target.radiusUnit | lowercase }} around {{ target.latitude }}, {{ target.longitude }}
+                      <button
+                        type="button"
+                        (click)="removeGoogleProximityTarget(i)"
+                        class="ml-0.5 text-blue-600 hover:text-blue-800"
+                        [attr.aria-label]="'Remove radius target ' + (i + 1)"
+                        [attr.data-testid]="'implementation-google-proximity-remove-' + i">
+                        <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  }
+                </div>
+              }
+              @if (!googleProximityFull()) {
+                <!--
+                  `lfx-input-text` / `lfx-select` over `googleProximityForm`, as
+                  frontend-checklist 14.1 requires. Text inputs rather than
+                  `type="number"`, so a half-typed `-33.` is shown back as typed and judged by the
+                  warnings below instead of being blanked by the browser. The section's `<label for>`
+                  names the latitude box (`inputId`); every box also carries its own `ariaLabel`.
+                -->
+                <div class="flex flex-wrap items-center gap-2">
+                  <lfx-input-text
+                    [form]="googleProximityForm"
+                    control="latitude"
+                    inputId="google-proximity-latitude"
+                    type="text"
+                    size="small"
+                    placeholder="Latitude"
+                    ariaLabel="Radius target latitude"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityLatitudeInvalid()"
+                    [describedBy]="googleProximityLatitudeInvalid() ? 'google-proximity-latitude-invalid' : null"
+                    dataTest="implementation-google-proximity-latitude-input"
+                    class="block w-28"
+                    data-testid="implementation-google-proximity-latitude" />
+                  <lfx-input-text
+                    [form]="googleProximityForm"
+                    control="longitude"
+                    type="text"
+                    size="small"
+                    placeholder="Longitude"
+                    ariaLabel="Radius target longitude"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityLongitudeInvalid()"
+                    [describedBy]="googleProximityLongitudeInvalid() ? 'google-proximity-longitude-invalid' : null"
+                    dataTest="implementation-google-proximity-longitude-input"
+                    class="block w-28"
+                    data-testid="implementation-google-proximity-longitude" />
+                  <lfx-input-text
+                    [form]="googleProximityForm"
+                    control="radius"
+                    type="text"
+                    size="small"
+                    placeholder="Radius"
+                    ariaLabel="Radius target distance"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityRadiusErrorId() !== null"
+                    [describedBy]="googleProximityRadiusErrorId()"
+                    dataTest="implementation-google-proximity-radius-input"
+                    class="block w-20"
+                    data-testid="implementation-google-proximity-radius" />
+                  <lfx-select
+                    [form]="googleProximityForm"
+                    control="radiusUnit"
+                    [options]="googleRadiusUnitOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Unit"
+                    ariaLabel="Radius target unit"
+                    styleClass="!text-xs"
+                    dataTest="implementation-google-proximity-unit-select"
+                    data-testid="implementation-google-proximity-unit" />
+                  <button
+                    type="button"
+                    (click)="onGoogleProximityAdd()"
+                    [disabled]="googleProximityAddDisabled()"
+                    [attr.aria-describedby]="googleProximityDuplicate() ? 'google-proximity-duplicate' : null"
+                    class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                    data-testid="implementation-google-proximity-add">
+                    + Add radius
+                  </button>
+                </div>
+              } @else {
+                <span class="text-xs text-gray-500" data-testid="implementation-google-proximity-full">
+                  Maximum of {{ googleMaxProximityTargets }} radius targets reached — remove one to add another.
+                </span>
+              }
+              <!--
+                One line per refusal `validateProximityTargets` would make, named while the sub-form is
+                still editable. Each is a whole-create refusal upstream, before the budget mutate.
+              -->
+              @if (googleProximityLatitudeInvalid()) {
+                <p
+                  id="google-proximity-latitude-invalid"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-latitude-invalid">
+                  Latitude must be a number from -90 to 90, in decimal degrees.
+                </p>
+              }
+              @if (googleProximityLongitudeInvalid()) {
+                <p
+                  id="google-proximity-longitude-invalid"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-longitude-invalid">
+                  Longitude must be a number from -180 to 180, in decimal degrees.
+                </p>
+              }
+              @if (googleProximityRadiusInvalid()) {
+                <p id="google-proximity-radius-invalid" role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-radius-invalid">
+                  Radius must be a number greater than 0.
+                </p>
+              } @else if (googleProximityRadiusOverMax()) {
+                <p
+                  id="google-proximity-radius-too-large"
+                  role="alert"
+                  class="text-xs text-red-600"
+                  data-testid="implementation-google-proximity-radius-too-large">
+                  Google's maximum radius is {{ googleProximityMaxRadius() }} {{ googleProximityDraft().radiusUnit | lowercase }}.
+                </p>
+              }
+              @if (googleProximityDuplicate()) {
+                <p id="google-proximity-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-proximity-duplicate">
+                  That radius target is already on the list.
+                </p>
+              }
+            </div>
           }
         </div>
+      }
+
+      <!--
+        Postal-code and radius targets withheld because the create capability is not an explicit yes.
+        Unlike the extensions block below this one GATES Create — a withheld location list widens the
+        campaign to the event country — so the operator either retries the check or removes them.
+      -->
+      @if (googleLocationsCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-locations-capability-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (block.kind !== 'pending') {
+            <div class="flex flex-wrap items-center gap-2">
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-google-locations-capability-retry" />
+              }
+              <lfx-button
+                label="Remove them"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="removeHeldGoogleLocationTargets()"
+                data-testid="implementation-google-locations-capability-remove" />
+            </div>
+          }
+        </div>
+      }
+
+      <!--
+        Radius targets picked under one channel and then withheld because the dispatched channel
+        refuses them. Held, not sent — said here rather than left to the section disappearing.
+      -->
+      <!-- Announced by the region at the top of the template. -->
+      @if (googleProximityWithheldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-proximity-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
       }
 
       <!--
@@ -452,6 +852,119 @@
       }
 
       <!--
+        Google Ads: audience segments.
+
+        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
+        to the Search ad group and refuses them on every other channel rather than dropping them.
+        Each entry is an EXISTING user list's resource name: campaign-service creates no audiences
+        and lists none, so there is nothing to pick from. Empty sends no key, so an untouched
+        section changes nothing about the campaign.
+      -->
+      @if (googleAudienceSegmentsAvailable()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-audience-segments-section">
+          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
+            Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (segment of googleAudienceSegments(); track segment; let i = $index) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                {{ segment }}
+                <button
+                  type="button"
+                  (click)="removeGoogleAudienceSegment(i)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + segment"
+                  [attr.data-testid]="'implementation-google-audience-segment-remove-' + i">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            @if (!googleAudienceSegmentsFull()) {
+              <!-- Free text, as the callout box is: the resource name is the input, and its shape is
+                   judged on add so a refusal arrives while the text is still in the box. -->
+              <input
+                id="google-audience-segment-add"
+                type="text"
+                placeholder="+ Add user list resource name"
+                [value]="googleAudienceSegmentDraft()"
+                (input)="onGoogleAudienceSegmentDraftInput($event)"
+                (change)="onGoogleAudienceSegmentAdd($event)"
+                (keydown.enter)="onGoogleAudienceSegmentAdd($event); $event.preventDefault()"
+                [attr.aria-invalid]="googleAudienceSegmentDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googleAudienceSegmentDraftErrorId()"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                data-testid="implementation-google-audience-segment-add" />
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="implementation-google-audience-segments-full">
+                Maximum of {{ googleMaxAudienceSegments }} audience segments reached — remove one to add another.
+              </span>
+            }
+          </div>
+          @if (googleAudienceSegmentDraftError() === 'custom') {
+            <p id="google-audience-segment-custom" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-custom">
+              A Search campaign cannot target a custom audience, only a user list. Enter a user list resource name, like
+              customers/1234567890/userLists/987654321, instead.
+            </p>
+          } @else if (googleAudienceSegmentDraftError() === 'shape') {
+            <p id="google-audience-segment-shape" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-shape">
+              Enter a user list's full resource name, like customers/1234567890/userLists/987654321 — the customer id without dashes.
+            </p>
+          } @else if (googleAudienceSegments().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-audience-segments-default">
+              No audience segments added — this campaign targets no user lists.
+            </span>
+          }
+        </div>
+      }
+
+      <!-- Segments entered under Search and withheld after a switch: said out loud, as the languages are. -->
+      @if (googleAudienceSegmentsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-audience-segments-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+
+      <!--
+        Retained audience segments the request cannot carry: the section above is hidden unless the
+        per-caller capability is an explicit yes, so this is outside it and keeps its actions
+        reachable. Create is held while it shows; Remove is offered in every state.
+      -->
+      @if (googleAudienceSegmentsBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-audience-segments-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-google-audience-segments-block-retry" />
+            }
+            <lfx-button
+              label="Remove audience segments"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onGoogleAudienceSegmentsRemoveAll()"
+              data-testid="implementation-google-audience-segments-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
         Callouts and sitelinks withheld because the create capability is not an explicit yes — the
         state in which the two channel warnings below cannot speak, because the channel they read is
         itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
@@ -498,6 +1011,21 @@
       }
       @if (googleStructuredSnippetsWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-structured-snippets-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googleCallExtensionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-call-extensions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePromotionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-promotions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePricesWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-prices-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
@@ -841,6 +1369,496 @@
       }
 
       <!--
+        Google Ads: call extensions.
+
+        Same gate and same reason as the three sections above — `validateAssetPlan` refuses every
+        extension list on a channel but Search. Typed, as the snippets are. Both boxes are required:
+        Google interprets a number against its country and has no default to pick.
+
+        One message line for the sub-form rather than one per refusal: the refusals come from the
+        shared judge the BFF also refuses by, already as sentences, so the line says exactly what the
+        create would be refused for.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-call-extensions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-call-country">
+            Google Call Extensions ({{ googleCallExtensions().length }}/{{ googleMaxCallExtensions }})
+          </label>
+          @if (googleCallExtensions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (call of googleCallExtensions(); track call.countryCode + call.phoneNumber; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <span class="break-words text-xs font-medium text-blue-700">{{ call.phoneNumber }} ({{ call.countryCode }})</span>
+                  <button
+                    type="button"
+                    (click)="removeGoogleCallExtension(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + call.phoneNumber"
+                    [attr.data-testid]="'implementation-google-call-extension-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-empty">
+              No call extensions added — this campaign is created without a phone number.
+            </span>
+          }
+          @if (!googleCallExtensionsFull()) {
+            <div class="flex flex-col gap-2">
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="countryCode"
+                inputId="google-call-country"
+                type="text"
+                size="small"
+                placeholder="Country code (e.g. US)"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
+                data-testid="implementation-google-call-country" />
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="phoneNumber"
+                type="tel"
+                size="small"
+                placeholder="Phone number"
+                ariaLabel="Call extension phone number"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
+                data-testid="implementation-google-call-number" />
+              <button
+                type="button"
+                (click)="onGoogleCallExtensionAdd()"
+                [disabled]="googleCallExtensionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-call-extension-add">
+                + Add call extension
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-full">
+              Maximum of {{ googleMaxCallExtensions }} call extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googleCallExtensionDraftError(); as error) {
+            <p id="google-call-extension-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-call-extension-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: promotion extensions.
+
+        Same gate. Google's two oneofs are each ONE select here rather than two boxes, so the form
+        cannot express what upstream refuses: exactly one discount (percentage or money), and at most
+        one condition (a coupon code or a minimum order). The currency box appears only while a money
+        field is in use, the one case upstream reads it.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-promotions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-promotion-target">
+            Google Promotions ({{ googlePromotions().length }}/{{ googleMaxPromotions }})
+          </label>
+          @if (googlePromotions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (promotion of googlePromotionRows(); track promotion.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ promotion.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ promotion.detail }}</span>
+                    <span class="break-all text-[10px] text-blue-700">{{ promotion.finalUrl }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePromotion(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + promotion.label"
+                    [attr.data-testid]="'implementation-google-promotion-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-empty">
+              No promotions added — this campaign is created without promotion extensions.
+            </span>
+          }
+          @if (!googlePromotionsFull()) {
+            <div class="flex flex-col gap-2">
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="promotionTarget"
+                inputId="google-promotion-target"
+                type="text"
+                size="small"
+                placeholder="What is on sale (e.g. Conference passes)"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
+                data-testid="implementation-google-promotion-target" />
+              <div class="flex gap-2">
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="discountKind"
+                  [options]="googlePromotionDiscountOptions"
+                  size="small"
+                  ariaLabel="Promotion discount kind"
+                  data-testid="implementation-google-promotion-discount-kind" />
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="discount"
+                  inputmode="decimal"
+                  type="text"
+                  size="small"
+                  placeholder="Discount"
+                  ariaLabel="Promotion discount"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-discount" />
+              </div>
+              <div class="flex gap-2">
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="eligibilityKind"
+                  [options]="googlePromotionConditionOptions"
+                  size="small"
+                  ariaLabel="Promotion condition"
+                  data-testid="implementation-google-promotion-eligibility-kind" />
+                @if (googlePromotionDraft().eligibilityKind === 'code') {
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="promotionCode"
+                    type="text"
+                    size="small"
+                    placeholder="Promotion code"
+                    ariaLabel="Promotion code"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
+                    data-testid="implementation-google-promotion-code" />
+                } @else if (googlePromotionDraft().eligibilityKind === 'ordersOver') {
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="ordersOverAmount"
+                    inputmode="decimal"
+                    type="text"
+                    size="small"
+                    placeholder="Minimum order amount"
+                    ariaLabel="Promotion minimum order amount"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
+                    data-testid="implementation-google-promotion-orders-over" />
+                }
+              </div>
+              @if (googlePromotionNeedsCurrency()) {
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="currencyCode"
+                  type="text"
+                  size="small"
+                  placeholder="Currency (e.g. USD)"
+                  ariaLabel="Promotion currency code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block"
+                  data-testid="implementation-google-promotion-currency" />
+              }
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="finalUrl"
+                type="url"
+                size="small"
+                placeholder="Destination URL"
+                ariaLabel="Promotion destination URL"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
+                data-testid="implementation-google-promotion-url" />
+              <div class="flex gap-2">
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="occasion"
+                  type="text"
+                  size="small"
+                  placeholder="Occasion (optional, e.g. BLACK_FRIDAY)"
+                  ariaLabel="Promotion occasion"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-occasion" />
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="languageCode"
+                  type="text"
+                  size="small"
+                  placeholder="Language (optional, e.g. en)"
+                  ariaLabel="Promotion language code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-language" />
+              </div>
+              <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed.
+                   Each picker sits in a visible label, since four identical date boxes say nothing on their own. -->
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows from
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="startDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows until
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="endDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-end" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable from
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionStartDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-redemption-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable until
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionEndDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-redemption-end" />
+                </label>
+              </div>
+              <button
+                type="button"
+                (click)="onGooglePromotionAdd()"
+                [disabled]="googlePromotionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-promotion-add">
+                + Add promotion
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-full">
+              Maximum of {{ googleMaxPromotions }} promotions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePromotionDraftError(); as error) {
+            <p id="google-promotion-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-promotion-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: price extensions.
+
+        Same gate. A table of rows, so the sub-form holds Google's minimum of three rows from the
+        start and lets the operator grow it to eight; the remove-row control disappears at three and
+        the add-row control at eight, so no table the form can build is refused for its size. One
+        currency box for the table, copied onto each row's `currencyCode` on the wire.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-prices-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-price-type">
+            Google Price Extensions ({{ googlePrices().length }}/{{ googleMaxPrices }})
+          </label>
+          @if (googlePrices().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (price of googlePriceRows(); track price.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ price.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ price.detail }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePrice(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove price extension ' + (i + 1)"
+                    [attr.data-testid]="'implementation-google-price-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-empty">
+              No price extensions added — this campaign is created without them.
+            </span>
+          }
+          @if (!googlePricesFull()) {
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap gap-2">
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="type"
+                  inputId="google-price-type"
+                  [options]="googlePriceTypeOptions"
+                  size="small"
+                  data-testid="implementation-google-price-type" />
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="priceQualifier"
+                  [options]="googlePriceQualifierOptions"
+                  size="small"
+                  ariaLabel="Price qualifier"
+                  data-testid="implementation-google-price-qualifier" />
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="languageCode"
+                  type="text"
+                  size="small"
+                  placeholder="Language (e.g. en)"
+                  ariaLabel="Price extension language code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
+                  data-testid="implementation-google-price-language" />
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="currencyCode"
+                  type="text"
+                  size="small"
+                  placeholder="Currency (e.g. USD)"
+                  ariaLabel="Price extension currency code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
+                  data-testid="implementation-google-price-currency" />
+              </div>
+              @for (row of googlePriceRowForms(); track row; let r = $index) {
+                <div class="flex flex-col gap-2 rounded-md border border-gray-100 p-2" [attr.data-testid]="'implementation-google-price-row-' + r">
+                  <div class="flex gap-2">
+                    <lfx-input-text
+                      [form]="row"
+                      control="header"
+                      type="text"
+                      size="small"
+                      placeholder="Header"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' header'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block min-w-0 flex-1"
+                      [attr.data-testid]="'implementation-google-price-row-header-' + r" />
+                    <lfx-input-text
+                      [form]="row"
+                      control="amount"
+                      inputmode="decimal"
+                      type="text"
+                      size="small"
+                      placeholder="Price"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' price'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block w-24"
+                      [attr.data-testid]="'implementation-google-price-row-amount-' + r" />
+                    <lfx-select
+                      [form]="row"
+                      control="unit"
+                      [options]="googlePriceUnitOptions"
+                      size="small"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' unit'"
+                      [attr.data-testid]="'implementation-google-price-row-unit-' + r" />
+                    @if (googlePriceDraft().offerings.length > googleMinPriceRows) {
+                      <button
+                        type="button"
+                        (click)="removeGooglePriceRow(r)"
+                        class="text-gray-500 hover:text-gray-700"
+                        [attr.aria-label]="'Remove price row ' + (r + 1)"
+                        [attr.data-testid]="'implementation-google-price-row-remove-' + r">
+                        <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                      </button>
+                    }
+                  </div>
+                  <lfx-input-text
+                    [form]="row"
+                    control="description"
+                    type="text"
+                    size="small"
+                    placeholder="Description"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' description'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
+                    [attr.data-testid]="'implementation-google-price-row-description-' + r" />
+                  <lfx-input-text
+                    [form]="row"
+                    control="finalUrl"
+                    type="url"
+                    size="small"
+                    placeholder="Destination URL"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' destination URL'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
+                    [attr.data-testid]="'implementation-google-price-row-url-' + r" />
+                </div>
+              }
+              <div class="flex gap-2">
+                @if (googlePriceDraft().offerings.length < googleMaxPriceRows) {
+                  <button
+                    type="button"
+                    (click)="addGooglePriceRow()"
+                    class="rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600"
+                    data-testid="implementation-google-price-row-add">
+                    + Add row
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="onGooglePriceAdd()"
+                  [disabled]="googlePriceAddDisabled()"
+                  class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                  data-testid="implementation-google-price-add">
+                  + Add price extension
+                </button>
+              </div>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-full">
+              Maximum of {{ googleMaxPrices }} price extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePriceDraftError(); as error) {
+            <p id="google-price-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-price-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
         Google Ads: bidding and conversions.
 
         Rendered against ONE channel — `googleBiddingChannel()`, the same one the request will
@@ -1078,6 +2096,17 @@
                     error
                   }}</span>
                 }
+                <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
+                     and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
+                @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
+                  <lfx-google-creative-image-library
+                    [slot]="slot"
+                    [accept]="creativeAssetAccept"
+                    (pick)="onGoogleImagePick(slot.key, $event)"
+                    (remove)="onGoogleImageRemove(slot.key, $event)"
+                    (upload)="onGoogleImageUpload(slot.key, $event)"
+                    (cancelUpload)="onGoogleImageUploadCancel()" />
+                }
               </div>
             }
           </div>
@@ -1104,6 +2133,47 @@
           amber-700 (#BB4D00) is 5.0:1. The red-600 error above already clears it at 4.8:1.
         -->
         <p class="text-xs text-amber-700" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
+      }
+
+      <!-- A stored Google image the request cannot carry, or that its slot would refuse, or a failed
+           upload; see `initGoogleImageAssetBlock`. Outside the sections, because a withheld capability
+           takes the sections down while the images they held still block. -->
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-image-asset-block-live">
+        {{ googleImageAssetBlockMessage() }}
+      </div>
+      @if (googleImageAssetBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-image-asset-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-google-image-asset-block-retry" />
+            }
+            <lfx-button
+              [label]="block.kind === 'uploadFailed' ? 'Remove upload' : 'Remove images'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onGoogleImageBlockRemove()"
+              data-testid="implementation-google-image-asset-block-remove" />
+          </div>
+        </div>
       }
 
       <!-- LinkedIn Ads Section -->
@@ -1222,6 +2292,99 @@
             </div>
           }
 
+          <!-- Ad image (one upload on every variant, as each dark post's thumbnail). LinkedIn takes no
+               image URL, so the upload is the whole control, offered only on an explicit yes from
+               `linkedInAssetUploadAvailable()`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
+            {{ linkedInImageUploadLiveMessage() }}
+          </div>
+          @if (linkedInAssetUploadAvailable()) {
+            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-image-upload">
+              <label class="text-xs font-medium text-gray-700" for="linkedin-image-file">Ad image</label>
+              <input
+                id="linkedin-image-file"
+                type="file"
+                [attr.accept]="creativeAssetAccept"
+                (change)="onLinkedInImageFileChange($event)"
+                [disabled]="linkedInImagePickerDisabled()"
+                [attr.aria-describedby]="linkedInImageFileDescribedBy()"
+                [attr.aria-invalid]="linkedInImageUploadStatus() === 'error' ? 'true' : null"
+                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                data-testid="implementation-linkedin-image-file" />
+              <p id="linkedin-image-file-hint" class="text-xs text-gray-500">
+                PNG or JPEG, up to 5 MB, at least 640x360 (horizontal), 360x360 (square) or 360x640 (vertical). Used as the thumbnail on every LinkedIn ad.
+              </p>
+              <p id="linkedin-image-file-status" class="text-xs text-gray-700" data-testid="implementation-linkedin-image-status">
+                {{ linkedInImageUploadStatusMessage() }}
+              </p>
+              @if (linkedInImageUploadStatus() === 'uploading') {
+                <div>
+                  <lfx-button
+                    label="Cancel upload"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onLinkedInImageAssetRemove()"
+                    data-testid="implementation-linkedin-image-cancel" />
+                </div>
+              } @else if (linkedInImageAssetId()) {
+                <div>
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onLinkedInImageAssetRemove()"
+                    data-testid="implementation-linkedin-image-remove" />
+                </div>
+              }
+              @if (linkedInImageUploadStatus() === 'error') {
+                <p id="linkedin-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-linkedin-image-error">
+                  {{ linkedInImageUploadError() }}
+                </p>
+              }
+            </div>
+          }
+
+          <!-- A LinkedIn upload the request cannot carry, or a failed upload; see `initLinkedInImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-asset-block-live">
+            {{ linkedInImageAssetBlockMessage() }}
+          </div>
+          @if (linkedInImageAssetBlock(); as block) {
+            <div
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-linkedin-image-asset-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-linkedin-image-asset-block-retry" />
+                }
+                <lfx-button
+                  label="Remove image"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onLinkedInImageAssetRemove()"
+                  data-testid="implementation-linkedin-image-asset-block-remove" />
+              </div>
+            </div>
+          }
+
           <!-- Variant Preview -->
           @if (linkedInVariants().length > 0) {
             <div>
@@ -1230,6 +2393,11 @@
                 @for (variant of linkedInVariants(); track $index; let i = $index) {
                   <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-linkedin-variant-' + i">
                     <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    @if (linkedInPreviewImageLabel(); as imageLabel) {
+                      <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-linkedin-variant-image-' + i">
+                        <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                      </p>
+                    }
                     <p class="text-sm text-gray-800">{{ variant.introText | slice: 0 : 120 }}{{ variant.introText.length > 120 ? '...' : '' }}</p>
                     <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline }}</p>
                   </div>
@@ -1424,10 +2592,200 @@
             </div>
           </div>
 
+          <!--
+            Instagram identity and EU DSA disclosures, offered only on an explicit yes
+            (`metaInstagramDsaAvailable`, LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA). Meta creates
+            an ad without them but will not PUBLISH it: the Instagram id for any Instagram placement, and
+            both disclosures for an EU geo target. Each error blocks Create (`canSubmit`).
+          -->
+          @if (metaInstagramDsaAvailable()) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="implementation-meta-instagram-dsa">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-instagram-user-id">
+                  Instagram account ID
+                  @if (metaUsesInstagram()) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="instagramUserId"
+                  inputId="meta-instagram-user-id"
+                  type="text"
+                  size="small"
+                  inputmode="numeric"
+                  placeholder="e.g. 17841400000000000"
+                  [required]="metaUsesInstagram()"
+                  [invalid]="metaInstagramUserIdError() !== null"
+                  [describedBy]="metaInstagramUserIdError() !== null ? 'meta-instagram-user-id-error' : 'meta-instagram-user-id-help'"
+                  dataTest="implementation-meta-instagram-user-id" />
+                @if (metaInstagramUserIdError(); as error) {
+                  <p id="meta-instagram-user-id-error" class="text-xs text-red-600" data-testid="implementation-meta-instagram-user-id-error">{{ error }}</p>
+                } @else {
+                  <p id="meta-instagram-user-id-help" class="text-xs text-gray-500">
+                    {{ metaUsesInstagram() ? 'Used for the Instagram placements.' : 'Not sent: no Instagram placement is enabled.' }}
+                  </p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-dsa-beneficiary">
+                  EU DSA beneficiary
+                  @if (metaDsaCountries().length > 0) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="dsaBeneficiary"
+                  inputId="meta-dsa-beneficiary"
+                  type="text"
+                  size="small"
+                  placeholder="Who the ads benefit"
+                  [required]="metaDsaCountries().length > 0"
+                  [invalid]="metaDsaBeneficiaryError() !== null"
+                  [describedBy]="metaDsaBeneficiaryError() !== null ? 'meta-dsa-beneficiary-error' : null"
+                  dataTest="implementation-meta-dsa-beneficiary" />
+                @if (metaDsaBeneficiaryError(); as error) {
+                  <p id="meta-dsa-beneficiary-error" class="text-xs text-red-600" data-testid="implementation-meta-dsa-beneficiary-error">{{ error }}</p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-dsa-payor">
+                  EU DSA payor
+                  @if (metaDsaCountries().length > 0) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="dsaPayor"
+                  inputId="meta-dsa-payor"
+                  type="text"
+                  size="small"
+                  placeholder="Who pays for the ads"
+                  [required]="metaDsaCountries().length > 0"
+                  [invalid]="metaDsaPayorError() !== null"
+                  [describedBy]="metaDsaPayorError() !== null ? 'meta-dsa-payor-error' : null"
+                  dataTest="implementation-meta-dsa-payor" />
+                @if (metaDsaPayorError(); as error) {
+                  <p id="meta-dsa-payor-error" class="text-xs text-red-600" data-testid="implementation-meta-dsa-payor-error">{{ error }}</p>
+                }
+              </div>
+            </div>
+          }
+
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {
             <div class="mb-4">
               <lfx-campaign-bidding-control [view]="biddingViews()['meta-ads']" (biddingChange)="onBiddingChange('meta-ads', $event)" />
+            </div>
+          }
+
+          <!-- Ad image (one image on every variant). Offered only on an explicit yes from
+               `metaCreativeAvailable()`: the legacy creator reads no Meta image. The upload, like
+               Reddit's, needs its own capability and wins over a pasted URL when both are set. -->
+          @if (metaCreativeAvailable()) {
+            <div class="mb-4 flex flex-col gap-3" data-testid="implementation-meta-image">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-image-url">Ad image URL</label>
+                <input
+                  id="meta-image-url"
+                  type="url"
+                  [value]="metaImageUrl()"
+                  (input)="onMetaImageUrlInput($event)"
+                  placeholder="https://example.org/promo.png"
+                  aria-describedby="meta-image-url-hint"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-meta-image-url" />
+                <p id="meta-image-url-hint" class="text-xs text-gray-500">Used on every Meta ad. Leave empty for link ads with no image of their own.</p>
+              </div>
+
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-image-status-live">
+                {{ metaImageUploadLiveMessage() }}
+              </div>
+              @if (metaAssetUploadAvailable()) {
+                <div class="flex flex-col gap-1" data-testid="implementation-meta-image-upload">
+                  <label class="text-xs font-medium text-gray-700" for="meta-image-file">Or upload an image</label>
+                  <input
+                    id="meta-image-file"
+                    type="file"
+                    [attr.accept]="creativeAssetAccept"
+                    (change)="onMetaImageFileChange($event)"
+                    [attr.aria-describedby]="metaImageFileDescribedBy()"
+                    [attr.aria-invalid]="metaImageUploadStatus() === 'error' ? 'true' : null"
+                    class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                    data-testid="implementation-meta-image-file" />
+                  <p id="meta-image-file-hint" class="text-xs text-gray-500">PNG or JPEG, up to 10 MB. Used instead of the image URL.</p>
+                  <p id="meta-image-file-status" class="text-xs text-gray-700" data-testid="implementation-meta-image-status">
+                    {{ metaImageUploadStatusMessage() }}
+                  </p>
+                  @if (metaImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onMetaImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-meta-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (metaImageAssetId()) {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onMetaImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-meta-image-remove">
+                        Remove uploaded image
+                      </button>
+                    </div>
+                  }
+                  @if (metaImageUploadStatus() === 'error') {
+                    <p id="meta-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-meta-image-error">
+                      {{ metaImageUploadError() }}
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- A Meta image (upload or pasted URL) the request cannot carry, or a failed upload; see `initMetaImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-image-asset-block-live">
+            {{ metaImageAssetBlockMessage() }}
+          </div>
+          @if (metaImageAssetBlock(); as block) {
+            <div
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-image-asset-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-meta-image-asset-block-retry" />
+                }
+                <lfx-button
+                  label="Remove image"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onMetaImageBlockRemove()"
+                  data-testid="implementation-meta-image-asset-block-remove" />
+              </div>
             </div>
           }
 
@@ -1439,6 +2797,11 @@
                 @for (variant of metaVariants(); track $index; let i = $index) {
                   <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
                     <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    @if (metaPreviewImageLabel(); as imageLabel) {
+                      <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-meta-variant-image-' + i">
+                        <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                      </p>
+                    }
                     <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
                     <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
                     @if (variant.description) {
@@ -1461,18 +2824,25 @@
           </div>
 
           <!--
-            Stated, not hidden. The flight dates above are NOT applied to Microsoft: `microsoftConfig`
-            carries no scheduling fields (unlike Meta), so the campaign is created with no start or
-            end. It is created PAUSED, so nothing spends until a human enables it — but there is no
-            automatic stop, and an operator who assumed the flight applied would find it still
-            spending after the end date. Naming that is the difference between a known limitation and
-            an unpleasant surprise.
+            Stated, not hidden. Unless `microsoftScheduleAvailable()` says the deployed campaign-service
+            applies them (linuxfoundation/lfx-v2-campaign-service#409), the flight dates above are NOT
+            sent to Microsoft, so the campaign is created with no start or end. It is created PAUSED,
+            so nothing spends until a human enables it — but there is no automatic stop, and an
+            operator who assumed the flight applied would find it still spending after the end date.
+            Naming that is the difference between a known limitation and an unpleasant surprise.
           -->
-          <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-microsoft-no-flight">
-            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
-            Microsoft campaigns are created paused and ignore the flight dates above — Microsoft Advertising has no scheduling in this integration yet. Enable
-            and pause the campaign manually in the Optimize tab.
-          </p>
+          @if (microsoftScheduleAvailable()) {
+            <p class="mb-4 text-xs text-gray-500" data-testid="implementation-microsoft-flight">
+              <i class="fa-light fa-calendar mr-1" aria-hidden="true"></i>
+              The flight dates above are applied to the Microsoft ad group.
+            </p>
+          } @else {
+            <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-microsoft-no-flight">
+              <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+              Microsoft campaigns are created paused and ignore the flight dates above — Microsoft Advertising has no scheduling in this integration yet. Enable
+              and pause the campaign manually in the Optimize tab.
+            </p>
+          }
 
           <!-- Budget + CPC bid -->
           <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1680,6 +3050,99 @@
               }
             }
           </div>
+
+          <!-- Image ad extension (one upload, attached to the campaign). Offered only on an explicit
+               yes from `microsoftAssetUploadAvailable()`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-microsoft-image-status-live">
+            {{ microsoftImageUploadLiveMessage() }}
+          </div>
+          @if (microsoftAssetUploadAvailable()) {
+            <div class="mt-4 flex flex-col gap-1" data-testid="implementation-microsoft-image-upload">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-image-file">Image extension</label>
+              <input
+                id="microsoft-image-file"
+                type="file"
+                [attr.accept]="creativeAssetAccept"
+                (change)="onMicrosoftImageFileChange($event)"
+                [disabled]="microsoftImagePickerDisabled()"
+                [attr.aria-describedby]="microsoftImageFileDescribedBy()"
+                [attr.aria-invalid]="microsoftImageUploadStatus() === 'error' ? 'true' : null"
+                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                data-testid="implementation-microsoft-image-file" />
+              <p id="microsoft-image-file-hint" class="text-xs text-gray-500">
+                PNG or JPEG, up to 75 KB (76,800 bytes) and 40x20 to 2592x2048 pixels. Attached to the campaign as an image extension. Available once the brief
+                is saved.
+              </p>
+              <p id="microsoft-image-file-status" class="text-xs text-gray-700" data-testid="implementation-microsoft-image-status">
+                {{ microsoftImageUploadStatusMessage() }}
+              </p>
+              @if (microsoftImageUploadStatus() === 'uploading' || microsoftImageChecking()) {
+                <div>
+                  <lfx-button
+                    label="Cancel upload"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onMicrosoftImageAssetRemove()"
+                    data-testid="implementation-microsoft-image-cancel" />
+                </div>
+              } @else if (microsoftImageAssetId()) {
+                <div>
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onMicrosoftImageAssetRemove()"
+                    data-testid="implementation-microsoft-image-remove" />
+                </div>
+              }
+              @if (microsoftImageUploadStatus() === 'error') {
+                <p id="microsoft-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-image-error">
+                  {{ microsoftImageUploadError() }}
+                </p>
+              }
+            </div>
+          }
+
+          <!-- A Microsoft upload the request cannot carry, or a failed upload; see `initMicrosoftImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-microsoft-image-asset-block-live">
+            {{ microsoftImageAssetBlockMessage() }}
+          </div>
+          @if (microsoftImageAssetBlock(); as block) {
+            <div
+              class="mt-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-microsoft-image-asset-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-microsoft-image-asset-block-retry" />
+                }
+                <lfx-button
+                  label="Remove image"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onMicrosoftImageAssetRemove()"
+                  data-testid="implementation-microsoft-image-asset-block-remove" />
+              </div>
+            </div>
+          }
         </div>
       }
 

@@ -72,3 +72,25 @@ describe('CampaignService monitor reads — account source marker', () => {
     }
   });
 });
+
+/** campaign-service Google Ads account discovery, read for the Monitor tab's Google Ads panel. */
+describe('CampaignService.getGoogleAdsAccounts', () => {
+  it('GETs the project-scoped account list with only the project, no account-source marker', () => {
+    const accounts = [{ key: '1000000001', label: 'CNCF Search' }];
+    const get = vi.fn().mockReturnValue(of(accounts));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get } },
+        { provide: SseService, useValue: {} },
+      ],
+    });
+    let result: unknown;
+
+    TestBed.inject(CampaignService)
+      .getGoogleAdsAccounts('cncf')
+      .subscribe((r) => (result = r));
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/google/accounts', { params: { project: 'cncf' } });
+    expect(result).toBe(accounts);
+  });
+});

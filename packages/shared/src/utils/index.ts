@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './ai.utils';
 export * from './avatar.utils';
 export * from './color.utils';
 export * from './date-time.utils';
@@ -123,6 +124,8 @@ export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
+export * from './campaign-google-assets.utils';
+export * from './campaign-google-creative.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';

@@ -382,6 +382,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     ['30d', 'AND activity_date >= DATEADD(day, -30, CURRENT_DATE())'],
     ['90d', 'AND activity_date >= DATEADD(day, -90, CURRENT_DATE())'],
     ['365d', 'AND activity_date >= DATEADD(day, -365, CURRENT_DATE())'],
+    ['730d', 'AND activity_date >= DATEADD(day, -730, CURRENT_DATE())'],
   ] as const)('windows %s by days before today', async (timeRange, predicate) => {
     await service.getContributors(ACCOUNT, timeRange, FILTERS);
 

@@ -145,6 +145,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid
+   * `?include_writer=true` additively decorates `writer` (vote#writer). Opt-in so polling and every pre-existing caller skip the FGA lookup.
    */
   public async getVoteById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -162,7 +163,7 @@ export class VoteController {
         return;
       }
 
-      const vote = await this.voteService.getVoteById(req, uid, { includeProject: true });
+      const vote = await this.voteService.getVoteById(req, uid, { includeProject: true, includeWriter: req.query['include_writer'] === 'true' });
 
       logger.success(req, 'get_vote_by_id', startTime, {
         vote_uid: uid,

@@ -296,6 +296,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     ['30d', 30],
     ['90d', 90],
     ['365d', 365],
+    ['730d', 730],
   ] as const)('windows every read on ACTIVITY_TS for %s', async (range, days) => {
     const response = await service.getTrainees(ACCOUNT, range);
 
