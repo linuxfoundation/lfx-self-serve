@@ -75,6 +75,7 @@ import { UserService } from '@services/user.service';
 
 import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
+import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -109,6 +110,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     MktgIntakeLogoFilesComponent,
     MktgRunActivityComponent,
     MktgRunQuestionsComponent,
+    MktgRunProgressComponent,
   ],
   templateUrl: './mktg-agent-run.component.html',
 })
@@ -210,6 +212,13 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly publicReceiver = signal(false);
+  protected readonly publicRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
+    initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
+  });
+  protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
+  protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
+  protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
   protected readonly waitingQuestions = signal(false);
   protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
   private readonly existingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
@@ -564,13 +573,22 @@ export class MktgAgentRunComponent {
         .subscribe(({ project, fresh, phase, over }) => {
           if (project && fresh && phase === 'form' && !over) this.readWaitingDraft(project);
         });
-      combineLatest([this.activeContext$, this.effectiveUser$, this.freshMode$])
+      combineLatest([
+        this.activeContext$,
+        this.effectiveUser$,
+        this.freshMode$,
+        this.route.queryParamMap.pipe(
+          map((params) => params.get('run') ?? ''),
+          distinctUntilChanged()
+        ),
+      ])
         .pipe(
           distinctUntilChanged(
-            ([previousContext, previousUser, previousMode], [context, user, mode]) =>
-              previousContext?.uid === context?.uid && previousUser?.sub === user?.sub && previousMode === mode
+            ([previousContext, previousUser, previousMode, previousRun], [context, user, mode, run]) =>
+              previousContext?.uid === context?.uid && previousUser?.sub === user?.sub && previousMode === mode && previousRun === run
           ),
-          switchMap(([context, user, fresh]) => {
+          switchMap(([context, user, freshEntry, runId]) => {
+            const fresh = freshEntry && !runId;
             if (!fresh && context?.uid === this.consumedFreshProject && user?.sub === this.consumedFreshSubject) {
               // Our accepted-attempt URL replacement is not a new intake/context.
               this.consumedFreshProject = null;
@@ -578,7 +596,7 @@ export class MktgAgentRunComponent {
               return EMPTY;
             }
             this.resetForContext(context, fresh);
-            if (!context) return EMPTY;
+            if (!context || this.publicReceiver()) return EMPTY;
             const history =
               fresh && user?.sub
                 ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
@@ -641,6 +659,24 @@ export class MktgAgentRunComponent {
           this.seedLinkRows();
         });
     }
+  }
+
+  protected onPublicLanding(failed = false): void {
+    const projectUid = this.projectContext.activeContextUid();
+    const agentKey = this.publicAgentKey();
+    if (!this.publicReceiver() || !projectUid || !agentKey) return;
+    // Public completion has no exact-revision receipt: open the current document, without revision=.
+    this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey, ...(failed && { runId: this.publicRunId() }) });
+    this.onRetryHandoff();
+  }
+
+  protected onPublicQuestions(): void {
+    const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
+    if (!pending?.pendingQuestions || pending.attempt?.runId !== this.publicRunId()) return;
+    this.activeRequest = pending.request;
+    this.hasAcknowledgement.set(true);
+    this.showQuestions(pending.pendingQuestions);
+    this.publicReceiver.set(false);
   }
 
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
@@ -1447,7 +1483,14 @@ export class MktgAgentRunComponent {
     this.lastSourceOrigins.set({});
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
+    const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
+    this.publicReceiver.set(!!publicId);
     if (!context) return;
+    if (publicId) {
+      const owned = this.runAttempts.load(context.uid, this.agent.id);
+      if (owned?.attempt?.runId !== publicId || (owned.state !== 'writing' && !(owned.state === 'questions' && owned.pendingQuestions))) return;
+      this.publicReceiver.set(false);
+    }
     if (fresh) {
       this.readWaitingDraft(context.uid);
       return; // Offer recovery without consuming a token or starting/resuming a run.
