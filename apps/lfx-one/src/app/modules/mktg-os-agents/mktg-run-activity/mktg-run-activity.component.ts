@@ -52,6 +52,8 @@ export class MktgRunActivityComponent {
   public readonly icon = input('fa-light fa-sparkles');
   /** Form-only agents have no questions turn, even before any activity arrives. */
   public readonly showQuestions = input(true);
+  /** Run-page owners supply the single heading/status; other callers retain the full header. */
+  public readonly showHeader = input(true);
 
   // === Signals ===
   protected readonly showAll = signal(false);
