@@ -78,6 +78,8 @@ describe('OverviewOrgsCardComponent', () => {
     const tip = (testId: string): string | null =>
       fixture.nativeElement.querySelector(`[data-testid="${testId}"] lfx-overview-info-tip [role="img"]`)?.getAttribute('aria-label') ?? null;
     expect(tip('overview-orgs-members-kpis-active')).toContain('Total active members in SFDC');
+    expect(tip('overview-orgs-members-kpis-new')).toContain('Total number of members added in the selected time period');
+    expect(tip('overview-orgs-non-members-kpis-non-members')).toContain('do not have a membership');
     expect(tip('overview-orgs-non-members-kpis-non-renewals')).toContain('Members who chose not to continue');
   });
 
