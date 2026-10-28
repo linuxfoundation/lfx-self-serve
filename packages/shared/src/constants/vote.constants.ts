@@ -83,3 +83,31 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Presenter view (#4140): live-count poll cadence while the tab is visible. */
+export const VOTE_PRESENTER_POLL_INTERVAL_MS = 5_000;
+
+/** Presenter view: first reconnect delay after a failed poll; doubles per consecutive failure up to the cap. */
+export const VOTE_PRESENTER_BACKOFF_BASE_MS = 5_000;
+
+/** Presenter view: ceiling for the reconnect backoff so a recovered network is noticed within half a minute. */
+export const VOTE_PRESENTER_BACKOFF_MAX_MS = 30_000;
+
+/** Presenter view: the one-second tick that refreshes the "Updated N seconds ago" label. */
+export const VOTE_PRESENTER_CLOCK_TICK_MS = 1_000;
+
+/** Presenter view and copy-slide PNG share one title cap so the two surfaces truncate identically (#4142, #4145). */
+export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
+
+/** Copy-slide PNG (#4145): fixed 16:9 export size so it drops into Google Slides / PowerPoint uncropped. */
+export const VOTE_SLIDE_WIDTH_PX = 1920;
+export const VOTE_SLIDE_HEIGHT_PX = 1080;
+
+/** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
+export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
+
+/** QR code quiet zone in modules; the spec asks for 4, 2 still scans reliably on a projector and keeps the code large. */
+export const VOTE_QR_QUIET_ZONE_MODULES = 2;
+
+/** How long Copy slide waits for the slide's QR to render before reporting a failed export. */
+export const VOTE_SLIDE_QR_READY_TIMEOUT_MS = 5000;

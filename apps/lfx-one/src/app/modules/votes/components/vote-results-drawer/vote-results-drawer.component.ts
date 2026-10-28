@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -25,14 +25,19 @@ import {
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isRankedPollType,
+  toAbsoluteUrl,
+  votePermalinkPath,
+  votePresenterPath,
   isVoteEndedEarly,
   mergeCommentResults,
 } from '@lfx-one/shared/utils';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
+import { exportVoteSlide, voteSlideFileName, voteSlideToast } from '@shared/utils/vote-slide.util';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -42,6 +47,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, s
 import { VoteAbstainResultComponent } from '../vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentResultsComponent } from '../vote-comment-results/vote-comment-results.component';
 import { VoteOptionResultsComponent } from '../vote-option-results/vote-option-results.component';
+import { VoteSlideComponent } from '../vote-slide/vote-slide.component';
 import { VoteParticipationCardComponent } from '../vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-results/vote-ranked-question-results.component';
 
@@ -62,6 +68,7 @@ import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-resu
     VoteAbstainResultComponent,
     VoteRankedQuestionResultsComponent,
     VoteCommentResultsComponent,
+    VoteSlideComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -70,6 +77,8 @@ export class VoteResultsDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
+  private readonly messageService = inject(MessageService);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -139,11 +148,40 @@ export class VoteResultsDrawerComponent {
   protected readonly voteTypeTooltip: Signal<string> = this.initVoteTypeTooltip();
   protected readonly voteEndedEarlyTooltip: Signal<string | null> = this.initVoteEndedEarlyTooltip();
 
+  /** Present and Copy slide are offered only when the vote came back decorated `writer: true` (the creator audience asks for it); votePresenterGuard re-checks vote#writer. */
+  protected readonly canPresent: Signal<boolean> = computed(() => {
+    const v = this.vote();
+    return this.audience() === 'creator' && !!v && v.writer === true && (v.status === PollStatus.ACTIVE || v.status === PollStatus.ENDED);
+  });
+  protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
+  protected readonly isBrowserRender = isPlatformBrowser(this.platformId);
+  protected readonly slideBusy = signal<boolean>(false);
+  private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
+  private readonly slideComponent = viewChild(VoteSlideComponent);
+  protected readonly presenterPath: Signal<string> = computed(() => votePresenterPath(this.vote()?.uid ?? ''));
+
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
   // close-date text falls back to UTC there and is replaced on client hydration.
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Protected Methods ===
+  /** Exports the static vote slide (#4145): PNG to the clipboard where the browser allows, else a download. */
+  protected async copySlide(): Promise<void> {
+    const element = this.slideRef()?.nativeElement;
+    const name = this.vote()?.name;
+    if (!element || !name || this.slideBusy()) return;
+    this.slideBusy.set(true);
+    // The QR is generated asynchronously; capturing before it renders would copy a slide with a blank code.
+    const result = (await this.slideComponent()?.whenQrReady()) ? await exportVoteSlide(element, voteSlideFileName(name)) : 'failed';
+    this.slideBusy.set(false);
+    this.messageService.add(voteSlideToast(result));
+  }
+
+  /** Opens the chrome-less presenter in a new tab; votePresenterGuard (vote#writer) is the real gate. */
+  protected present(): void {
+    this.document.defaultView?.open(this.presenterPath(), '_blank', 'noopener,noreferrer');
+  }
+
   protected onClose(): void {
     this.visible.set(false);
   }
@@ -226,7 +264,7 @@ export class VoteResultsDrawerComponent {
             this.loadingVoteDetails.set(true);
           }
 
-          return this.voteService.getVote(id, { skipCache }).pipe(
+          return this.voteService.getVote(id, { skipCache, ...(this.audience() === 'creator' && { includeWriter: true }) }).pipe(
             tap((v) => {
               lastVoteId = id;
               lastVote = v;
