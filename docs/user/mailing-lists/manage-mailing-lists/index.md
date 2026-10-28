@@ -34,16 +34,16 @@ Each row shows the list's name, its email address, and an **Open on Groups.io** 
 | Project or foundation, other users      | **Mailing List**, **Description**, **Linked Groups**, **Public**, **Subscribers**, and a **Join** button where it applies |
 | Your own view                           | **Mailing List**, **Description**, **My Subscription**, **Public**, and a leave button                                    |
 
-A **Public** check mark means the list's archive is public. A **Member** badge next to a list name means you are already subscribed. **My Subscription** shows how you receive email from the list: **Individual**, **Digest**, or **None**.
+A **Public** check mark means the list's archive is public. A **Member** badge next to a list name means you are already subscribed. **My Subscription** shows how you receive email from the list, for example **Individual**, **Digest**, or **None**. It shows **Subscribed** when no delivery mode is available.
 
-If you are signed in with the board member persona, list names on a project or foundation page are plain text instead of links, and there is no **Join** button.
+If you are signed in with the board member persona, list names on a project or foundation page are plain text instead of links, and there is no **Join** button. You can still open a list by selecting its row.
 
 ## Find a list
 
 - **Search mailing lists…** matches the list's name and description.
 - **Select Committee** is the group filter. Choose a group to see only the lists linked to it. Its options start with **All Groups**.
 - **Select Status** filters to **Public** or **Private** lists. Its options start with **All Status** and show how many lists are in each.
-- In your own view, if you have more than one foundation or project, **foundation** and **project** filters also appear.
+- In your own view, **foundation** and **project** filters can also appear. They depend on your roles and on which foundations and projects your subscribed lists belong to.
 
 If nothing matches, you see "No results found". Select **Reset filters** to clear them.
 
@@ -60,6 +60,7 @@ You are subscribed with the email address on your account, and you receive messa
 
 - The list's **Audience & Access** is **Public**. For **Approval Required** and **Invite Only** lists, someone who manages the list adds you. See [Mailing List Settings and Visibility](../mailing-list-settings/).
 - You are not already subscribed.
+- You don't manage mailing lists for this project. The view for people who manage lists has no **Join** button. To add yourself, use **Add Subscriber** on the list's page. See [Manage Subscribers](../manage-subscribers/).
 - Your subscriptions have finished loading. If they couldn't be loaded, **Join** is hidden so you aren't offered a list you already belong to.
 
 If joining fails, you see "Failed to join" followed by the list's name. Try again.
@@ -88,7 +89,7 @@ Select a list's name to open its page. The top shows:
 - The list's email address
 - **View on Groups.io**, which opens the list on Groups.io
 
-If you came from your own view, a note says "You're viewing this mailing list in its project context" and explains that some options may differ from your personal view. Use **Back to Mailing Lists** to return.
+If you came from your own view, a note says "You're viewing this mailing list in its" followed by "project" or "foundation" and "context", and explains that some options may differ from your personal view. Use **Back to Mailing Lists** to return.
 
 Below that are:
 
@@ -98,7 +99,7 @@ Below that are:
 
 ## Edit a list
 
-You need permission to manage the list.
+You need permission to manage the list. Everyone who can open a list's page sees **Edit Mailing List** and **Manage Groups**, but the edit form only opens for people who can manage the list.
 
 1. Open the list's page and select **Edit Mailing List**.
 2. The form opens with the list's current details in the same three steps as [Create a Mailing List](../create-mailing-list/). Move between steps with **Next** and **Previous**, or select a step.

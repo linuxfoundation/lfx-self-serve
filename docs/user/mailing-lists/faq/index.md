@@ -16,6 +16,7 @@ Open **Mailing Lists** for the project or foundation and select **Join** on the 
 
 - The list is **Approval Required** or **Invite Only**. Someone who manages the list has to add you.
 - You are already subscribed. Look for the **Member** badge next to the list's name.
+- You manage mailing lists for the project. The view for people who manage lists has no **Join** button. To add yourself, use **Add Subscriber** on the list's page. See [Manage Subscribers](../manage-subscribers/).
 - Your subscriptions didn't finish loading. Refresh the page and try again.
 - You are signed in with the board member persona, which doesn't show **Join** buttons.
 
@@ -35,7 +36,7 @@ If the list is kept in sync with a group, leaving may not persist if your role i
 
 ## Who can create a mailing list?
 
-People who can manage mailing lists for the project or foundation. The project also needs a mailing list service. If you don't see **Add Mailing List**, contact your project administrator. See [Create a Mailing List](../create-mailing-list/).
+People who can manage mailing lists for the project or foundation. The project, or its parent foundation, also needs a mailing list service. If you don't see **Add Mailing List**, contact your project administrator. See [Create a Mailing List](../create-mailing-list/).
 
 ## What do the settings mean?
 

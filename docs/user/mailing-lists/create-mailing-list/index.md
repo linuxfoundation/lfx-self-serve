@@ -15,7 +15,7 @@ Mailing lists in LFX Self Serve run on Groups.io. Creating a list sets up a new 
 ## Before you begin
 
 1. Use the project picker in the sidebar to select the project or foundation the list belongs to. The new list is created for the project you have selected.
-2. Make sure the project has a mailing list service. If it doesn't, there is no **Add Mailing List** button. When the project also has no lists, the **Mailing Lists** page shows "Mailing list service hasn't been set up yet for this project. To create a mailing list for your project, contact support." with a **Contact Support** button. Contact support to have the service set up first.
+2. Make sure the project, or its parent foundation, has a mailing list service. If neither does, there is no **Add Mailing List** button. When the project also has no lists, the **Mailing Lists** page shows "Mailing list service hasn't been set up yet for this project. To create a mailing list for your project, contact support." with a **Contact Support** button. Contact support to have the service set up first.
 
 ## Open the form
 
@@ -45,7 +45,7 @@ You see an error under the field when a rule isn't met, for example "Mailing lis
 
 Choose three things: **Audience & Access** (who can join), **Posting Permission** (who can post), and **Visibility** (who can read past messages). The defaults are **Public**, **Open Discussion**, and **Public**, which are the recommended starting point. See [Mailing List Settings and Visibility](../mailing-list-settings/) for what each option does. Two of them need extra care:
 
-- **Members only** visibility can't be changed back to **Public** later.
+- **Subscribers only** visibility can't be changed back to **Public** later.
 - An **Announcement** list must have **Public** visibility.
 
 ## Step 3: People & Groups
@@ -62,6 +62,7 @@ If something goes wrong:
 
 - **Duplicate name.** You return to step 1 with the name flagged. Choose a different name.
 - **Address rejected.** You see "Unable to create mailing list" explaining that the generated address was rejected. Try again, and contact support if it keeps happening.
+- **Service setup failed.** If the project has no mailing list service of its own, one is set up for it when you create the list. If that step fails, you see "Failed to create mailing list service for this project". Try again, and contact support if it keeps failing.
 - **Anything else.** You see "Failed to create mailing list". Try again, and contact support if it keeps failing.
 
 ## After you create a list
