@@ -261,21 +261,6 @@ export class MktgAgentRunService {
     return !!this.retainedBody(request);
   }
 
-  private retainedBody(request: MktgGenerateRequest): MktgRunGenerateBody | null {
-    const pending = this.attempts.load(request.projectUid, request.agentId, request.documentId);
-    const body = pending?.request.retainedStartBody;
-    if (
-      !request.projectUid ||
-      pending?.state !== 'failed' ||
-      pending.requiresReattachment ||
-      !body ||
-      body !== request.retainedStartBody ||
-      body.project !== request.projectUid
-    )
-      return null;
-    return body;
-  }
-
   /** Validate and scope the future server conflict before any navigation or discard choice. */
   public activeRunConflict(error: unknown, request: MktgGenerateRequest): MktgActiveRunConflict | null {
     if (!(error instanceof HttpErrorResponse) || error.status !== 409 || !request.projectUid) return null;
@@ -390,6 +375,21 @@ export class MktgAgentRunService {
     } catch {
       return null;
     }
+  }
+
+  private retainedBody(request: MktgGenerateRequest): MktgRunGenerateBody | null {
+    const pending = this.attempts.load(request.projectUid, request.agentId, request.documentId);
+    const body = pending?.request.retainedStartBody;
+    if (
+      !request.projectUid ||
+      pending?.state !== 'failed' ||
+      pending.requiresReattachment ||
+      !body ||
+      body !== request.retainedStartBody ||
+      body.project !== request.projectUid
+    )
+      return null;
+    return body;
   }
 
   /**
