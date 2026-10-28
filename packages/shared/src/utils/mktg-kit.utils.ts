@@ -18,6 +18,11 @@ import type { MktgKitAsset, MktgKitAssetRow, MktgKitFamily, MktgKitFamilyView, M
 
 import { isMktgFamilyAgentAvailable } from './mktg-family-actions.utils';
 
+/** The Kit catalogue owns common asset display labels. */
+export function mktgKitAssetLabel(agentKey: string): string | undefined {
+  return MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((asset) => asset.agentKey === agentKey)?.label;
+}
+
 /** Stable UTC day/month for one-off history; invalid or absent timestamps remain unknown. */
 export function mktgKitRunDate(createdAt: string | null | undefined): string {
   const date = new Date(createdAt ?? '');

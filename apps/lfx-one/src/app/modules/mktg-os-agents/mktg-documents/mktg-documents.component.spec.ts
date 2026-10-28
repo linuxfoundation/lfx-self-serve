@@ -217,7 +217,7 @@ describe('MktgDocumentsComponent', () => {
 
     expect(query('mktg-documents-nav-all')?.classList.contains('border-gray-200')).toBe(true);
     expect(query('mktg-documents-nav-all')?.classList.contains('font-semibold')).toBe(false);
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Brand kit');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('1 ·');
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('Not generated yet');
@@ -320,7 +320,7 @@ describe('MktgDocumentsComponent', () => {
     expect(action?.querySelector('a')?.getAttribute('href')).toContain('/documents/foundation-message/living');
     expect(query('mktg-documents-empty-living')?.textContent).not.toContain('Boilerplates Agent');
     expect(query('mktg-documents-empty-living')?.querySelector('p')?.textContent).toBe(
-      'Nothing written yet. Opens the messaging framework document in Positioning & brand.'
+      'Nothing written yet. Opens the framework document in Positioning & brand.'
     );
   });
 

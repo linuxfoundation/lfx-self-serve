@@ -10,6 +10,7 @@ import {
   describeMktgKitAsset,
   isMktgKitFamilyLive,
   mktgKitCurrentVersion,
+  mktgKitAssetLabel,
   mktgKitSources,
   mktgKitRunDate,
   resolveMktgKit,
@@ -65,6 +66,8 @@ describe('Marketing kit plan of record', () => {
     expect(MKTG_KIT_FAMILIES[0].agentIds).toEqual(['foundation-setup', 'boilerplates', 'faq', 'brand-kit']);
   });
   it('keeps board Run wording separate from catalog agent identities and row headings', () => {
+    expect(mktgKitAssetLabel('brand-kit')).toBe('Brand kit');
+    expect(mktgKitAssetLabel('not-registered')).toBeUndefined();
     expect(MKTG_KIT_FAMILIES[0].assets.filter((asset) => asset.runName !== undefined).map((asset) => [asset.label, asset.runName])).toEqual([
       ['Messaging framework', 'messaging framework'],
       ['Boilerplates', 'boilerplates'],

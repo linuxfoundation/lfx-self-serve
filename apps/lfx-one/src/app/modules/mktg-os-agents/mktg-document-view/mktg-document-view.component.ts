@@ -66,6 +66,7 @@ import {
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
   mktgSentenceCaseLabel,
+  mktgKitAssetLabel,
   mktgKitRootPath,
   mktgRunRouteFor,
   mktgRunModeFor,
@@ -264,7 +265,8 @@ export class MktgDocumentViewComponent {
     mktgSentenceCaseLabel(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'document')
   );
   protected readonly generatingLabel = computed(
-    () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
+    () =>
+      `Working on ${mktgKitAssetLabel(this.params().agentKey) ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly memberResult = viewChild(Member360ResultComponent);
@@ -1221,7 +1223,8 @@ export class MktgDocumentViewComponent {
       const view = this.view();
       if (!view) {
         const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${type.itemLabel}`.trim() : '';
+        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
+        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {

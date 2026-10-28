@@ -1445,6 +1445,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing the asset…');
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('The revision will appear here when it is ready.');
     expect(query('mktg-document-view-live-state')?.textContent).toBe('Generating the asset.');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('TestOrbit Brand kit');
+    expect((harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent)['generatingLabel']()).toBe('Working on Brand kit');
     store.getDocument.mockReturnValue(of(detail));
     await harness.navigateByUrl(`/documents/${BRAND_KIT.agentKey}/living?run=${runId}&revision=${LATEST.id}`, MktgDocumentViewComponent);
     await settle();

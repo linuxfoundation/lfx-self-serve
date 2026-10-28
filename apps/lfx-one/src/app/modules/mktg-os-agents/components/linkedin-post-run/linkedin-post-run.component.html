@@ -157,6 +157,7 @@
               }
               <lfx-button
                 [label]="saved() || explicitProfileSave() ? 'Save profile' : 'Continue to draft a post'"
+                [outlined]="(!!acceptedRequest() && !busy()) || (!acceptedRequest() && !!pendingNotice())"
                 type="submit"
                 data-testid="mktg-linkedin-save-profile" />
             </div>

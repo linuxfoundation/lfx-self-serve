@@ -20,7 +20,7 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, describeMktgRevisionAuthor, resolveMktgKit, resolveMktgFamilyNextStep } from '@lfx-one/shared/utils';
+import { describeMktgRevision, describeMktgRevisionAuthor, resolveMktgKit, resolveMktgFamilyNextStep, mktgKitAssetLabel } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -401,7 +401,7 @@ export class MktgDocumentsComponent {
           items: family.types.map((type) => {
             const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
             return {
-              type,
+              type: { ...type, label: mktgKitAssetLabel(type.agentKey) ?? type.label },
               position: type.kind === 'living' && living.length > 1 ? living.indexOf(type) + 1 : null,
               ...(countsUnknown
                 ? { badge: '', badgeClass: '' }

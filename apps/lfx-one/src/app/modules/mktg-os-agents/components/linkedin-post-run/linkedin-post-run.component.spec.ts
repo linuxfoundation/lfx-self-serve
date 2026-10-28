@@ -277,6 +277,13 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
+  it('keeps Open the document as the only solid action when a first-run profile has a pending draft', async () => {
+    TestBed.inject(MktgRunAttemptService).save(intakePending('writing'));
+    const fixture = await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-save-profile"] button')?.classList.contains('p-button-outlined')).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-pending"] button')?.classList.contains('p-button-outlined')).toBe(false);
+  });
+
   it('prefills first-run setup from creator/project live memory on return, not in a fresh visit', async () => {
     const setup = { ...profile.about, ...profile.voice };
     api.setupForDocument.mockReturnValueOnce(setup).mockReturnValue(null);
