@@ -821,7 +821,18 @@
                      compose created nothing, and another send's master is not this email's fix. -->
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-loose">
                   The master list composed here was not attached. To send to it instead, choose "Use for this email" on it under
-                  <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>.
+                  <!-- That section shows only after a discovery, as in the compose result's links below. -->
+                  @if (hasDiscovered()) {
+                    <button
+                      type="button"
+                      (click)="onGoToStep('reuse')"
+                      class="text-blue-600 underline hover:text-blue-800"
+                      data-testid="campaigns-audience-existing-replace-loose-link">
+                      Master lists already built</button
+                    >.
+                  } @else {
+                    Master lists already built (run Discover under Use existing lists first).
+                  }
                 </p>
               } @else if (composeAttempted()) {
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-after-compose">

@@ -2303,6 +2303,28 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-existing"]')?.textContent).toContain('900');
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace"]'), 'a replace that cannot run was offered').toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose-link"]'), 'discovery ran, so the grid is reachable').not.toBeNull();
+    });
+
+    it('does not link to the reuse grid for a Build-tab compose that ran no discovery', async () => {
+      // "Master lists already built" shows only after a discovery, so a link there from a Build-tab
+      // compose switched to a tab whose section stayed hidden.
+      await render({ briefId: 'brief-1' });
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).created.emit({
+        listId: '7777',
+        name: 'Built here',
+        hubspotUrl: 'https://app.hubspot.com/x/7777',
+      });
+      fixture.detectChanges();
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '777', name: 'Loose', hubspotUrl: 'u' }, sourceListIds: ['7777'], recorded: false }));
+      composeMaster();
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      const loose = host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]');
+      expect(loose, 'fixture precondition').not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose-link"]'), 'linked to a hidden section').toBeNull();
+      expect(loose?.textContent).toContain('run Discover under Use existing lists first');
     });
 
     it('points at the master a 502 partial confirmed, not at a reload', async () => {
