@@ -69,6 +69,8 @@ export class MktgRunProgressComponent {
   public readonly externalActivity = input<MktgRunActivity[] | undefined>();
   public readonly runPage = input(false);
   public readonly suppressCard = input(false);
+  /** Keep the single public observer alive without rendering a living document's live presentation. */
+  public readonly headless = input(false);
 
   public readonly observed = output<MktgDocumentReadCycle>();
   public readonly landed = output<void>();

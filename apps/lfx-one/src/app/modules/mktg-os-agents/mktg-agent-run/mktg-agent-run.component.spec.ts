@@ -359,7 +359,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       component['onSubmit']();
       await fixture.whenStable();
-      expect(query('mktg-agent-run-starting-note')?.textContent?.trim()).toBe('Starting the agent — stay on this page for a few seconds.');
+      expect(query('mktg-agent-run-starting-note')?.textContent?.trim()).toBe('Getting started… Stay on this page for a few seconds.');
       expect(query('mktg-agent-run-leave-note')).toBeNull();
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
       progress.next({ type: 'submitted' });
@@ -380,11 +380,11 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-leave-note')?.textContent).toContain('You can leave this page — the agent keeps working.');
       expect(query('mktg-agent-run-starting-note')).toBeNull();
       expect(query('mktg-agent-run-live')?.querySelector('lfx-button')).toBeNull();
-      const feed = query('mktg-run-activity');
-      const leaveNote = query('mktg-agent-run-leave-note');
-      expect(feed?.contains(leaveNote)).toBe(true);
-      expect(leaveNote?.querySelector('.fa-clock')).not.toBeNull();
-      expect(leaveNote && (query('mktg-run-activity-elapsed')?.compareDocumentPosition(leaveNote) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const status = query('mktg-agent-run-status');
+      expect(status?.contains(query('mktg-agent-run-leave-note'))).toBe(true);
+      expect(host().querySelectorAll('[data-testid="mktg-agent-run-status"]')).toHaveLength(1);
+      expect(query('mktg-agent-run-page')?.querySelectorAll('h1, h2')).toHaveLength(1);
+      expect(query('mktg-run-activity-elapsed')).toBeNull();
       const request = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
       const pending: MktgRunQuestionsPending = {
         attempt: { session: { agentId, sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
@@ -1363,6 +1363,8 @@ describe('MktgAgentRunComponent', () => {
       expect(reader.runId()).toBe(runId);
       expect(reader.project()).toBe(PROJECT_1.uid);
       expect(component['publicReceiver']()).toBe(true);
+      expect(query('mktg-run-public-progress')?.querySelectorAll('h1, h2')).toHaveLength(1);
+      expect(query('mktg-run-public-progress')?.querySelectorAll('p[role="status"]')).toHaveLength(1);
       if (state === 'questions') expect(host().textContent).toContain('browser that started this run');
       expect(generate).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
@@ -1466,10 +1468,10 @@ describe('MktgAgentRunComponent', () => {
       generate.mockReturnValue(progress);
       component['onSubmit']();
       await fixture.whenStable();
-      expect(query('mktg-agent-run-running')?.textContent).toContain('Getting started');
+      expect(query('mktg-agent-run-status')?.textContent).toContain('Getting started');
       progress.next({ type: 'submitted' });
       await fixture.whenStable();
-      expect(query('mktg-agent-run-running')?.textContent).toContain('Writing the asset');
+      expect(query('mktg-agent-run-status')?.textContent).toContain('Writing the asset');
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
     });
 

@@ -51,7 +51,7 @@ test.describe('Marketing OS new run Sources', () => {
     });
     await page.getByTestId('mktg-run-start').getByRole('button').click();
     await expect.poll(() => sources.generated.length).toBe(1);
-    await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Starting the agent — stay on this page for a few seconds.');
+    await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Getting started… Stay on this page for a few seconds.');
     await expect(page.getByTestId('mktg-agent-run-leave-note')).toHaveCount(0);
     const questions = page.getByTestId('mktg-run-questions');
     await page.route('**/api/mktg-agents/documents?*', (route) =>

@@ -414,9 +414,10 @@ it. Agent writing markers remain a contract follow-up in marketing-os-agents'
 [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md).
 
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
-single bounded availability budget. The document view consumes its read cycles;
-one-off receivers keep their existing poll and supply snapshots to the same
-presentation. A living run-page `?run=` reader uses that public progress unless
+single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
+failed card renders there, and an active `?run=` replaces to the run page. The
+run page owns one asset heading, one status line and the progress steps.
+One-off receivers keep their existing poll and generating presentation. A living run-page `?run=` reader uses that public progress unless
 this browser holds the matching private attempt. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave
 `runs[]` without a public completion receipt. Public questions show the browser

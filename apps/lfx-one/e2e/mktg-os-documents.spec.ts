@@ -44,7 +44,8 @@ test.describe('Marketing OS current revisions', () => {
       await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
       await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
       await expect(page.getByTestId(state === 'failed' ? 'mktg-document-view-page' : 'mktg-run-public-progress')).toBeVisible();
-      await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(state === 'failed' ? 1 : 0);
+      if (state !== 'failed') await expect(page.getByTestId('mktg-run-progress-status')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
       if (state === 'failed') {
         const details = page.getByTestId('mktg-document-view-failure-details');
@@ -132,7 +133,9 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
     await page.getByTestId('mktg-document-view-progress-retry').getByRole('button', { name: 'Check on it again', exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
     expect(generates).toBe(0);
   });

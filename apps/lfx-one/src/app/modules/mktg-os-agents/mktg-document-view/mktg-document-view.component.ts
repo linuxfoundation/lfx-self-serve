@@ -234,6 +234,7 @@ export class MktgDocumentViewComponent {
   private readonly reloads = signal(0);
   protected readonly handoffRunId = signal('');
   private readonly publicReads = new Subject<MktgDocumentReadCycle>();
+  private redirectedRun = '';
   protected readonly projectUid = computed(() => this.projectContext.activeContextUid());
   protected readonly publicProgressPolling = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.kind === 'living');
   protected readonly progressRefreshKey = signal('0');
@@ -790,7 +791,19 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
-    this.publicReads.next(cycle);
+    this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
+    const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
+    const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
+    if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
+      return;
+    this.redirectedRun = run.runId;
+    const failedNavigation = () => this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    void this.router
+      .navigate(commands, { queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, run: run.runId }, replaceUrl: true })
+      .then((opened) => {
+        if (!opened) failedNavigation();
+      })
+      .catch(failedNavigation);
   }
 
   protected onPublicProgressError(error: HttpErrorResponse): void {

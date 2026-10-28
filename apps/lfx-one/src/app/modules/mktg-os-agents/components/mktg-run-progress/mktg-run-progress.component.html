@@ -1,14 +1,35 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
-@if (!suppressCard() && (!runPage() || runState() !== 'failed') && runState(); as state) {
-  <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
-    @if (state !== 'failed' && viewSnapshot()?.revision) {
-      <p class="text-sm text-gray-500" data-testid="mktg-document-view-current-during-run">
-        Writing a new version — the current one stays below until it lands.
-      </p>
+@if (!headless() && !runPage()) {
+  <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
+}
+@if (!headless() && runPage() && (warning() || (runState() && runState() !== 'failed'))) {
+  <section class="flex flex-col gap-3" data-testid="mktg-run-progress-live">
+    <p class="text-sm text-gray-600" role="status" data-testid="mktg-run-progress-status">
+      @if (warning()) {
+        {{ warning() }}
+      } @else if (runState() === 'questions') {
+        Waiting for your answers. <span data-testid="mktg-run-progress-owner-note">Answering needs the browser that started this run.</span>
+      } @else {
+        {{ runState() === 'storing' ? 'Saving…' : 'Writing…' }} You can leave this page — the agent keeps working.
+      }
+    </p>
+    @if (warning()) {
+      <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
+    @if (visibleRunActivity(); as activity) {
+      <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" [showHeader]="false" />
+    } @else if (runState() === 'writing' || runState() === 'storing') {
+      <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
+        <li>{{ runState() === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
+        <li>{{ runState() === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+      </ol>
+    }
+  </section>
+}
+@if (!headless() && !runPage() && !suppressCard() && runState(); as state) {
+  <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
     <h2 class="text-lg font-semibold text-gray-900">{{ liveState() }}</h2>
     @if (selectedRun(); as run) {
       <p class="text-xs text-gray-500">Started {{ run.startedAt | date: 'd MMM y, HH:mm' }}</p>
@@ -47,9 +68,6 @@
         <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-paused-refresh" />
       } @else {
         <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
-        @if (runPage()) {
-          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Answering needs the browser that started this run.</p>
-        }
       }
     } @else {
       <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
@@ -117,7 +135,7 @@
   <lfx-message severity="error" [text]="readFailure()" data-testid="mktg-run-progress-error" />
   <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-run-progress-refresh" />
 }
-@if (warning()) {
+@if (!headless() && !runPage() && warning()) {
   <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
     <p class="text-xs text-gray-500">{{ warning() }}</p>
     <lfx-button

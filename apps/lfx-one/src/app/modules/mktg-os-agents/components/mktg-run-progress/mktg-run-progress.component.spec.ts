@@ -73,6 +73,18 @@ describe('MktgRunProgressComponent', () => {
     }
   });
 
+  it('keeps the document observer headless without rendering any live card or status', async () => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('headless', true);
+    const observed = vi.fn();
+    fixture.componentInstance.observed.subscribe(observed);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledOnce();
+    expect(observed).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.textContent.trim()).toBe('');
+  });
+
   it('polls the same public record and emits only a current-document landing, never an inferred revision id', async () => {
     await setup();
     const landed = vi.fn();
