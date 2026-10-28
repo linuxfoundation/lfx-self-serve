@@ -80,6 +80,8 @@ describe('SnowflakeService circuit breaker', () => {
     );
   const valueConversion = () => Promise.reject(Object.assign(new Error("Date 'x' is not recognized"), { code: '100040' }));
   const missingObject = () => Promise.reject(new Error("SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized."));
+  const missingNamedObject = (object: string) => () => Promise.reject(new Error(`SQL compilation error: Object '${object}' does not exist or not authorized.`));
+  const OPTIONAL_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
 
   const serviceWithPool = (use: ReturnType<typeof vi.fn>) => {
     vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
@@ -89,9 +91,9 @@ describe('SnowflakeService circuit breaker', () => {
     return { service, internals };
   };
 
-  const runQueries = async (service: SnowflakeService, count: number) => {
+  const runQueries = async (service: SnowflakeService, count: number, options?: SnowflakeQueryOptions) => {
     for (let i = 0; i < count; i++) {
-      await service.execute(`SELECT ${i}`).catch(() => undefined);
+      await service.execute(`SELECT ${i}`, [], options).catch(() => undefined);
     }
   };
 
@@ -267,6 +269,60 @@ describe('SnowflakeService circuit breaker', () => {
     const thrown = await service.execute('SELECT 1').catch((error: unknown) => error);
 
     expect(SnowflakeService.isMissingObjectError(thrown)).toBe(true);
+  });
+
+  // The exemption is what keeps an optional table's absence from opening the POD-WIDE breaker, and
+  // the expected branch calls recordSuccess(), which RESETS the failure count. So the boundary has to
+  // hold in both directions, and only `execute` can show that: the matcher spec proves what the
+  // predicate answers, not what the breaker then does with it.
+  describe('named missing-object exemption', () => {
+    it('keeps the circuit closed while the NAMED object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`)));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', OPTIONAL_TABLE);
+    });
+
+    it('still opens the circuit when a DIFFERENT, core object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+      expect(span.setAttribute).not.toHaveBeenCalledWith('snowflake.expected_missing_object', expect.anything());
+    });
+
+    // A core table going missing must not have its breaker failures wiped out by the scoped retry
+    // that follows it — the exposure that made the bare boolean wrong.
+    it('does not reset failures accumulated from a core outage', async () => {
+      const use = vi.fn().mockImplementationOnce(queryFailure).mockImplementationOnce(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS'));
+      const { service } = serviceWithPool(use);
+
+      await service.execute('SELECT 1').catch(() => undefined);
+      await service.execute('SELECT 2', [], { expectMissingObject: OPTIONAL_TABLE }).catch(() => undefined);
+
+      expect(service.getCircuitStats().consecutiveFailures).toBe(2);
+    });
+
+    // Every other caller still passes `true`, so the broad exemption has to keep working as it did.
+    it('still exempts any missing object when the caller passes true', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectMissingObject: true });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', true);
+    });
+
+    it('does not exempt an unrelated failure just because an object was named', async () => {
+      const { service } = serviceWithPool(vi.fn(queryFailure));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
   });
 });
 
