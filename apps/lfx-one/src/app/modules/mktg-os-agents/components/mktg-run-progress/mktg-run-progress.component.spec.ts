@@ -125,6 +125,28 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('It will appear here when it is ready.');
   });
 
+  it.each([false, true])('preserves the legacy Member document feed header and node (steps=%s)', async (hasSteps) => {
+    await setup();
+    const member = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
+    if (!member) throw new Error('Missing synthetic Member document type');
+    const documentId = 'run-synthetic';
+    const activity = hasSteps
+      ? [{ id: 'synthetic-step', kind: 'lfx' as const, label: 'Checking LFX', status: 'running' as const, startedAt: run.startedAt }]
+      : [];
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('polling', false);
+    fixture.componentRef.setInput('agentKey', member.agentKey);
+    fixture.componentRef.setInput('documentId', documentId);
+    fixture.componentRef.setInput('snapshot', { ...detail([{ ...run, agentKey: member.agentKey, documentId, activity }]), type: member, documentId });
+    fixture.componentRef.setInput('externalActivity', activity);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-title"]')?.textContent?.trim()).toBe('Working on Member 360');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).not.toBeNull();
+    if (hasSteps) expect(text()).toContain('Checking LFX');
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it('keeps the document observer headless without rendering any live card or status', async () => {
     await setup();
     fixture.componentRef.setInput('runPage', false);
