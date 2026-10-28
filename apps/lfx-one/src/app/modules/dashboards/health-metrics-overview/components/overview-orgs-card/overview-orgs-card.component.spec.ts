@@ -108,7 +108,7 @@ describe('OverviewOrgsCardComponent', () => {
 
   it('shows its empty state for a foundation with no row, and its error state when the read fails', async () => {
     await render({ ...ORGS, measured: false });
-    expect(text('overview-orgs-empty')).toContain('No participating organizations yet');
+    expect(text('overview-orgs-empty-title')).toBe('No organizations yet');
 
     TestBed.resetTestingModule();
     await render(new Error('down'));
