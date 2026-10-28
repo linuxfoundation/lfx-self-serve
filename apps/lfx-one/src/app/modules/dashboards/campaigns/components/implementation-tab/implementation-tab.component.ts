@@ -1786,6 +1786,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaImageAssetForThisBrief = computed(
     () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
   );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly metaAssetWithheld = computed(
+    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  );
+  /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
+  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
   protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
   protected readonly metaImageUploadStatusMessage = computed(() => {
     if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
@@ -2513,6 +2519,19 @@ export class ImplementationTabComponent implements OnInit {
   /** Forget the uploaded Meta image (the stored asset stays upstream, unused) and fall back to the image URL. */
   protected onMetaImageAssetRemove(): void {
     this.clearMetaImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * The block's Remove: drops only what the block is about. An upload it names (failed, made for
+   * another brief, or withheld) is cleared; a pasted URL only when the URL itself is withheld, so
+   * removing a refused upload never also discards a URL the request can still carry.
+   */
+  protected onMetaImageBlockRemove(): void {
+    if (this.metaImageUrlWithheld()) this.metaImageUrl.set('');
+    if (this.metaImageAssetId() !== '' || this.metaImageUploadStatus() !== 'idle' || this.metaImageUploadPendingName() !== '') {
+      this.clearMetaImageAsset();
+    }
     this.emitDraft();
   }
 
@@ -3430,7 +3449,17 @@ export class ImplementationTabComponent implements OnInit {
     return {};
   }
 
-  /** `initRedditImageAssetBlock`'s sibling: the same states in the same order, worded for Meta. */
+  /**
+   * `initRedditImageAssetBlock`'s sibling, widened to the pasted URL and to a failed upload.
+   *
+   * Two departures from the Reddit block, both so a Meta image the operator chose is never left
+   * out of the request without a word. A failed upload for the open brief blocks whatever the
+   * capability says: with the upload control shown, its alert names the failure, but Create would
+   * otherwise launch the campaign with the pasted URL or no image instead of the chosen file. And a
+   * pasted URL held while `metaCreativeAvailable()` is not an explicit yes (a tab round-trip or a
+   * failed capability read clears it, and hides the URL input) blocks the same way a retained
+   * upload does, since `metaImageField` would withhold it.
+   */
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
     return computed(() => {
       if (!this.showMetaSection()) return null;
@@ -3442,34 +3471,31 @@ export class ImplementationTabComponent implements OnInit {
             'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
         };
       }
-      const hasImage = this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading';
-      if (this.metaAssetUploadAvailable()) return null;
       if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
         return {
           kind: 'uploadFailed',
-          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it to create the campaign without the image.`,
+          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
         };
       }
-      if (!hasImage) return null;
-      if (this.metaCreativeEnabled() === false || this.metaAssetUploadEnabled() === false) {
+      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
+      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
         return {
           kind: 'unsupported',
-          message: 'Image upload is not available on this deployment, so the uploaded Meta image cannot be sent. Remove it to create the campaign without it.',
+          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
         };
       }
       if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking Meta image upload support…' };
+        return { kind: 'pending', message: 'Checking Meta ad image support…' };
       }
       if (!this.briefPersistence().briefId) {
         return {
           kind: 'unsaved',
-          message: "Meta image upload support can't be checked until this brief is saved. Save the brief, or remove the uploaded image.",
+          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
         };
       }
       return {
         kind: 'failed',
-        message:
-          'Could not confirm that Meta image upload is supported, so the uploaded image cannot be sent yet. Retry the check, or remove the uploaded image.',
+        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
       };
     });
   }

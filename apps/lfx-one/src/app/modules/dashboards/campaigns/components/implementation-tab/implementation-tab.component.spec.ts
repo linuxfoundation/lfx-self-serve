@@ -9145,4 +9145,47 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(q(f, 'implementation-meta-image-asset-block-otherBrief')).not.toBeNull();
     expect(at(f).canSubmit()).toBe(false);
   });
+
+  it('keeps Create blocked after a failed upload with both capabilities on, until the operator removes it', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
+    const f = (await mount(true, true)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+    fillForm(f);
+    choose(f, png());
+
+    expect(at(f).metaImageUploadStatus()).toBe('error');
+    expect(q(f, 'implementation-meta-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(q(f, 'implementation-meta-image-asset-block-uploadFailed')).toBeNull();
+    expect(at(f).canSubmit()).toBe(true);
+    // Removing the failed upload leaves the pasted URL, which the request can still carry.
+    expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
+  });
+
+  it.each([
+    ['unanswered, with the read failed', null, 'failed', 'failed'],
+    ['unanswered, with the read pending', null, 'pending', 'pending'],
+    ['off', false, 'ready', 'unsupported'],
+  ] as const)('blocks Create for a restored image URL while the image capability is %s, rather than dropping it', async (_label, creative, read, kind) => {
+    const first = await mount(true, false);
+    typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    first.fixture.destroy();
+
+    const f = (await mount(creative, false, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', read);
+    fillForm(f);
+
+    expect(q(f, 'implementation-meta-image-url')).toBeNull();
+    expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(at(f).canSubmit()).toBe(true);
+    expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
+  });
 });

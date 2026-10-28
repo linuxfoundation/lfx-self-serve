@@ -1500,7 +1500,7 @@
             </div>
           }
 
-          <!-- A retained uploaded Meta image the request cannot carry yet; `redditImageAssetBlock`'s sibling. -->
+          <!-- A Meta image (upload or pasted URL) the request cannot carry, or a failed upload; see `initMetaImageAssetBlock`. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-image-asset-block-live">
             {{ metaImageAssetBlockMessage() }}
           </div>
@@ -1529,11 +1529,11 @@
                     data-testid="implementation-meta-image-asset-block-retry" />
                 }
                 <lfx-button
-                  label="Remove uploaded image"
+                  label="Remove image"
                   size="small"
                   severity="secondary"
                   [text]="true"
-                  (onClick)="onMetaImageAssetRemove()"
+                  (onClick)="onMetaImageBlockRemove()"
                   data-testid="implementation-meta-image-asset-block-remove" />
               </div>
             </div>
