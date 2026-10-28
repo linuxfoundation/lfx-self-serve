@@ -4659,6 +4659,25 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('free shipping');
   });
 
+  it('refuses callouts that differ only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    // `\ud800` and `\ud801` are two strings in JS, but Go's JSON decoder reads both as U+FFFD, so
+    // upstream would refuse the pair as a repeat AFTER dispatch.
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Labs\ud800', 'Labs\ud801'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('callouts');
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it('forwards a callout with an unpaired surrogate as the well-formed text upstream would decode', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: [' Labs\ud800 '] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['Labs\ufffd']);
+  });
+
   it.each([
     ['an absent callout list', {}],
     ['an empty callout list', { callouts: [] }],
@@ -5050,6 +5069,18 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(refusalFrom().message).toContain('more than once');
   });
 
+  it('refuses sitelink text that differs only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('Register\ud800'), link('Register\udc00')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
   it.each([
     ['only the first description line', { description1: 'Seats are limited' }],
     ['only the second description line', { description2: 'Seats are limited' }],
@@ -5313,6 +5344,18 @@ describe('CampaignController.createCampaign cutover', () => {
     // Google serves one line per header, so the second would be dropped silently.
     await controller.createCampaign(
       buildReq(googleBody({ structuredSnippets: [snip('Brands'), snip('brands')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it('refuses headers that differ only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands\ud800'), snip('Brands\ud801')] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );

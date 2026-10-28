@@ -68,7 +68,9 @@ import {
   googleAdsEchoed,
   googleAdsBoundExtensionText,
   googleAdsToLower,
+  googleAdsDecodedText,
   googleAdsTrimSpace,
+  googleAdsWellFormed,
   googleAdsUrlGoParseFlaw,
   isGoogleAdsServableUrl,
   isGoSpaceCode,
@@ -1049,6 +1051,26 @@ describe('Google Ads string rules', () => {
     }
 
     expect(mismatches).toEqual([]);
+  });
+
+  it.each([
+    ['a lone high surrogate', 'a\ud800b', 'a\ufffdb'],
+    ['a lone low surrogate', 'a\udc00b', 'a\ufffdb'],
+    ['a high surrogate at the end', 'ab\ud801', 'ab\ufffd'],
+    ['two lone surrogates in a row', '\udc00\ud800', '\ufffd\ufffd'],
+    ['a reversed pair', '\ude00\ud83d', '\ufffd\ufffd'],
+  ])("replaces %s with U+FFFD as Go's JSON decoder does", (_label, input, expected) => {
+    expect(googleAdsWellFormed(input)).toBe(expected);
+  });
+
+  it('keeps well-formed text, astral characters included, as the same string', () => {
+    const text = 'Labs \u{1F600} \u00e9';
+    expect(googleAdsWellFormed(text)).toBe(text);
+  });
+
+  it('reads two different lone surrogates as the same text, as upstream does', () => {
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe(googleAdsDecodedText('Talks\ud801'));
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe('Talks\ufffd');
   });
 
   it('trims a long interior whitespace run in linear time', () => {
