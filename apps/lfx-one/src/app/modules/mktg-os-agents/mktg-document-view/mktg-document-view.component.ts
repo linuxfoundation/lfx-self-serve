@@ -1351,6 +1351,10 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'restored') {
       this.localProgress.set(null);
       this.restoreNotice.set(progress.message);
+      // A restored intake has no accepted run or stored view to wait for.
+      // Land on the form with its saved inputs; navigation grants no Generate authority.
+      const commands = this.runAgainLink();
+      if (commands) void this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true });
       return;
     }
     if (progress.type === 'submitted') {

@@ -1769,6 +1769,19 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledExactlyOnceWith(pending);
   });
 
+  it('lands a confirmed restored intake on its form instead of waiting for a stored view or header action', async () => {
+    const pending = { ...preparedPending(), state: 'failed' as const, requiresReattachment: true, attempt: undefined };
+    vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(of({ type: 'restored', pending, message: 'Reattach source files.' }));
+    store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } })));
+    await render('/documents/brand-kit/living?generation=synthetic-restored');
+    expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/mktg-os-agents', BRAND_KIT_INTAKE.agentId], {
+      queryParams: expect.objectContaining({ project: PROJECT.slug, generation: null, mode: 'new' }),
+      replaceUrl: true,
+    });
+    expect(query('mktg-document-view-run-again')).toBeNull();
+  });
+
   it('does not synchronously replace a living generation token even with an accepted run id', async () => {
     const pending = preparedPending();
     pending.attempt = {
