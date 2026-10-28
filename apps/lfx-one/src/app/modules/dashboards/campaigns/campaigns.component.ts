@@ -935,6 +935,10 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditCreativeEnabled = signal<boolean | null>(null);
   /** Whether the Reddit section offers an image upload — `CampaignListResult.redditAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsRedditAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers an ad image — `CampaignListResult.metaCreativeEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /**
@@ -2494,6 +2498,8 @@ export class CampaignsComponent {
         this.briefCampaignsGoogleCreativeEnabled.set(null);
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
+        this.briefCampaignsMetaCreativeEnabled.set(null);
+        this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
@@ -4589,6 +4595,8 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
+          this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+          this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsCapabilityRead.set('ready');
         },
@@ -4605,6 +4613,8 @@ export class CampaignsComponent {
           this.briefCampaignsGoogleCreativeEnabled.set(null);
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
+          this.briefCampaignsMetaCreativeEnabled.set(null);
+          this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
@@ -4667,6 +4677,8 @@ export class CampaignsComponent {
     this.briefCampaignsGoogleCreativeEnabled.set(null);
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
+    this.briefCampaignsMetaCreativeEnabled.set(null);
+    this.briefCampaignsMetaAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
     this.briefCampaignsCapabilityRead.set('unknown');
@@ -4699,6 +4711,8 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(result.googleCreativeEnabled);
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
+            this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+            this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsCapabilityRead.set('ready');
           }
@@ -4721,6 +4735,8 @@ export class CampaignsComponent {
             this.briefCampaignsGoogleCreativeEnabled.set(null);
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
+            this.briefCampaignsMetaCreativeEnabled.set(null);
+            this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }

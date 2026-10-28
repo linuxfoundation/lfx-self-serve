@@ -8643,7 +8643,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     const file = png();
     choose(f, file);
 
-    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID);
+    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'reddit');
     expect(at(f).redditImageAssetId()).toBe(ASSET_ID);
     const status = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status"]') as HTMLElement;
     expect(status.textContent).toContain('Uploaded: promo.png');
@@ -8698,7 +8698,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     resumeCreativeAssetUpload.mockReturnValue(pending);
 
     const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
-    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('reddit', BRIEF_ID);
     expect(at(second.fixture).redditImageUploadStatus()).toBe('uploading');
 
     pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
@@ -8835,7 +8835,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     switched.destroy();
 
     const back = await mount(true, true, parked as unknown as CampaignImplementationDraft);
-    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('reddit', BRIEF_ID);
     pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
     back.fixture.detectChanges();
     expect(at(back.fixture).redditImageAssetId()).toBe(ASSET_ID);
@@ -9196,5 +9196,302 @@ describe('ImplementationTabComponent reddit image upload', () => {
       expect(q(f, 'implementation-reddit-image-asset-block-pending')).toBeNull();
       expect(at(f).canSubmit()).toBe(true);
     });
+  });
+});
+
+/**
+ * The Meta ad image: one image, set on every variant. A pasted URL is offered on an explicit yes
+ * from `metaCreativeEnabled`; an upload on an explicit yes from `metaAssetUploadEnabled` as well,
+ * sent as `imageAssetId` in place of `imageUrl`. With neither, the variants go out as before.
+ */
+describe('ImplementationTabComponent meta ad image', () => {
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let uploadCreativeAsset: ReturnType<typeof vi.fn>;
+  let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    selectedPlatforms: { set(v: string[]): void };
+    metaImageAssetId: () => string;
+    metaImageUploadStatus: () => string;
+    metaImageUploadError: () => string;
+    canSubmit: () => boolean;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+  const q = (f: ComponentFixture<ImplementationTabComponent>, id: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['meta-ads'],
+      metaCopy: {
+        variants: [
+          { primaryText: 'First primary', headline: 'First headline' },
+          { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
+        ],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  async function mount(
+    creative: boolean | null,
+    upload: boolean | null,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('metaCreativeEnabled', creative);
+    f.componentRef.setInput('metaAssetUploadEnabled', upload);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
+    f.componentRef.setInput('briefData', brief());
+    at(f).selectedPlatforms.set(['meta-ads']);
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File): void {
+    const input = q(f, 'implementation-meta-image-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  const png = (size = 16): File => new File([new Uint8Array(size)], 'promo.png', { type: 'image/png' });
+
+  function typeImageUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = q(f, 'implementation-meta-image-url') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  /** The draft a real upload leaves behind, as a tab switch hands it to the next mount. */
+  async function uploadedDraft(): Promise<CampaignImplementationDraft> {
+    const first = await mount(true, true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    first.fixture.destroy();
+    return draft;
+  }
+
+  function fillForm(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+  }
+
+  function submitVariants(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown>[] {
+    fillForm(f);
+    at(f).submit();
+    expect(createCampaign).toHaveBeenCalled();
+    return (createCampaign.mock.calls[0][0]['metaConfig'] as { variants: Record<string, unknown>[] }).variants;
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
+    cancelCreativeAssetUpload = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            uploadCreativeAsset,
+            resumeCreativeAssetUpload,
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload,
+            getLinkedInAccounts: () => of([]),
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it.each([
+    ['unanswered', null],
+    ['off', false],
+  ])('renders no image controls while the Meta creative capability is %s, and sends the variants unchanged', async (_label, creative) => {
+    const f = (await mount(creative, true)).fixture;
+
+    expect(q(f, 'implementation-meta-image-url')).toBeNull();
+    expect(q(f, 'implementation-meta-image-file')).toBeNull();
+    expect(submitVariants(f)).toEqual([
+      { primaryText: 'First primary', headline: 'First headline' },
+      { primaryText: 'Second primary', headline: 'Second headline', description: 'Second description' },
+    ]);
+  });
+
+  it.each([
+    ['unanswered', null],
+    ['off', false],
+  ])('offers the image URL but no upload while the upload capability is %s', async (_label, upload) => {
+    const f = (await mount(true, upload)).fixture;
+
+    expect(q(f, 'implementation-meta-image-url')).not.toBeNull();
+    expect(q(f, 'implementation-meta-image-file')).toBeNull();
+  });
+
+  it('sends a pasted image URL on every variant and names it in the preview', async () => {
+    const f = (await mount(true, false)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+
+    expect(q(f, 'implementation-meta-variant-image-0')?.textContent).toContain('https://cdn.example.org/promo.png');
+    expect(q(f, 'implementation-meta-variant-image-1')?.textContent).toContain('https://cdn.example.org/promo.png');
+    const variants = submitVariants(f);
+    expect(variants.map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
+    expect(variants.some((v) => 'imageAssetId' in v)).toBe(false);
+  });
+
+  it('uploads the chosen image for the saved brief and sends its asset id on every variant in place of the URL', async () => {
+    const f = (await mount(true, true)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+    const file = png();
+    choose(f, file);
+
+    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'meta');
+    expect(at(f).metaImageAssetId()).toBe(ASSET_ID);
+    expect(q(f, 'implementation-meta-image-status')?.textContent).toContain('Uploaded: promo.png');
+    expect(q(f, 'implementation-meta-variant-image-0')?.textContent).toContain('promo.png');
+    const variants = submitVariants(f);
+    expect(variants.map((v) => v['imageAssetId'])).toEqual([ASSET_ID, ASSET_ID]);
+    expect(variants.some((v) => 'imageUrl' in v)).toBe(false);
+  });
+
+  it('refuses a file that is not a PNG or JPEG before any upload', async () => {
+    const f = (await mount(true, true)).fixture;
+    choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    expect(at(f).metaImageUploadStatus()).toBe('error');
+    expect(q(f, 'implementation-meta-image-error')).not.toBeNull();
+  });
+
+  it('holds Create while the upload is in flight, and Cancel aborts the Meta upload only', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true, true)).fixture;
+    fillForm(f);
+    expect(at(f).canSubmit()).toBe(true);
+
+    choose(f, png());
+    expect(at(f).metaImageUploadStatus()).toBe('uploading');
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-cancel') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('meta');
+    expect(at(f).metaImageUploadStatus()).toBe('idle');
+    expect(at(f).canSubmit()).toBe(true);
+  });
+
+  it('carries the upload in the draft, and a remount resumes an upload still in flight', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true, true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    expect(draft.metaImageUploadPendingName).toBe('promo.png');
+    expect(draft.metaImageUploadPendingBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+    const second = await mount(true, true, draft);
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('meta', BRIEF_ID);
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    second.fixture.detectChanges();
+    expect(at(second.fixture).metaImageAssetId()).toBe(ASSET_ID);
+    expect(second.latest()?.metaImageAssetId).toBe(ASSET_ID);
+  });
+
+  it('blocks Create for a restored upload the deployment cannot send, until it is removed', async () => {
+    const draft = await uploadedDraft();
+    const f = (await mount(true, false, draft)).fixture;
+    fillForm(f);
+
+    expect(q(f, 'implementation-meta-image-asset-block-unsupported')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(q(f, 'implementation-meta-image-asset-block-unsupported')).toBeNull();
+    expect(at(f).canSubmit()).toBe(true);
+    expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
+  });
+
+  it('never sends an upload made for another brief, and says so', async () => {
+    const draft = { ...(await uploadedDraft()), metaImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
+    const f = (await mount(true, true, draft)).fixture;
+    fillForm(f);
+
+    expect(q(f, 'implementation-meta-image-asset-block-otherBrief')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+  });
+
+  it('keeps Create blocked after a failed upload with both capabilities on, until the operator removes it', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
+    const f = (await mount(true, true)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+    fillForm(f);
+    choose(f, png());
+
+    expect(at(f).metaImageUploadStatus()).toBe('error');
+    expect(q(f, 'implementation-meta-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(q(f, 'implementation-meta-image-asset-block-uploadFailed')).toBeNull();
+    expect(at(f).canSubmit()).toBe(true);
+    // Removing the failed upload leaves the pasted URL, which the request can still carry.
+    expect(submitVariants(f).map((v) => v['imageUrl'])).toEqual(['https://cdn.example.org/promo.png', 'https://cdn.example.org/promo.png']);
+  });
+
+  it.each([
+    ['unanswered, with the read failed', null, 'failed', 'failed'],
+    ['unanswered, with the read pending', null, 'pending', 'pending'],
+    ['off', false, 'ready', 'unsupported'],
+  ] as const)('blocks Create for a restored image URL while the image capability is %s, rather than dropping it', async (_label, creative, read, kind) => {
+    const first = await mount(true, false);
+    typeImageUrl(first.fixture, 'https://cdn.example.org/promo.png');
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    first.fixture.destroy();
+
+    const f = (await mount(creative, false, draft)).fixture;
+    f.componentRef.setInput('createCapabilityRead', read);
+    fillForm(f);
+
+    expect(q(f, 'implementation-meta-image-url')).toBeNull();
+    expect(q(f, `implementation-meta-image-asset-block-${kind}`)).not.toBeNull();
+    expect(at(f).canSubmit()).toBe(false);
+
+    (q(f, 'implementation-meta-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(at(f).canSubmit()).toBe(true);
+    expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
   });
 });

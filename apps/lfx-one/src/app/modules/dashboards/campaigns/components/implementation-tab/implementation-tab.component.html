@@ -1906,6 +1906,114 @@
             </div>
           }
 
+          <!-- Ad image (one image on every variant). Offered only on an explicit yes from
+               `metaCreativeAvailable()`: the legacy creator reads no Meta image. The upload, like
+               Reddit's, needs its own capability and wins over a pasted URL when both are set. -->
+          @if (metaCreativeAvailable()) {
+            <div class="mb-4 flex flex-col gap-3" data-testid="implementation-meta-image">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-image-url">Ad image URL</label>
+                <input
+                  id="meta-image-url"
+                  type="url"
+                  [value]="metaImageUrl()"
+                  (input)="onMetaImageUrlInput($event)"
+                  placeholder="https://example.org/promo.png"
+                  aria-describedby="meta-image-url-hint"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-meta-image-url" />
+                <p id="meta-image-url-hint" class="text-xs text-gray-500">Used on every Meta ad. Leave empty for link ads with no image of their own.</p>
+              </div>
+
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-image-status-live">
+                {{ metaImageUploadLiveMessage() }}
+              </div>
+              @if (metaAssetUploadAvailable()) {
+                <div class="flex flex-col gap-1" data-testid="implementation-meta-image-upload">
+                  <label class="text-xs font-medium text-gray-700" for="meta-image-file">Or upload an image</label>
+                  <input
+                    id="meta-image-file"
+                    type="file"
+                    [attr.accept]="creativeAssetAccept"
+                    (change)="onMetaImageFileChange($event)"
+                    [attr.aria-describedby]="metaImageFileDescribedBy()"
+                    [attr.aria-invalid]="metaImageUploadStatus() === 'error' ? 'true' : null"
+                    class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                    data-testid="implementation-meta-image-file" />
+                  <p id="meta-image-file-hint" class="text-xs text-gray-500">PNG or JPEG, up to 10 MB. Used instead of the image URL.</p>
+                  <p id="meta-image-file-status" class="text-xs text-gray-700" data-testid="implementation-meta-image-status">
+                    {{ metaImageUploadStatusMessage() }}
+                  </p>
+                  @if (metaImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onMetaImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-meta-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (metaImageAssetId()) {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onMetaImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-meta-image-remove">
+                        Remove uploaded image
+                      </button>
+                    </div>
+                  }
+                  @if (metaImageUploadStatus() === 'error') {
+                    <p id="meta-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-meta-image-error">
+                      {{ metaImageUploadError() }}
+                    </p>
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <!-- A Meta image (upload or pasted URL) the request cannot carry, or a failed upload; see `initMetaImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-image-asset-block-live">
+            {{ metaImageAssetBlockMessage() }}
+          </div>
+          @if (metaImageAssetBlock(); as block) {
+            <div
+              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-meta-image-asset-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-meta-image-asset-block-retry" />
+                }
+                <lfx-button
+                  label="Remove image"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onMetaImageBlockRemove()"
+                  data-testid="implementation-meta-image-asset-block-remove" />
+              </div>
+            </div>
+          }
+
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {
             <div>
@@ -1914,6 +2022,11 @@
                 @for (variant of metaVariants(); track $index; let i = $index) {
                   <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
                     <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
+                    @if (metaPreviewImageLabel(); as imageLabel) {
+                      <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-meta-variant-image-' + i">
+                        <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                      </p>
+                    }
                     <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
                     <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
                     @if (variant.description) {
