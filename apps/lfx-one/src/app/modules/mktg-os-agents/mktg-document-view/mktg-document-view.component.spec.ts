@@ -1437,10 +1437,15 @@ describe('MktgDocumentViewComponent', () => {
   it.each(['writing', 'questions', 'storing'] as const)('explains that the stored current revision remains below the %s run', async (state) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started(state)] }));
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
     expect(query('mktg-document-view-current-during-run')?.textContent?.trim()).toBe('Writing a new version — the current one stays below until it lands.');
     expect(query('mktg-document-view-run')?.firstElementChild).toBe(query('mktg-document-view-current-during-run'));
-    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    const current = query('mktg-document-view-brand-kit');
+    const live = query('mktg-document-view-run');
+    expect(current).not.toBeNull();
+    expect(harness.routeDebugElement?.query(By.css('[data-testid="mktg-document-view-brand-kit"]'))?.componentInstance.version()).toBe(LATEST.number);
+    expect(live && current && live.compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it.each(['failed', 'empty'] as const)('does not imply a preserved current revision for a %s run', async (kind) => {
