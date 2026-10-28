@@ -446,7 +446,8 @@ export class MktgDocumentRunService {
     readDetail: MktgDocumentDetailResponse | null | (() => Promise<MktgDocumentDetailResponse | null>),
     progress: MktgDocumentRunSnapshot,
     poll = false,
-    refreshRunId?: string
+    refreshRunId?: string,
+    selectedRunId?: string
   ): Promise<(MktgDocumentDetailResponse & MktgDocumentRunSnapshot) | null> {
     if (refreshRunId !== undefined && (poll || !MKTG_STARTED_RUN_ID_REGEX.test(refreshRunId))) {
       throw ServiceValidationError.forField('refreshRun', 'Refresh must name one run on an explicit detail read.');
@@ -470,6 +471,18 @@ export class MktgDocumentRunService {
             err,
           }
         );
+      }
+    }
+    if (selectedRunId) {
+      try {
+        const closed = await this.readClosedProgress(req, project, type.agentKey, documentId, selectedRunId);
+        if (closed) snapshot.runs = [closed, ...snapshot.runs.filter((run) => run.runId !== selectedRunId)];
+      } catch (err) {
+        if (err instanceof ServiceValidationError || err instanceof AuthorizationError) throw err;
+        if (!(err instanceof ResourceNotFoundError)) {
+          snapshot.progressUnavailable = true;
+          logger.warning(req, 'mktg_run_closed_detail', 'Selected run closure could not be read', { project, run: selectedRunId, err });
+        }
       }
     }
     const detail = typeof readDetail === 'function' ? await readDetail() : readDetail;
@@ -526,6 +539,13 @@ export class MktgDocumentRunService {
       runs: [...rows.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
       ...((coverage.lookupFailed || staleWindow) && { progressUnavailable: true }),
     };
+  }
+
+  /** Selected-run details alone may expose a closed marker; never reconcile or resolve an author here. */
+  public async readClosedProgress(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
+    const stored = await this.selected(req, project, agentKey, documentId, runId);
+    if (stored.record.state !== 'discarded' && stored.record.state !== 'superseded') return null;
+    return mktgRunProgress(stored.record, undefined, undefined, undefined, true);
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
@@ -812,6 +832,7 @@ export class MktgDocumentRunService {
       stored.body,
       {
         state,
+        ...((state === 'discarded' || state === 'superseded') && { 'closed-at': new Date().toISOString() }),
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',
@@ -1037,6 +1058,7 @@ export class MktgDocumentRunService {
           ...record,
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
           state: state as MktgStoredDocumentRunState,
+          closedAt: m['closed-at'],
           startedAt,
           priorVersion,
           attemptId,
@@ -1080,15 +1102,24 @@ export class MktgDocumentRunService {
   }
 
   private async activeRunConflict(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType): Promise<ConflictError> {
-    const author = await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
+    const startedByViewer = record.creatorSubject === getEffectiveSub(req);
+    const author = startedByViewer ? null : await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
     const startedBy = author?.name ?? 'Another writer';
     const itemLabel = type.itemLabel.replace(/\s+run$/i, '');
-    const clientMessage = type.kind === 'run' ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
+    const clientMessage = type.kind === 'run' || startedByViewer ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
     return new ConflictError(`A ${itemLabel} run is already in progress.`, MKTG_RUN_ACTIVE, {
       operation: 'mktg_run_start',
       service: 'object_store',
       clientMessage,
-      details: { activeRunId: record.runId, state: record.state, agentKey: record.agentKey, documentId: record.documentId, startedBy },
+      details: {
+        activeRunId: record.runId,
+        state: record.state,
+        agentKey: record.agentKey,
+        documentId: record.documentId,
+        startedBy,
+        startedByViewer,
+        startedAt: record.startedAt,
+      },
     });
   }
 

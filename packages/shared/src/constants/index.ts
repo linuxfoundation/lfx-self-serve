@@ -167,4 +167,5 @@ export * from './mktg-one-off.constants';
 export * from './mktg-family-export.constants';
 export * from './aeo-geo.constants';
 export * from './mktg-last-intake.constants';
+export * from './mktg-intake-link-advice.constants';
 export * from './mktg-project-roles.constants';

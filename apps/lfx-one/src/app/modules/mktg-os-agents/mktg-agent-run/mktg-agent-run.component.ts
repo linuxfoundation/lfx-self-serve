@@ -65,7 +65,7 @@ import {
   mktgJsonAttachmentUsable,
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
-  mktgActiveRunConflictHeading,
+  mktgLinkWarnings,
 } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
@@ -73,6 +73,7 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
@@ -137,6 +138,7 @@ export class MktgAgentRunComponent {
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
@@ -353,6 +355,15 @@ export class MktgAgentRunComponent {
     if (!this.intakeValid()) return 'Complete the required fields and correct any highlighted sources.';
     return '';
   });
+  protected readonly linkValues = computed(() =>
+    Object.fromEntries(
+      (this.intake?.fields ?? [])
+        .filter((field) => field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url')
+        .map((field) => [field.key, this.intakeValue()[field.key] ?? ''])
+    )
+  );
+  protected readonly linkUrls = computed(() => Object.values(this.linkValues()).flatMap((value) => value.split(/\r?\n/)));
+  protected readonly linkWarnings = computed(() => mktgLinkWarnings(this.linkValues()));
   protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
   protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
   protected readonly missingFiles = computed(() => this.missingDocuments() + this.missingLogos());
@@ -748,8 +759,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
-    // Removing entry-only mode uses the same restoration path as a plain run URL.
-    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (this.waitingQuestions()) {
+      // Removing entry-only mode uses the same restoration path as a plain run URL.
+      this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.router.navigate(this.waitingRunLink(), { queryParams: this.waitingRunParams() });
   }
 
   protected onStartOverWaiting(): void {
@@ -882,7 +897,10 @@ export class MktgAgentRunComponent {
           this.discardedRunId = runId;
           action();
         },
-        () => this.keepExistingRun()
+        (reason) => {
+          this.keepExistingRun();
+          if (reason === ConfirmEventType.REJECT) this.onContinueWaiting();
+        }
       ),
     });
   }
@@ -920,10 +938,6 @@ export class MktgAgentRunComponent {
     if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
-  private activeConflictHeading(conflict: MktgActiveRunConflict): string {
-    return mktgActiveRunConflictHeading(conflict);
-  }
-
   private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
     if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
     if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
@@ -931,8 +945,9 @@ export class MktgAgentRunComponent {
     this.runFailed.set(false);
     this.errorText.set('');
     this.waitingQuestions.set(false);
-    this.waitingRun.set({ runId: conflict.activeRunId, state: conflict.state });
-    this.existingRun.set({ runId: conflict.activeRunId, state: conflict.state });
+    const activeRun = { runId: conflict.activeRunId, state: conflict.state, startedAt: conflict.startedAt };
+    this.waitingRun.set(activeRun);
+    this.existingRun.set(activeRun);
     const discard = () => {
       this.discardConfirmed = true;
       this.discardedRunId = conflict.activeRunId;
@@ -949,19 +964,39 @@ export class MktgAgentRunComponent {
       discard();
       return;
     }
-    this.confirmation.confirm({
-      header: this.activeConflictHeading(conflict),
-      message: 'Its questions and progress will be lost.',
-      acceptLabel: 'Discard and start over',
-      rejectLabel: 'Open it',
-      rejectButtonProps: { text: true },
-      ...this.confirmActions(discard, (reason) => {
-        if (reason !== ConfirmEventType.REJECT) return;
-        void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', conflict.agentKey, conflict.documentId], {
-          queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: conflict.activeRunId },
-        });
-      }),
-    });
+    const epoch = this.discardEpoch;
+    const subject = this.userService.user()?.sub;
+    this.activeRunGuard.open(
+      this.confirmation,
+      {
+        conflict,
+        current: () =>
+          !this.destroyRef.destroyed &&
+          epoch === this.discardEpoch &&
+          subject === this.userService.user()?.sub &&
+          request.projectUid === this.projectContext.activeContextUid(),
+        recheck: () => this.runService.recheckActiveConflict(request),
+        classify: (error) => this.runService.activeRunConflict(error, request),
+        onValue: (progress) => {
+          this.phase.set('running');
+          this.onProgress(progress, request.projectUid);
+        },
+        onDiscard: (fresh) => {
+          conflict = fresh;
+          discard();
+        },
+        onOpen: (fresh) => {
+          void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+            queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: fresh.activeRunId },
+          });
+        },
+        onError: () => {
+          this.restoreInputs(request, 'returned');
+          this.errorText.set('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.');
+        },
+      },
+      this.destroyRef
+    );
   }
 
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */

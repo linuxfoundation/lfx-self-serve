@@ -8,6 +8,8 @@ const body = {
   code: 'MKTG_RUN_ACTIVE',
   message: 'A run is in progress.',
   startedBy: 'Synthetic writer',
+  startedByViewer: false,
+  startedAt: '2026-10-19T12:00:00.000Z',
   activeRunId: 'b'.repeat(64),
   state: 'writing',
   agentKey: 'brand-kit',
@@ -33,6 +35,13 @@ describe('active-run conflict choices', () => {
     expect(conflict).toEqual(body);
     expect(conflict && mktgActiveRunConflictHeading(conflict)).toBe("Synthetic writer's Brand Kit run is in progress");
   });
+  it.each([true, false])('uses viewer ownership for a living FAQ heading (own=%s)', (startedByViewer) => {
+    const conflict = readMktgActiveRunConflict({ ...body, agentKey: 'faq', startedByViewer }, 'faq');
+    expect(conflict).not.toBeNull();
+    expect(conflict && mktgActiveRunConflictHeading(conflict)).toBe(
+      startedByViewer ? 'Your FAQ run is in progress' : "Synthetic writer's FAQ run is in progress"
+    );
+  });
   it.each([
     { code: 'OTHER' },
     { state: 'failed' },
@@ -41,6 +50,10 @@ describe('active-run conflict choices', () => {
     { agentKey: 'faq' },
     { startedBy: '' },
     { startedBy: null },
+    { startedByViewer: undefined },
+    { startedByViewer: 'true' },
+    { startedAt: undefined },
+    { startedAt: 'invalid' },
   ])('rejects malformed or out-of-slot facts %j', (override) => {
     expect(readMktgActiveRunConflict({ ...body, ...override }, 'brand-kit')).toBeNull();
   });

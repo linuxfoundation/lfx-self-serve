@@ -16,6 +16,9 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
+        @if (view() && !runState()) {
+          <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
+        }
       </div>
       <div class="grow"></div>
       @if (!loading() && hasAssetView() && proseView(); as current) {
@@ -37,7 +40,7 @@
                 [loading]="approvingId() === current.revision.id"
                 [disabled]="writePending()"
                 data-testid="mktg-document-view-approve"
-                (onClick)="onApprove()" />
+                (onClick)="requestApproval()" />
               @if (approvalError()) {
                 <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
               }
@@ -117,7 +120,7 @@
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
-    @if (runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
+    @if (!closedRun() && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"
@@ -129,7 +132,28 @@
 
     <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
 
-    @if (!runFailed() && runState(); as state) {
+    @if (closedRun(); as run) {
+      <section class="flex flex-col gap-3 text-sm text-gray-600" data-testid="mktg-document-view-closed-run">
+        <p data-testid="mktg-document-view-closed-message">
+          @if (run.state === 'discarded') {
+            @if (run.closedAt) {
+              This run was discarded at {{ run.closedAt | date: 'd MMM y, HH:mm' }}; a newer run was started.
+            } @else {
+              This run was discarded; a newer run was started.
+            }
+          } @else {
+            A newer run replaced this one.
+          }
+        </p>
+        <a
+          [routerLink]="newerRunsLink()"
+          [queryParams]="newerRunsParams()"
+          class="w-fit font-medium text-blue-700 hover:underline"
+          data-testid="mktg-document-view-newer-run"
+          >Open the newer run</a
+        >
+      </section>
+    } @else if (!runFailed() && runState(); as state) {
       <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
         @if (state !== 'failed' && view()?.revision) {
           <p class="text-sm text-gray-500" data-testid="mktg-document-view-current-during-run">

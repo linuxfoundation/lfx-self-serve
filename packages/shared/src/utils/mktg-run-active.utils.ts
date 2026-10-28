@@ -14,6 +14,9 @@ export function readMktgActiveRunConflict(value: unknown, agentId: string, docum
     !type ||
     body['code'] !== MKTG_RUN_ACTIVE ||
     typeof body['message'] !== 'string' ||
+    typeof body['startedAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(body['startedAt'])) ||
+    typeof body['startedByViewer'] !== 'boolean' ||
     typeof body['startedBy'] !== 'string' ||
     !body['startedBy'].trim() ||
     typeof body['activeRunId'] !== 'string' ||
@@ -29,6 +32,8 @@ export function readMktgActiveRunConflict(value: unknown, agentId: string, docum
     code: MKTG_RUN_ACTIVE,
     message: body['message'],
     startedBy: body['startedBy'],
+    startedByViewer: body['startedByViewer'],
+    startedAt: body['startedAt'],
     activeRunId: body['activeRunId'],
     state: body['state'],
     agentKey: type.agentKey,
@@ -55,5 +60,5 @@ export function readMktgRunAnsweredConflict(value: unknown): MktgRunAnsweredConf
 export function mktgActiveRunConflictHeading(conflict: MktgActiveRunConflict): string {
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === conflict.agentKey);
   const label = (type?.itemLabel ?? 'document').replace(/\s+run$/i, '');
-  return type?.kind === 'run' ? `Your ${label} run is in progress` : `${conflict.startedBy}'s ${label} run is in progress`;
+  return type?.kind === 'run' || conflict.startedByViewer ? `Your ${label} run is in progress` : `${conflict.startedBy}'s ${label} run is in progress`;
 }

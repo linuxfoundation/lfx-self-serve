@@ -42,6 +42,7 @@ import {
   MktgBoilerplatesAsset,
   MktgFaqAsset,
   MktgFrameworkAsset,
+  MktgAssetReport,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
@@ -59,6 +60,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  describeMktgAssetReadiness,
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
@@ -85,6 +87,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import {
@@ -112,6 +115,7 @@ import {
   Subject,
 } from 'rxjs';
 
+import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
@@ -171,10 +175,12 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     Member360ResultComponent,
     MktgRunActivityComponent,
   ],
+  providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
+  private readonly dialogService = inject(DialogService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -215,6 +221,7 @@ export class MktgDocumentViewComponent {
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
   protected readonly writer = signal(false);
+  private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
   protected readonly approvalAnnouncement = signal('');
@@ -320,6 +327,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  protected readonly viewedReport = this.initViewedReport();
+  protected readonly readiness = computed(() => describeMktgAssetReadiness(this.viewedReport()));
   /** Label context uses the stored content shape, never the transformed display rows. */
   protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
@@ -412,6 +421,12 @@ export class MktgDocumentViewComponent {
   );
 
   protected readonly selectedRun: Signal<MktgDocumentRunProgress | null> = this.initSelectedRun();
+  protected readonly closedRun = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'discarded' || run?.state === 'superseded' ? run : null;
+  });
+  protected readonly newerRunsLink = computed(() => `${mktgKitRootPath(this.router.url)}/documents`);
+  protected readonly newerRunsParams = computed(() => ({ project: this.projectContext.activeContext()?.slug || this.routeProject() }));
   protected readonly runState: Signal<MktgDocumentRunProgress['state'] | null> = this.initRunState();
 
   protected readonly runFailure = computed(() => this.selectedRun()?.failureText || this.failureText() || '');
@@ -671,14 +686,19 @@ export class MktgDocumentViewComponent {
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
-              const metadata$ = defer(() => this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
+              const selectedRunId = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
+              const metadata$ = defer(() =>
+                selectedRunId
+                  ? this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, selectedRunId)
+                  : this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)
+              ).pipe(
                 switchMap((detail) => {
                   const id = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
                   const selected = id ? detail.runs?.find((run) => run.runId === id) : detail.runs?.[0];
                   if (poll || this.localProgress() || selected?.state !== 'failed' || this.refreshedFailures.has(selected.runId)) return of(detail);
                   this.refreshedFailures.add(selected.runId);
                   return this.documentStore
-                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId)
+                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId, false, selectedRunId || undefined)
                     .pipe(
                       catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error)))
                     );
@@ -727,6 +747,11 @@ export class MktgDocumentViewComponent {
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
+                  if (this.closedRun()) {
+                    this.localProgress.set(null);
+                    this.runFailed.set(false);
+                    this.errorText.set('');
+                  }
                   if (request.agentKey === 'member-360' && failure?.state === 'failed') {
                     this.runFailed.set(true);
                     this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason ?? 'agent_stopped']);
@@ -751,7 +776,7 @@ export class MktgDocumentViewComponent {
                   return EMPTY;
                 }
                 const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                if (this.selectedRun()?.state === 'questions' && unavailableSince === null) return EMPTY;
+                if (this.closedRun() || (this.selectedRun()?.state === 'questions' && unavailableSince === null)) return EMPTY;
                 const local = this.localProgress();
                 if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
                 let delay: number = MKTG_RUN_POLL.intervalMs;
@@ -969,6 +994,43 @@ export class MktgDocumentViewComponent {
     this.showAllRevisions.update((expanded) => !expanded);
   }
 
+  protected requestApproval(): void {
+    const view = this.view();
+    const project = this.projectContext.activeContextUid();
+    if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
+    if (!view || !project || view.project !== project || this.loading()) return;
+    const report = this.viewedReport();
+    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    const selection = this.revisionParam();
+    const epoch = this.restoreEpoch;
+    const subject = this.userService.user()?.sub;
+    const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
+      header: 'Approve with open gaps?',
+      data: report,
+      modal: true,
+      width: '32rem',
+      style: { maxWidth: '90vw' },
+      draggable: false,
+      resizable: false,
+    });
+    if (!ref) return;
+    this.confirmingApproval.set(true);
+    const unregisterDestroy = this.destroyRef.onDestroy(() => ref.close());
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => false)))
+      .pipe(
+        take(1),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.confirmingApproval.set(false);
+          unregisterDestroy();
+        })
+      )
+      .subscribe((confirmed: unknown) => {
+        if (confirmed === true && epoch === this.restoreEpoch && subject === this.userService.user()?.sub && this.sameView(project, view, selection))
+          this.onApprove();
+      });
+  }
+
   protected onApprove(): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -1178,13 +1240,29 @@ export class MktgDocumentViewComponent {
 
   private initRunState(): Signal<MktgDocumentRunProgress['state'] | null> {
     return computed(() => {
+      if (this.closedRun()) return this.closedRun()?.state ?? null;
       const states = [this.localProgress(), this.selectedRun()?.state].filter((state) => state != null);
       return states.sort((a, b) => MKTG_STARTED_RUN_STATE_ORDER[b] - MKTG_STARTED_RUN_STATE_ORDER[a])[0] ?? null;
     });
   }
 
+  private initViewedReport(): Signal<MktgAssetReport | null> {
+    return computed(() => {
+      const faq = this.faq();
+      if (!faq) return this.asset()?.report ?? this.brandKit()?.report ?? this.boilerplates()?.report ?? null;
+      const gaps = new Set(faq.report.gaps);
+      for (const { path, question } of faq.checks.unanswered) {
+        gaps.delete(path);
+        gaps.add(question);
+      }
+      return { ...faq.report, gaps: [...gaps] };
+    });
+  }
+
   private initLiveState(): Signal<string> {
     return computed(() => {
+      if (this.runState() === 'discarded') return 'This run was discarded.';
+      if (this.runState() === 'superseded') return 'A newer run replaced this one.';
       if (this.runState() === 'failed')
         return this.unconfirmedFailure() ? 'The run could not be confirmed.' : `The ${this.failureAssetLabel()} wasn't finished`;
       if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
@@ -1193,7 +1271,7 @@ export class MktgDocumentViewComponent {
         const type = this.runDocumentType();
         return type ? `Writing the ${type.itemLabel}.` : 'Generating the asset.';
       }
-      return this.view() ? 'The asset is ready.' : '';
+      return this.view() ? this.readiness() : '';
     });
   }
 

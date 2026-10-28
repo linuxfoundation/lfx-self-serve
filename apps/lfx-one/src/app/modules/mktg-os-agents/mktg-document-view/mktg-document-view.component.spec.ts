@@ -56,9 +56,11 @@ import { MktgPrintService } from '@services/mktg-print.service';
 // package-architecture.md § Import Patterns: fixtures are intentionally not re-exported by the production utils barrel.
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
@@ -100,6 +102,7 @@ describe('MktgDocumentViewComponent', () => {
     return { ...detail, revision: current, approval: current.approval, markdown: `# Revision ${current.number}\n`, sidecar: null };
   }
 
+  const dialog = { open: vi.fn() };
   const projectLookup = vi.fn();
   const impersonating = signal(false);
   const viewer = signal<{ sub: string } | null | undefined>({ sub: 'synthetic-writer' });
@@ -287,6 +290,7 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   beforeEach(async () => {
+    dialog.open.mockReset();
     subject = linkedSignal(() => viewer()?.sub ?? '');
     pending.load.mockReset().mockReturnValue(null);
     pending.waitForStorage.mockReset();
@@ -349,7 +353,9 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgPendingDocumentService, useValue: pending },
         { provide: MktgPrintService, useValue: print },
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(MktgDocumentViewComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
+      .compileComponents();
   });
 
   it.each(['faq', 'linkedin-post'])('preserves %s capitalization in recorded-failure labels', async (agentKey) => {
@@ -1478,6 +1484,57 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-current-during-run')).toBeNull();
   });
 
+  it.each(['discarded', 'superseded'] as const)('explains a %s selected run instead of a blank page, with no active controls or polling', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const closedAt = '2026-10-19T13:00:00Z';
+    const run = { ...started(state), closedAt };
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [run, { ...started('writing'), runId: 'c'.repeat(64) }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'brand-kit', 'living', false, undefined, false, run.runId);
+    const message = query('mktg-document-view-closed-message')?.textContent?.trim();
+    if (state === 'discarded') {
+      expect(message).toContain('This run was discarded at');
+      expect(message).toContain('19 Oct 2026');
+      expect(message).toContain('; a newer run was started.');
+    } else expect(message).toBe('A newer run replaced this one.');
+    const link = query('mktg-document-view-newer-run');
+    expect(link?.textContent?.trim()).toBe('Open the newer run');
+    expect(link?.getAttribute('href')).toContain('/documents?project=');
+    for (const id of [
+      'mktg-document-view-run',
+      'mktg-document-view-run-steps',
+      'mktg-run-activity-steps',
+      'mktg-document-view-progress-retry',
+      'mktg-document-view-intake-link',
+    ])
+      expect(query(id)).toBeNull();
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.getDocument).toHaveBeenCalledTimes(reads);
+    expect(store.retryRun).not.toHaveBeenCalled();
+  });
+
+  it('settles an already open run page when the next timer read reports discard', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = started('writing');
+    store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [], runs: [run] }));
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...run, state: 'discarded' }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(query('mktg-document-view-run-steps')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', true, undefined, false, run.runId);
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    expect(query('mktg-document-view-progress-retry')).toBeNull();
+  });
+
+  it('does not invent a closure time or person for a legacy discarded run', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [started('discarded')] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded; a newer run was started.');
+  });
+
   it('keeps a Started run with no stored revision in the generating state', async () => {
     const runId = 'b'.repeat(64);
     store.getDocument.mockReturnValue(
@@ -1664,6 +1721,8 @@ describe('MktgDocumentViewComponent', () => {
       agentKey: type.agentKey,
       documentId: 'living',
       startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
     };
     const attempts = TestBed.inject(MktgRunAttemptService);
     vi.mocked(attempts.consume).mockReturnValueOnce({ subject: 'synthetic-sub', pending: { request, state: 'draft', updatedAt: new Date().toISOString() } });
@@ -1916,7 +1975,7 @@ describe('MktgDocumentViewComponent', () => {
         expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
         expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
         expect(query('mktg-document-view-failure-actions')?.textContent).toContain('only if you think it is still running; starts nothing new');
-        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64));
+        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64), false, 'b'.repeat(64));
         store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
         query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
         await settle();
@@ -2804,6 +2863,91 @@ describe('MktgDocumentViewComponent', () => {
     return { ...revisionResponse(selected), type, markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }) };
   }
 
+  it.each([
+    [0, 0, 'Ready.'],
+    [1, 0, 'Ready — 1 of 3 sources could not be read.'],
+    [0, 1, 'Ready — 1 gap.'],
+    [0, 2, 'Ready — 2 gaps.'],
+    [2, 1, 'Ready — 2 of 4 sources could not be read; 1 gap.'],
+  ] as const)('announces viewed revision readiness with %i failed sources and %i gaps', async (failed, gaps, expected) => {
+    const report = {
+      sources_read: ['Docs', 'Website'],
+      sources_failed: Array.from({ length: failed }, () => ({ name: 'Members', reason: 'Unavailable' })),
+      gaps: Array.from({ length: gaps }, (_, index) => `Missing evidence ${index + 1}`),
+      notes: '',
+    };
+    store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(expected);
+    const readiness = query('mktg-document-view-readiness');
+    expect(readiness?.textContent).toBe(expected);
+    expect(readiness?.closest('[hidden], .sr-only')).toBeNull();
+    expect(query('mktg-document-view-title-card')?.contains(readiness)).toBe(true);
+  });
+
+  it.each(['empty', 'missing', 'invalid', 'question', 'path'])('keeps unanswered FAQ visible with a %s report', async (state) => {
+    const question = 'When is launch?';
+    const report = { sources_read: [], sources_failed: [], gaps: state === 'question' ? [question] : [], notes: '' };
+    if (state === 'path') report.gaps = ['faq[0][1][0]'];
+    let sidecar: Record<string, unknown> | null = { report };
+    if (state === 'missing') sidecar = null;
+    if (state === 'invalid') sidecar = { report: { gaps: [] } };
+    store.getRevision.mockReturnValue(of({ ...faqResponse(), markdown: JSON.stringify({ faq: [['About', [[question, null, null]]]] }), sidecar }));
+    const closed = new Subject<boolean>();
+    dialog.open.mockReturnValue({ onClose: closed, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledWith(MktgApproveGapsDialogComponent, expect.objectContaining({ data: expect.objectContaining({ gaps: [question] }) }));
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    closed.next(false);
+  });
+
+  it.each([true, false, 'navigate', 'destroy'] as const)('requires scoped explicit gap confirmation (%s) before approving', async (confirmed) => {
+    const report = { sources_read: ['Docs'], sources_failed: [{ name: 'Members', reason: 'Unavailable' }], gaps: ['Missing evidence'], notes: '' };
+    store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
+    store.approveRevision.mockReturnValue(NEVER);
+    const closed = new Subject<boolean>();
+    const ref = { onClose: closed, onDestroy: NEVER, close: vi.fn() };
+    dialog.open.mockReturnValue(ref);
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    expect(dialog.open).toHaveBeenCalledExactlyOnceWith(
+      MktgApproveGapsDialogComponent,
+      expect.objectContaining({ header: 'Approve with open gaps?', data: report, modal: true })
+    );
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    if (confirmed === 'navigate') {
+      await harness.navigateByUrl(`/documents/faq/living?revision=${OLDER.id}`);
+      await settle();
+    }
+    if (confirmed === 'destroy') harness.fixture.destroy();
+    else closed.next(confirmed !== false);
+    expect(ref.close).toHaveBeenCalledTimes(confirmed === 'destroy' ? 1 : 0);
+    expect(store.approveRevision).toHaveBeenCalledTimes(confirmed === true ? 1 : 0);
+  });
+
+  it('allows another approval attempt after the gaps dialog is dismissed', async () => {
+    const report = { sources_read: ['Docs'], sources_failed: [], gaps: ['Missing evidence'], notes: '' };
+    store.getRevision.mockReturnValue(of({ ...faqResponse(), sidecar: { report } }));
+    store.approveRevision.mockReturnValue(NEVER);
+    const dismissed = new Subject<void>();
+    const closed = new Subject<boolean>();
+    dialog.open
+      .mockReturnValueOnce({ onClose: NEVER, onDestroy: dismissed, close: vi.fn() })
+      .mockReturnValueOnce({ onClose: closed, onDestroy: NEVER, close: vi.fn() });
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    const approve = query('mktg-document-view-approve')?.querySelector('button');
+    approve?.click();
+    expect(dialog.open).toHaveBeenCalledTimes(1);
+    dismissed.next();
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    approve?.click();
+    expect(dialog.open).toHaveBeenCalledTimes(2);
+    closed.next(true);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+  });
+
   it('approves directly without confirmation and updates saving/state metadata', async () => {
     const response = faqResponse();
     const pending = new Subject<MktgRevisionResponse>();
@@ -2817,6 +2961,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-approve')?.querySelector('button')?.click();
     await settle();
     expect(query('mktg-document-view-saving-status')).toBe(status);
+    expect(dialog.open).not.toHaveBeenCalled();
     expect(status?.textContent).toBe('Approving revision 2…');
     expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id);
     expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
@@ -2947,10 +3092,12 @@ describe('MktgDocumentViewComponent', () => {
   it('renders the catalog Run again href for both the framework and native FAQ', async () => {
     useFrameworkRevision();
     await render('/project/mktg-os-agents/documents/foundation-message/living?project=testorbit');
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
     expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit&mode=new');
     store.getRevision.mockReturnValue(of(faqResponse()));
     await harness.navigateByUrl(`/project/mktg-os-agents/documents/faq/living?project=testorbit&revision=${LATEST.id}`);
     await settle();
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready.');
     expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit&mode=new');
   });
 
@@ -3173,6 +3320,7 @@ describe('MktgDocumentViewComponent', () => {
 
     await render('/documents/brand-kit/living');
 
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready.');
     expect(query('mktg-document-view-brand-kit')).not.toBeNull();
     const panel = harness.routeDebugElement?.query(By.directive(MktgCommentsPanelComponent)).componentInstance as MktgCommentsPanelComponent | undefined;
     expect(panel?.scope()).toEqual({ projectUid: PROJECT.uid, agentKey: 'brand-kit', documentId: 'living', revisionId: LATEST.id });
@@ -3321,6 +3469,7 @@ describe('MktgDocumentViewComponent', () => {
 
     await render('/documents/boilerplates/living');
 
+    expect(query('mktg-document-view-live-state')?.textContent).toBe('Ready — 1 gap.');
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Boilerplates');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-framework-view')).toBeNull();

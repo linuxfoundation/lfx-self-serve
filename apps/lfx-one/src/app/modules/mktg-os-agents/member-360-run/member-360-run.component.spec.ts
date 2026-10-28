@@ -15,7 +15,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { of, throwError, NEVER } from 'rxjs';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
 import { MktgPendingGeneration, Member360Result } from '@lfx-one/shared/interfaces';
@@ -72,6 +72,7 @@ describe('Member360RunComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="member-360-run"] button');
   }
   beforeEach(async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     context.canWrite.set(true);
     confirmation.confirm.mockClear();
     attempts.load.mockReset().mockReturnValue(capability());
@@ -90,6 +91,7 @@ describe('Member360RunComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: ConfirmationService, useValue: confirmation },
+        MessageService,
         { provide: Member360Service, useValue: run },
         { provide: MktgRunAttemptService, useValue: attempts },
         { provide: MktgDocumentStoreService, useValue: documents },
@@ -102,7 +104,7 @@ describe('Member360RunComponent', () => {
     TestBed.inject(HttpTestingController).verify();
     vi.useRealTimers();
   });
-  it.each(['open', 'discard'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
+  it.each(['open', 'discard', 'finished'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
     await render();
     const conflict = {
       code: 'MKTG_RUN_ACTIVE',
@@ -112,27 +114,47 @@ describe('Member360RunComponent', () => {
       agentKey: 'member-360',
       documentId: 'run-' + 'a'.repeat(24),
       startedBy: 'Synthetic writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T12:00:00.000Z',
     };
-    run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    run.generate
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
     expect(prompt).toMatchObject({ header: 'Your Member 360 run is in progress', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
     const original = run.generate.mock.calls[0][0];
+    const fresh = { ...conflict, activeRunId: 'c'.repeat(64), startedAt: '2026-10-19T13:00:00Z' };
+    if (choice !== 'finished') run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: fresh })));
+    const notice = vi.spyOn(TestBed.inject(MessageService), 'add');
+    window.dispatchEvent(new Event('focus'));
+    expect(run.generate).toHaveBeenNthCalledWith(3, original);
+    expect(confirmation.confirm.mock.calls.at(-1)?.[0]).toBe(prompt);
+    if (choice === 'finished') {
+      expect(confirmation.close).toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(expect.objectContaining({ detail: 'The earlier run has finished — yours started.' }));
+      expect(navigate).not.toHaveBeenCalled();
+      window.dispatchEvent(new Event('focus'));
+      expect(run.generate).toHaveBeenCalledTimes(3);
+      return;
+    }
+    expect(prompt?.message).toContain('19 Oct 2026');
     if (choice === 'discard') {
       fixture.componentInstance.form.controls.window.setValue('6');
       prompt?.accept?.();
       prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
-      expect(run.generate).toHaveBeenCalledTimes(2);
-      expect(run.generate).toHaveBeenNthCalledWith(2, { ...original, discard: conflict.activeRunId });
+      expect(run.generate).toHaveBeenCalledTimes(4);
+      expect(run.generate).toHaveBeenNthCalledWith(2, original);
+      expect(run.generate).toHaveBeenNthCalledWith(4, { ...original, discard: fresh.activeRunId });
       expect(navigate).not.toHaveBeenCalled();
     } else {
       prompt?.reject?.(ConfirmEventType.REJECT);
-      expect(run.generate).toHaveBeenCalledOnce();
+      expect(run.generate).toHaveBeenCalledTimes(3);
       expect(navigate).toHaveBeenCalledWith(
         expect.arrayContaining(['documents', 'member-360', conflict.documentId]),
-        expect.objectContaining({ queryParams: expect.objectContaining({ run: conflict.activeRunId }) })
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: fresh.activeRunId }) })
       );
     }
   });
@@ -214,6 +236,23 @@ describe('Member360RunComponent', () => {
     expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
     expect(navigate).not.toHaveBeenCalled();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
+  });
+  it('presents tracker matches and source tiles as neutral information', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv')]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const summary = root.querySelector('[data-testid="member-360-tracker-summary"]');
+    expect(summary?.textContent).toContain('1 row');
+    expect(summary?.classList.contains('text-gray-500')).toBe(true);
+    expect(summary?.className).not.toContain('emerald');
+    const tiles = root.querySelectorAll('[data-testid="member-360-source-tile"]');
+    expect(tiles).toHaveLength(3);
+    for (const tile of tiles) {
+      for (const token of ['border', 'border-gray-200', 'bg-gray-50', 'text-gray-700']) expect(tile.classList.contains(token)).toBe(true);
+      expect(tile.className).not.toContain('emerald');
+    }
   });
   it('keeps fixed context parents for a shared URL without copying revision, tab or stale project', async () => {
     const router = TestBed.inject(Router);

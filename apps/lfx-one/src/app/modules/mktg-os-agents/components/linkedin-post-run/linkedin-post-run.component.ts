@@ -32,6 +32,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   LinkedinContentSource,
+  LinkedinGeneration,
   LinkedinSetup,
   LinkedinStoredProfile,
   MktgAgentIntake,
@@ -46,17 +47,18 @@ import {
   mktgKitRootPath,
   parseLinkedinContentSource,
   readMktgActiveRunConflict,
-  mktgActiveRunConflictHeading,
+  mktgLinkWarnings,
 } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { FileSelectEvent } from 'primeng/fileupload';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, take } from 'rxjs';
 
@@ -92,6 +94,7 @@ export class LinkedinPostRunComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
   protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.linkedin;
 
   public readonly intake = input.required<MktgAgentIntake>();
@@ -141,6 +144,8 @@ export class LinkedinPostRunComponent {
   protected readonly explicitProfileSave = signal(false);
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
   protected readonly pendingNotice = signal<ReturnType<MktgRunAttemptService['latestPending']>>(null);
+  private readonly contentUrl = signal(this.contentForm.controls.url.value);
+  protected readonly linkWarning = computed(() => mktgLinkWarnings({ url: this.contentUrl() })['url']);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
   private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub, reload: this.reload() })));
@@ -152,6 +157,7 @@ export class LinkedinPostRunComponent {
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) return;
+    this.contentForm.controls.url.valueChanges.pipe(takeUntilDestroyed()).subscribe((url) => this.contentUrl.set(url));
     this.initLastIntakeRestore();
     this.route.queryParamMap
       .pipe(
@@ -391,6 +397,12 @@ export class LinkedinPostRunComponent {
       const setup = savedSetup ? { ...savedSetup } : undefined;
       const current = () =>
         version === this.scopeVersion && !this.destroyRef.destroyed && owner === this.user.user()?.sub && project === this.context.activeContextUid();
+      const onSession = (session: LinkedinGeneration) => {
+        if (!current()) return;
+        const request = { agentId: this.intake().agentId, intake: this.intake(), projectUid: project, documentId: session.documentId, answers };
+        this.acceptedRequest.set(request);
+        void this.returnToDocument(request, this.attempts.prepareAccepted(request, session));
+      };
       const start = (discard?: string) => {
         if (!current()) return;
         this.busy.set(true);
@@ -398,12 +410,7 @@ export class LinkedinPostRunComponent {
           ? this.api.startForDocument(this.intake(), project, answers, setup, discard)
           : this.api.startForDocument(this.intake(), project, answers, setup);
         this.generation = call.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: (session) => {
-            if (!current()) return;
-            const request = { agentId: this.intake().agentId, intake: this.intake(), projectUid: project, documentId: session.documentId, answers };
-            this.acceptedRequest.set(request);
-            void this.returnToDocument(request, this.attempts.prepareAccepted(request, session));
-          },
+          next: onSession,
           error: (error: unknown) => {
             if (!current()) return;
             const conflict = error instanceof HttpErrorResponse && error.status === 409 ? readMktgActiveRunConflict(error.error, this.intake().agentId) : null;
@@ -412,28 +419,26 @@ export class LinkedinPostRunComponent {
               return;
             }
             this.busy.set(false);
-            let decided = false;
-            this.confirmation.confirm({
-              key: this.conflictKey,
-              header: mktgActiveRunConflictHeading(conflict),
-              message: 'Its questions and progress will be lost.',
-              acceptLabel: 'Discard and start over',
-              rejectLabel: 'Open it',
-              rejectButtonProps: { text: true },
-              accept: () => {
-                if (decided || !current()) return;
-                decided = true;
-                start(conflict.activeRunId);
-              },
-              reject: (reason: ConfirmEventType) => {
-                if (decided) return;
-                decided = true;
-                if (reason === ConfirmEventType.REJECT && current())
-                  void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', conflict.agentKey, conflict.documentId], {
-                    queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: conflict.activeRunId },
+            this.activeRunGuard.open(
+              this.confirmation,
+              {
+                conflict,
+                current,
+                recheck: () => this.api.startForDocument(this.intake(), project, answers, setup),
+                classify: (failure) =>
+                  failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, this.intake().agentId) : null,
+                onValue: onSession,
+                onDiscard: (fresh) => start(fresh.activeRunId),
+                onOpen: (fresh) => {
+                  void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+                    queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: fresh.activeRunId },
                   });
+                },
+                onError: (failure) => this.failedRun(failure),
               },
-            });
+              this.destroyRef,
+              this.conflictKey
+            );
           },
         });
       };
@@ -576,6 +581,8 @@ export class LinkedinPostRunComponent {
           { text: answers['content_text'] ?? '', url: answers['content_url'] ?? '', share_link: answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '' },
           { emitEvent: false }
         );
+        // Restore silently to preserve share-link ownership, but refresh advisory state.
+        this.contentUrl.set(this.contentForm.controls.url.value);
         if (source === 'url' && this.contentForm.controls.share_link.value !== this.contentForm.controls.url.value)
           this.contentForm.controls.share_link.markAsDirty();
         if (source === 'file') this.lastIntakeNote.set('The last run used a file — choose it again to draft.');

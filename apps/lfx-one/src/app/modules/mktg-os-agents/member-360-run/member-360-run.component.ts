@@ -28,12 +28,13 @@ import {
   MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { readMktgActiveRunConflict, readMktgRunAnsweredConflict, mktgActiveRunConflictHeading, mktgKitRootPath } from '@lfx-one/shared/utils';
-import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { readMktgActiveRunConflict, readMktgRunAnsweredConflict, mktgKitRootPath } from '@lfx-one/shared/utils';
+import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import {
   Member360Envelope,
   Member360GenerateRequest,
+  Member360Session,
   Member360TrackerUpload,
   MktgDocumentListItem,
   MktgPendingGeneration,
@@ -41,6 +42,7 @@ import {
   MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
@@ -79,6 +81,7 @@ export class Member360RunComponent {
   private readonly router = inject(Router);
   private readonly users = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
   protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.member360;
   protected readonly context = inject(ProjectContextService);
   protected readonly intro = MEMBER_360_INTRO;
@@ -236,6 +239,14 @@ export class Member360RunComponent {
       trackers: this.trackers().map((upload) => upload.tracker),
     };
     const current = () => !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    const onSession = (session: Member360Session) => {
+      if (!current()) return;
+      const pending = this.attempts.load(project, 'member-360', session.documentId);
+      this.submitting.set(false);
+      this.startedAt.set(Date.now());
+      this.accepted.set([user ?? '', pending]);
+      if (!pending) this.error.set('The run started, but its creator capability could not be restored. Open it from run history.');
+    };
     const start = (discard?: string) => {
       if (!current()) return;
       this.submitting.set(true);
@@ -243,41 +254,35 @@ export class Member360RunComponent {
         .generate(discard ? { ...body, discard } : body)
         .pipe(take(1))
         .subscribe({
-          next: (session) => {
-            if (!current()) return;
-            const pending = this.attempts.load(project, 'member-360', session.documentId);
-            this.submitting.set(false);
-            this.startedAt.set(Date.now());
-            this.accepted.set([user ?? '', pending]);
-            if (!pending) this.error.set('The run started, but its creator capability could not be restored. Open it from run history.');
-          },
+          next: onSession,
           error: (error: HttpErrorResponse) => {
             if (!current()) return;
             this.submitting.set(false);
             const conflict = error.status === 409 ? readMktgActiveRunConflict(error.error, 'member-360') : null;
             if (conflict) {
-              let decided = false;
-              this.confirmation.confirm({
-                key: this.conflictKey,
-                header: mktgActiveRunConflictHeading(conflict),
-                message: 'Its questions and progress will be lost.',
-                acceptLabel: 'Discard and start over',
-                rejectLabel: 'Open it',
-                rejectButtonProps: { text: true },
-                accept: () => {
-                  if (decided || !current()) return;
-                  decided = true;
-                  start(conflict.activeRunId);
-                },
-                reject: (reason: ConfirmEventType) => {
-                  if (decided) return;
-                  decided = true;
-                  if (reason === ConfirmEventType.REJECT && current())
-                    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', conflict.agentKey, conflict.documentId], {
-                      queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: conflict.activeRunId },
+              this.activeRunGuard.open(
+                this.confirmation,
+                {
+                  conflict,
+                  current,
+                  recheck: () => this.api.generate(body),
+                  classify: (failure) =>
+                    failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, 'member-360') : null,
+                  onValue: onSession,
+                  onDiscard: (fresh) => start(fresh.activeRunId),
+                  onOpen: (fresh) => {
+                    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+                      queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: fresh.activeRunId },
                     });
+                  },
+                  onError: () => {
+                    this.submitting.set(false);
+                    this.error.set('The start could not be confirmed. Check Documents before trying again.');
+                  },
                 },
-              });
+                this.destroyRef,
+                this.conflictKey
+              );
               return;
             }
             let message = 'The run could not be started. Your trackers are still here; try again.';

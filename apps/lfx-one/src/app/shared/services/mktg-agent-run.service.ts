@@ -198,17 +198,20 @@ export class MktgAgentRunService {
    * (project switch, a new submission, leaving the page) cancels the retry
    * with it.
    */
-  public generate(request: MktgGenerateRequest, discard?: string): Observable<MktgGenerateProgress> {
+  public generate(request: MktgGenerateRequest, discard?: string, recheck = false): Observable<MktgGenerateProgress> {
     if (request.discard && !MKTG_STARTED_RUN_ID_REGEX.test(request.discard)) return throwError(() => new Error('Invalid active run selection.'));
-    const retryBody = discard ? this.retainedBody(request) : null;
-    if (discard && (!MKTG_STARTED_RUN_ID_REGEX.test(discard) || !retryBody))
+    const retryBody = discard || recheck ? this.retainedBody(request) : null;
+    if ((discard && !MKTG_STARTED_RUN_ID_REGEX.test(discard)) || ((discard || recheck) && !retryBody))
       return throwError(() => new Error('Review the retained intake and Create explicitly; the original start cannot be replayed safely.'));
     if (request.intake.oneOffDocument) return throwError(() => new Error('Submit this one-off through its dedicated intake first.'));
     const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
-    if (!discard) request.retainedStartBody = undefined;
+    if (!discard && !recheck) request.retainedStartBody = undefined;
     let attempt$: Observable<MktgRunAttempt>;
-    if (discard && retryBody) attempt$ = this.postStartBody(request, retryBody, discard);
-    else if (!stored || request.intake.freshRunPerSubmission) {
+    if ((discard || recheck) && retryBody) {
+      const body = { ...retryBody };
+      if (recheck) delete body.discard;
+      attempt$ = this.postStartBody(request, body, discard);
+    } else if (!stored || request.intake.freshRunPerSubmission) {
       // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
@@ -254,6 +257,11 @@ export class MktgAgentRunService {
         return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
       })
     );
+  }
+
+  /** Re-send the visit's exact start body without discard; never reconstruct it or send a session follow-up. */
+  public recheckActiveConflict(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+    return this.generate(request, undefined, true);
   }
 
   /** The existing attempt store, not a closure or mutable version history, owns this visit's submitted body. */

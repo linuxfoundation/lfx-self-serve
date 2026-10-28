@@ -59,6 +59,13 @@ describe('Member360ResultComponent', () => {
     else envelope.summary_markdown = value;
     expect(render(envelope).query('member-360-run-summary')).toBeNull();
   });
+  it('presents the used sources in neutral grey rather than success green', () => {
+    const view = render();
+    const sources = view.query('member-360-sources-used');
+    expect(sources.textContent).toBeTruthy();
+    expect(sources.classList.contains('text-gray-700')).toBe(true);
+    expect(sources.className).not.toContain('emerald');
+  });
   it('exposes the shared form route for title-row actions without carrying asset state or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);

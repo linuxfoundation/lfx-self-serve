@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants';
+import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-post.constants';
+import { LINKEDIN_POST_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
+import { MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
 import {
   createLinkedinRuns,
@@ -26,7 +28,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       const activeRunId = 'b'.repeat(64);
       await page.route(`**${LINKEDIN_API}/generate`, (route) => {
         bodies.push(route.request().postDataJSON());
-        if (bodies.length === 1)
+        if (!bodies.at(-1)?.['discard'])
           return json(
             route,
             {
@@ -37,6 +39,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
               agentKey: 'linkedin-post',
               documentId,
               startedBy: 'Synthetic writer',
+              startedByViewer: true,
+              startedAt: '2026-10-19T12:00:00.000Z',
             },
             409
           );
@@ -49,8 +53,9 @@ test.describe('Marketing OS LinkedIn posts', () => {
       await expect(dialog).toContainText('Your LinkedIn post run is in progress');
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-      expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
-      if (choice !== 'Open it') expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+      expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
+      if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       await page.screenshot({ path: info.outputPath('linkedin-active-run-choice.png'), fullPage: true });
     });
   test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {

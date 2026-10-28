@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
+  HEALTH_METRICS_OVERVIEW_BLANK_COPY,
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
@@ -31,6 +33,7 @@ import type {
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsOverviewBalanceView,
+  HealthMetricsOverviewBlankCopy,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
   HealthMetricsOverviewBoardSort,
@@ -41,6 +44,8 @@ import type {
   HealthMetricsOverviewCodeView,
   HealthMetricsOverviewDelta,
   HealthMetricsOverviewDonutSegmentView,
+  HealthMetricsOverviewEmptyCopy,
+  HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEventRegistrationsView,
@@ -73,6 +78,29 @@ export function buildHealthMetricsYtdRangeLabel(today: Date): string {
 /** The selected period as one the Overview views carry columns for; `null` for any other. */
 export function toHealthMetricsOverviewRange(range: HealthMetricsRange): HealthMetricsL2Range | null {
   return (HEALTH_METRICS_L2_RANGES as readonly HealthMetricsRange[]).includes(range) ? (range as HealthMetricsL2Range) : null;
+}
+
+/** The past year a period stands for, or `null` for YTD, whose empty states speak of "so far". */
+export function toHealthMetricsOverviewPastYear(range: HealthMetricsRange): number | null {
+  return range === 'YTD' ? null : getYearForRange(range);
+}
+
+/** A card's empty state for the period: the YTD words, or a past year's with `{Y}` filled in when the card has them. */
+export function buildHealthMetricsOverviewEmptyCopy(copy: HealthMetricsOverviewEmptyStateCopy, pastYear: number | null): HealthMetricsOverviewEmptyCopy {
+  const period = pastYear === null || !copy.past ? copy.ytd : copy.past;
+  const fill = withYear(pastYear);
+  return { icon: copy.icon, title: fill(period.title), text: fill(period.text), reasons: period.reasons.map(fill) };
+}
+
+/** The whole-foundation empty state for the period. */
+export function buildHealthMetricsOverviewBlankCopy(pastYear: number | null): HealthMetricsOverviewBlankCopy {
+  const copy = pastYear === null ? HEALTH_METRICS_OVERVIEW_BLANK_COPY.ytd : HEALTH_METRICS_OVERVIEW_BLANK_COPY.past;
+  const fill = withYear(pastYear);
+  return { title: fill(copy.title), lead: fill(copy.lead), reasons: copy.reasons.map(fill) };
+}
+
+function withYear(pastYear: number | null): (text: string) => string {
+  return (text) => text.replace(/\{Y\}/g, String(pastYear ?? ''));
 }
 
 /** Members and non-members, each with its two KPIs and engagement split. */

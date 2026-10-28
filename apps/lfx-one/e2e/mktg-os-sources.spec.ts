@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
+import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
 import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
@@ -20,7 +21,7 @@ test.describe('Marketing OS new run Sources', () => {
       const activeRunId = 'b'.repeat(64);
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
         bodies.push(route.request().postDataJSON());
-        if (bodies.length === 1)
+        if (!bodies.at(-1)?.['discard'])
           return route.fulfill({
             status: 409,
             json: {
@@ -31,6 +32,8 @@ test.describe('Marketing OS new run Sources', () => {
               agentKey: 'brand-kit',
               documentId: 'living',
               startedBy: 'Synthetic writer',
+              startedByViewer: false,
+              startedAt: '2026-10-19T12:00:00.000Z',
             },
           });
         return route.fallback();
@@ -52,9 +55,10 @@ test.describe('Marketing OS new run Sources', () => {
       if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
       else {
         await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
-        expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+        expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       }
-      expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
+      expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
       await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
     });
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
@@ -174,8 +178,12 @@ test.describe('Marketing OS new run Sources', () => {
     const title = `Discard the ${mktgSentenceCaseLabel(type.itemLabel)} run?`;
     await expect(page.getByText(title, { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Keep it', exact: true }).click();
-    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
+    await expect(questions).toContainText('Which synthetic goal?');
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
     expect(sources.generated).toHaveLength(1);
+    await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
     await page.getByTestId('mktg-run-waiting-start-over').click();
     await page.getByRole('button', { name: 'Discard and start over', exact: true }).click();
     await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
@@ -186,6 +194,21 @@ test.describe('Marketing OS new run Sources', () => {
     expect(sources.generated).toHaveLength(2); // Exactly ONE new Generate, no second confirmation in this visit.
     expect(sources.generated[1]['answers']).toEqual(sources.generated[0]['answers']);
     await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
+  });
+  test('Drive and duplicate source warnings leave Start enabled', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    await sources.open();
+    await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
+    const url = 'https://drive.google.com/drive/folders/synthetic';
+    await page.locator('[data-test="mktg-intake-website_url"]').fill(url);
+    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    const start = page.getByTestId('mktg-run-start').getByRole('button');
+    await expect(start).toBeEnabled();
+    await page.locator('[data-test="mktg-intake-brand_page_url"]').fill(url + '/?usp=sharing');
+    await expect(page.getByTestId('mktg-agent-run-link-warning-brand_page_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    await expect(start).toBeEnabled();
+    expect(sources.generated).toHaveLength(0);
+    await page.screenshot({ path: test.info().outputPath('nonblocking-link-advice.png'), fullPage: true });
   });
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {

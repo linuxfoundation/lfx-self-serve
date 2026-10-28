@@ -40,9 +40,12 @@ test.describe('Marketing OS current revisions', () => {
       await expect(page.getByTestId('mktg-documents-pending-document')).toBeVisible();
       await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
       if (state === 'questions') {
-        await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveText('Answer the questions');
-        await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', /\/mktg-os-agents\/icp\?project=/);
-        return; // D2 already routes questions to intake; this item does not change ICP.
+        const link = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
+        await expect(link).toHaveText('Answer the questions');
+        await expect(link).toHaveAttribute('href', new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}$`));
+        await link.click();
+        await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+        return;
       }
       await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
       await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();

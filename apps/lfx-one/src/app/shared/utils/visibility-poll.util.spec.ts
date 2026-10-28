@@ -61,6 +61,19 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
+  it('rechecks immediately on window focus only while visible', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('stops when shouldContinue is false and restarts on the next visible event', () => {
     const fetch = vi.fn(() => of(1));
     const sub = createVisibilityPoll(doc, fetch, { ...options, shouldContinue: () => false }).subscribe();

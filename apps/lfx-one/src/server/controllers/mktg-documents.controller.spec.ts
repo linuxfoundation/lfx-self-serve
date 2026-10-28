@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn(), resolveProject: vi.fn() }));
+const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), readClosedProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn(), resolveProject: vi.fn() }));
 const redraftMocks = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock('../services/mktg-document-redraft.service', () => ({
   MktgDocumentRedraftService: class {
@@ -55,6 +55,7 @@ vi.mock('../services/mktg-document-run.service', async () => {
       public resolveProject = runMocks.resolveProject;
       public retry = runMocks.retry;
       public refreshFailure = runMocks.refreshFailure;
+      public readClosedProgress = runMocks.readClosedProgress;
       public detailWithProgress = actual.MktgDocumentRunService.prototype.detailWithProgress;
     },
   };
@@ -115,6 +116,7 @@ describe('MktgDocumentsController', () => {
     runMocks.readProgress.mockResolvedValue({ runs: [] });
     runMocks.retry.mockResolvedValue(undefined);
     runMocks.refreshFailure.mockResolvedValue(null);
+    runMocks.readClosedProgress.mockResolvedValue(null);
     controller = new MktgDocumentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
   });
@@ -413,6 +415,29 @@ describe('MktgDocumentsController', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ revisions: [], runs: [] }));
     expect(next).not.toHaveBeenCalled();
     expect(runMocks.readProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', true);
+  });
+
+  it.each([false, true])('returns a selected closed run even before any revision exists (poll=%s)', async (poll) => {
+    const closed = runProgress({ state: 'discarded', closedAt: '2026-10-19T13:00:00Z' });
+    storeMocks.getDocument.mockResolvedValue(null);
+    runMocks.readClosedProgress.mockResolvedValue(closed);
+    const res = buildRes();
+    await controller.getDocument(
+      buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, run: closed.runId, ...(poll && { poll: '1' }) }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(runMocks.readClosedProgress).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', closed.runId);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ revisions: [], runs: [closed] }));
+    expect(runMocks.refreshFailure).not.toHaveBeenCalled();
+  });
+
+  it.each(['../bad', ['b'.repeat(64)]])('rejects invalid selected-run query %j before reading progress', async (run) => {
+    await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, run }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(runMocks.readProgress).not.toHaveBeenCalled();
+    expect(runMocks.readClosedProgress).not.toHaveBeenCalled();
   });
 
   it('explicitly refreshes only the selected failed run on navigation, never list/timer reads', async () => {
