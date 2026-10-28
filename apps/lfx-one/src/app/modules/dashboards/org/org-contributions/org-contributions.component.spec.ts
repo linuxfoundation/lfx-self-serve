@@ -17,7 +17,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgContributionsComponent } from './org-contributions.component';
@@ -471,6 +471,79 @@ describe('OrgContributionsComponent', () => {
       [],
       expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', foundation: null }) })
     );
+  });
+
+  it('lets a response that lands during the debounce of a newer pick reconcile nothing', async () => {
+    const cncf: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [{ foundationId: 'f-cncf', foundationName: 'CNCF' }],
+    };
+    const { fixture, navigate, getContributions } = await render(null, { response: cncf });
+    const { projectScope, foundation } = fixture.componentInstance['filterForm'].controls;
+
+    const nonLf = new Subject<OrgContributionsResponse>();
+    getContributions.mockReturnValueOnce(nonLf);
+    projectScope.setValue('non_lf');
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', foundation: '' }));
+
+    // While the non-LF read is in flight, the user goes back to LF projects and picks CNCF; then the non-LF answer lands.
+    projectScope.setValue('lf');
+    foundation.setValue('f-cncf');
+    nonLf.next({ ...cncf, foundationOptions: [] });
+    nonLf.complete();
+    expect(foundation.value).toBe('f-cncf');
+
+    await pastDebounce(fixture);
+    expect(foundation.value).toBe('f-cncf');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', foundation: 'f-cncf' }));
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: null, foundation: 'f-cncf' }) })
+    );
+  });
+
+  // Employee and foundation intersect, so a pick is never dropped for the foundation; it must stay removable.
+  it('keeps a picked employee the foundation-narrowed options drop listed under their last label, and removable', async () => {
+    const foundationOptions = [
+      { foundationId: 'f-a', foundationName: 'A' },
+      { foundationId: 'f-b', foundationName: 'B' },
+    ];
+    const inA: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions,
+      employeeOptions: [{ id: 'e-1', displayName: 'Ada', commits: 3 }],
+    };
+    const inB: OrgContributionsResponse = { ...inA, employeeOptions: [{ id: 'e-2', displayName: 'Grace', commits: 5 }] };
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { foundation: 'f-a' }, response: inA });
+    const { foundation, employees } = fixture.componentInstance['filterForm'].controls;
+    employees.setValue(['e-1']);
+    await pastDebounce(fixture);
+
+    getContributions.mockReturnValue(of(inB));
+    foundation.setValue('f-b');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-b', employees: ['e-1'] }));
+    expect(employees.value).toEqual(['e-1']);
+    expect(fixture.componentInstance['employeeOptions']()).toEqual([
+      { label: 'Grace', value: 'e-2', sublabel: '5 contributions' },
+      { label: 'Ada', value: 'e-1', sublabel: '0 contributions' },
+    ]);
+
+    employees.setValue([]);
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-b', employees: [] }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-b', employees: null }) }));
+    expect(fixture.componentInstance['employeeOptions']().map((option) => option.value)).toEqual(['e-2']);
+  });
+
+  it('offers a deep-linked employee the options never listed under their id', async () => {
+    const { fixture } = await render(null, { queryParams: { employees: 'e-9' } });
+
+    expect(fixture.componentInstance['employeeOptions']()).toEqual([{ label: 'e-9', value: 'e-9', sublabel: '0 contributions' }]);
   });
 
   describe('projects and the picked foundation', () => {

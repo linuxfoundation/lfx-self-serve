@@ -145,6 +145,8 @@ export class OrgContributionsComponent {
   private readonly fetchErrorState = signal<boolean>(false);
   protected readonly isLoading = this.loadingState.asReadonly();
   protected readonly fetchError = this.fetchErrorState.asReadonly();
+  // The last name each employee id was listed under, so a pick the foundation-narrowed options drop keeps its label.
+  private readonly employeeLabels = new Map<string, string>();
 
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
   protected readonly pageState = this.emptyState.pageState;
@@ -398,14 +400,10 @@ export class OrgContributionsComponent {
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });
           }
           return this.dataService.getContributions(orgUid, query).pipe(
-            // A new range or project type can drop the picked foundation from the options, and filtering on it would
-            // empty the page, so it is cleared (as on People → Contributors). Options also arrive with each project's
-            // foundation, so a deep-linked project pick outside the foundation is dropped here.
             tap((res) => {
               this.loadingState.set(false);
-              const { foundation } = this.filterForm.controls;
-              if (foundation.value && !res.foundationOptions.some((option) => option.foundationId === foundation.value)) foundation.setValue('');
-              this.dropProjectsOutside(foundation.value, res.projectOptions);
+              for (const employee of res.employeeOptions) this.employeeLabels.set(employee.id, employee.displayName);
+              this.reconcileSelections(res, query);
             }),
             catchError(() => {
               this.fetchErrorState.set(true);
@@ -481,13 +479,40 @@ export class OrgContributionsComponent {
       }));
   }
 
+  /**
+   * Employee options narrow to the picked foundation, but a pick is never dropped for it (employee and foundation
+   * intersect). A picked employee the options no longer list stays offered, under the last label seen for them, so
+   * the picker can still show and remove them.
+   */
   private initEmployeeOptions(): ContributionsFilterOption[] {
     const unit = this.codeUnit();
-    return this.response().employeeOptions.map((e) => ({
+    const listed = this.response().employeeOptions;
+    const options = listed.map((e) => ({
       label: e.displayName,
       value: e.id,
       sublabel: `${e.commits.toLocaleString()} ${e.commits === 1 ? unit.one : unit.other}`,
     }));
+    for (const id of this.query().employees) {
+      if (!listed.some((e) => e.id === id)) options.push({ label: this.employeeLabels.get(id) ?? id, value: id, sublabel: `0 ${unit.other}` });
+    }
+    return options;
+  }
+
+  /**
+   * A new range or project type can drop the picked foundation from the options, and filtering on it would empty the
+   * page, so it is cleared (as on People → Contributors). Options also arrive with each project's foundation, so a
+   * deep-linked project pick outside the foundation is dropped. Only a response for the range, project type and
+   * foundation the form still holds may do either: one that lands during the debounce of a newer pick belongs to
+   * filters the user has already left.
+   */
+  private reconcileSelections(res: OrgContributionsResponse, query: OrgContributionsQuery): void {
+    const { dateRange, projectScope, foundation } = this.filterForm.getRawValue();
+    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation) {
+      return;
+    }
+    const control = this.filterForm.controls.foundation;
+    if (control.value && !res.foundationOptions.some((option) => option.foundationId === control.value)) control.setValue('');
+    this.dropProjectsOutside(control.value, res.projectOptions);
   }
 
   private initSortIconMap(): Record<ContributionsSortColumn, string> {
