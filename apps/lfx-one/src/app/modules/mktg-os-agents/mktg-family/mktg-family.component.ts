@@ -69,7 +69,7 @@ export class MktgFamilyComponent {
   });
   protected readonly rows = computed(() =>
     Object.values(this.actions()?.rows ?? {}).map((entry) => {
-      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../']);
+      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../'], entry.row.document);
       const link = run?.link;
       return { ...entry, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
     })

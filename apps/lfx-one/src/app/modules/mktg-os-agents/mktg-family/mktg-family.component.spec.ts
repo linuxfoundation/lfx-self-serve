@@ -148,6 +148,40 @@ describe('Marketing family page', () => {
     expect(primary?.getAttribute('href')).toBe(primaryHref);
   });
 
+  it.each(['writing', 'storing', 'questions'] as const)('shows approved + %s in the row and shared header presentation', async (state) => {
+    families.update((views) =>
+      views.map((view) => ({
+        ...view,
+        rows: view.rows.map((row) =>
+          row.asset.agentKey === 'foundation-message' && row.document
+            ? {
+                ...row,
+                state: 'approved',
+                version: 2,
+                document: { ...row.document, approvedCurrent: { revisionId: 'approved', number: 2 } },
+              }
+            : row
+        ),
+      }))
+    );
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [{ agentKey: 'foundation-message', state, project: 'synthetic', documentId: 'living', runId: 'synthetic-run', startedAt: '2026-10-28T12:00:00Z' }],
+    });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const caption = state === 'questions' ? 'Waiting for your answers' : 'Approved · new version being written';
+    expect(root?.querySelector('[data-testid="mktg-family-run-status-row"]')?.textContent).toContain(caption);
+    expect(root?.querySelector('[data-testid="mktg-family-run-status"]')?.textContent).toContain('Messaging framework · ' + caption);
+    const href =
+      state === 'questions'
+        ? '/project/mktg-os-agents/foundation-setup?project=synthetic'
+        : '/project/mktg-os-agents/documents/foundation-message/living?project=synthetic&run=synthetic-run';
+    expect(root?.querySelector('[data-testid="mktg-family-run-status-link"]')?.getAttribute('href')).toBe(href);
+    expect(root?.querySelector('[data-testid="mktg-family-current-messaging-framework"]')?.textContent).toContain('v2');
+  });
   it('names the newest active asset across the family, ignoring failed and other-family runs', async () => {
     documents.set({
       project: 'synthetic',

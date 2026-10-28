@@ -86,6 +86,44 @@ describe('Marketing kit home', () => {
     }
     expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
   });
+  it.each(['writing', 'storing', 'questions'] as const)('keeps approval visible for %s without changing the run destination', async (state) => {
+    families.update((views) =>
+      views.map((view) => ({
+        ...view,
+        rows: view.rows.map((row) =>
+          row.asset.agentKey === 'foundation-message'
+            ? {
+                ...row,
+                state: 'approved',
+                version: 2,
+                document: {
+                  agentKey: 'foundation-message',
+                  documentId: 'living',
+                  revisionCount: 2,
+                  latestRevisionId: 'approved',
+                  approvedCurrent: { revisionId: 'approved', number: 2 },
+                  createdAt: null,
+                  updatedAt: null,
+                },
+              }
+            : row
+        ),
+      }))
+    );
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [{ agentKey: 'foundation-message', state, project: 'synthetic', documentId: 'living', runId: 'synthetic-run', startedAt: '2026-10-28T12:00:00Z' }],
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const row: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]');
+    expect(row?.textContent).toContain(state === 'questions' ? 'Waiting for your answers' : 'Approved · new version being written');
+    expect(row?.querySelector('a')?.getAttribute('href')).toBe(
+      state === 'questions' ? '/foundation-setup?project=synthetic' : '/documents/foundation-message/living?project=synthetic&run=synthetic-run'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('1 assets');
+  });
   it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();

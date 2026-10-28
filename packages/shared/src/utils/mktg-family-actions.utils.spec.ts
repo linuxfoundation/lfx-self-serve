@@ -70,6 +70,44 @@ describe('One rule for every family action', () => {
     });
     expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Paused');
   });
+  it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
+    const run = {
+      agentKey: 'foundation-message' as const,
+      state,
+      project: 'synthetic',
+      documentId: 'living',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    const document = {
+      agentKey: run.agentKey,
+      documentId: 'living',
+      revisionCount: 2,
+      latestRevisionId: 'approved',
+      approvedCurrent: { revisionId: 'approved', number: 2 },
+      createdAt: null,
+      updatedAt: null,
+    };
+    const result = resolveMktgFamilyRun(run.agentKey, [run], [], document);
+    expect(result?.caption).toBe(state === 'questions' ? 'Waiting for your answers' : 'Approved · new version being written');
+    expect(result?.link).toEqual(resolveMktgFamilyRun(run.agentKey, [run])?.link);
+    expect(document.approvedCurrent).toEqual({ revisionId: 'approved', number: 2 });
+    for (const approvedCurrent of [
+      null,
+      { revisionId: '', number: 2 },
+      { revisionId: ' ', number: 2 },
+      { revisionId: 'approved', number: 0 },
+      { revisionId: 'approved', number: 1.5 },
+    ]) {
+      expect(resolveMktgFamilyRun(run.agentKey, [run], [], { ...document, approvedCurrent })?.caption).toBe(
+        state === 'questions' ? 'Waiting for your answers' : 'Writing…'
+      );
+    }
+    expect(resolveMktgFamilyRun(run.agentKey, [run], [], null)?.caption).toBe(state === 'questions' ? 'Waiting for your answers' : 'Writing…');
+    expect(resolveMktgFamilyRun(run.agentKey, [run], [], { ...document, documentId: 'other' })?.caption).toBe(
+      state === 'questions' ? 'Waiting for your answers' : 'Writing…'
+    );
+  });
   it('every available never-run row has Create X; required approved documents disable it with the reason', () => {
     const result = resolveMktgFamilyActions(family(), context);
     expect(result.rows['messaging-framework'].action).toMatchObject({ kind: 'run', label: 'Create messaging framework', mode: 'new', blockedReason: '' });

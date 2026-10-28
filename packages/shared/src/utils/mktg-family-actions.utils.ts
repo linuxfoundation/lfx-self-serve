@@ -21,12 +21,14 @@ import { MKTG_RUN_NEW_MODE } from '../constants/mktg-last-intake.constants';
 import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction, MktgFamilyNextStep } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitAssetRow, MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 import type { MktgDocumentRunProgress } from '../interfaces/mktg-document-run.interface';
+import type { MktgDocumentListItem } from '../interfaces/mktg-document-store.interface';
 
 /** Optional run overlay only; stored-asset actions and Kit Next step keep their existing policy. Links are relative to the Kit root. */
 export function resolveMktgFamilyRun(
   agentKey: string | null | undefined,
   runs: readonly MktgDocumentRunProgress[] = [],
-  prefix: string[] = []
+  prefix: string[] = [],
+  document?: MktgDocumentListItem | null
 ): Pick<MktgFamilyHeaderAction, 'label' | 'caption' | 'link'> | null {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === agentKey);
   if (!type?.catalogAgentId || !isMktgFamilyAgentAvailable(type.catalogAgentId)) return null;
@@ -34,7 +36,17 @@ export function resolveMktgFamilyRun(
     .filter((candidate) => candidate.agentKey === agentKey && candidate.state !== 'failed')
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
   if (!run) return null;
-  let caption = 'Writing…';
+  const approved = document?.approvedCurrent;
+  const approvedDocument =
+    type.kind === 'living' &&
+    document?.agentKey === run.agentKey &&
+    document.documentId === run.documentId &&
+    approved &&
+    Number.isSafeInteger(approved.number) &&
+    approved.number > 0 &&
+    typeof approved.revisionId === 'string' &&
+    approved.revisionId.trim().length > 0;
+  let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
   if (run.state === 'questions') caption = run.agentKey === 'member-360' ? 'Paused' : 'Waiting for your answers';
   return {
     label: run.state === 'questions' ? 'Answer the questions' : 'Open',

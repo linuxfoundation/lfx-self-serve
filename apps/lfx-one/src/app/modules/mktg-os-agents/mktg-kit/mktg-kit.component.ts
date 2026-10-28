@@ -72,7 +72,7 @@ export class MktgKitComponent {
           approvedFramework: !!this.kit.documents()?.approvedFramework,
         });
         const rows = Object.values(actions.rows).map(({ row }) => {
-          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs);
+          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs, [], row.document);
           const link = run?.link;
           return { ...row, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
         });
