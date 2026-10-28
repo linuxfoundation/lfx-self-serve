@@ -1218,6 +1218,17 @@ export interface CampaignImplementationDraft {
    */
   googleAudienceSegments?: string[];
   /**
+   * Google's call, promotion and price extensions, as the operator added them.
+   *
+   * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and
+   * empty agree, a list saved under a non-Search channel is kept rather than discarded, and — being
+   * typed by hand with no brief counterpart — none of the three outlives a re-generate or a Start
+   * Over.
+   */
+  googleCallExtensions?: CampaignCallExtension[];
+  googlePromotions?: CampaignPromotion[];
+  googlePrices?: CampaignPriceExtension[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -2293,6 +2304,148 @@ export interface CampaignStructuredSnippetDraft {
 }
 
 /**
+ * One Google call extension: a phone number shown with the Search ad, and the country it belongs to.
+ *
+ * Both fields are REQUIRED. `countryCode` is the ISO alpha-2 country, because Google interprets the
+ * number against it and has no default to pick; upstream (`assets_extended.go`'s
+ * `validateCallExtensions`) upper-cases it before judging it, and this app sends it upper-cased.
+ * `phoneNumber` is the number as a human writes it for that country — Google normalises it, and
+ * neither upstream nor this app tries to.
+ */
+export interface CampaignCallExtension {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * One Google promotion extension: what is on sale, the discount, and where a click lands.
+ *
+ * Mirrors `googleAdsPromotionConfig` (`internal/dispatch/googleads.go`) field for field. Every
+ * money and percentage field is a NUMBER in whole units and is OMITTED when unset — upstream decodes
+ * an absent field to `0`, which is its own "unset", so sending `0` and omitting the key mean the
+ * same thing there.
+ *
+ * Two oneofs, both Google's. `discountPercent` and `discountAmount` — EXACTLY one. `promotionCode`
+ * and `ordersOverAmount` — AT MOST one. `currencyCode` is required whenever either money field is
+ * set. `occasion` is Google's `PromotionExtensionOccasion` name, checked for shape and not for
+ * membership. The four dates are optional `YYYY-MM-DD` pairs — a serving window and a redemption
+ * window, each ordered on its own.
+ *
+ * `finalUrl` is REQUIRED and UNTAGGED here, as a sitelink's is: campaign-service tags it exactly as
+ * it tags the ad's own final URL.
+ */
+export interface CampaignPromotion {
+  promotionTarget: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  ordersOverAmount?: number;
+  currencyCode?: string;
+  promotionCode?: string;
+  occasion?: string;
+  languageCode?: string;
+  startDate?: string;
+  endDate?: string;
+  redemptionStartDate?: string;
+  redemptionEndDate?: string;
+  finalUrl: string;
+}
+
+/**
+ * One row of a {@link CampaignPriceExtension}, mirroring `googleAdsPriceOfferingConfig`.
+ *
+ * Each row carries its OWN destination: Google serves the rows as separate clickable entries.
+ * `amount` must be greater than zero in `currencyCode` units — a free row is not a price row, and
+ * `0` reaches Google as unset. `unit` is Google's `PriceExtensionPriceUnit` name, optional.
+ */
+export interface CampaignPriceOffering {
+  header: string;
+  description: string;
+  amount: number;
+  currencyCode: string;
+  unit?: string;
+  finalUrl: string;
+}
+
+/**
+ * One Google price extension: a typed table of 3-8 priced rows, mirroring `googleAdsPriceConfig`.
+ *
+ * `type` (Google's `PriceExtensionType`) and `languageCode` are REQUIRED — upstream refuses a price
+ * asset without a language rather than picking one. `priceQualifier` (`FROM`, `UP_TO`, `AVERAGE`) is
+ * optional. Row headers must be distinct, case-folded: Google serves one row per header.
+ */
+export interface CampaignPriceExtension {
+  type: string;
+  priceQualifier?: string;
+  languageCode: string;
+  offerings: CampaignPriceOffering[];
+}
+
+/**
+ * The call-extension sub-form as the operator is filling it in — the two boxes' raw text, before
+ * trimming, so a refused entry stays on screen exactly as typed.
+ */
+export interface CampaignCallExtensionDraft {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * Which arm of the promotion's discount oneof the sub-form is filling in. A select, not two boxes,
+ * because Google takes exactly one of the two.
+ */
+export type CampaignPromotionDiscountKind = 'percent' | 'amount';
+
+/**
+ * Which arm of the promotion's eligibility oneof the sub-form is filling in — `none` being the
+ * legal third state, since Google takes AT MOST one of the two.
+ */
+export type CampaignPromotionEligibilityKind = 'none' | 'code' | 'ordersOver';
+
+/**
+ * The promotion sub-form as the operator is filling it in. Every box is RAW TEXT, numbers included —
+ * the same choice the bidding controls make: an empty box is "not filled in", a different state from
+ * a zero, and a refused entry must stay on screen as typed.
+ */
+export interface CampaignPromotionDraft {
+  promotionTarget: string;
+  discountKind: CampaignPromotionDiscountKind;
+  discount: string;
+  eligibilityKind: CampaignPromotionEligibilityKind;
+  promotionCode: string;
+  ordersOverAmount: string;
+  currencyCode: string;
+  occasion: string;
+  languageCode: string;
+  startDate: string;
+  endDate: string;
+  redemptionStartDate: string;
+  redemptionEndDate: string;
+  finalUrl: string;
+}
+
+/** One price row as the operator is filling it in, raw text throughout. */
+export interface CampaignPriceOfferingDraft {
+  header: string;
+  description: string;
+  amount: string;
+  unit: string;
+  finalUrl: string;
+}
+
+/**
+ * The price sub-form as the operator is filling it in. `currencyCode` is ONE box for the whole
+ * table — every row of a price extension is in the same currency in practice — and is copied onto
+ * each row's `currencyCode`, which is where the wire carries it.
+ */
+export interface CampaignPriceExtensionDraft {
+  type: string;
+  priceQualifier: string;
+  languageCode: string;
+  currencyCode: string;
+  offerings: CampaignPriceOfferingDraft[];
+}
+
+/**
  * The radius unit a {@link CampaignProximityTarget} is measured in.
  *
  * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
@@ -2578,6 +2731,25 @@ export interface CampaignCreateRequest {
    * refuses it by name.
    */
   audienceSegments?: string[];
+  /**
+   * The Google campaign's call extensions — a phone number shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}. The key is
+   * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
+   */
+  callExtensions?: CampaignCallExtension[];
+  /**
+   * The Google campaign's promotion extensions — a discount shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  promotions?: CampaignPromotion[];
+  /**
+   * The Google campaign's price extensions — a table of priced rows shown with the text ad.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  prices?: CampaignPriceExtension[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *
@@ -4938,6 +5110,11 @@ export interface CampaignBiddingCapabilityBlock {
  * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
  * capability read for that is worse than creating and saying so.
  */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
 /**
  * Why Create is blocked for Google audience segments the draft still holds but the request cannot
  * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
@@ -4947,11 +5124,6 @@ export interface CampaignBiddingCapabilityBlock {
  */
 export interface CampaignGoogleAudienceSegmentsBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
-  message: string;
-}
-
-export interface CampaignGoogleExtensionsCapabilityBlock {
-  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 

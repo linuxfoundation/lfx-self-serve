@@ -8,6 +8,12 @@
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import {
+  googleAdsToUpperCode,
+  googleCallExtensionRefusal,
+  googlePriceExtensionRefusal,
+  googlePromotionRefusal,
+} from '@lfx-one/shared/utils/campaign-google-assets.utils';
 
 import { NextFunction, Request, Response } from 'express';
 
@@ -35,6 +41,9 @@ import type {
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignProximityTarget,
+  CampaignCallExtension,
+  CampaignPriceExtension,
+  CampaignPromotion,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignSSEEventType,
@@ -99,6 +108,9 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MAX_CALL_EXTENSIONS,
+  GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+  GOOGLE_ADS_MAX_PROMOTIONS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
@@ -1427,6 +1439,52 @@ export class CampaignController {
               return;
             }
           }
+        }
+      }
+
+      // Call extensions, promotions and prices, after the snippets and in that order, as
+      // `validateAssetPlan` runs `validateCallExtensions`, `validatePromotionExtensions` and
+      // `validatePriceExtensions` after `validateStructuredSnippets`. Each list takes the same four
+      // steps the three above do — JSON decode, the Search-only fence, the raw-slice cap, then each
+      // entry in upstream's own order, first bad one wins — so they share one walk rather than
+      // three copies of it. The per-entry rules live in `campaign-google-assets.utils`, the one copy
+      // the Implementation tab's add guard also judges by.
+      if (cutoverOn && platforms.includes('google-ads')) {
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        const assetRefusal =
+          this.googleAssetListRefusal(body?.callExtensions, googleChannel, {
+            plural: 'call extensions',
+            singular: 'call extension',
+            max: GOOGLE_ADS_MAX_CALL_EXTENSIONS,
+            shapeMessage: 'Google Ads call extensions must be a list of objects with a country code and a phone number.',
+            isShape: (entry) => this.isCallExtensionShape(entry),
+            entryRefusal: (raw) => {
+              const calls = this.googleCallExtensionList(raw);
+              return this.firstAssetRefusal(calls, (call, i) => googleCallExtensionRefusal(call, calls.slice(0, i)));
+            },
+          }) ??
+          this.googleAssetListRefusal(body?.promotions, googleChannel, {
+            plural: 'promotions',
+            singular: 'promotion',
+            max: GOOGLE_ADS_MAX_PROMOTIONS,
+            shapeMessage: 'Google Ads promotions must be a list of objects whose amounts are numbers and whose other fields are text.',
+            isShape: (entry) => this.isPromotionShape(entry),
+            entryRefusal: (raw) => {
+              const promotions = this.googlePromotionList(raw);
+              return this.firstAssetRefusal(promotions, (promotion, i) => googlePromotionRefusal(promotion, promotions.slice(0, i)));
+            },
+          }) ??
+          this.googleAssetListRefusal(body?.prices, googleChannel, {
+            plural: 'price extensions',
+            singular: 'price extension',
+            max: GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+            shapeMessage: 'Google Ads price extensions must be a list of objects with text fields and a list of rows whose amounts are numbers.',
+            isShape: (entry) => this.isPriceExtensionShape(entry),
+            entryRefusal: (raw) => this.firstAssetRefusal(this.googlePriceExtensionList(raw), (price) => googlePriceExtensionRefusal(price)),
+          });
+        if (assetRefusal) {
+          next(ServiceValidationError.forField(assetRefusal.field, assetRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
         }
       }
 
@@ -5003,6 +5061,9 @@ export class CampaignController {
     const audienceSegments = this.googleAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
     const structuredSnippets = this.googleStructuredSnippets(body);
+    // Normalized only, as the three above are — `createCampaign` names every call, promotion and
+    // price refusal first.
+    const assetExtensions = this.googleAssetExtensions(body);
 
     return {
       budget,
@@ -5039,6 +5100,7 @@ export class CampaignController {
       ...callouts,
       ...sitelinks,
       ...structuredSnippets,
+      ...assetExtensions,
     };
   }
 
@@ -5242,6 +5304,208 @@ export class CampaignController {
   }
 
   /**
+   * Why upstream would refuse one of the call, promotion or price lists, as the field to name and the
+   * message, or `null` when it would not.
+   *
+   * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
+   * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
+   * non-empty list on a channel but Search is refused by name, because `validateAssetPlan` fails the
+   * whole create there; then the raw-slice cap, and only then the entries. `entryRefusal` returns the
+   * first bad entry's sentence already numbered.
+   */
+  private googleAssetListRefusal(
+    raw: unknown,
+    channel: unknown,
+    spec: {
+      plural: 'call extensions' | 'promotions' | 'price extensions';
+      singular: string;
+      max: number;
+      shapeMessage: string;
+      isShape: (entry: unknown) => boolean;
+      entryRefusal: (raw: unknown[]) => { index: number; message: string } | null;
+    }
+  ): { field: string; message: string } | null {
+    if (raw === undefined || raw === null) return null;
+    const field = ({ 'call extensions': 'callExtensions', promotions: 'promotions', 'price extensions': 'prices' } as const)[spec.plural];
+    if (!Array.isArray(raw) || !raw.every((entry) => spec.isShape(entry))) return { field, message: spec.shapeMessage };
+    if (raw.length === 0 || typeof channel !== 'string') return null;
+    if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) {
+      return {
+        field,
+        message: `Google Ads only accepts ${spec.plural} on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel as GoogleCampaignChannel] ?? channel} campaigns. Remove the ${spec.plural} or pick Search, then create again.`,
+      };
+    }
+    if (raw.length > spec.max) {
+      return {
+        field,
+        message: `Google Ads accepts at most ${spec.max} ${spec.plural} on one campaign, and this one has ${raw.length}. Remove some and create again.`,
+      };
+    }
+    const refusal = spec.entryRefusal(raw);
+    if (!refusal) return null;
+    return { field, message: `Google Ads ${spec.singular} ${refusal.index + 1}: ${refusal.message} Fix it and create again.` };
+  }
+
+  /** The first entry `refusalOf` refuses, with its index, or `null` when every entry passes. */
+  private firstAssetRefusal<T>(entries: T[], refusalOf: (entry: T, index: number) => string | null): { index: number; message: string } | null {
+    for (const [index, entry] of entries.entries()) {
+      const message = refusalOf(entry, index);
+      if (message) return { index, message };
+    }
+    return null;
+  }
+
+  /**
+   * The Search campaign's call, promotion and price extensions, spread-ready, each key omitted when
+   * its list is empty — the absent-key route {@link googleCallouts} takes.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses all three on any other channel
+   * by name, and every per-entry refusal, before this is dispatched. The keys are
+   * campaign-service's own (`googleAdsConfig.callExtensions`, `.promotions`, `.prices`), so nothing
+   * is renamed on the way through.
+   */
+  private googleAssetExtensions(body: CampaignCreateRequest): {
+    callExtensions?: CampaignCallExtension[];
+    promotions?: CampaignPromotion[];
+    prices?: CampaignPriceExtension[];
+  } {
+    const callExtensions = this.googleCallExtensionList(body?.callExtensions);
+    const promotions = this.googlePromotionList(body?.promotions);
+    const prices = this.googlePriceExtensionList(body?.prices);
+    return {
+      ...(callExtensions.length > 0 ? { callExtensions } : {}),
+      ...(promotions.length > 0 ? { promotions } : {}),
+      ...(prices.length > 0 ? { prices } : {}),
+    };
+  }
+
+  /**
+   * Whether one raw entry survives the Go decode into its config struct: an object (or null, which
+   * decodes to a blank entry the per-entry checks then refuse by name) whose `text` fields are
+   * absent, null or text and whose `numeric` fields are absent, null or a number. A number sent as a
+   * string is a decode error upstream, so it is a shape refusal here rather than a coercion.
+   */
+  private isAssetEntryShape(entry: unknown, text: readonly string[], numeric: readonly string[] = []): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    const absent = (f: string): boolean => fields[f] === undefined || fields[f] === null;
+    return text.every((f) => absent(f) || typeof fields[f] === 'string') && numeric.every((f) => absent(f) || typeof fields[f] === 'number');
+  }
+
+  private isCallExtensionShape(entry: unknown): boolean {
+    return this.isAssetEntryShape(entry, ['countryCode', 'phoneNumber']);
+  }
+
+  private isPromotionShape(entry: unknown): boolean {
+    return this.isAssetEntryShape(
+      entry,
+      [
+        'promotionTarget',
+        'currencyCode',
+        'promotionCode',
+        'occasion',
+        'languageCode',
+        'startDate',
+        'endDate',
+        'redemptionStartDate',
+        'redemptionEndDate',
+        'finalUrl',
+      ],
+      ['discountPercent', 'discountAmount', 'ordersOverAmount']
+    );
+  }
+
+  /** A price extension's own text fields, plus `offerings` as absent, null or a list of row-shaped entries. */
+  private isPriceExtensionShape(entry: unknown): boolean {
+    if (!this.isAssetEntryShape(entry, ['type', 'priceQualifier', 'languageCode'])) return false;
+    const offerings = (entry as Record<string, unknown> | null)?.['offerings'];
+    if (offerings === undefined || offerings === null) return true;
+    return (
+      Array.isArray(offerings) &&
+      offerings.every((row) => this.isAssetEntryShape(row, ['header', 'description', 'currencyCode', 'unit', 'finalUrl'], ['amount']))
+    );
+  }
+
+  /** One field of a shape-checked raw entry, trimmed with Go's rules, or `''` when absent or null. */
+  private assetText(fields: Record<string, unknown>, name: string): string {
+    return typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '';
+  }
+
+  /** One numeric field of a shape-checked raw entry, or `0` — upstream's own "unset" — when absent or null. */
+  private assetNumber(fields: Record<string, unknown>, name: string): number {
+    return typeof fields[name] === 'number' ? (fields[name] as number) : 0;
+  }
+
+  /**
+   * The call-extension list as judged and dispatched: both fields trimmed, the country upper-cased
+   * as `validateCallExtensions` upper-cases it. Nothing is dropped, so a blank entry is refused by
+   * name. Callers have checked the shape with {@link isCallExtensionShape}.
+   */
+  private googleCallExtensionList(raw: unknown): CampaignCallExtension[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      return { countryCode: googleAdsToUpperCode(this.assetText(fields, 'countryCode')), phoneNumber: this.assetText(fields, 'phoneNumber') };
+    });
+  }
+
+  /**
+   * The promotion list as judged and dispatched. Every text field trimmed, the currency upper-cased
+   * as `validateMoney` upper-cases it; an empty optional field and a zero amount are OMITTED — upstream
+   * decodes an absent key to that same zero value, so the wire stays the shape a caller would write.
+   */
+  private googlePromotionList(raw: unknown): CampaignPromotion[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const promotion: CampaignPromotion = { promotionTarget: this.assetText(fields, 'promotionTarget'), finalUrl: this.assetText(fields, 'finalUrl') };
+      for (const name of ['discountPercent', 'discountAmount', 'ordersOverAmount'] as const) {
+        const value = this.assetNumber(fields, name);
+        if (value !== 0) promotion[name] = value;
+      }
+      const currency = googleAdsToUpperCode(this.assetText(fields, 'currencyCode'));
+      if (currency !== '') promotion.currencyCode = currency;
+      for (const name of ['promotionCode', 'occasion', 'languageCode', 'startDate', 'endDate', 'redemptionStartDate', 'redemptionEndDate'] as const) {
+        const value = this.assetText(fields, name);
+        if (value !== '') promotion[name] = value;
+      }
+      return promotion;
+    });
+  }
+
+  /**
+   * The price-extension list as judged and dispatched, on {@link googlePromotionList}'s rules: text
+   * trimmed, currency upper-cased, an empty optional field omitted. Each row keeps its own currency
+   * and destination, which is where the wire carries them.
+   */
+  private googlePriceExtensionList(raw: unknown): CampaignPriceExtension[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const rows = Array.isArray(fields['offerings']) ? (fields['offerings'] as unknown[]) : [];
+      const qualifier = this.assetText(fields, 'priceQualifier');
+      return {
+        type: this.assetText(fields, 'type'),
+        ...(qualifier !== '' ? { priceQualifier: qualifier } : {}),
+        languageCode: this.assetText(fields, 'languageCode'),
+        offerings: rows.map((row) => {
+          const cells = (row ?? {}) as Record<string, unknown>;
+          const unit = this.assetText(cells, 'unit');
+          return {
+            header: this.assetText(cells, 'header'),
+            description: this.assetText(cells, 'description'),
+            amount: this.assetNumber(cells, 'amount'),
+            currencyCode: googleAdsToUpperCode(this.assetText(cells, 'currencyCode')),
+            ...(unit !== '' ? { unit } : {}),
+            finalUrl: this.assetText(cells, 'finalUrl'),
+          };
+        }),
+      };
+    });
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
@@ -5297,7 +5561,7 @@ export class CampaignController {
       }
     }
 
-    // Four request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Seven request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -5305,8 +5569,8 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks` and `structuredSnippets` are the two that are not already `candidates` keys, so
-    // their list lengths are checked here. For the other two the check above has already refused an
+    // `sitelinks`, `structuredSnippets` and the three asset lists are the ones that are not already
+    // `candidates` keys, so their list lengths are checked here. For the other two the check above has already refused an
     // over-long list with the same field and message, which is why this one re-states rather than
     // contradicts.
     //
@@ -5322,6 +5586,23 @@ export class CampaignController {
     const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
       ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
       ['structuredSnippets', ['header', 'values']],
+      ['callExtensions', ['countryCode', 'phoneNumber']],
+      [
+        'promotions',
+        [
+          'promotionTarget',
+          'currencyCode',
+          'promotionCode',
+          'occasion',
+          'languageCode',
+          'startDate',
+          'endDate',
+          'redemptionStartDate',
+          'redemptionEndDate',
+          'finalUrl',
+        ],
+      ],
+      ['prices', ['type', 'priceQualifier', 'languageCode', 'offerings']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
     ];
@@ -5368,6 +5649,28 @@ export class CampaignController {
           }
           if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
+          }
+        }
+      }
+    }
+
+    // `prices.offerings` is the one nested list of OBJECTS, so the walk above bounds its length
+    // (at the shared 100, against upstream's own 3..8) but skips the strings inside each row. They
+    // are bounded here on the same terms, because `googlePriceExtensionList` trims every one of them
+    // during `createConfigEnvelope`, before the caps an operator can act on are reached.
+    const prices = raw['prices'];
+    if (Array.isArray(prices)) {
+      for (const price of prices) {
+        const rows = price && typeof price === 'object' ? (price as Record<string, unknown>)['offerings'] : undefined;
+        if (!Array.isArray(rows)) continue;
+        for (const row of rows) {
+          if (!row || typeof row !== 'object') continue;
+          for (const name of ['header', 'description', 'currencyCode', 'unit', 'finalUrl']) {
+            const value = (row as Record<string, unknown>)[name];
+            const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+            if (typeof value === 'string' && this.boundedLength(value) > max) {
+              return { field: `prices.offerings.${name}`, message: `a value exceeds the maximum length of ${max}` };
+            }
           }
         }
       }

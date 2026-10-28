@@ -5311,6 +5311,204 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(refusalFrom().message).not.toContain('🎉🎉');
   });
 
+  /**
+   * The call, promotion and price guards. The per-entry rules are `campaign-google-assets.utils`'
+   * and are tested branch by branch there; what is tested here is the walk around them — decode
+   * shape, the Search-only fence, the raw cap, the entry numbering, upstream's order across the
+   * three lists — and that what is dispatched is exactly campaign-service's wire shape.
+   */
+  const call = (phoneNumber = '+1 (415) 555-0100', countryCode = 'US') => ({ countryCode, phoneNumber });
+  const promotion = (promotionTarget = 'Conference passes', overrides: Record<string, unknown> = {}) => ({
+    promotionTarget,
+    discountPercent: 25,
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+  const priceRow = (header: string, overrides: Record<string, unknown> = {}) => ({
+    header,
+    description: 'Two days',
+    amount: 499,
+    currencyCode: 'USD',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+  const priceTable = (overrides: Record<string, unknown> = {}) => ({
+    type: 'EVENTS',
+    languageCode: 'en',
+    offerings: [priceRow('Standard'), priceRow('Student'), priceRow('Virtual')],
+    ...overrides,
+  });
+
+  it("dispatches all three lists under campaign-service's own keys, normalised the way upstream normalises them", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          callExtensions: [{ countryCode: ' us ', phoneNumber: ' +1 (415) 555-0100\u0085' }],
+          promotions: [
+            promotion(' Conference passes ', {
+              discountPercent: null,
+              discountAmount: 50,
+              currencyCode: 'usd',
+              promotionCode: '',
+              occasion: ' BLACK_FRIDAY ',
+              startDate: '2026-11-01',
+              endDate: '2026-11-30',
+            }),
+          ],
+          prices: [
+            priceTable({
+              priceQualifier: 'FROM',
+              offerings: [priceRow('Standard', { unit: 'PER_DAY', currencyCode: 'usd' }), priceRow('Student'), priceRow('Virtual')],
+            }),
+          ],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config['callExtensions']).toEqual([{ countryCode: 'US', phoneNumber: '+1 (415) 555-0100' }]);
+    // Empty optionals and zero amounts OMITTED: upstream decodes an absent key to that same zero.
+    expect(config['promotions']).toEqual([
+      {
+        promotionTarget: 'Conference passes',
+        discountAmount: 50,
+        currencyCode: 'USD',
+        occasion: 'BLACK_FRIDAY',
+        startDate: '2026-11-01',
+        endDate: '2026-11-30',
+        finalUrl: 'https://events.example.org/register',
+      },
+    ]);
+    expect(config['prices']).toEqual([
+      {
+        type: 'EVENTS',
+        priceQualifier: 'FROM',
+        languageCode: 'en',
+        offerings: [
+          { header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD', unit: 'PER_DAY', finalUrl: 'https://events.example.org/register' },
+          { header: 'Student', description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: 'https://events.example.org/register' },
+          { header: 'Virtual', description: 'Two days', amount: 499, currencyCode: 'USD', finalUrl: 'https://events.example.org/register' },
+        ],
+      },
+    ]);
+  });
+
+  it('omits all three keys when the lists are empty, the absent-key route every earlier caller takes', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b2', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callExtensions: [], promotions: [], prices: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const config = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(config).not.toHaveProperty('callExtensions');
+    expect(config).not.toHaveProperty('promotions');
+    expect(config).not.toHaveProperty('prices');
+  });
+
+  it.each([
+    ['callExtensions', 20, (i: number) => call(`+1 415 555 01${String(i).padStart(2, '0')}`), 'call extensions'],
+    ['promotions', 20, (i: number) => promotion(`Pass ${i}`), 'promotions'],
+    ['prices', 10, () => priceTable(), 'price extensions'],
+  ])('dispatches %s at the cap and refuses one more on the RAW count, before any entry is read', async (field, max, make, noun) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b3', error: null });
+    const atCap = Array.from({ length: max }, (_, i) => (make as (i: number) => unknown)(i));
+    await controller.createCampaign(buildReq(googleBody({ [field]: atCap }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(next).not.toHaveBeenCalled();
+
+    vi.mocked(next).mockClear();
+    createCampaigns.mockClear();
+    // The extra entry is a REPEAT of the first, so a guard that judged entries first would name the
+    // repeat; upstream compares `len()` before it reads one.
+    await controller.createCampaign(buildReq(googleBody({ [field]: [...atCap, atCap[0]] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(`at most ${max} ${noun}`);
+  });
+
+  it.each([
+    ['callExtensions', [call()], 'call extensions'],
+    ['promotions', [promotion()], 'promotions'],
+    ['prices', [priceTable()], 'price extensions'],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (field, list, noun) => {
+    await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['demand-gen'], [field]: list }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(`only accepts ${noun} on Search campaigns, not on Demand Gen`);
+  });
+
+  it.each([
+    ['call extensions that are not a list', { callExtensions: call() }, 'callExtensions'],
+    ['a call extension number that is not text', { callExtensions: [{ countryCode: 'US', phoneNumber: 4155550100 }] }, 'callExtensions'],
+    ['a promotion discount sent as text, which the Go decode refuses', { promotions: [promotion('Passes', { discountPercent: '25' })] }, 'promotions'],
+    ['a price table whose rows are not a list', { prices: [priceTable({ offerings: priceRow('A') })] }, 'prices'],
+    ['a price row amount sent as text', { prices: [priceTable({ offerings: [priceRow('A', { amount: '499' }), priceRow('B'), priceRow('C')] })] }, 'prices'],
+  ])('refuses %s by shape rather than coercing it', async (_label, overrides, field) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain('must be a list of objects');
+  });
+
+  it.each([
+    [
+      'a vanity number, numbered',
+      { callExtensions: [call(), call('1-800-FLOWERS')] },
+      'callExtensions',
+      'call extension 2: The phone number may contain only digits',
+    ],
+    ['a repeat that differs only in punctuation', { callExtensions: [call(), call('14155550100')] }, 'callExtensions', 'call extension 2: The number'],
+    ['a null entry, which the Go decode reads as blank', { callExtensions: [null] }, 'callExtensions', 'call extension 1: It has no country code'],
+    ['a promotion with both discounts', { promotions: [promotion('Passes', { discountAmount: 10, currencyCode: 'USD' })] }, 'promotions', 'exactly one'],
+    [
+      'a promotion target repeated in another case',
+      { promotions: [promotion('Passes'), promotion('PASSES')] },
+      'promotions',
+      'promotion 2: The promotion target',
+    ],
+    ['a two-row price table', { prices: [priceTable({ offerings: [priceRow('A'), priceRow('B')] })] }, 'prices', 'price extension 1: It has 2 rows'],
+    ['a price table with no language', { prices: [priceTable({ languageCode: '  ' })] }, 'prices', 'no language code'],
+  ])('names %s instead of letting Google refuse it opaquely', async (_label, overrides, field, expected) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+    expect(refusalFrom().message).toContain(expected);
+    expect(refusalFrom().message).toContain('Fix it and create again.');
+  });
+
+  it.each([
+    ['the snippet guard before the call guard', { structuredSnippets: [{ header: '', values: [] }], callExtensions: [call('')] }, 'structuredSnippets'],
+    ['the call guard before the promotion guard', { callExtensions: [call('')], promotions: [promotion('')] }, 'callExtensions'],
+    ['the promotion guard before the price guard', { promotions: [promotion('')], prices: [priceTable({ type: '' })] }, 'promotions'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field) => {
+    // `validateAssetPlan` runs snippets, then calls, then promotions, then prices.
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(refusalFrom().field).toBe(field);
+  });
+
+  it('bounds the strings inside a price row before the normaliser walks them', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ prices: [priceTable({ offerings: [priceRow('A'.repeat(5000)), priceRow('B'), priceRow('C')] })] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('prices.offerings.header');
+  });
+
   it.each([
     ['a zero budget', 0],
     ['a negative budget, which no body validator on this route stops', -50],

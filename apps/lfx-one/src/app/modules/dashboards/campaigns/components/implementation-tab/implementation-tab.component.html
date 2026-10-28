@@ -85,7 +85,7 @@
 </div>
 
 <!--
-  Google callouts, sitelinks and structured snippets withheld, announced. Top-level for the same reason as the three regions above:
+  Google ad extensions withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -97,6 +97,15 @@
 </div>
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
   {{ googleStructuredSnippetsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-call-extensions-withheld-live">
+  {{ googleCallExtensionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-promotions-withheld-live">
+  {{ googlePromotionsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-prices-withheld-live">
+  {{ googlePricesWithheldWarning() }}
 </div>
 <!-- Audience segments withheld after a channel switch, announced on the same terms as the extensions above. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-withheld-live">
@@ -622,6 +631,21 @@
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
+      @if (googleCallExtensionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-call-extensions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePromotionsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-promotions-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googlePricesWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-prices-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
 
       <!--
         Google Ads: callout extensions.
@@ -956,6 +980,496 @@
           } @else if (googleSnippetTooManyValues()) {
             <p id="google-snippet-too-many-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-many-values">
               Google takes at most {{ googleMaxSnippetValues }} values on a line — this one has {{ googleSnippetDistinctValueCount() }}.
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: call extensions.
+
+        Same gate and same reason as the three sections above — `validateAssetPlan` refuses every
+        extension list on a channel but Search. Typed, as the snippets are. Both boxes are required:
+        Google interprets a number against its country and has no default to pick.
+
+        One message line for the sub-form rather than one per refusal: the refusals come from the
+        shared judge the BFF also refuses by, already as sentences, so the line says exactly what the
+        create would be refused for.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-call-extensions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-call-country">
+            Google Call Extensions ({{ googleCallExtensions().length }}/{{ googleMaxCallExtensions }})
+          </label>
+          @if (googleCallExtensions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (call of googleCallExtensions(); track call.countryCode + call.phoneNumber; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <span class="break-words text-xs font-medium text-blue-700">{{ call.phoneNumber }} ({{ call.countryCode }})</span>
+                  <button
+                    type="button"
+                    (click)="removeGoogleCallExtension(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + call.phoneNumber"
+                    [attr.data-testid]="'implementation-google-call-extension-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-empty">
+              No call extensions added — this campaign is created without a phone number.
+            </span>
+          }
+          @if (!googleCallExtensionsFull()) {
+            <div class="flex flex-col gap-2">
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="countryCode"
+                inputId="google-call-country"
+                type="text"
+                size="small"
+                placeholder="Country code (e.g. US)"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
+                data-testid="implementation-google-call-country" />
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="phoneNumber"
+                type="tel"
+                size="small"
+                placeholder="Phone number"
+                ariaLabel="Call extension phone number"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
+                data-testid="implementation-google-call-number" />
+              <button
+                type="button"
+                (click)="onGoogleCallExtensionAdd()"
+                [disabled]="googleCallExtensionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-call-extension-add">
+                + Add call extension
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-call-extensions-full">
+              Maximum of {{ googleMaxCallExtensions }} call extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googleCallExtensionDraftError(); as error) {
+            <p id="google-call-extension-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-call-extension-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: promotion extensions.
+
+        Same gate. Google's two oneofs are each ONE select here rather than two boxes, so the form
+        cannot express what upstream refuses: exactly one discount (percentage or money), and at most
+        one condition (a coupon code or a minimum order). The currency box appears only while a money
+        field is in use, the one case upstream reads it.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-promotions-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-promotion-target">
+            Google Promotions ({{ googlePromotions().length }}/{{ googleMaxPromotions }})
+          </label>
+          @if (googlePromotions().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (promotion of googlePromotionRows(); track promotion.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ promotion.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ promotion.detail }}</span>
+                    <span class="break-all text-[10px] text-blue-700">{{ promotion.finalUrl }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePromotion(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + promotion.label"
+                    [attr.data-testid]="'implementation-google-promotion-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-empty">
+              No promotions added — this campaign is created without promotion extensions.
+            </span>
+          }
+          @if (!googlePromotionsFull()) {
+            <div class="flex flex-col gap-2">
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="promotionTarget"
+                inputId="google-promotion-target"
+                type="text"
+                size="small"
+                placeholder="What is on sale (e.g. Conference passes)"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
+                data-testid="implementation-google-promotion-target" />
+              <div class="flex gap-2">
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="discountKind"
+                  [options]="googlePromotionDiscountOptions"
+                  size="small"
+                  ariaLabel="Promotion discount kind"
+                  data-testid="implementation-google-promotion-discount-kind" />
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="discount"
+                  inputmode="decimal"
+                  type="text"
+                  size="small"
+                  placeholder="Discount"
+                  ariaLabel="Promotion discount"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-discount" />
+              </div>
+              <div class="flex gap-2">
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="eligibilityKind"
+                  [options]="googlePromotionConditionOptions"
+                  size="small"
+                  ariaLabel="Promotion condition"
+                  data-testid="implementation-google-promotion-eligibility-kind" />
+                @if (googlePromotionDraft().eligibilityKind === 'code') {
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="promotionCode"
+                    type="text"
+                    size="small"
+                    placeholder="Promotion code"
+                    ariaLabel="Promotion code"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
+                    data-testid="implementation-google-promotion-code" />
+                } @else if (googlePromotionDraft().eligibilityKind === 'ordersOver') {
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="ordersOverAmount"
+                    inputmode="decimal"
+                    type="text"
+                    size="small"
+                    placeholder="Minimum order amount"
+                    ariaLabel="Promotion minimum order amount"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
+                    data-testid="implementation-google-promotion-orders-over" />
+                }
+              </div>
+              @if (googlePromotionNeedsCurrency()) {
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="currencyCode"
+                  type="text"
+                  size="small"
+                  placeholder="Currency (e.g. USD)"
+                  ariaLabel="Promotion currency code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block"
+                  data-testid="implementation-google-promotion-currency" />
+              }
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="finalUrl"
+                type="url"
+                size="small"
+                placeholder="Destination URL"
+                ariaLabel="Promotion destination URL"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
+                data-testid="implementation-google-promotion-url" />
+              <div class="flex gap-2">
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="occasion"
+                  type="text"
+                  size="small"
+                  placeholder="Occasion (optional, e.g. BLACK_FRIDAY)"
+                  ariaLabel="Promotion occasion"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-occasion" />
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="languageCode"
+                  type="text"
+                  size="small"
+                  placeholder="Language (optional, e.g. en)"
+                  ariaLabel="Promotion language code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
+                  data-testid="implementation-google-promotion-language" />
+              </div>
+              <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed.
+                   Each picker sits in a visible label, since four identical date boxes say nothing on their own. -->
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows from
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="startDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows until
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="endDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-end" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable from
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionStartDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-redemption-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable until
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionEndDate"
+                    type="date"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
+                    data-testid="implementation-google-promotion-redemption-end" />
+                </label>
+              </div>
+              <button
+                type="button"
+                (click)="onGooglePromotionAdd()"
+                [disabled]="googlePromotionAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-promotion-add">
+                + Add promotion
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-promotions-full">
+              Maximum of {{ googleMaxPromotions }} promotions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePromotionDraftError(); as error) {
+            <p id="google-promotion-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-promotion-error">
+              {{ error }}
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: price extensions.
+
+        Same gate. A table of rows, so the sub-form holds Google's minimum of three rows from the
+        start and lets the operator grow it to eight; the remove-row control disappears at three and
+        the add-row control at eight, so no table the form can build is refused for its size. One
+        currency box for the table, copied onto each row's `currencyCode` on the wire.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-prices-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-price-type">
+            Google Price Extensions ({{ googlePrices().length }}/{{ googleMaxPrices }})
+          </label>
+          @if (googlePrices().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (price of googlePriceRows(); track price.key; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ price.label }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ price.detail }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGooglePrice(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove price extension ' + (i + 1)"
+                    [attr.data-testid]="'implementation-google-price-remove-' + i">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-empty">
+              No price extensions added — this campaign is created without them.
+            </span>
+          }
+          @if (!googlePricesFull()) {
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap gap-2">
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="type"
+                  inputId="google-price-type"
+                  [options]="googlePriceTypeOptions"
+                  size="small"
+                  data-testid="implementation-google-price-type" />
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="priceQualifier"
+                  [options]="googlePriceQualifierOptions"
+                  size="small"
+                  ariaLabel="Price qualifier"
+                  data-testid="implementation-google-price-qualifier" />
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="languageCode"
+                  type="text"
+                  size="small"
+                  placeholder="Language (e.g. en)"
+                  ariaLabel="Price extension language code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
+                  data-testid="implementation-google-price-language" />
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="currencyCode"
+                  type="text"
+                  size="small"
+                  placeholder="Currency (e.g. USD)"
+                  ariaLabel="Price extension currency code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
+                  data-testid="implementation-google-price-currency" />
+              </div>
+              @for (row of googlePriceRowForms(); track row; let r = $index) {
+                <div class="flex flex-col gap-2 rounded-md border border-gray-100 p-2" [attr.data-testid]="'implementation-google-price-row-' + r">
+                  <div class="flex gap-2">
+                    <lfx-input-text
+                      [form]="row"
+                      control="header"
+                      type="text"
+                      size="small"
+                      placeholder="Header"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' header'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block min-w-0 flex-1"
+                      [attr.data-testid]="'implementation-google-price-row-header-' + r" />
+                    <lfx-input-text
+                      [form]="row"
+                      control="amount"
+                      inputmode="decimal"
+                      type="text"
+                      size="small"
+                      placeholder="Price"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' price'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block w-24"
+                      [attr.data-testid]="'implementation-google-price-row-amount-' + r" />
+                    <lfx-select
+                      [form]="row"
+                      control="unit"
+                      [options]="googlePriceUnitOptions"
+                      size="small"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' unit'"
+                      [attr.data-testid]="'implementation-google-price-row-unit-' + r" />
+                    @if (googlePriceDraft().offerings.length > googleMinPriceRows) {
+                      <button
+                        type="button"
+                        (click)="removeGooglePriceRow(r)"
+                        class="text-gray-500 hover:text-gray-700"
+                        [attr.aria-label]="'Remove price row ' + (r + 1)"
+                        [attr.data-testid]="'implementation-google-price-row-remove-' + r">
+                        <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                      </button>
+                    }
+                  </div>
+                  <lfx-input-text
+                    [form]="row"
+                    control="description"
+                    type="text"
+                    size="small"
+                    placeholder="Description"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' description'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
+                    [attr.data-testid]="'implementation-google-price-row-description-' + r" />
+                  <lfx-input-text
+                    [form]="row"
+                    control="finalUrl"
+                    type="url"
+                    size="small"
+                    placeholder="Destination URL"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' destination URL'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
+                    [attr.data-testid]="'implementation-google-price-row-url-' + r" />
+                </div>
+              }
+              <div class="flex gap-2">
+                @if (googlePriceDraft().offerings.length < googleMaxPriceRows) {
+                  <button
+                    type="button"
+                    (click)="addGooglePriceRow()"
+                    class="rounded-md border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600"
+                    data-testid="implementation-google-price-row-add">
+                    + Add row
+                  </button>
+                }
+                <button
+                  type="button"
+                  (click)="onGooglePriceAdd()"
+                  [disabled]="googlePriceAddDisabled()"
+                  class="rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                  data-testid="implementation-google-price-add">
+                  + Add price extension
+                </button>
+              </div>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-prices-full">
+              Maximum of {{ googleMaxPrices }} price extensions reached — remove one to add another.
+            </span>
+          }
+          @if (googlePriceDraftError(); as error) {
+            <p id="google-price-error" role="alert" class="text-xs text-red-600" data-testid="implementation-google-price-error">
+              {{ error }}
             </p>
           }
         </div>

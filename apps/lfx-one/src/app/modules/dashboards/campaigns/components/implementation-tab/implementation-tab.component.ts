@@ -18,6 +18,8 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
@@ -60,11 +62,15 @@ import {
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
+  GOOGLE_ADS_MAX_CALL_EXTENSIONS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+  GOOGLE_ADS_MAX_PRICE_OFFERINGS,
+  GOOGLE_ADS_MAX_PROMOTIONS,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
@@ -73,7 +79,11 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MIN_PRICE_OFFERINGS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
+  GOOGLE_ADS_PRICE_QUALIFIERS,
+  GOOGLE_ADS_PRICE_TYPES,
+  GOOGLE_ADS_PRICE_UNITS,
   GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -136,6 +146,13 @@ import type {
   CampaignPlatformResult,
   CampaignMetaImageAssetBlock,
   CampaignRedditImageAssetBlock,
+  CampaignCallExtension,
+  CampaignCallExtensionDraft,
+  CampaignPriceExtension,
+  CampaignPriceExtensionDraft,
+  CampaignPriceOfferingDraft,
+  CampaignPromotion,
+  CampaignPromotionDraft,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignStructuredSnippetDraft,
@@ -168,6 +185,10 @@ import {
   codePointLength,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
+  googleAdsToUpperCode,
+  googleCallExtensionRefusal,
+  googlePriceExtensionRefusal,
+  googlePromotionRefusal,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -210,7 +231,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -671,6 +692,25 @@ export class ImplementationTabComponent implements OnInit {
     linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
   });
 
+  /**
+   * The call, promotion and price sub-forms, on the LFX form-control API the `lfx-input-text` and
+   * `lfx-select` wrappers bind to. TRANSIENT, as the sitelink and snippet boxes are: what is typed
+   * here reaches the saved draft only when an entry is ADDED, so none of these is listed in
+   * `emitDraft`. Raw text throughout, numbers included, so a refused entry stays on screen as typed.
+   *
+   * The price table's rows are a `FormArray` held at Google's three to eight, one `FormGroup` per row,
+   * so each row's boxes bind to their own group.
+   */
+  protected readonly googleCallExtensionForm = this.fb.nonNullable.group<CampaignCallExtensionDraft>({ countryCode: '', phoneNumber: '' });
+  protected readonly googlePromotionForm = this.fb.nonNullable.group<CampaignPromotionDraft>(this.emptyGooglePromotionDraft());
+  protected readonly googlePriceForm = this.fb.nonNullable.group({
+    type: this.fb.nonNullable.control<string>(GOOGLE_ADS_PRICE_TYPES[0]),
+    priceQualifier: '',
+    languageCode: '',
+    currencyCode: '',
+    offerings: this.fb.nonNullable.array(Array.from({ length: GOOGLE_ADS_MIN_PRICE_OFFERINGS }, () => this.googlePriceRowGroup())),
+  });
+
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
@@ -1063,6 +1103,60 @@ export class ImplementationTabComponent implements OnInit {
    * see {@link CampaignStructuredSnippetDraft} for why it is not parsed here.
    */
   protected readonly googleStructuredSnippetDraft = signal<CampaignStructuredSnippetDraft>({ header: '', values: '' });
+  /**
+   * Google's call, promotion and price extensions — the three remaining Search extension types
+   * campaign-service creates (`assets_extended.go`).
+   *
+   * TYPED, as the snippets are: no generator event exists for any of them, so each list grows only
+   * through its add method or a restored draft. Every add is judged by the SAME functions the BFF
+   * refuses by (`campaign-google-assets.utils`), which mirror upstream's validators branch for branch.
+   */
+  protected readonly googleCallExtensions = signal<CampaignCallExtension[]>([]);
+  protected readonly googleMaxCallExtensions = GOOGLE_ADS_MAX_CALL_EXTENSIONS;
+  protected readonly googlePromotions = signal<CampaignPromotion[]>([]);
+  protected readonly googleMaxPromotions = GOOGLE_ADS_MAX_PROMOTIONS;
+  protected readonly googlePrices = signal<CampaignPriceExtension[]>([]);
+  protected readonly googleMaxPrices = GOOGLE_ADS_MAX_PRICE_EXTENSIONS;
+  protected readonly googleMinPriceRows = GOOGLE_ADS_MIN_PRICE_OFFERINGS;
+  protected readonly googleMaxPriceRows = GOOGLE_ADS_MAX_PRICE_OFFERINGS;
+  /**
+   * The price selects' options. Google's own enum names, offered as a closed list for the reason the
+   * language select is one — the operator picks rather than spells — while the BFF checks only their
+   * shape, so a value Google adds later is not refused there.
+   */
+  protected readonly googlePriceTypeOptions = GOOGLE_ADS_PRICE_TYPES.map((value) => ({ label: value, value }));
+  protected readonly googlePriceQualifierOptions = [
+    { label: 'No qualifier', value: '' },
+    ...GOOGLE_ADS_PRICE_QUALIFIERS.map((value) => ({ label: value, value })),
+  ];
+  protected readonly googlePriceUnitOptions = [{ label: 'No unit', value: '' }, ...GOOGLE_ADS_PRICE_UNITS.map((value) => ({ label: value, value }))];
+  /** The promotion's two oneofs, one select each, so the form cannot express both arms of either. */
+  protected readonly googlePromotionDiscountOptions = [
+    { label: 'Percent off', value: 'percent' },
+    { label: 'Amount off', value: 'amount' },
+  ];
+  protected readonly googlePromotionConditionOptions = [
+    { label: 'No condition', value: 'none' },
+    { label: 'Promotion code', value: 'code' },
+    { label: 'Orders over', value: 'ordersOver' },
+  ];
+  /**
+   * The three sub-forms' live values as signals, so the refusal computeds below re-run as the
+   * operator types — the forms are the source of truth, these are their read side.
+   */
+  protected readonly googleCallExtensionDraft: Signal<CampaignCallExtensionDraft> = this.initFormDraft(this.googleCallExtensionForm);
+  protected readonly googlePromotionDraft: Signal<CampaignPromotionDraft> = this.initFormDraft(this.googlePromotionForm);
+  protected readonly googlePriceDraft: Signal<CampaignPriceExtensionDraft> = this.initFormDraft(this.googlePriceForm);
+  /**
+   * The price table's row groups, for the template's `@for`. A `FormArray`'s `controls` is not a
+   * signal, so the template cannot read it directly under zoneless change detection; reading
+   * {@link googlePriceDraft} here re-runs this on every row pushed or removed. Tracked by the group
+   * itself, which is a stable identity a typed row does not otherwise have.
+   */
+  protected readonly googlePriceRowForms = computed(() => {
+    this.googlePriceDraft();
+    return [...this.googlePriceForm.controls.offerings.controls];
+  });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1673,6 +1767,94 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * Why the call extension in the sub-form would be refused, or `null` when it would not — or when
+   * either box is still EMPTY, on the rule {@link googleSitelinkUrlInvalid} follows: an unfilled field
+   * is not yet a mistake, and the add button's own disabled state withholds the add until it is filled.
+   *
+   * One computed for the whole sub-form rather than one per refusal, because the refusals come from
+   * the shared judge as sentences already; the add button and {@link addGoogleCallExtension} read the
+   * same judge, so the three cannot disagree.
+   */
+  protected readonly googleCallExtensionDraftError = computed<string | null>(() => {
+    const call = this.googleCallExtensionFromDraft(this.googleCallExtensionDraft());
+    if (call.countryCode === '' || call.phoneNumber === '') return null;
+    return googleCallExtensionRefusal(call, this.googleCallExtensions());
+  });
+
+  protected readonly googleCallExtensionsFull = computed(() => this.googleCallExtensions().length >= GOOGLE_ADS_MAX_CALL_EXTENSIONS);
+
+  protected readonly googleCallExtensionAddDisabled = computed(() => {
+    const call = this.googleCallExtensionFromDraft(this.googleCallExtensionDraft());
+    return this.googleCallExtensionsFull() || call.countryCode === '' || call.phoneNumber === '' || this.googleCallExtensionDraftError() !== null;
+  });
+
+  /**
+   * The promotion sub-form's refusal, on {@link googleCallExtensionDraftError}'s rule: silent until
+   * the three boxes every promotion needs — what is on sale, the discount and the destination — are
+   * filled, then the selected condition's own refusal ({@link googlePromotionConditionRefusal}), then
+   * upstream's first refusal for what is in the form.
+   */
+  protected readonly googlePromotionDraftError = computed<string | null>(() => {
+    const draft = this.googlePromotionDraft();
+    if ([draft.promotionTarget, draft.discount, draft.finalUrl].some((text) => googleAdsTrimSpace(text) === '')) return null;
+    return this.googlePromotionConditionRefusal(draft) ?? googlePromotionRefusal(this.googlePromotionFromDraft(draft), this.googlePromotions());
+  });
+
+  protected readonly googlePromotionsFull = computed(() => this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS);
+
+  /** Whether the promotion form needs a currency: only when one of its two money fields is in use. */
+  protected readonly googlePromotionNeedsCurrency = computed(() => {
+    const draft = this.googlePromotionDraft();
+    return draft.discountKind === 'amount' || draft.eligibilityKind === 'ordersOver';
+  });
+
+  protected readonly googlePromotionAddDisabled = computed(() => {
+    const draft = this.googlePromotionDraft();
+    if ([draft.promotionTarget, draft.discount, draft.finalUrl].some((text) => googleAdsTrimSpace(text) === '')) return true;
+    return this.googlePromotionsFull() || this.googlePromotionDraftError() !== null;
+  });
+
+  /**
+   * The price sub-form's refusal, on the same rule: silent until every box a price table needs is
+   * filled — type, language, currency, and each row's header, description, price and destination —
+   * then upstream's first refusal for the table.
+   */
+  protected readonly googlePriceDraftError = computed<string | null>(() => {
+    const draft = this.googlePriceDraft();
+    if (!this.googlePriceDraftFilled(draft)) return null;
+    return googlePriceExtensionRefusal(this.googlePriceFromDraft(draft));
+  });
+
+  protected readonly googlePricesFull = computed(() => this.googlePrices().length >= GOOGLE_ADS_MAX_PRICE_EXTENSIONS);
+
+  protected readonly googlePriceAddDisabled = computed(
+    () => this.googlePricesFull() || !this.googlePriceDraftFilled(this.googlePriceDraft()) || this.googlePriceDraftError() !== null
+  );
+
+  /**
+   * The added promotions and price tables as display rows, so the template binds labels rather than
+   * formatting on every change-detection pass — the reason {@link googleStructuredSnippetRows} gives.
+   * `key` is the identity the add guard makes unique (the case-folded target), or the list position
+   * for prices, which upstream does not de-duplicate against one another.
+   */
+  protected readonly googlePromotionRows = computed(() =>
+    this.googlePromotions().map((promotion) => ({
+      key: promotion.promotionTarget,
+      label: promotion.promotionTarget,
+      detail: this.googlePromotionDetail(promotion),
+      finalUrl: promotion.finalUrl,
+    }))
+  );
+
+  protected readonly googlePriceRows = computed(() =>
+    this.googlePrices().map((price, index) => ({
+      key: index,
+      label: [price.type, price.priceQualifier].filter(Boolean).join(' · '),
+      detail: price.offerings.map((row) => `${row.header} ${row.amount} ${row.currencyCode}`).join(', '),
+    }))
+  );
+
+  /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
    * not logic-bearing calls, which re-run on every change-detection pass.
@@ -2122,6 +2304,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleStructuredSnippetsWithheldWarning: Signal<string | null> = this.initGoogleStructuredSnippetsWithheldWarning();
+  protected readonly googleCallExtensionsWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(
+    this.googleCallExtensions,
+    'call extensions'
+  );
+  protected readonly googlePromotionsWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(this.googlePromotions, 'promotions');
+  protected readonly googlePricesWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(this.googlePrices, 'price extensions');
   /**
    * Why generated callouts and sitelinks are being withheld because the CAPABILITY is not an
    * explicit yes, or `null`. The two warnings above cover the other reason — the channel takes no
@@ -3033,6 +3221,103 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one call extension from the sub-form's raw text, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleSitelink} is. The cap first, as upstream checks the raw
+   * list before any entry; then every per-entry branch of `validateCallExtensions` in its order,
+   * through the shared judge the BFF refuses by — so a call extension added here is one upstream
+   * accepts. Stored normalised (trimmed, country upper-cased), which is what is judged and sent.
+   */
+  protected addGoogleCallExtension(draft: CampaignCallExtensionDraft): boolean {
+    if (this.googleCallExtensions().length >= GOOGLE_ADS_MAX_CALL_EXTENSIONS) return false;
+    const call = this.googleCallExtensionFromDraft(draft);
+    if (googleCallExtensionRefusal(call, this.googleCallExtensions()) !== null) return false;
+    this.googleCallExtensions.update((calls) => [...calls, call]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleCallExtensionAdd(): void {
+    // Cleared ONLY on success, so a refused number keeps both boxes and its warning.
+    if (this.addGoogleCallExtension(this.googleCallExtensionDraft())) {
+      this.googleCallExtensionForm.reset();
+    }
+  }
+
+  protected removeGoogleCallExtension(index: number): void {
+    this.googleCallExtensions.update((calls) => calls.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one promotion from the sub-form, on {@link addGoogleCallExtension}'s contract: the cap, then
+   * `validatePromotionExtensions`' branches through the shared judge, then a store of the entry
+   * exactly as it will be sent — only the discount and eligibility arms the form selected, and an
+   * empty optional box omitted rather than sent as `""`.
+   */
+  protected addGooglePromotion(draft: CampaignPromotionDraft): boolean {
+    if (this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS) return false;
+    if (this.googlePromotionConditionRefusal(draft) !== null) return false;
+    const promotion = this.googlePromotionFromDraft(draft);
+    if (googlePromotionRefusal(promotion, this.googlePromotions()) !== null) return false;
+    this.googlePromotions.update((promotions) => [...promotions, promotion]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGooglePromotionAdd(): void {
+    // Cleared ONLY on success, as the call box is.
+    if (this.addGooglePromotion(this.googlePromotionDraft())) {
+      this.googlePromotionForm.reset();
+    }
+  }
+
+  protected removeGooglePromotion(index: number): void {
+    this.googlePromotions.update((promotions) => promotions.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one price table from the sub-form, on the same contract: the cap, then
+   * `validatePriceExtensions`' branches through the shared judge. The table's one currency box is
+   * copied onto every row, which is where the wire carries it.
+   */
+  protected addGooglePrice(draft: CampaignPriceExtensionDraft): boolean {
+    if (this.googlePrices().length >= GOOGLE_ADS_MAX_PRICE_EXTENSIONS) return false;
+    const price = this.googlePriceFromDraft(draft);
+    if (googlePriceExtensionRefusal(price) !== null) return false;
+    this.googlePrices.update((prices) => [...prices, price]);
+    this.emitDraft();
+    return true;
+  }
+
+  /** One more row, up to Google's eight. The button is hidden at the ceiling; this holds it anyway. */
+  protected addGooglePriceRow(): void {
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length < GOOGLE_ADS_MAX_PRICE_OFFERINGS) rows.push(this.googlePriceRowGroup());
+  }
+
+  /** One row fewer, down to Google's three — a table below that is refused, so it cannot be built. */
+  protected removeGooglePriceRow(index: number): void {
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(index);
+  }
+
+  protected onGooglePriceAdd(): void {
+    // Cleared ONLY on success, and back to Google's three empty rows.
+    if (this.addGooglePrice(this.googlePriceDraft())) {
+      const rows = this.googlePriceForm.controls.offerings;
+      while (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(rows.length - 1);
+      this.googlePriceForm.reset();
+    }
+  }
+
+  protected removeGooglePrice(index: number): void {
+    this.googlePrices.update((prices) => prices.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -3169,6 +3454,8 @@ export class ImplementationTabComponent implements OnInit {
       // upstream refuses the whole create when any extension list reaches a non-Search campaign.
       ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       ...(platforms.includes('google-ads') ? this.googleStructuredSnippetsPayload() : {}),
+      // The call, promotion and price extensions, on the same gate as the three above.
+      ...(platforms.includes('google-ads') ? this.googleAssetExtensionsPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -3890,6 +4177,17 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleStructuredSnippets !== undefined) {
       this.googleStructuredSnippets.set(draft.googleStructuredSnippets.map((s) => ({ ...s, values: [...s.values] })));
     }
+    // The call, promotion and price lists on the snippets' rule exactly: typed, so this draft is the
+    // only thing that carries them between visits, and each entry copied — a price table's rows too.
+    if (draft.googleCallExtensions !== undefined) {
+      this.googleCallExtensions.set(draft.googleCallExtensions.map((c) => ({ ...c })));
+    }
+    if (draft.googlePromotions !== undefined) {
+      this.googlePromotions.set(draft.googlePromotions.map((p) => ({ ...p })));
+    }
+    if (draft.googlePrices !== undefined) {
+      this.googlePrices.set(this.copyGooglePrices(draft.googlePrices));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -4079,6 +4377,9 @@ export class ImplementationTabComponent implements OnInit {
       googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // `values` copied as its own array, matching the restore.
       googleStructuredSnippets: this.googleStructuredSnippets().map((s) => ({ ...s, values: [...s.values] })),
+      googleCallExtensions: this.googleCallExtensions().map((c) => ({ ...c })),
+      googlePromotions: this.googlePromotions().map((p) => ({ ...p })),
+      googlePrices: this.copyGooglePrices(this.googlePrices()),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -4817,6 +5118,19 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take structured snippets, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
+  /**
+   * The call, promotion and price twins of {@link initGoogleCalloutsWithheldWarning}, on the same
+   * channel gate and in the same words. One initializer for the three because they differ only in
+   * the list they count and the noun they name.
+   */
+  private initGoogleAssetWithheldWarning(list: Signal<readonly unknown[]>, noun: string): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      const count = list().length;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${noun}, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
 
   /**
    * Why the callouts, sitelinks and structured snippets on this brief are being withheld for want of
@@ -4853,18 +5167,19 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.resolveGoogleChannel();
       if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
 
-      const callouts = this.googleCallouts().length;
-      const sitelinks = this.googleSitelinks().length;
-      const snippets = this.googleStructuredSnippets().length;
-      if (callouts + sitelinks + snippets === 0) return null;
-
       // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty. The
       // counts are the point: they are what the operator is about to lose, and they are the only way
       // to tell this notice from a generic capability warning.
-      const parts: string[] = [];
-      if (callouts > 0) parts.push(`${callouts} callout${callouts === 1 ? '' : 's'}`);
-      if (sitelinks > 0) parts.push(`${sitelinks} sitelink${sitelinks === 1 ? '' : 's'}`);
-      if (snippets > 0) parts.push(`${snippets} structured snippet${snippets === 1 ? '' : 's'}`);
+      const counted: [number, string][] = [
+        [this.googleCallouts().length, 'callout'],
+        [this.googleSitelinks().length, 'sitelink'],
+        [this.googleStructuredSnippets().length, 'structured snippet'],
+        [this.googleCallExtensions().length, 'call extension'],
+        [this.googlePromotions().length, 'promotion'],
+        [this.googlePrices().length, 'price extension'],
+      ];
+      const parts = counted.filter(([count]) => count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
+      if (parts.length === 0) return null;
       // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
       const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
 
@@ -5476,6 +5791,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The call, promotion and price extensions as the request carries them, each key omitted when its
+   * list is empty.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. Every entry is
+   * COPIED, and a price table's rows with it — the rows are an array inside the entry, as a
+   * snippet's values are.
+   */
+  private googleAssetExtensionsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const calls = this.googleCallExtensions();
+    const promotions = this.googlePromotions();
+    const prices = this.googlePrices();
+    return {
+      ...(calls.length > 0 ? { callExtensions: calls.map((c) => ({ ...c })) } : {}),
+      ...(promotions.length > 0 ? { promotions: promotions.map((p) => ({ ...p })) } : {}),
+      ...(prices.length > 0 ? { prices: this.copyGooglePrices(prices) } : {}),
+    };
+  }
+
+  /**
    * Whether a destination URL is one the ad platforms will serve.
    *
    * The accept set itself is {@link isGoogleAdsServableUrl}, which the brief-restore path
@@ -5492,6 +5827,142 @@ export class ImplementationTabComponent implements OnInit {
    */
   private isServableDestination(raw: string): boolean {
     return isGoogleAdsServableUrl(googleAdsTrimSpace(raw));
+  }
+
+  /** The call sub-form's text as upstream normalises it: both boxes trimmed, the country upper-cased. */
+  private googleCallExtensionFromDraft(draft: CampaignCallExtensionDraft): CampaignCallExtension {
+    return { countryCode: googleAdsToUpperCode(googleAdsTrimSpace(draft.countryCode)), phoneNumber: googleAdsTrimSpace(draft.phoneNumber) };
+  }
+
+  /**
+   * One typed amount: `undefined` for an empty box, otherwise `Number` of the trimmed text — NaN
+   * included, so a box holding "ten" reaches the shared judge and is refused by name rather than
+   * read as "not filled in".
+   */
+  private googleAssetAmount(raw: string): number | undefined {
+    const text = googleAdsTrimSpace(raw);
+    return text === '' ? undefined : Number(text);
+  }
+
+  /**
+   * The promotion sub-form as the entry it would add. Only the arm of each oneof the form selected
+   * is read, so text left in a box the operator switched away from is never sent; a zero amount is
+   * left off, as upstream reads zero as unset; and the currency is carried only when a money field
+   * uses it, the one case upstream reads it.
+   */
+  private googlePromotionFromDraft(draft: CampaignPromotionDraft): CampaignPromotion {
+    const promotion: CampaignPromotion = { promotionTarget: googleAdsTrimSpace(draft.promotionTarget), finalUrl: googleAdsTrimSpace(draft.finalUrl) };
+    const discount = this.googleAssetAmount(draft.discount);
+    if (discount !== undefined && discount !== 0) promotion[draft.discountKind === 'percent' ? 'discountPercent' : 'discountAmount'] = discount;
+    if (draft.eligibilityKind === 'code') {
+      const code = googleAdsTrimSpace(draft.promotionCode);
+      if (code !== '') promotion.promotionCode = code;
+    }
+    if (draft.eligibilityKind === 'ordersOver') {
+      const ordersOver = this.googleAssetAmount(draft.ordersOverAmount);
+      if (ordersOver !== undefined && ordersOver !== 0) promotion.ordersOverAmount = ordersOver;
+    }
+    if (promotion.discountAmount !== undefined || promotion.ordersOverAmount !== undefined) {
+      const currency = googleAdsToUpperCode(googleAdsTrimSpace(draft.currencyCode));
+      if (currency !== '') promotion.currencyCode = currency;
+    }
+    for (const field of ['occasion', 'languageCode', 'startDate', 'endDate', 'redemptionStartDate', 'redemptionEndDate'] as const) {
+      const value = googleAdsTrimSpace(draft[field]);
+      if (value !== '') promotion[field] = value;
+    }
+    return promotion;
+  }
+
+  /**
+   * Why the condition the promotion form SELECTED is unusable, or `null`. Upstream treats both
+   * conditions as optional, so an empty code box or a zero minimum order would pass its check — by
+   * being dropped, and the ad would then advertise an unconditional offer while the select still
+   * names a condition. Only the explicit "No condition" choice may produce one.
+   */
+  private googlePromotionConditionRefusal(draft: CampaignPromotionDraft): string | null {
+    if (draft.eligibilityKind === 'code' && googleAdsTrimSpace(draft.promotionCode) === '') return 'Enter the promotion code, or choose No condition.';
+    if (draft.eligibilityKind === 'ordersOver') {
+      const ordersOver = this.googleAssetAmount(draft.ordersOverAmount);
+      if (ordersOver === undefined || ordersOver === 0) return 'Enter a minimum order amount greater than 0, or choose No condition.';
+    }
+    return null;
+  }
+
+  /** The price sub-form as the entry it would add, the table's currency copied onto every row. */
+  private googlePriceFromDraft(draft: CampaignPriceExtensionDraft): CampaignPriceExtension {
+    const currencyCode = googleAdsToUpperCode(googleAdsTrimSpace(draft.currencyCode));
+    const qualifier = googleAdsTrimSpace(draft.priceQualifier);
+    return {
+      type: googleAdsTrimSpace(draft.type),
+      ...(qualifier !== '' ? { priceQualifier: qualifier } : {}),
+      languageCode: googleAdsTrimSpace(draft.languageCode),
+      offerings: draft.offerings.map((row) => {
+        const unit = googleAdsTrimSpace(row.unit);
+        return {
+          header: googleAdsTrimSpace(row.header),
+          description: googleAdsTrimSpace(row.description),
+          // An empty box is already withheld by `googlePriceDraftFilled`; NaN here only for text.
+          amount: this.googleAssetAmount(row.amount) ?? Number.NaN,
+          currencyCode,
+          ...(unit !== '' ? { unit } : {}),
+          finalUrl: googleAdsTrimSpace(row.finalUrl),
+        };
+      }),
+    };
+  }
+
+  /** Whether every box a price table requires holds something — not yet whether it is valid. */
+  private googlePriceDraftFilled(draft: CampaignPriceExtensionDraft): boolean {
+    if ([draft.type, draft.languageCode, draft.currencyCode].some((text) => googleAdsTrimSpace(text) === '')) return false;
+    return draft.offerings.every((row) => [row.header, row.description, row.amount, row.finalUrl].every((text) => googleAdsTrimSpace(text) !== ''));
+  }
+
+  /** "25% off · code SPRING" — the discount and its condition, as a promotion row reads on screen. */
+  private googlePromotionDetail(promotion: CampaignPromotion): string {
+    const discount =
+      promotion.discountPercent !== undefined ? `${promotion.discountPercent}% off` : `${promotion.discountAmount} ${promotion.currencyCode ?? ''} off`.trim();
+    const parts = [discount];
+    if (promotion.promotionCode) parts.push(`code ${promotion.promotionCode}`);
+    if (promotion.ordersOverAmount !== undefined) parts.push(`orders over ${promotion.ordersOverAmount} ${promotion.currencyCode ?? ''}`.trim());
+    if (promotion.occasion) parts.push(promotion.occasion);
+    return parts.join(' · ');
+  }
+
+  /** Price tables copied with their rows, so no list shares a row array with another. */
+  private copyGooglePrices(prices: readonly CampaignPriceExtension[]): CampaignPriceExtension[] {
+    return prices.map((price) => ({ ...price, offerings: price.offerings.map((row) => ({ ...row })) }));
+  }
+
+  private emptyGooglePromotionDraft(): CampaignPromotionDraft {
+    return {
+      promotionTarget: '',
+      discountKind: 'percent',
+      discount: '',
+      eligibilityKind: 'none',
+      promotionCode: '',
+      ordersOverAmount: '',
+      currencyCode: '',
+      occasion: '',
+      languageCode: '',
+      startDate: '',
+      endDate: '',
+      redemptionStartDate: '',
+      redemptionEndDate: '',
+      finalUrl: '',
+    };
+  }
+
+  /** One empty price row's controls. */
+  private googlePriceRowGroup(): FormGroup<{ [K in keyof CampaignPriceOfferingDraft]: FormControl<string> }> {
+    return this.fb.nonNullable.group<CampaignPriceOfferingDraft>({ header: '', description: '', amount: '', unit: '', finalUrl: '' });
+  }
+
+  /**
+   * A sub-form's raw value as a signal, re-read on every change — including a row pushed onto or
+   * removed from the price table's `FormArray`, which `valueChanges` also reports.
+   */
+  private initFormDraft<T>(form: { valueChanges: Observable<unknown>; getRawValue(): T }): Signal<T> {
+    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */
