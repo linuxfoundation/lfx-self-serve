@@ -21,14 +21,16 @@ const ROWS = [
 ] as SurveyResponseItem[];
 
 async function mount(hasPMOAccess: boolean, responses$ = of(ROWS)) {
+  const activeContext = signal<{ uid: string } | null>({ uid: 'p-1' });
   TestBed.resetTestingModule();
   const getAllSurveyResponses = vi.fn().mockReturnValue(responses$);
+  const getSurvey = vi.fn().mockReturnValue(of(SURVEY));
   TestBed.configureTestingModule({
     imports: [SurveyResultsDrawerComponent],
     providers: [
-      { provide: SurveyService, useValue: { getSurvey: vi.fn().mockReturnValue(of(SURVEY)), getAllSurveyResponses } },
+      { provide: SurveyService, useValue: { getSurvey, getAllSurveyResponses } },
       provideNoopAnimations(),
-      { provide: ProjectContextService, useValue: { activeContext: signal({ uid: 'p-1' }) } },
+      { provide: ProjectContextService, useValue: { activeContext } },
     ],
   });
   const fixture = TestBed.createComponent(SurveyResultsDrawerComponent);
@@ -37,7 +39,7 @@ async function mount(hasPMOAccess: boolean, responses$ = of(ROWS)) {
   fixture.componentRef.setInput('visible', true);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, component: fixture.componentInstance, getAllSurveyResponses };
+  return { fixture, component: fixture.componentInstance, getAllSurveyResponses, getSurvey, activeContext };
 }
 
 describe('SurveyResultsDrawerComponent', () => {
@@ -107,5 +109,18 @@ describe('SurveyResultsDrawerComponent', () => {
 
     expect(component['responsesLoadError']()).toBe(true);
     expect(component['responses']()).toEqual([]);
+  });
+
+  it('refetches the survey detail with the new project scope when the project changes', async () => {
+    const { fixture, getSurvey, getAllSurveyResponses, activeContext } = await mount(true);
+    current = fixture;
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-1');
+
+    activeContext.set({ uid: 'p-2' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getSurvey).toHaveBeenLastCalledWith('s-1', 'p-2');
+    expect(getAllSurveyResponses).toHaveBeenLastCalledWith('s-1', 'p-2');
   });
 });
