@@ -303,7 +303,9 @@ kit and LinkedIn answer transports. Only LinkedIn's stable `avoid` question acce
 `none`; its client applies the exemption to that question, not the whole route. Validators
 retain their origin/id/uniqueness and length limits; invalid answers return a plain 400 before
 sending or resuming a session. AEO/GEO retains its explicitly approved non-empty compatibility
-policy until the agent supplies a stable exclusion-question id; empty/whitespace answers fail.
+policy until the agent supplies a stable exclusion-question id; empty/whitespace HTTP submissions fail.
+The HTTP guard `isAeoGeoSubmittedAnswers` is separate from the agent-protocol shape guard
+`isAeoGeoAnswers`: empty frames/text remain valid for byte-exact rendering and internal retry handling.
 Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.
 The current main run record does not store asked questions, so complete-turn coverage for kit,
 LinkedIn and AEO/GEO is a follow-on once that server-side evidence is available, not inferred here.
