@@ -3,7 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import {
   MKTG_ARTIFACT_SHA256_REGEX,
   MKTG_RUN_FAILURE_REASON,
@@ -52,8 +53,10 @@ import {
   map,
   Observable,
   of,
+  shareReplay,
   switchMap,
   take,
+  takeUntil,
   takeWhile,
   tap,
   throwError,
@@ -65,6 +68,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
 import { UserService } from './user.service';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
+import { ProjectContextService } from './project-context.service';
 
 /**
  * Form-first agent runs for the Marketing OS marketplace. A first run submits
@@ -105,6 +109,11 @@ export class MktgAgentRunService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
   private readonly attempts = inject(MktgRunAttemptService);
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly runScope = computed(() => JSON.stringify([this.attempts.subject(), this.projectContext.activeContextUid()]));
+  private readonly runScope$ = toObservable(this.runScope);
+  /** An ACK can arrive after its page leaves; returning intakes re-read the existing private draft. */
+  public readonly acknowledgementVersion = signal(0);
 
   /**
    * In-memory runs, keyed exactly like localStorage. The authoritative record
@@ -202,23 +211,34 @@ export class MktgAgentRunService {
       attempt$ = this.followUp(request, stored);
     }
 
-    return defer(() => {
-      const subject = this.attempts.subject();
+    const scope = JSON.stringify([this.attempts.subject(), request.projectUid]);
+    const failed = (error: unknown): Observable<never> => {
+      if (scope === this.runScope()) this.track(request, { state: 'failed' });
+      return throwError(() => error);
+    };
+    // Only the POST/ACK leg is service-held. Page teardown still cancels result polling.
+    const acknowledged = defer(() => {
+      if (scope !== this.runScope()) return EMPTY;
       this.attempts.reserve(request); // Before subscribing to the POST: even a pre-ACK 503 keeps the intake.
-      return attempt$.pipe(
-        tap((attempt) => {
-          this.assertSubject(subject);
-          this.track(request, { attempt, state: 'writing' });
-        }),
-        switchMap((attempt) => concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt))),
-        catchError((error: unknown) => {
-          if (subject === this.attempts.subject()) {
-            this.track(request, { state: 'failed' });
-          }
-          return throwError(() => error);
-        })
-      );
-    });
+      return attempt$;
+    }).pipe(
+      // toObservable may replay the previous scope until its effect flushes; inspect the current signal.
+      takeUntil(this.runScope$.pipe(filter(() => this.runScope() !== scope))),
+      takeWhile(() => scope === this.runScope()), // Check synchronously too, before a queued scope effect can run.
+      take(1),
+      tap((attempt) => {
+        this.track(request, { attempt, state: 'writing' });
+        this.acknowledgementVersion.update((version) => version + 1);
+      }),
+      catchError(failed),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return acknowledged.pipe(
+      switchMap((attempt) => {
+        if (scope !== this.runScope()) return EMPTY;
+        return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
+      })
+    );
   }
 
   /**
