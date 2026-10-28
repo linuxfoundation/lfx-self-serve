@@ -193,6 +193,23 @@ describe('CdpService.runMemberIdentityWrites', () => {
     expect(loggerCalls.some(([, operation]) => operation === 'run_cdp_member_identity_writes')).toBe(true);
     next.resolve();
   });
+
+  // A queued verify landing after the removal would set the identity back to verified.
+  it('holds an identity removal until the member chain running on this pod settles', async () => {
+    const started: string[] = [];
+    const pendingVerify = deferredWrite(started, 'verify');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: 'member-removal' })).mockResolvedValueOnce(jsonResponse({}));
+    new CdpService().runMemberIdentityWrites(undefined, 'member-removal', [pendingVerify.write]);
+
+    const removal = new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    pendingVerify.resolve();
+    await removal;
+    expect(requestedUrls(fetchMock)[1]).toContain(`${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES('member-removal')}/identity-1`);
+  });
 });
 
 describe('CdpService.getMemberIdentitiesForUser', () => {

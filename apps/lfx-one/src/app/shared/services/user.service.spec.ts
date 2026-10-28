@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { defer, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -73,12 +73,22 @@ describe('UserService', () => {
   // #4523: every identities GET re-runs the server's CDP reconcile, so the page must share one.
   describe('getIdentities', () => {
     const identitiesUrl = '/api/profile/identities';
-    const identitiesRequests = (): number => httpGet.mock.calls.filter(([url]) => url === identitiesUrl).length;
     let response$: Subject<EnrichedIdentity[]>;
+    // HttpClient observables are cold: every subscription is a request, so count subscriptions, not get() calls.
+    let subscriptions: number;
+    const identitiesRequests = (): number => subscriptions;
 
     beforeEach(() => {
       response$ = new Subject<EnrichedIdentity[]>();
-      httpGet.mockImplementation((url: string) => (url === identitiesUrl ? response$ : of({ profile: {} })));
+      subscriptions = 0;
+      httpGet.mockImplementation((url: string) =>
+        url === identitiesUrl
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
     });
 
     function respond(rows: EnrichedIdentity[] = []): void {

@@ -46,8 +46,8 @@ interface CachedToken {
  * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
-  // Static: several controllers/services each construct their own CdpService.
-  private static readonly memberIdentityWritesInFlight = new Set<string>();
+  // Static: several controllers/services each construct their own CdpService. Maps member id → running chain.
+  private static readonly memberIdentityWritesInFlight = new Map<string, Promise<void>>();
 
   private cachedToken: CachedToken | null = null;
 
@@ -264,10 +264,12 @@ export class CdpService {
   }
 
   /**
-   * Reject an identity for a user by resolving their member ID first
+   * Reject an identity for a user by resolving their member ID first. Waits for any reconcile
+   * write chain running for the member on this pod, so a queued verify can't undo the removal.
    */
   public async rejectIdentityForUser(req: Request | undefined, sub: string, identityId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
+    await CdpService.memberIdentityWritesInFlight.get(memberId);
     await this.rejectIdentity(req, memberId, identityId, sub);
   }
 
@@ -408,7 +410,9 @@ export class CdpService {
     } catch (error) {
       // Return empty array on 404 (user has no CDP profile)
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.warning(req, 'get_cdp_identities_for_user', 'No CDP profile found for user', { sub });
+        // A resolved member whose identities read 404s is not "no profile" — say which case it was.
+        const message = memberId ? 'CDP identities not found for resolved member' : 'No CDP profile found for user';
+        logger.warning(req, 'get_cdp_identities_for_user', message, { sub, member_id: memberId });
         return { memberId, identities: [] };
       }
 
@@ -431,8 +435,8 @@ export class CdpService {
       return false;
     }
 
-    CdpService.memberIdentityWritesInFlight.add(memberId);
-    void (async () => {
+    // Never rejects (each write's failure is caught), so a removal can safely await it.
+    const chain = (async () => {
       try {
         for (const write of writes) {
           await write().catch((err: unknown) => {
@@ -443,6 +447,7 @@ export class CdpService {
         CdpService.memberIdentityWritesInFlight.delete(memberId);
       }
     })();
+    CdpService.memberIdentityWritesInFlight.set(memberId, chain);
     return true;
   }
 
