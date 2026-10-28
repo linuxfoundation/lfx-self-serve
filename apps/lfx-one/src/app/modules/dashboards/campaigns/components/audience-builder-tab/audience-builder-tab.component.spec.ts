@@ -3890,7 +3890,7 @@ describe('AudienceBuilderTabComponent', () => {
       const message = 'the master would carry 2,601 filter conditions (51 lists x 51); the limit is 2,500';
       composeAudienceMaster.mockReturnValue(throwError(() => refusal(message)));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]')?.textContent?.trim()).toBe(message);
       expect(
@@ -3903,7 +3903,7 @@ describe('AudienceBuilderTabComponent', () => {
       await discover();
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
     });
@@ -3913,7 +3913,7 @@ describe('AudienceBuilderTabComponent', () => {
       const message = 'list 300 (LFX Standard Suppressions - tlf) is in both the send and its suppressions';
       attachExistingAudience.mockReturnValue(throwError(() => refusal(message)));
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')?.textContent?.trim()).toBe(message);
     });
@@ -3926,7 +3926,7 @@ describe('AudienceBuilderTabComponent', () => {
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       const text = host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent ?? '';
       expect(text).toContain('Legacy suppression');
@@ -3942,7 +3942,7 @@ describe('AudienceBuilderTabComponent', () => {
       };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')).not.toBeNull();
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial-suppression-link"]')).toBeNull();
