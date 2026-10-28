@@ -13,7 +13,7 @@ import {
   ORG_LENS_ROLLUP_ENABLED_FLAG,
   ORG_NOT_FOUND_PATH,
   ORG_ROLLUP_SEGMENT,
-  ROLLUP_ACCOUNT_NAME,
+  ROLLUP_ACCOUNT,
   ROLLUP_MIN_ORGANIZATIONS,
 } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
@@ -31,25 +31,6 @@ const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
   accountName: '',
   membershipTier: '',
-};
-
-/**
- * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
- * `b2b_org` row: there is no Salesforce account behind it, so both identifier fields carry the
- * reserved segment instead (see the note on `accountId` below), and `slug` is a confirmed `null` so
- * nothing tries to learn one from the index. The segment is what every address, cookie and
- * `:orgUid` / `:accountId` request built from this selection ends up spelling, and what `isRollUp`
- * keys on.
- */
-const ROLLUP_ACCOUNT: Account = {
-  // The sentinel sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
-  // Events family keys on `:accountId` (#4125's contract covers both), and consumers that filter on
-  // a falsy `accountId` would otherwise skip the roll-up and silently keep their previous result.
-  accountId: ORG_ROLLUP_SEGMENT,
-  accountName: ROLLUP_ACCOUNT_NAME,
-  membershipTier: '',
-  uid: ORG_ROLLUP_SEGMENT,
-  slug: null,
 };
 
 @Injectable({

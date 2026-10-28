@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Account } from '../interfaces';
+
 /**
  * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/org/{segment}/{page}` where `segment`
  * is the organization's lowercase slug, or its 18-char SFID when it has none. Shared by the
@@ -62,6 +64,25 @@ export const ROLLUP_ACCOUNT_NAME = 'All Organizations';
 
 /** Fewest organizations a roll-up is worth offering over: with one, it is the organization. */
 export const ROLLUP_MIN_ORGANIZATIONS = 2;
+
+/**
+ * Synthetic selection standing for the All Organizations roll-up (lfx-self-serve#4125). It is not a
+ * `b2b_org` row: there is no Salesforce account behind it, so both identifier fields carry the
+ * reserved segment instead (see the note on `accountId` below), and `slug` is a confirmed `null` so
+ * nothing tries to learn one from the index. The segment is what every address, cookie and
+ * `:orgUid` / `:accountId` request built from this selection ends up spelling, and what `isRollUp`
+ * keys on.
+ */
+export const ROLLUP_ACCOUNT: Account = {
+  // The sentinel sits in BOTH identifier fields. The Org Lens endpoints key on `:orgUid`, but the
+  // Events family keys on `:accountId` (#4125's contract covers both), and consumers that filter on
+  // a falsy `accountId` would otherwise skip the roll-up and silently keep their previous result.
+  accountId: ORG_ROLLUP_SEGMENT,
+  accountName: ROLLUP_ACCOUNT_NAME,
+  membershipTier: '',
+  uid: ORG_ROLLUP_SEGMENT,
+  slug: null,
+};
 
 /** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
 export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;
