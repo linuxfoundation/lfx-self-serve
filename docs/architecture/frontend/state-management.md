@@ -502,13 +502,16 @@ Stored Brand Kits opt into string passage pins in their screen chapters (never S
 bytes, generated sample text or the printed book). The BFF captures passage text
 from the immutable stored key for `brand_kit_revise_form`; the browser sends only
 that key and comment. Boilerplates pin each original `bp[index].t` length and send
-the selected asset's comments through the same redraft flow. Framework, Kit and
-Boilerplates keep Comments, Revisions and About together in the right-hand column
+the selected asset's comments through the same redraft flow. FAQ pins each answer
+at `faq[g][1][q][1]`, including null answers, both in its group and on the Needs an
+answer tab. An answer supplied in a comment is published by the agent as Notes;
+the next revision's content determines which questions still need an answer.
+Framework, Kit, Boilerplates and FAQ keep Comments, Revisions and About together in the right-hand column
 at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
 800px host-container threshold and each asset's inner container grids remain intact.
 The side panel uses one empty-comments instruction (Send and its reason appear only with open comments after a successful read), revision labels limited to version/state/date plus the Current pill, hover/focus Make current help rather than a footnote, and About rows for Agent and Stored only.
-Run previews, legacy/unreadable assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
-and boilerplate lengths identically in pins and the panel.
+Run previews and legacy/unreadable assets do not opt in. Shared labels name palette entries, voice attributes,
+boilerplate lengths and FAQ group/question positions identically in pins and the panel.
 The controls appear on hover/focus, and stay visible on hover-less devices; threads
 and a wrapper-based composer pin beneath their field. Disabled hosts have no
 layout box; the extra hover groups use display:contents until controls are shown.

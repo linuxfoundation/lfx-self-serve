@@ -13,19 +13,6 @@ export interface HealthMetricsTrainingSubNavItem extends HealthMetricsL2SubNavIt
   key: HealthMetricsTrainingSectionKey;
 }
 
-/** `GET /api/analytics/training-presence` query. */
-export interface HealthMetricsTrainingPresenceQuery {
-  foundationSlug: string;
-}
-
-/** Whether the foundation runs a training programme through LF Education. */
-export interface HealthMetricsTrainingPresence {
-  hasProgramme: boolean;
-}
-
-/** What the Training tab renders: a skeleton while reading, the shell, the no-programme state, or an error. */
-export type HealthMetricsTrainingPresenceState = 'loading' | 'present' | 'absent' | 'failed';
-
 /** `GET /api/analytics/training-enrollment` query; one read carries every period, so a period change never re-reads. */
 export interface HealthMetricsTrainingEnrollmentQuery {
   foundationSlug: string;

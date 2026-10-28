@@ -1427,6 +1427,18 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
   });
 
+  it.each(['living', 'one-off'] as const)('announces a stored %s document in exactly one live-state region', async (kind) => {
+    const response = kind === 'living' ? revisionResponse(LATEST) : { ...member360Revision(), project: PROJECT.uid };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render(`/documents/${response.type.agentKey}/${response.documentId}`);
+    const regions = harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]');
+    expect(regions).toHaveLength(1);
+    expect(regions?.[0].getAttribute('role')).toBe('status');
+    expect(regions?.[0].getAttribute('aria-live')).toBe('polite');
+    expect(regions?.[0].textContent?.trim()).toBeTruthy();
+  });
+
   it.each(
     MKTG_DOCUMENT_TYPES.filter(
       (type) =>
@@ -1466,6 +1478,32 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run')).toBeNull();
     expect(query('mktg-document-view-live-state')).toBeNull();
     expect(query('mktg-document-view-run-steps')).toBeNull();
+  });
+
+  it.each(['cancelled', 'rejected'])('retries the same public run redirect after navigation is %s', async (outcome) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const response = { ...detail, runs: [started('writing')] };
+    store.getDocument.mockReturnValue(of(response));
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    navigate.mockClear();
+    if (outcome === 'rejected') navigate.mockRejectedValueOnce(new Error('Synthetic cancelled route'));
+    else navigate.mockResolvedValueOnce(false);
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['errorText']()).toContain('The run page could not be opened');
+    expect(component['redirectedRun']).toBe('');
+    component['onPublicProgress']({ detail: response, view: null });
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith(
+      ['/mktg-os-agents', BRAND_KIT.catalogAgentId],
+      expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ run: 'b'.repeat(64) }) })
+    );
+    component['onPublicProgress']({ detail: response, view: null });
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(query('mktg-document-view-run')).toBeNull();
   });
 
   it('keeps a Started run with no stored revision headless until the stored document lands', async () => {
@@ -2768,6 +2806,19 @@ describe('MktgDocumentViewComponent', () => {
     return { ...revisionResponse(selected), type, markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }) };
   }
 
+  it('enables FAQ comments with stored label content in the shared document scope', async () => {
+    const response = faqResponse();
+    store.getRevision.mockReturnValue(of(response));
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    const select = vi.spyOn(comments, 'select');
+    const label = vi.spyOn(comments, 'setLabelContent');
+    await render(`/documents/faq/living?revision=${response.revision.id}`);
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ agentKey: 'faq', revisionId: response.revision.id }));
+    expect(label).toHaveBeenCalledWith(JSON.parse(response.markdown));
+    expect(harness.routeNativeElement?.querySelectorAll('lfx-mktg-field-comments')).toHaveLength(1);
+    expect(query('mktg-comments-panel')).not.toBeNull();
+  });
+
   it.each([
     [0, 0, 'Ready.'],
     [1, 0, 'Ready — 1 of 3 sources could not be read.'],
@@ -3448,7 +3499,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-faq-view-title')).toBeNull();
-    expect(query('mktg-comments-panel')).toBeNull();
+    expect(query('mktg-comments-panel')).not.toBeNull();
+    expect(query('mktg-faq-view-question-0-0')?.querySelector('lfx-mktg-field-comments')).not.toBeNull();
     expect(query('mktg-faq-view-metadata')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
@@ -3456,6 +3508,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
     expect(query('mktg-faq-view-unanswered-open')).toBeNull();
     expect(query('mktg-faq-view-tab-unanswered')?.textContent).toContain('Needs an answer (1)');
+    expect(query('mktg-faq-view-unanswered-callout')?.textContent).toContain('1 question needs an answer from your team.');
     expectContentColumn('mktg-faq-view');
   });
 });

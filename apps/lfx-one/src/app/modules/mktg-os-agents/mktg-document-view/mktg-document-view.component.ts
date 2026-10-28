@@ -321,7 +321,7 @@ export class MktgDocumentViewComponent {
   protected readonly viewedReport = this.initViewedReport();
   protected readonly readiness = computed(() => describeMktgAssetReadiness(this.viewedReport()));
   /** Label context uses the stored content shape, never the transformed display rows. */
-  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
+  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.faq()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -806,7 +806,11 @@ export class MktgDocumentViewComponent {
     if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
       return;
     this.redirectedRun = run.runId;
-    const failedNavigation = () => this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    const failedNavigation = () => {
+      if (this.redirectedRun !== run.runId) return;
+      this.redirectedRun = '';
+      this.errorText.set('The run page could not be opened. Open this run from Documents.');
+    };
     void this.router
       .navigate(commands, { queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, run: run.runId }, replaceUrl: true })
       .then((opened) => {

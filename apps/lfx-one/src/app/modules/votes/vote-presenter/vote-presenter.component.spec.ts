@@ -8,6 +8,7 @@ import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,6 +65,7 @@ describe('VotePresenterComponent', () => {
         { provide: VoteService, useValue: { fetchVote, getVoteResults } },
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: 'v1' })) } },
         { provide: Router, useValue: { navigateByUrl } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
   });
@@ -78,6 +80,19 @@ describe('VotePresenterComponent', () => {
     expect(has('vote-qr')).toBe(true);
     expect(fixture.nativeElement.querySelector('[data-testid="vote-presenter-close"] button')?.disabled).toBe(true);
     expect(getVoteResults).not.toHaveBeenCalled();
+  });
+
+  it('offers Send ballots now and the updated QR copy while the vote is active (#4363)', async () => {
+    await mount();
+    expect(has('vote-presenter-send-ballots')).toBe(true);
+    expect(text('vote-presenter-share')).toContain("Didn't get the email? Scan to open your ballot");
+    expect(text('vote-presenter-share')).not.toContain('In the room? Scan instead');
+  });
+
+  it('does not offer Send ballots now once the vote has ended (#4363)', async () => {
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+    await mount();
+    expect(has('vote-presenter-send-ballots')).toBe(false);
   });
 
   it('never requests results, and shows no tallies, while the vote is active across many polls', async () => {
@@ -299,6 +314,7 @@ describe('VotePresenterComponent', () => {
         { provide: VoteService, useValue: { fetchVote, getVoteResults } },
         { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: Router, useValue: { navigateByUrl } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
     await mount();

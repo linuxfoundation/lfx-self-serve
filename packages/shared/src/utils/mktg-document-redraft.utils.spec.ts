@@ -109,6 +109,10 @@ describe('private immutable redraft context', () => {
       expect(readMktgRedraftContext({ ...context, comments: [{ ...first, anchor: { kind: 'field', key } }] })).toBeNull();
     }
     expect(readMktgRedraftContext({ ...context, comments: [{ ...first, anchor: { ...first.anchor, passage: 'invented' } }] })).toBeNull();
+    const faq = redraftContextFixture('faq');
+    for (const key of ['faq[0][1][2][0]', 'faq[0][1][2][2]', 'faq[0][0]', 'faq[00][1][2][1]']) {
+      expect(readMktgRedraftContext({ ...faq, comments: [{ ...faq.comments[0], anchor: { kind: 'field', key } }] })).toBeNull();
+    }
     const bp = redraftContextFixture('boilerplates');
     expect(readMktgRedraftContext({ ...bp, comments: [{ ...bp.comments[0], anchor: { kind: 'field', key: 'bp[0].max' } }] })).toBeNull();
   });
