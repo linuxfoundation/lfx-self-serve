@@ -420,7 +420,7 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-cncf' }), replaceUrl: true }));
   });
 
-  it('drops the selected projects outside a newly picked foundation, and keeps them all for All Foundations', async () => {
+  describe('projects and the picked foundation', () => {
     const response: OrgContributionsResponse = {
       ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
       accountId: 'org-uid-1',
@@ -434,14 +434,75 @@ describe('OrgContributionsComponent', () => {
         { slug: 'solo', projectId: 'p-solo', name: 'Solo', commits: 1, foundationId: null },
       ],
     };
-    const { fixture } = await render(null, { queryParams: { projects: 'k8s,p-onnx,solo' }, response });
-    const { foundation, projects } = fixture.componentInstance['filterForm'].controls;
 
-    foundation.setValue('');
-    expect(projects.value).toEqual(['k8s', 'p-onnx', 'solo']);
+    it("lists only the picked foundation's projects, and every project for All Foundations", async () => {
+      const { fixture } = await render(null, { queryParams: { foundation: 'f-lfai' }, response });
+      expect(fixture.componentInstance['projectOptions']().map((option) => option.label)).toEqual(['ONNX']);
+      TestBed.resetTestingModule();
 
-    foundation.setValue('f-lfai');
-    expect(projects.value).toEqual(['p-onnx']);
+      const all = await render(null, { response });
+      expect(all.fixture.componentInstance['projectOptions']().map((option) => option.label)).toEqual(['Kubernetes', 'ONNX', 'Solo']);
+    });
+
+    it('drops the selected projects the options place in another foundation, keeps unlisted ones, and keeps them all for All Foundations', async () => {
+      const { fixture } = await render(null, { queryParams: { projects: 'k8s,p-onnx,solo,ghost' }, response });
+      const { foundation, projects } = fixture.componentInstance['filterForm'].controls;
+
+      foundation.setValue('');
+      expect(projects.value).toEqual(['k8s', 'p-onnx', 'solo', 'ghost']);
+
+      foundation.setValue('f-lfai');
+      expect(projects.value).toEqual(['p-onnx', 'ghost']);
+    });
+
+    it('reconciles a deep link once the first response brings the options, and refetches without the dropped pick', async () => {
+      const { fixture, getContributions } = await render(null, { queryParams: { foundation: 'f-lfai', projects: 'k8s,ghost' }, response });
+
+      expect(getContributions).toHaveBeenCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai', projects: ['k8s', 'ghost'] }));
+      expect(fixture.componentInstance['filterForm'].controls.projects.value).toEqual(['ghost']);
+
+      // Past the form's 250ms debounce.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai', projects: ['ghost'] }));
+    });
+
+    it('fetches nothing more when the response drops no pick', async () => {
+      const { fixture, getContributions } = await render(null, { queryParams: { foundation: 'f-lfai', projects: 'onnx,ghost' }, response });
+      const calls = getContributions.mock.calls.length;
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.componentInstance['filterForm'].controls.projects.value).toEqual(['onnx', 'ghost']);
+      expect(getContributions).toHaveBeenCalledTimes(calls);
+    });
+  });
+
+  it('follows ?foundation= on a query-only navigation, its removal included, ignoring the echo of its own URL write', async () => {
+    const { fixture, getContributions, queryParamMap } = await render(null, { queryParams: { foundation: 'f-cncf' } });
+    const { foundation } = fixture.componentInstance['filterForm'].controls;
+    const settle = async () => {
+      // Past the form's 250ms debounce.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fixture.detectChanges();
+      await fixture.whenStable();
+    };
+
+    queryParamMap.next(convertToParamMap({ foundation: 'f-lfai' }));
+    await settle();
+    expect(foundation.value).toBe('f-lfai');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai' }));
+
+    const patchValue = vi.spyOn(fixture.componentInstance['filterForm'], 'patchValue');
+    queryParamMap.next(convertToParamMap({ foundation: 'f-lfai', page: '1' }));
+    expect(patchValue).not.toHaveBeenCalled();
+
+    queryParamMap.next(convertToParamMap({}));
+    await settle();
+    expect(foundation.value).toBe('');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {

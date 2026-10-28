@@ -98,7 +98,7 @@ export class OrgContributionsService {
         : this.fetchRepositories(accountId, commitScope, repoSearch, query, repoPagination),
       // The Commits feed lists commits under either metric.
       this.fetchCommits(accountId, commitScope, commitSearch, query, commitPagination),
-      this.fetchFoundationOptionRows(accountId, codeScope ? CODE_ACTIVITY_TABLE : PLATINUM_TABLE, codeScope ?? commitScope),
+      this.fetchFoundationOptionRows(accountId, codeScope ?? buildCodeScopeFilters(query)),
       codeScope ? this.fetchCodeProjectOptionRows(accountId, codeScope) : this.fetchProjectOptionRows(accountId, commitScope),
       codeScope ? this.fetchCodeEmployeeOptionRows(accountId, codeScope) : this.fetchEmployeeOptionRows(accountId, commitScope),
     ]);
@@ -322,18 +322,19 @@ export class OrgContributionsService {
   }
 
   /**
-   * Foundations in the window and project type. Never narrowed by the foundation, project or employee picks, so the
-   * dropdown always offers every foundation to switch to.
+   * Foundations the org made any code contribution to in the window and project type, read from code activity whatever
+   * the code-count option, as People → Contributors does. Never narrowed by the foundation, project or employee picks,
+   * so the dropdown always offers every foundation to switch to.
    */
-  private async fetchFoundationOptionRows(accountId: string, table: string, scope: ScopeFilters): Promise<{ rows: ContributionsFoundationOptionRow[] }> {
+  private async fetchFoundationOptionRows(accountId: string, codeScope: ScopeFilters): Promise<{ rows: ContributionsFoundationOptionRow[] }> {
     const sql = `
       SELECT
         foundation_id,
         ANY_VALUE(foundation_name) AS foundation_name
-      FROM ${table}
+      FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
-        ${scope.datePredicate}
-        ${scope.scopePredicate}
+        ${codeScope.datePredicate}
+        ${codeScope.scopePredicate}
         AND foundation_id IS NOT NULL
         AND foundation_name IS NOT NULL
       GROUP BY foundation_id
@@ -342,7 +343,10 @@ export class OrgContributionsService {
     return this.snowflakeService.execute<ContributionsFoundationOptionRow>(sql, [accountId]);
   }
 
-  /** Options follow the window, project/commit scope and picked foundation, not the project/employee selections themselves. */
+  /**
+   * Options follow the window and project/commit scope, not the foundation, project or employee picks. Each carries its
+   * foundation, so the page lists the picked foundation's projects and drops picks outside it.
+   */
   private async fetchProjectOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsProjectOptionRow[] }> {
     const sql = `
       SELECT
@@ -355,12 +359,11 @@ export class OrgContributionsService {
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
-        ${scope.foundationPredicate}
         AND project_id IS NOT NULL
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId, ...scope.foundationBinds]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
   }
 
   private async fetchCodeProjectOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsProjectOptionRow[] }> {
@@ -375,12 +378,11 @@ export class OrgContributionsService {
       WHERE account_id = ?
         ${scope.datePredicate}
         ${scope.scopePredicate}
-        ${scope.foundationPredicate}
         AND project_id IS NOT NULL
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId, ...scope.foundationBinds]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
   }
 
   private async fetchEmployeeOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
@@ -426,7 +428,7 @@ interface ScopeFilters {
   /** Project scope (and, on commit reads, commit scope) — allow-listed values, inlined. */
   scopePredicate: string;
   foundationPredicate: string;
-  /** The foundation predicate's binds alone, for the option reads that skip the project and employee picks. */
+  /** The foundation predicate's binds alone, for the employee options, which skip the project and employee picks. */
   foundationBinds: string[];
   projectPredicate: string;
   employeePredicate: string;

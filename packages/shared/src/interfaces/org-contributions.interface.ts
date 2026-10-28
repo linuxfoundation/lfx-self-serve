@@ -99,10 +99,11 @@ export interface OrgContributionsResponse {
   repositories: OrgContributionRepoRow[];
   /** Org-wide recent-commits activity feed (most recent first). */
   commits: OrgContributionCommitRow[];
-  /** Foundations the org was active in over the window and project type; never narrowed by the foundation or project picks. */
+  /** Foundations with any code contribution by the org in the window and project type, whatever the code-count option; never narrowed by the picks. */
   foundationOptions: OrgContributorFoundationOption[];
-  /** Projects in the window and project type, narrowed to the picked foundation. */
+  /** Projects in the window and project type, never narrowed by the picks; the page lists the picked foundation's projects. */
   projectOptions: OrgContributionProjectOption[];
+  /** Employees in the window and project type, narrowed to the picked foundation. */
   employeeOptions: OrgContributionEmployeeOption[];
   /** Repositories rows matching the active filters — drives the Repositories pager + tab count. */
   totalRecords: number;

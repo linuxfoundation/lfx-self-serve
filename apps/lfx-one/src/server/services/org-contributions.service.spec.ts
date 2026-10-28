@@ -50,6 +50,8 @@ const feedCall = () => callSelecting('commit_message,');
 const foundationOptionCall = () => callSelecting('GROUP BY foundation_id');
 const projectOptionCall = () => callSelecting('GROUP BY project_id');
 const employeeOptionCall = () => callSelecting('ANY_VALUE(member_display_name)');
+/** Every read but the foundation options, which always read code activity. */
+const commitReads = () => calls().filter((call) => !call.sql.includes('GROUP BY foundation_id'));
 
 let service: OrgContributionsService;
 
@@ -85,15 +87,16 @@ describe('OrgContributionsService — commit filters', () => {
     execute.mockClear();
     await service.getContributions(ACCOUNT, query({ commitScope: 'merged' }));
     expect(execute).toHaveBeenCalledTimes(6);
-    for (const { sql } of calls()) {
+    for (const { sql } of commitReads()) {
       expect(sql).toContain('is_merged = TRUE');
     }
   });
 
-  it('reads every surface from the commits table with metric=commits', async () => {
+  it('reads every surface but the foundation options from the commits table with metric=commits', async () => {
     await service.getContributions(ACCOUNT, query());
 
-    for (const { sql } of calls()) {
+    expect(commitReads()).toHaveLength(5);
+    for (const { sql } of commitReads()) {
       expect(sql).toContain(COMMITS_TABLE);
       expect(sql).not.toContain(CODE_TABLE);
     }
@@ -105,7 +108,7 @@ describe('OrgContributionsService — range window', () => {
     await service.getContributions(ACCOUNT, query());
 
     expect(execute).toHaveBeenCalledTimes(6);
-    for (const { sql } of calls()) {
+    for (const { sql } of commitReads()) {
       expect(sql).toContain('activity_ts::date >= DATEADD(day, -365, CURRENT_DATE())');
       expect(sql).not.toContain('CURRENT_TIMESTAMP');
       expect(sql).not.toContain('month');
@@ -121,7 +124,7 @@ describe('OrgContributionsService — range window', () => {
   it('windows Past 2 years as 730 calendar days on the commit reads and on code activity', async () => {
     await service.getContributions(ACCOUNT, query({ dateRange: '730d' }));
 
-    for (const { sql } of calls()) {
+    for (const { sql } of commitReads()) {
       expect(sql).toContain('activity_ts::date >= DATEADD(day, -730, CURRENT_DATE())');
     }
 
@@ -234,31 +237,55 @@ describe('OrgContributionsService — exact project and foundation filters', () 
   );
 
   it.each(['commits', 'code'] as const)(
-    'adds foundation_id = ? to every scoped read, bound before the project and employee picks (metric=%s)',
+    'adds foundation_id = ? to every data read and the employee options, bound before the project and employee picks (metric=%s)',
     async (metric) => {
       await service.getContributions(ACCOUNT, query({ metric, foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] }));
 
-      for (const call of [kpiCall(), repoCall(), feedCall(), projectOptionCall(), employeeOptionCall()]) {
+      for (const call of [kpiCall(), repoCall(), feedCall(), employeeOptionCall()]) {
         expect(call.sql).toContain('AND foundation_id = ?');
       }
       expect(kpiCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
       expect(feedCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
-      // Options skip the project and employee picks, but project and employee options narrow to the foundation.
-      expect(projectOptionCall().binds).toEqual([ACCOUNT, 'f-cncf']);
+      // Employee options skip the project and employee picks but narrow to the foundation.
       expect(employeeOptionCall().binds).toEqual([ACCOUNT, 'f-cncf']);
     }
   );
 
-  it.each(['commits', 'code'] as const)('builds foundation options from the window and project type alone, whatever is picked (metric=%s)', async (metric) => {
+  it.each(['commits', 'code'] as const)('builds project options from the window and project type alone, whatever is picked (metric=%s)', async (metric) => {
     await service.getContributions(ACCOUNT, query({ metric, projectScope: 'lf', foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] }));
 
-    const { sql, binds } = foundationOptionCall();
+    const { sql, binds } = projectOptionCall();
     expect(sql).toContain('is_lf_project = TRUE');
+    expect(sql).toContain('ANY_VALUE(foundation_id) AS foundation_id');
     expect(sql).not.toContain('foundation_id = ?');
     expect(sql).not.toContain('project_slug IN');
     expect(sql).not.toContain('member_id IN');
     expect(binds).toEqual([ACCOUNT]);
   });
+
+  it.each([
+    ['commits', 'all'],
+    ['commits', 'merged'],
+    ['code', 'all'],
+  ] as const)(
+    'builds foundation options from code activity in the window and project type alone, whatever is picked (metric=%s, commitScope=%s)',
+    async (metric, commitScope) => {
+      await service.getContributions(
+        ACCOUNT,
+        query({ metric, commitScope, projectScope: 'lf', dateRange: '90d', foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] })
+      );
+
+      const { sql, binds } = foundationOptionCall();
+      expect(sql).toContain(`FROM ANALYTICS.PLATINUM_LFX_ONE.${CODE_TABLE}`);
+      expect(sql).toContain('activity_date >= DATEADD(day, -90, CURRENT_DATE())');
+      expect(sql).toContain('is_lf_project = TRUE');
+      expect(sql).not.toContain('is_merged');
+      expect(sql).not.toContain('foundation_id = ?');
+      expect(sql).not.toContain('project_slug IN');
+      expect(sql).not.toContain('member_id IN');
+      expect(binds).toEqual([ACCOUNT]);
+    }
+  );
 
   it('leaves the foundation out of every read when none is picked', async () => {
     await service.getContributions(ACCOUNT, query());

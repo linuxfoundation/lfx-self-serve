@@ -47,6 +47,7 @@ import type {
   OrgCodeMeasure,
   OrgCodeMeasureOption,
   OrgContributionCommitRowVm,
+  OrgContributionProjectOption,
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
   OrgContributionsResponse,
@@ -217,8 +218,10 @@ export class OrgContributionsComponent {
     this.capFilterSelection(this.filterForm.controls.projects);
     this.capFilterSelection(this.filterForm.controls.employees);
 
-    // Project options narrow to the picked foundation, so picking one drops the selected projects outside it.
-    this.filterForm.controls.foundation.valueChanges.pipe(takeUntilDestroyed()).subscribe((foundation) => this.dropProjectsOutside(foundation));
+    // The Projects picker lists only the picked foundation's projects, so picking one drops the selected projects outside it.
+    this.filterForm.controls.foundation.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((foundation) => this.dropProjectsOutside(foundation, this.response().projectOptions));
 
     // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link, or a default, unknown or legacy
     // (`12mo`) range, once the initial navigation has settled (browser-only; normal loads are untouched).
@@ -265,6 +268,18 @@ export class OrgContributionsComponent {
       )
       .subscribe((dateRange) => {
         if (dateRange !== this.filterForm.controls.dateRange.value) this.filterForm.patchValue({ dateRange });
+      });
+
+    // `?foundation=` follows a query-only navigation (back/forward, an edited link), its removal included. The guard
+    // skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => (params.get('foundation') ?? '').trim()),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((foundation) => {
+        if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
       });
   }
 
@@ -386,7 +401,11 @@ export class OrgContributionsComponent {
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });
           }
           return this.dataService.getContributions(orgUid, query).pipe(
-            tap(() => this.loadingState.set(false)),
+            // Options arrive with each project's foundation, so a deep-linked pick outside the foundation is dropped here.
+            tap((res) => {
+              this.loadingState.set(false);
+              this.dropProjectsOutside(this.filterForm.controls.foundation.value, res.projectOptions);
+            }),
             catchError(() => {
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
@@ -444,11 +463,14 @@ export class OrgContributionsComponent {
 
   private initProjectOptions(): ContributionsFilterOption[] {
     const unit = this.codeUnit();
-    return this.response().projectOptions.map((p) => ({
-      label: p.name,
-      value: p.slug,
-      sublabel: `${p.commits.toLocaleString()} ${p.commits === 1 ? unit.one : unit.other}`,
-    }));
+    const foundation = this.query().foundation;
+    return this.response()
+      .projectOptions.filter((p) => !foundation || p.foundationId === foundation)
+      .map((p) => ({
+        label: p.name,
+        value: p.slug,
+        sublabel: `${p.commits.toLocaleString()} ${p.commits === 1 ? unit.one : unit.other}`,
+      }));
   }
 
   private initEmployeeOptions(): ContributionsFilterOption[] {
@@ -541,16 +563,20 @@ export class OrgContributionsComponent {
     });
   }
 
-  /** Keeps only the selected projects the current options place in `foundation`; any foundation keeps them all. */
-  private dropProjectsOutside(foundation: string): void {
+  /**
+   * Drops the selected projects the options place under a foundation other than `foundation`. Projects the options do
+   * not list (no activity in the range for this project type, or options not loaded yet) are kept; any foundation keeps
+   * them all. Leaves the control untouched, and so fetches nothing, when nothing is dropped.
+   */
+  private dropProjectsOutside(foundation: string, options: readonly OrgContributionProjectOption[]): void {
     const projects = this.filterForm.controls.projects;
     if (!foundation || !projects.value.length) {
       return;
     }
-    const options = this.response().projectOptions;
-    const kept = projects.value.filter((value) =>
-      options.some((option) => (option.slug === value || option.projectId === value) && option.foundationId === foundation)
-    );
+    const kept = projects.value.filter((value) => {
+      const option = options.find((o) => o.slug === value || o.projectId === value);
+      return !option || option.foundationId === foundation;
+    });
     if (kept.length !== projects.value.length) {
       projects.setValue(kept);
     }
