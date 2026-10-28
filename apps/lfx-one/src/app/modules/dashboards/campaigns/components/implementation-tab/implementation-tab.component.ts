@@ -130,6 +130,7 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
@@ -1024,7 +1025,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditInterests = signal<string[]>([]);
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
-  protected readonly redditBudgetUsd = signal(500);
+  protected readonly redditBudgetUsd = signal(DEFAULT_REDDIT_BUDGET_USD);
   /**
    * Reddit campaign objective. Seeded from `DEFAULT_REDDIT_OBJECTIVE` for the reason the Meta
    * objective is seeded from upstream's: nothing has ever sent this field, so both creators have
@@ -6567,6 +6568,17 @@ export class ImplementationTabComponent implements OnInit {
     // the previous brief's pixel into the new brief's draft and create (#3484). Inside `seeding`,
     // so the reset does not emit a draft of its own.
     this.redditConversionPixelForm.reset();
+    // The other Reddit values the brief does not derive, cleared for the same reason (#4589): each
+    // is restored only from a draft, so with the draft cleared by a brief switch they would carry
+    // the previous brief's typed post, image, button, objective, goal and budget into this one.
+    // The uploaded image is left alone on purpose: it is scoped to its brief, and
+    // `redditImageAssetBlock` already holds Create with a Remove for one made for another brief.
+    this.redditPostUrl.set('');
+    this.redditImageUrl.set('');
+    this.redditCallToAction.set('');
+    this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
+    this.redditVideoGoal.set('');
+    this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,
