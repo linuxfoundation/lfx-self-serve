@@ -4794,6 +4794,25 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('free shipping');
   });
 
+  it('refuses callouts that differ only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    // `\ud800` and `\ud801` are two strings in JS, but Go's JSON decoder reads both as U+FFFD, so
+    // upstream would refuse the pair as a repeat AFTER dispatch.
+    await controller.createCampaign(buildReq(googleBody({ callouts: ['Labs\ud800', 'Labs\ud801'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('callouts');
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
+  it('forwards a callout with an unpaired surrogate as the well-formed text upstream would decode', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ callouts: [' Labs\ud800 '] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['callouts']).toEqual(['Labs\ufffd']);
+  });
+
   it.each([
     ['an absent callout list', {}],
     ['an empty callout list', { callouts: [] }],
@@ -5185,6 +5204,18 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(refusalFrom().message).toContain('more than once');
   });
 
+  it('refuses sitelink text that differs only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ sitelinks: [link('Register\ud800'), link('Register\udc00')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('sitelinks');
+    expect(refusalFrom().message).toContain('more than once');
+  });
+
   it.each([
     ['only the first description line', { description1: 'Seats are limited' }],
     ['only the second description line', { description2: 'Seats are limited' }],
@@ -5448,6 +5479,32 @@ describe('CampaignController.createCampaign cutover', () => {
     // Google serves one line per header, so the second would be dropped silently.
     await controller.createCampaign(
       buildReq(googleBody({ structuredSnippets: [snip('Brands'), snip('brands')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it('forwards snippet values with an unpaired surrogate as the well-formed text upstream would decode (#3644)', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b4', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Types', [' Talks\ud800 ', 'Labs', 'Demos'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const snippets = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets'] as { values: string[] }[];
+    expect(snippets[0].values[0]).toBe('Talks\ufffd');
+  });
+
+  it('refuses headers that differ only by an unpaired surrogate, which Go decodes to the same text (#3644)', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands\ud800'), snip('Brands\ud801')] }), { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -5779,6 +5836,37 @@ describe('CampaignController.createCampaign cutover', () => {
         ],
       },
     ]);
+  });
+
+  // `assetText` decodes as Go's JSON decoder does (#3644), so the call, promotion and price lists are
+  // judged on the same text upstream will see.
+  it('refuses promotion targets that differ only by an unpaired surrogate, which Go decodes to the same text', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ promotions: [promotion('Passes\ud800'), promotion('Passes\ud801')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('promotions');
+    expect(refusalFrom().message).toContain('already listed');
+  });
+
+  it('forwards a price row header with an unpaired surrogate as the well-formed text upstream would decode', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b3', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ prices: [priceTable({ offerings: [priceRow(' Standard\udc00 '), priceRow('Student'), priceRow('Virtual')] })] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const prices = (envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['prices'] as { offerings: { header: string }[] }[];
+    expect(prices[0].offerings[0].header).toBe('Standard\ufffd');
   });
 
   it('omits all three keys when the lists are empty, the absent-key route every earlier caller takes', async () => {

@@ -1925,6 +1925,45 @@ export function googleAdsTrimSpace(text: string): string {
 }
 
 /**
+ * `text` as Go's `encoding/json` decodes it: every unpaired UTF-16 surrogate replaced with U+FFFD.
+ *
+ * `JSON.stringify` escapes a lone surrogate as `\ud800`, and Go's decoder reads every such escape as
+ * U+FFFD. So `\ud800` and `\ud801` are two strings here and one string upstream, and a duplicate check
+ * run on the raw text would pass a list that `validateSitelinks` then refuses after dispatch (#3644).
+ * A well-formed pair is kept as it is. An index walk rather than a lookbehind regex, for the reason
+ * {@link googleAdsTrimSpace} gives; it returns `text` itself when there is nothing to replace.
+ */
+export function googleAdsWellFormed(text: string): string {
+  let out = '';
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0xd800 || code > 0xdfff) continue;
+    if (code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++;
+        continue;
+      }
+    }
+    out += `${text.slice(last, i)}\ufffd`;
+    last = i + 1;
+  }
+  return last === 0 ? text : out + text.slice(last);
+}
+
+/**
+ * An ad extension's text as upstream judges it: decoded as Go decodes it ({@link googleAdsWellFormed}),
+ * then trimmed with Go's rules ({@link googleAdsTrimSpace}). This is the one normalisation the BFF applies
+ * to sitelinks, callouts, structured snippets and the call, promotion and price extensions before their
+ * duplicate checks and before it forwards them. Applying it once to all of them means no list can
+ * disagree with upstream about which two entries are the same.
+ */
+export function googleAdsDecodedText(text: string): string {
+  return googleAdsTrimSpace(googleAdsWellFormed(text));
+}
+
+/**
  * Whether a URL fails upstream's `validateServableURL` in a way `new URL()` does not catch, so the
  * refusal is named here instead of arriving as "platform campaign creation failed". Each rule was
  * found by running both parsers over the same generated corpus; `new URL()` repairs or accepts all
