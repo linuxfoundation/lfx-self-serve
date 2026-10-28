@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  CreativeAssetQueueItemStatus,
-  CreativeAssetQueueStatusView,
   AudienceBuildMode,
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
@@ -40,6 +38,8 @@ import type {
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
+  CreativeAssetQueueItemStatus,
+  CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   KeywordActionOutcome,
