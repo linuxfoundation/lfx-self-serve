@@ -266,12 +266,8 @@
           <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
           @if (isEnded()) {
             <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
-          } @else if (closeText()) {
-            <p class="text-sm text-gray-700">
-              This is a pseudo-anonymous vote, so totals, abstentions and comments stay hidden until voting closes on {{ closeText() }}.
-            </p>
           } @else {
-            <p class="text-sm text-gray-700">This is a pseudo-anonymous vote, so totals, abstentions and comments stay hidden until voting closes.</p>
+            <p class="text-sm text-gray-700">Totals, abstentions and comments stay hidden until voting closes.</p>
           }
         </div>
       </div>

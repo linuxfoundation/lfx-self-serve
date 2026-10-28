@@ -105,6 +105,22 @@ describe('VoteDetailFactsComponent', () => {
     expect(openPopover()).toEqual(getVoteVisibilityRules('creator', true, true));
   });
 
+  it('exposes the visibility popover state on the native button', async () => {
+    render(makeVote());
+    const trigger = fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-visibility-more"] button') as HTMLButtonElement;
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it.each(['creator', 'voter'] as const)('shows pending visibility copy for %s until held results are released', (audience) => {
     fixture.componentRef.setInput('resultsHeld', true);
     render(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }), audience);

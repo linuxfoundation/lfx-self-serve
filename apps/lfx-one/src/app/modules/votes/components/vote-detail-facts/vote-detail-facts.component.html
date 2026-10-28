@@ -31,7 +31,7 @@
           [text]="true"
           size="small"
           (onClick)="visibilityPopover.toggle($event)"
-          [attr.aria-expanded]="visibilityPopover.overlayVisible"
+          [ariaExpanded]="visibilityPopover.overlayVisible"
           data-testid="vote-detail-facts-visibility-more" />
         <p-popover #visibilityPopover [style]="{ width: '320px' }" data-testid="vote-detail-facts-visibility-popover">
           <ul class="flex flex-col gap-2 text-sm text-gray-600">
