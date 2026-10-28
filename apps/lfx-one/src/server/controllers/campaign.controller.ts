@@ -57,6 +57,8 @@ import type {
   GoogleAdsAccountOption,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeImageRef,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   MicrosoftKeywordsWindow,
@@ -335,19 +337,28 @@ function googleAdsClockTime(hour: number, minute: number): string {
  * exists. `display.longHeadline` is the live example: a **scalar** where Performance Max's
  * `longHeadlines` is a list.
  *
+ * `images` is the subset of `lists` whose entries may also be a stored-asset ref
+ * (`{ imageAssetId }`) — the fields the catalogue gives an image shape. `youtubeVideoIds` is a list
+ * but not an image slot, so an object there is dropped as before.
+ *
  * `video` has no entry on purpose — see `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either:
  * its copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
  */
-const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; scalars: readonly string[] }> = Object.fromEntries(
-  GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
-    channel,
-    {
-      key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
-      lists: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'list').map((f) => f.control),
-      scalars: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'text').map((f) => f.control),
-    },
-  ])
-);
+const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; images: readonly string[]; scalars: readonly string[] }> =
+  Object.fromEntries(
+    GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => {
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      return [
+        channel,
+        {
+          key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+          lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
+          images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
+          scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
+        },
+      ];
+    })
+  );
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -796,6 +807,20 @@ export class CampaignController {
               service: 'campaign_controller',
             }
           )
+        );
+        return;
+      }
+
+      // A stored Google image is refused, not dropped, on the same terms as the Meta one below: the
+      // normalizer would otherwise forward it to a service that ignores it, or drop it, and either
+      // way the campaign would launch without the image the operator picked.
+      const unservedGoogleAssetField = this.unservedGoogleAssetField(body);
+      if (unservedGoogleAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedGoogleAssetField, 'uploaded Google images are not enabled on this deployment; supply an image URL instead', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
         );
         return;
       }
@@ -2461,13 +2486,8 @@ export class CampaignController {
     // ANY capability admits an upload: the stored library is one library, and a deployment that
     // can use an image on any platform is reason enough to let it in. Refusing unless Reddit's
     // flag were on would mean a Google-only deployment could read and delete the library it is not
-    // allowed to add to.
-    //
-    // The Google arm runs AHEAD of the field that will consume it: at this commit the Google
-    // creative interfaces carry image URLs only, so an asset uploaded on GOOGLE_ASSETS alone is
-    // stored, listed, planned and deletable but cannot yet be named in a Google create. That is
-    // the intended order — the library has to exist before the asset-id field can reference it —
-    // and it costs an operator nothing worse than a stored image they can prune.
+    // allowed to add to. On GOOGLE_ASSETS the upload is what the Google image slots name as
+    // `{ imageAssetId }` in a create.
     if (
       !canUseRedditCreativeAssets() &&
       !canUseGoogleCreativeAssets() &&
@@ -4674,6 +4694,31 @@ export class CampaignController {
     return index === -1 ? null : `metaConfig.variants[${index}].imageAssetId`;
   }
 
+  /**
+   * The first stored-image entry in a Google creative image field when this deployment cannot
+   * honour it, as `<creative key>.<field>[i].imageAssetId`, else `null`.
+   *
+   * Every channel's creative key is scanned, not only the selected channel's: a stored image the
+   * request carries anywhere is one the operator chose, and naming it is cheaper than reasoning about
+   * which key the normalizer would have read. `in`, as for the Meta field: an explicit
+   * `imageAssetId: null` is still the field.
+   */
+  private unservedGoogleAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseGoogleCreativeAssets()) return null;
+    const raw = body as unknown as Record<string, unknown>;
+    for (const spec of Object.values(GOOGLE_CREATIVE_FIELDS)) {
+      const creative = raw?.[spec.key];
+      if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) continue;
+      for (const field of spec.images) {
+        const value = (creative as Record<string, unknown>)[field];
+        if (!Array.isArray(value)) continue;
+        const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
+        if (index !== -1) return `${spec.key}.${field}[${index}].imageAssetId`;
+      }
+    }
+    return null;
+  }
+
   /** `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId` this deployment cannot honour. */
   private unservedLinkedInAssetField(body: CampaignCreateRequest): string | null {
     if (canUseLinkedInCreativeAssets()) return null;
@@ -5681,7 +5726,12 @@ export class CampaignController {
           if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
             return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
           }
-          const long = value.find((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          // A stored-image ref is an object entry, so its id is measured here too: the normalizer
+          // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
+          const long = value.find((entry) => {
+            const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
+            return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          });
           if (long !== undefined) {
             return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
           }
@@ -5880,7 +5930,7 @@ export class CampaignController {
     for (const field of spec.lists) {
       const value = raw[field];
       if (!Array.isArray(value)) continue;
-      const clean = value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+      const clean = spec.images.includes(field) ? this.googleImageRefList(value) : this.googleStringList(value);
       if (clean.length > 0) creative[field] = clean;
     }
     for (const field of spec.scalars) {
@@ -5891,6 +5941,43 @@ export class CampaignController {
     }
 
     return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
+  }
+
+  /** A creative list's non-blank strings, trimmed, in order. */
+  private googleStringList(value: unknown[]): string[] {
+    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+  }
+
+  /**
+   * An image slot's entries as campaign-service's `googleAdsImageRef` decodes them: a URL stays a
+   * bare string, and a stored asset is forwarded as `{ imageAssetId }` with the id trimmed — the
+   * object form, never a bare id, because upstream finds an asset only under that key and would
+   * fetch a bare id as a URL.
+   *
+   * Shape-only like the string lists: a blank id, or an object naming no id, is dropped rather than
+   * refused, and a `url` key on the object is never forwarded — this application sends a URL as a
+   * string. Whether the asset exists, belongs to the brief and fits the slot is upstream's preflight
+   * to decide, by name, before the budget mutate. `createCampaign` has already refused every ref
+   * when `canUseGoogleCreativeAssets()` is false, so reaching here means the deployment honours them.
+   */
+  private googleImageRefList(value: unknown[]): GoogleCreativeImageRef[] {
+    const clean: GoogleCreativeImageRef[] = [];
+    for (const entry of value) {
+      if (typeof entry === 'string') {
+        if (entry.trim() !== '') clean.push(entry.trim());
+        continue;
+      }
+      const id = this.imageAssetIdOf(entry);
+      if (id !== null && id.trim() !== '') clean.push({ imageAssetId: id.trim() });
+    }
+    return clean;
+  }
+
+  /** The `imageAssetId` string of an object entry, or `null` for anything else. */
+  private imageAssetIdOf(entry: unknown): string | null {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const id = (entry as Record<string, unknown>)['imageAssetId'];
+    return typeof id === 'string' ? id : null;
   }
 
   /**

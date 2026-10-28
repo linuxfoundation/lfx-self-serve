@@ -2024,6 +2024,17 @@
                     error
                   }}</span>
                 }
+                <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
+                     and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
+                @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
+                  <lfx-google-creative-image-library
+                    [slot]="slot"
+                    [accept]="creativeAssetAccept"
+                    (pick)="onGoogleImagePick(slot.key, $event)"
+                    (remove)="onGoogleImageRemove(slot.key, $event)"
+                    (upload)="onGoogleImageUpload(slot.key, $event)"
+                    (cancelUpload)="onGoogleImageUploadCancel()" />
+                }
               </div>
             }
           </div>
@@ -2050,6 +2061,47 @@
           amber-700 (#BB4D00) is 5.0:1. The red-600 error above already clears it at 4.8:1.
         -->
         <p class="text-xs text-amber-700" data-testid="implementation-google-creative-empty-warning">{{ googleCreativeEmptyWarning() }}</p>
+      }
+
+      <!-- A stored Google image the request cannot carry, or that its slot would refuse, or a failed
+           upload; see `initGoogleImageAssetBlock`. Outside the sections, because a withheld capability
+           takes the sections down while the images they held still block. -->
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-image-asset-block-live">
+        {{ googleImageAssetBlockMessage() }}
+      </div>
+      @if (googleImageAssetBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-image-asset-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-google-image-asset-block-retry" />
+            }
+            <lfx-button
+              [label]="block.kind === 'uploadFailed' ? 'Remove upload' : 'Remove images'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onGoogleImageBlockRemove()"
+              data-testid="implementation-google-image-asset-block-remove" />
+          </div>
+        </div>
       }
 
       <!-- LinkedIn Ads Section -->

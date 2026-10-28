@@ -26,7 +26,7 @@ import {
   AudiencePreviewCountRequest,
   AudienceQaResult,
   AudienceQaRunRequest,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -60,6 +60,7 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  CreativeAssetLibrary,
   CreativeAssetPlan,
   CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
@@ -318,8 +319,8 @@ export class CampaignService {
   }
 
   /**
-   * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn or Microsoft create
-   * names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn,
+   * Google or Microsoft create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
    * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
    * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
    * `createCampaign`, because they are path segments upstream.
@@ -368,6 +369,25 @@ export class CampaignService {
   public cancelCreativeAssetUpload(owner: CreativeAssetUploadOwner): void {
     this.creativeAssetUploads.get(owner)?.cancel.next();
     this.creativeAssetUploads.delete(owner);
+  }
+
+  /**
+   * The brief's stored creative assets, each with the pixel dimensions recorded at upload (absent
+   * for an asset stored before they were), plus the library's quota.
+   *
+   * Logged and rethrown, never defaulted, for the plan's reason below: an empty library is an
+   * answer ("nothing stored"), and a failed read rendered as one would tell the Google image slots
+   * that a held image had been deleted.
+   */
+  public listCreativeAssets(projectSlug: string, briefId: string): Observable<CreativeAssetLibrary> {
+    return this.http
+      .get<CreativeAssetLibrary>('/api/campaigns/brief/creative-assets', { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) })
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to load the creative asset library:', error);
+          return throwError(() => error);
+        })
+      );
   }
 
   /**
@@ -806,10 +826,12 @@ export class CampaignService {
    * and event-specific. Nothing here is pre-applied — the operator chooses, because a wrongly
    * auto-applied exclusion silently shrinks a send.
    *
-   * Both `brandShort` and `eventName` are optional: the portfolio-wide lists are found by fixed
-   * name, so the answer is already useful before discovery has identified the event.
+   * Every filter is optional: the portfolio-wide lists are found by fixed name, so the answer is
+   * already useful before discovery has identified the event. `registrantsEvent` (the edition, with
+   * its year) adds the current-registrants row. `standardList` is the project's standing standard
+   * suppression list, present only once it exists.
    */
-  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = ''): Observable<AudienceSuppressionList[]> {
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionListsResult> {
     let params = new HttpParams().set('project', projectSlug);
     if (brandShort !== '') {
       params = params.set('brandShort', brandShort);
@@ -817,7 +839,10 @@ export class CampaignService {
     if (eventName !== '') {
       params = params.set('eventName', eventName);
     }
-    return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
+    if (registrantsEvent !== '') {
+      params = params.set('registrantsEvent', registrantsEvent);
+    }
+    return this.http.get<AudienceSuppressionListsResult>('/api/campaigns/audience-builder/suppression-lists', { params });
   }
 
   /**

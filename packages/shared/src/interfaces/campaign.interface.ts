@@ -108,8 +108,10 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 /**
  * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
  * upload per owner, so a pick on one platform never cancels or takes over another's.
+ * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
+ * upload still running in another, as a second Meta pick replaces the first.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'microsoft';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -1180,6 +1182,24 @@ export interface CampaignImplementationDraft {
    */
   googleCreatives?: Record<string, Record<string, string>>;
   /**
+   * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
+   * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
+   * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
+   * rather than sends another brief's asset.
+   *
+   * With them, an upload still in flight (its file name, brief and slot) and a failed upload's
+   * reason, on the Meta image fields' terms: a tab switch neither loses the images nor lifts the
+   * block a failure raises. Round-trips regardless of `googleAssetUploadEnabled`, and restored only
+   * when present.
+   */
+  googleImageAssets?: Record<string, GoogleCreativeHeldImage[]>;
+  googleImageUploadPendingName?: string;
+  googleImageUploadPendingBriefId?: string;
+  googleImageUploadPendingSlot?: string;
+  googleImageUploadFailedMessage?: string;
+  googleImageUploadFailedBriefId?: string;
+  googleImageUploadFailedSlot?: string;
+  /**
    * Google's own geo targets, separate from {@link countryCode} rather than a widening of it.
    *
    * Empty means "use the event country", which is what this path did before the list existed — so
@@ -2135,6 +2155,102 @@ export interface GoogleCreativeFieldSpec {
   requiredOnce?: boolean;
   /** Anything true of this field that its bounds do not say, shown beneath the control. */
   hint?: string;
+  /**
+   * Set on an IMAGE slot, and only there: the shape Google requires of every image in it. Its
+   * presence is also what marks the list as one whose entries may name a stored asset
+   * ({@link GoogleCreativeImageRef}) rather than only a URL — `youtubeVideoIds` is a list too, and
+   * an asset ref there would be refused upstream.
+   */
+  image?: GoogleCreativeImageShape;
+}
+
+/**
+ * The shape one Google image slot requires: a target aspect ratio, held to
+ * `GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE`, and a floor on each side with no ceiling.
+ *
+ * The numbers are campaign-service's own (`demandGenImageSlots`, `performanceMaxImageSlots` and
+ * `displayImageSlots` in `internal/platform/googleads/`), which publish them as the slot catalogue
+ * `get-asset-plan` classifies against. They are restated here rather than read from the plan
+ * because the plan answers a different question: it PLACES only as many assets as a slot's minimum
+ * (one, for an optional slot), so an image that fits but ranks below another is reported unused,
+ * and a picker built on it could never offer the operator their second-best fit.
+ */
+export interface GoogleCreativeImageShape {
+  ratioW: number;
+  ratioH: number;
+  minWidth: number;
+  minHeight: number;
+}
+
+/**
+ * One stored creative asset named in a Google image slot, in place of a URL — campaign-service's
+ * `googleAdsImageRef` (`internal/dispatch/googleads_image_ref.go`).
+ *
+ * An OBJECT and not a bare id, and in the SAME array as the URLs rather than a parallel
+ * `*AssetIds` list, because that is the wire: upstream decodes each slot entry as either a bare
+ * string (a URL, today's shape) or an object, and finds an asset reference only under the
+ * `imageAssetId` key — the key its dangling-reference guard scans a stored config for. A bare id
+ * would be fetched as a URL and refused.
+ */
+export interface GoogleCreativeImageAssetRef {
+  imageAssetId: string;
+}
+
+/** One entry in a Google image slot: a hosted image URL, or a stored asset of the brief's. */
+export type GoogleCreativeImageRef = string | GoogleCreativeImageAssetRef;
+
+/**
+ * One stored image the Implement tab holds in one Google image slot.
+ *
+ * `briefId` is the brief the asset was stored for, kept per image because an asset belongs to one
+ * brief's library and campaign-service refuses it under another ("does not exist for this brief").
+ * `name` is the uploaded file's name, or `''` for an image picked from the library, which records
+ * no file name — the label then falls back to the library's own description of it.
+ */
+export interface GoogleCreativeHeldImage {
+  id: string;
+  name: string;
+  briefId: string;
+}
+
+/** One held image as a slot renders it, with the reason it cannot be sent when there is one. */
+export interface GoogleCreativeHeldImageView {
+  id: string;
+  label: string;
+  problem: string;
+}
+
+/** One library image offered for a slot — already narrowed to the images that fit it. */
+export interface GoogleCreativeImageOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * One Google image slot's library controls, assembled by the Implement tab for
+ * `lfx-google-creative-image-library`. `key` is `<request key>.<control>`, the key the held images
+ * and the draft are stored under.
+ */
+export interface GoogleCreativeImageSlotView {
+  key: string;
+  label: string;
+  /** The shape as a sentence an operator can take to a designer. */
+  requirement: string;
+  held: GoogleCreativeHeldImageView[];
+  options: GoogleCreativeImageOption[];
+  /** Why no option is offered, or `''` when some are. */
+  optionsNote: string;
+  /** False once the slot's URLs and held images reach its catalogued `max`. */
+  canAdd: boolean;
+  uploading: boolean;
+  /** A failed upload into this slot, or `''`. */
+  error: string;
+}
+
+/** The Implement tab's read of the brief's creative-asset library, for the Google image slots. */
+export interface CreativeAssetLibraryState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  assets: StoredCreativeAsset[];
 }
 
 /**
@@ -2214,10 +2330,13 @@ export interface GoogleBiddingOption {
  * The Demand Gen ad's creative, typed to `googleAdsConfig.demandGenCreative`
  * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenCreativeConfig`).
  *
- * Images are URLs the caller already hosts, matching Reddit's and Meta's `imageUrl`. Google is the
- * one platform that will not fetch a URL itself, so campaign-service downloads each one and uploads
- * the bytes — which is why a URL that 404s fails the create rather than producing an ad with a
- * missing image.
+ * Each image is a URL the caller already hosts, or a stored asset of the brief's named by
+ * {@link GoogleCreativeImageAssetRef} in the same array. Google is the one platform that will not
+ * fetch a URL itself, so campaign-service downloads each URL and uploads the bytes — which is why a
+ * URL that 404s fails the create rather than producing an ad with a missing image. A stored asset
+ * skips the download: its bytes are read from the library and POSTed to `assets:mutate`, after the
+ * same size and shape checks a fetched image gets. Asset refs are sent only while
+ * `CampaignListResult.googleAssetUploadEnabled` is true; the BFF refuses them otherwise.
  *
  * Counts and widths are Demand Gen's own and are NOT the Search ad's. See
  * `GOOGLE_CREATIVE_FIELD_SPECS['demand-gen']`.
@@ -2228,12 +2347,12 @@ export interface GoogleDemandGenCreative {
    * the upstream preflight. At least one of `marketingImages` or `squareMarketingImages` is
    * required; the four share a COMBINED cap.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  portraitImages?: string[];
-  tallPortraitImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
+  tallPortraitImages?: GoogleCreativeImageRef[];
   /** REQUIRED upstream: 1-5 square images. A Demand Gen ad with no logo is refused. */
-  logoImages?: string[];
+  logoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   descriptions?: string[];
   /** REQUIRED by Google when a creative is supplied. */
@@ -2257,14 +2376,14 @@ export interface GooglePerformanceMaxCreative {
   /**
    * `marketingImages` (1.91:1) and `squareMarketingImages` (1:1) are BOTH required here — unlike
    * Demand Gen, where either satisfies the other. `portraitImages` (4:5) is optional, and the three
-   * share a combined cap.
+   * share a combined cap. Every image list here, as on Demand Gen, carries URLs and asset refs alike.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  portraitImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
   /** `logoImages` (1:1) is REQUIRED, 1-5. `landscapeLogoImages` (4:1) is optional. */
-  logoImages?: string[];
-  landscapeLogoImages?: string[];
+  logoImages?: GoogleCreativeImageRef[];
+  landscapeLogoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   /** A DISTINCT asset field type (`LONG_HEADLINE`), not a long `headlines` entry. 1-5 required. */
   longHeadlines?: string[];
@@ -2293,12 +2412,12 @@ export interface GoogleDisplayCreative {
    * The two marketing arrays are reciprocally required — Google requires each when the other is
    * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
    * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
-   * slots'.
+   * slots'. Each list carries URLs and asset refs alike, as on the siblings.
    */
-  marketingImages?: string[];
-  squareMarketingImages?: string[];
-  logoImages?: string[];
-  squareLogoImages?: string[];
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  logoImages?: GoogleCreativeImageRef[];
+  squareLogoImages?: GoogleCreativeImageRef[];
   headlines?: string[];
   /** Scalar. See the interface docblock. */
   longHeadline?: string;
@@ -4948,16 +5067,16 @@ export interface CampaignListResult {
    * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
    * `assets:mutate`, so no URL signing is involved and none is asserted
    * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
-   * that the deployed campaign-service resolves Google creative asset ids at all — an older one
-   * ignores them and dispatches a campaign with no images, reporting success. The legacy creator
-   * never reads them either, hence the cutover half.
+   * that the deployed campaign-service resolves Google creative asset ids, which every release from
+   * v1.0.21 does — an older one types the image arrays as strings and cannot decode an asset entry,
+   * so its Google create fails. The legacy creator never reads them at all, hence the cutover half.
    *
-   * NOTHING IN THE CLIENT READS THIS YET. It is served ahead of the Google creative asset-id field:
-   * at this commit `GoogleDemandGenCreative`, `GooglePerformanceMaxCreative` and
-   * `GoogleDisplayCreative` carry image URLs only, with no asset-id key for a stored image to go
-   * in, so the library control it gates does not exist. The Reddit sibling's client model — `boolean | null` on the component, `null` for
-   * unanswered, withholding the control — is the shape to mirror when that field lands; until then
-   * the Google section offers the pasted image URL and nothing else, flag on or off.
+   * The Implement tab reads it as `boolean | null`, `null` for unanswered, like the Reddit and Meta
+   * siblings: only an explicit `true` offers the library controls in each Google image slot — upload
+   * into the brief's library, or pick a stored image that fits — and sends the picks as
+   * {@link GoogleCreativeImageAssetRef} entries beside the pasted URLs. Anything else withholds the
+   * controls and blocks Create while a stored image is still held, rather than dropping it. The
+   * pasted image URLs are offered either way.
    */
   googleAssetUploadEnabled: boolean;
   /**
@@ -5260,6 +5379,17 @@ export interface CampaignRedditImageAssetBlock {
  */
 export interface CampaignMetaImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a stored image held in a Google image slot that the request cannot
+ * carry, or that campaign-service would refuse. The first six kinds mean what they do on
+ * `CampaignMetaImageAssetBlock`. `missing`: the asset is no longer in the brief's library (it was
+ * deleted). `misfit`: its recorded dimensions do not meet the slot's shape.
+ */
+export interface CampaignGoogleImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed' | 'missing' | 'misfit';
   message: string;
 }
 
@@ -5959,14 +6089,14 @@ export interface AudienceCardBucket {
 }
 
 /**
- * How a suppression list was found, which is also its priority order in the UI.
+ * How a suppression list was found, which is also its order in the UI.
  *
- * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
- * over from a prior edition already bundles that event's current-registrant and unsubscribe
- * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
- * never assumed.
+ * `current_registrants` comes first (the edition's own registrants are the exclusion a
+ * registration push most needs), then `event_specific` (carried over from a prior edition),
+ * `brand`, and `standard`: the portfolio-wide hygiene lists, shown as one entry because they are
+ * applied through the project's one shared standard suppression list.
  */
-export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
 export interface AudienceSuppressionList {
   /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
@@ -5977,6 +6107,21 @@ export interface AudienceSuppressionList {
   size?: number;
   category: AudienceSuppressionCategory;
   hubspotUrl: string;
+  /**
+   * The list does not exist yet: attach or compose creates it by name when the row is applied.
+   * Only the `current_registrants` row sets it, and such a row has an empty `listId`.
+   */
+  willCreate?: boolean;
+}
+
+/**
+ * The suppression rows for a scope, and the project's standing standard suppression list when it
+ * already exists. `standardList` is absent until the first attach or compose that applies every
+ * resolved standard row creates it, so its absence is how the tab knows that write will CREATE it.
+ */
+export interface AudienceSuppressionListsResult {
+  lists: AudienceSuppressionList[];
+  standardList?: AudienceComposedList;
 }
 
 /**
@@ -6075,6 +6220,8 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /** Edition (event name with year) whose current registrants the master also excludes. */
+  currentRegistrantsEvent?: string;
   /**
    * Attach the composed master to this brief, as its built send audience.
    *
@@ -6119,20 +6266,26 @@ export interface AudienceComposeUnattachedEvent {
 /**
  * Result of composing a master list.
  *
- * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
- * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
- * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ * `suppression` is the project's standing standard suppression list, which the master excludes
+ * directly beside every other selected suppression. It is reused across composes, never created
+ * per compose, and absent unless every resolved standard list was selected.
  *
- * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
- * failure (suppression created, master failed) is reported as an error that still carries
- * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
- * offer a bare retry on failure.
+ * This operation is NOT idempotent: the master is a real HubSpot create. An unconfirmed master
+ * create is reported as a partial error carrying the master's name. (Older deployments could
+ * also report a combined suppression list created before a failed master.) Do not offer a bare
+ * retry on failure.
  */
 export interface AudienceComposeMasterResult {
   master: AudienceComposedList;
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * The suppression list ids the master actually excludes: the standing list first (in place of
+   * the standard rows), then the other exclusions, then the edition's current-registrants list.
+   * Not the ids sent. Absent from an upstream that predates it, so every reader needs a fallback.
+   */
+  suppressionListIds?: string[];
   /**
    * Whether the master was recorded as the brief's built send audience.
    *
@@ -6222,6 +6375,11 @@ export interface AudienceAttachExistingRequestBase {
   briefId: string;
   /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
   suppressionListIds: string[];
+  /**
+   * Edition (event name with year) whose current registrants the send also suppresses, through a
+   * `<edition> - Current Registrants` list campaign-service finds or creates by name.
+   */
+  currentRegistrantsEvent?: string;
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -6230,6 +6388,11 @@ export interface AudienceAttachExistingRequestBase {
 export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
+  /**
+   * The project's standing standard suppression list, reused across audiences and recorded in
+   * place of the standard lists. Absent unless every resolved standard list was sent.
+   */
+  standardSuppression?: AudienceComposedList;
   audience: CampaignAudience;
 }
 
@@ -6458,8 +6621,46 @@ export interface AudienceCustomRequest {
   name?: string;
 }
 
-/** How the Audience tab builds the send audience — the legacy builder's three modes. */
-export type AudienceBuildMode = 'event' | 'custom' | 'reuse';
+/**
+ * What an attach or compose expected to create, captured at dispatch so its result can say what
+ * actually happened: whether the standing standard list existed, and the name of the
+ * current-registrants list it was asked to create ('' when none).
+ */
+export interface AudienceWriteDispatchContext {
+  standingExisted: boolean;
+  registrantsName: string;
+}
+
+/**
+ * A 409 from compose or attach: a HubSpot list already holds the name of the standing standard
+ * suppression list or of the edition's current-registrants list. `message` is upstream's, naming
+ * the list and its id; `fromCompose` says whether the compose latch waits on the operator's fix.
+ */
+export interface AudienceListNameConflict {
+  message: string;
+  fromCompose: boolean;
+}
+
+/**
+ * The project's standing standard list and the standard rows it stands for, so a past send that
+ * excluded the standing list is compared with a recorded audience in the same terms.
+ */
+export interface AudienceStandingExpansion {
+  listId: string;
+  rowIds: readonly string[];
+}
+
+/** An action that starts the Audience tab over and so waits for the operator to confirm it. */
+export type AudienceStartOverAction = 'discover' | 'draft';
+
+/** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
+export interface AudienceStandardSuppressionToggle {
+  keys: readonly string[];
+  selected: boolean;
+}
+
+/** How the Audience tab sets the send audience: build a new list, or use existing lists. */
+export type AudienceBuildMode = 'build' | 'reuse';
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {
