@@ -4701,6 +4701,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
@@ -5034,6 +5035,37 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, microsoft: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, microsoft: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, microsoft: true, others: false }, false],
+  ])('reports the Microsoft upload capability from the cutover and the Microsoft-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftAssets) return flags.microsoft;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -5071,6 +5103,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
