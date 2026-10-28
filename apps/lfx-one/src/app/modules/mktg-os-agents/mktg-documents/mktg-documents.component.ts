@@ -155,7 +155,7 @@ export class MktgDocumentsComponent {
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
-  protected readonly questionRunIds = computed(() =>
+  protected readonly questionRunIds = computed<Record<string, string | undefined>>(() =>
     Object.fromEntries(
       this.runs()
         .filter(
