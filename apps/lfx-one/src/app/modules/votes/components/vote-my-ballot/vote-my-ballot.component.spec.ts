@@ -115,4 +115,40 @@ describe('VoteMyBallotComponent (#4331)', () => {
     expect(text('vote-my-ballot-comment-p-1')).not.toContain('No comment.');
     expect(text('vote-my-ballot-comment-p-2')).toContain('No comment.');
   });
+
+  it.each([
+    { label: 'omitted', prompts: undefined },
+    { label: 'empty', prompts: [] },
+  ])('preserves saved comments when prompt metadata is $label', ({ prompts }) => {
+    render(
+      { ...VOTE, poll_comment_prompts: prompts },
+      ballot({ comment_responses: [{ prompt_id: 'saved-prompt', comment_text: 'Keep this recorded comment' }] })
+    );
+
+    expect(text('vote-my-ballot-comment-saved-prompt')).toContain('Comment');
+    expect(text('vote-my-ballot-comment-saved-prompt')).toContain('Keep this recorded comment');
+    expect(VOTE.poll_comment_prompts).toHaveLength(2);
+  });
+
+  it('keeps known labels and appends each missing saved prompt once without inventing blank comments', () => {
+    render(
+      VOTE,
+      ballot({
+        comment_responses: [
+          { prompt_id: 'p-1', comment_text: 'Known response' },
+          { prompt_id: 'missing-prompt', comment_text: 'Older response' },
+          { prompt_id: 'missing-prompt', comment_text: 'Latest response' },
+          { prompt_id: 'blank-prompt', comment_text: '  ' },
+        ],
+      })
+    );
+
+    expect(text('vote-my-ballot-comment-p-1')).toContain('Why?');
+    expect(text('vote-my-ballot-comment-p-1')).toContain('Known response');
+    expect(text('vote-my-ballot-comment-missing-prompt')).toContain('Comment');
+    expect(text('vote-my-ballot-comment-missing-prompt')).toContain('Latest response');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-my-ballot-comment-missing-prompt"]')).toHaveLength(1);
+    expect(text('vote-my-ballot-comment-blank-prompt')).toBeUndefined();
+    expect(VOTE.poll_comment_prompts).toHaveLength(2);
+  });
 });

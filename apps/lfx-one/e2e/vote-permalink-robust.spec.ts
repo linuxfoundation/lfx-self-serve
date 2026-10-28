@@ -83,6 +83,8 @@ test.describe('Vote permalink structure (#3659)', () => {
     await expect(page.getByTestId('votes-row-action-menu')).toBeAttached();
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(page).not.toHaveURL(new RegExp(`/votes/${VOTE_UID}`));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('vote-cast-drawer-header')).toHaveCount(0);
   });
 
   test('preserves skeleton, error, retry and view-only panel test IDs on the vote page', async ({ page }) => {

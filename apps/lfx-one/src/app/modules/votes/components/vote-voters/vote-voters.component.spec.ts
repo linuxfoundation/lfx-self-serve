@@ -468,6 +468,31 @@ describe('VoteVotersComponent', () => {
 
     const data = open.mock.calls[0][1].data as VoteBallotDialogData;
     expect(data.vote.poll_comment_prompts).toEqual([prompt]);
+    expect(data.commentPrompts?.()).toEqual([prompt]);
+  });
+
+  it.each([
+    { label: 'omitted', prompts: undefined },
+    { label: 'empty', prompts: [] },
+  ])('keeps a linked ballot reactive when its prompts are $label and results arrive after voters', async ({ prompts }) => {
+    const { fixture, open } = await mount({
+      vote: { ...VOTE, poll_comment_prompts: prompts },
+      initialBallotUid: 'b-avery',
+    });
+    current = fixture;
+    expect(open).toHaveBeenCalledTimes(1);
+    const data = open.mock.calls[0][1].data as VoteBallotDialogData;
+    expect(data.commentPrompts?.()).toEqual([]);
+
+    const prompt = { prompt_id: 'late-prompt', prompt: 'Recovered after voters loaded' };
+    fixture.componentRef.setInput('commentPrompts', [prompt]);
+    await settle(fixture);
+
+    expect(data.commentPrompts?.()).toEqual([prompt]);
+    expect(open).toHaveBeenCalledTimes(1);
+    fixture.componentRef.setInput('vote', { ...VOTE, uid: 'another-vote' });
+    await settle(fixture);
+    expect(data.commentPrompts?.()).toEqual([]);
   });
 
   it('opens the linked ballot once after the list loads', async () => {

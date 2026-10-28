@@ -35,7 +35,7 @@ const PROJECT_NAME = 'Cast Drawer E2E Project';
 const VOTE_UID = 'v0000000-0000-0000-0000-00000000c501';
 const VOTE_NAME = 'Steering Committee Ratification';
 
-const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
+const AUTH_CREDS_PRESENT = !!process.env['TEST_USERNAME'] && !!process.env['TEST_PASSWORD'];
 
 function skipWhenAuthMissing(): void {
   if (!AUTH_CREDS_PRESENT) {

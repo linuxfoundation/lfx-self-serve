@@ -518,6 +518,21 @@ export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormVa
   return nonBlank.length > 0 ? nonBlank : undefined;
 }
 
+/**
+ * Keeps recorded ballot comments visible when current prompt metadata is incomplete.
+ * Known prompts retain their labels and order; saved nonblank responses add missing ids once.
+ */
+export function buildBallotCommentPrompts(prompts: PollCommentPrompt[] | undefined, responses: CommentResponseInput[]): PollCommentPrompt[] {
+  const resolved = [...(prompts ?? [])];
+  const knownIds = new Set(resolved.map((prompt) => prompt.prompt_id));
+  for (const response of responses) {
+    if (!response.comment_text?.trim() || knownIds.has(response.prompt_id)) continue;
+    resolved.push({ prompt_id: response.prompt_id, prompt: 'Comment' });
+    knownIds.add(response.prompt_id);
+  }
+  return resolved;
+}
+
 /** Reconciles a ballot comment form against the vote's prompts, keyed by prompt_id.
  *  Uses { emitEvent: false } — callers bump their form-version signal after calling. */
 export function reconcileCommentFormControls(commentForm: FormGroup, prompts: PollCommentPrompt[]): void {

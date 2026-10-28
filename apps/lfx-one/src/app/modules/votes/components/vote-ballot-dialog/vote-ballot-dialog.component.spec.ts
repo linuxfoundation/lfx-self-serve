@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { PollStatus, PollType, VoteVoterStatus } from '@lfx-one/shared/enums';
-import { Vote, VoteBallotDialogData, VoteVoter } from '@lfx-one/shared/interfaces';
+import { PollCommentPrompt, Vote, VoteBallotDialogData, VoteVoter } from '@lfx-one/shared/interfaces';
 import { buildVoteVoterRowView } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -42,10 +43,10 @@ function voter(overrides: Partial<VoteVoter> = {}): VoteVoter {
   };
 }
 
-function mount(vote: Vote, voters: VoteVoter[], index = 0) {
+function mount(vote: Vote, voters: VoteVoter[], index = 0, commentPrompts?: () => PollCommentPrompt[]) {
   TestBed.resetTestingModule();
   const close = vi.fn();
-  const data: VoteBallotDialogData = { vote, ballots: voters.map((entry) => buildVoteVoterRowView(vote, entry)), index };
+  const data: VoteBallotDialogData = { vote, ballots: voters.map((entry) => buildVoteVoterRowView(vote, entry)), index, commentPrompts };
 
   TestBed.configureTestingModule({
     imports: [VoteBallotDialogComponent],
@@ -173,6 +174,30 @@ describe('VoteBallotDialogComponent', () => {
     component['next']();
     fixture.detectChanges();
     expect(byTestId(fixture, 'vote-ballot-dialog-no-comment-p-1')!.textContent).toContain('No comment.');
+  });
+
+  it.each([
+    { label: 'omitted', prompts: undefined },
+    { label: 'empty', prompts: [] },
+  ])('renders comments recovered after the dialog opens with $label prompt metadata', ({ prompts }) => {
+    const recovered = signal<PollCommentPrompt[]>([]);
+    const { fixture } = mount(
+      { ...BASE_VOTE, poll_comment_prompts: prompts },
+      [voter({ comment_responses: [{ prompt_id: 'p-late', comment_text: 'A saved comment loaded before its prompt' }] })],
+      0,
+      recovered
+    );
+    current = fixture;
+    expect(byTestId(fixture, 'vote-ballot-dialog-comments')).toBeNull();
+
+    recovered.set([{ prompt_id: 'p-late', prompt: 'Recovered question' }]);
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'vote-ballot-dialog-comments')?.textContent).toContain('Recovered question');
+    expect(byTestId(fixture, 'vote-ballot-dialog-comment-p-late')?.textContent).toContain('A saved comment loaded before its prompt');
+    recovered.set([]);
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'vote-ballot-dialog-comments')).toBeNull();
   });
 
   it('keeps missing and blank comments empty, including a prompt whose id matches a prototype key', () => {

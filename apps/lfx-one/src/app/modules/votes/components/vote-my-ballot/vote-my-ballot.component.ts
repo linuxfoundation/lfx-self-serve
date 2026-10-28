@@ -3,7 +3,7 @@
 
 import { Component, computed, input, Signal } from '@angular/core';
 import { MyVoteBallot, PollCommentPrompt, Vote, VoteBallotChoiceView, VoteBallotQuestionView } from '@lfx-one/shared/interfaces';
-import { buildVoteBallotQuestions } from '@lfx-one/shared/utils';
+import { buildBallotCommentPrompts, buildVoteBallotQuestions } from '@lfx-one/shared/utils';
 
 /**
  * Read-only view of the viewer's own current ballot on the vote page (#4331).
@@ -22,7 +22,9 @@ export class VoteMyBallotComponent {
   // === Computed Signals ===
   protected readonly questions: Signal<VoteBallotQuestionView[]> = computed(() => buildVoteBallotQuestions(this.vote(), this.ballot()));
   protected readonly selectedChoicesByQuestion: Signal<Record<string, VoteBallotChoiceView[]>> = this.initSelectedChoicesByQuestion();
-  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote().poll_comment_prompts ?? []);
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() =>
+    buildBallotCommentPrompts(this.vote().poll_comment_prompts, this.ballot().comment_responses)
+  );
   protected readonly commentsByPrompt: Signal<Record<string, string | null>> = this.initCommentsByPrompt();
 
   // === Private Initializers ===
