@@ -1879,11 +1879,8 @@ describe('MktgDocumentViewComponent', () => {
       await render('/documents/brand-kit/living?run=' + 'b'.repeat(64) + '&type=drop&profile=drop');
       expect(query('mktg-document-view-run')).not.toBeNull();
       expect(query('mktg-document-view-revision-chip')).toBeNull();
-      const action = query('mktg-document-view-run-again');
-      const run = query('mktg-document-view-run');
-      if (!action || !run) throw new Error('Missing first-run actions');
-      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit&mode=new');
-      expect(action.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      // No stored view means no header Run again; the recorded run owns recovery below.
+      expect(query('mktg-document-view-run-again')).toBeNull();
       expect(query('brand-kit-web-view-header')).toBeNull();
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed' || state === 'questions');
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
