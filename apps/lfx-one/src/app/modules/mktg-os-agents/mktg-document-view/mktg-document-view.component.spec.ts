@@ -120,7 +120,7 @@ describe('MktgDocumentViewComponent', () => {
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
   const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
-  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+  const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
@@ -294,7 +294,8 @@ describe('MktgDocumentViewComponent', () => {
     pending.load.mockReset().mockReturnValue(null);
     pending.waitForStorage.mockReset();
     pending.clear.mockClear();
-    print.print.mockReset().mockResolvedValue(undefined);
+    print.prepare.mockReset().mockResolvedValue(undefined);
+    print.printNow.mockReset();
     print.clear.mockClear();
     print.ensureFontStylesheet.mockClear();
 
@@ -1036,8 +1037,11 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-print')?.textContent).toContain('Revision 2');
       expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
       expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=testorbit');
+      expect(print.prepare).toHaveBeenCalledWith('Inter');
+      expect(print.printNow).not.toHaveBeenCalled();
       query('mktg-document-view-download')?.querySelector('button')?.click();
-      expect(print.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+      // Same call stack, with no stability/font/network await after the click.
+      expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
       harness.fixture.destroy();
       expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     });
