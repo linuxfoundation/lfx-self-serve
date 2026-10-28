@@ -5,6 +5,7 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
@@ -37,7 +38,7 @@ import type {
   CampaignBriefPersistResult,
   CampaignBudgetUpdateParams,
   CampaignDeliveryType,
-  CampaignEmailStage,
+  CampaignSendStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
@@ -3405,14 +3406,22 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // `campaignGoal` above is: this value decides which surface may open the row, so an
     // unrecognised string must read as "no delivery type recorded" (paid, per the field's
     // contract) rather than as a surface matching nothing. Rows predating the field land here too.
-    deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
+    // Every surface the client knows, not just the first two. Dropping `survey` to `undefined`
+    // made the caller's own surface comparison report "no brief" for a row it had just read.
+    deliveryType:
+      found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' || found.delivery_type === 'survey' ? found.delivery_type : undefined,
     // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
     // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
     // returning false for it — and this is the presence-vs-value boundary this feature already got
     // wrong once. An absent stage and the empty string are different things upstream (`''` is the
     // PAID brief's real stage), so the check that distinguishes them should be explicit.
+    // Both stage vocabularies, matching the surface above. Keeping only the event stages meant a
+    // restored survey brief came back with no stage, so the planner could not tell which send it
+    // had just read and offered no restore at all.
     emailStage:
-      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
+      typeof found.stage === 'string' && ([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as readonly string[]).includes(found.stage)
+        ? (found.stage as CampaignSendStage)
+        : undefined,
   };
 }
 

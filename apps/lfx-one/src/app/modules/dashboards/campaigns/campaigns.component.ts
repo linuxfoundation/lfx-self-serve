@@ -5994,6 +5994,15 @@ export class CampaignsComponent {
    * rest are cleared for the ordinary reason that they describe a brief that is no longer on screen.
    */
   private resetEmailBriefDerivedState(): void {
+    // The written sends, their drafts and the built workflow all belong to the brief being
+    // dropped. Left standing, a Start Over or a foundation switch returns to a panel showing the
+    // previous campaign's sends, its HubSpot draft links and a "Built ..." banner -- and after a
+    // foundation switch those links point into the PREVIOUS foundation's portal, which is the
+    // cross-portal mislabelling this handler's own comments exist to prevent.
+    this.surveySequenceSends.set([]);
+    this.surveySequenceState.set('idle');
+    this.surveySequenceError.set('');
+    this.discardSequenceStaging();
     // Bumped FIRST, before any signal is cleared: a persist that resolves between the clear and
     // the bump would otherwise still see its own generation and write the stale id back.
     this.emailBriefPersistGeneration++;
@@ -6179,28 +6188,41 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
-
-    // APPROVED, not merely saved. `saveBrief` returns a non-empty id with `approved: false`
-    // when the approve step failed, and on `stale-brief` / `unverified-validator` -- and
-    // campaign-service gates copy generation, audience build and staging on the brief having
-    // reached approved. Accepting the id anyway cached an unusable brief, and because the
-    // ownership cache short-circuits, every retry returned it instead of re-attempting the
-    // approval that was actually missing.
-    if (briefId === '' || !persisted.approved) {
-      throw new Error(this.emailSaveFailureMessage('so this send was not saved.'));
-    }
-    if (ownershipKey === null) {
-      return briefId;
+    if (briefId === '') {
+      // Nothing was written, so there is nothing to claim. This is also the arm a retry lands in
+      // once the row below exists but is unowned, which is why the two cases are reported apart.
+      throw new Error(`The ${this.surveyStageLabel(brief.emailStage as CampaignSurveyStage)} could not be saved. Try again.`);
     }
 
+    // CLAIMED BEFORE REFUSED. A non-empty id with `approved: false` means the row EXISTS
+    // upstream and only its approval failed -- so recording ownership is what lets the retry
+    // address that row and re-attempt the approval. Refusing first left it unclaimed: the next
+    // attempt sent no brief id, `saveBrief` answered `unowned-brief-exists` with an empty id, and
+    // the send became permanently unbuildable. The single-brief path survives that because the
+    // operator can restore by re-entering the URL; the reminder and closing sends cannot, since
+    // the picker addresses only the two assets.
+    //
     // Same shape the single-brief save records: a null validator is UNKNOWN rather than
     // permission, so the overwrite licence is granted only where the write returned none at all.
-    const validator = persisted.etag ?? null;
-    this.rememberBriefId(ownershipKey, {
-      id: briefId,
-      etag: validator,
-      ...(validator === null ? { absence: 'overwrite' as const } : {}),
-    });
+    if (ownershipKey !== null) {
+      const validator = persisted.etag ?? null;
+      this.rememberBriefId(ownershipKey, {
+        id: briefId,
+        etag: validator,
+        ...(validator === null ? { absence: 'overwrite' as const } : {}),
+      });
+    }
+
+    // APPROVED, not merely saved: campaign-service gates copy generation, audience build and
+    // staging on it, so a send that stopped here would fail later with a message about approval
+    // that names nothing the operator can act on.
+    //
+    // Its own message, not `emailSaveFailureMessage`: that reads the SINGLE brief's recorded
+    // conflict and consumes `pendingEmailOverwrite`, so borrowing it here would report another
+    // send's conflict and hand that send an overwrite licence off a warning shown about this one.
+    if (!persisted.approved) {
+      throw new Error(`The ${this.surveyStageLabel(brief.emailStage as CampaignSurveyStage)} was saved but not approved. Try again.`);
+    }
     return briefId;
   }
 

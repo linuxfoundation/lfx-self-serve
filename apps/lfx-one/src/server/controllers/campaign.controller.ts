@@ -58,6 +58,7 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
@@ -1939,10 +1940,15 @@ export class CampaignController {
     //
     // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
     // not a malformed one.
+    // BOTH vocabularies, because `stage` is one query parameter spanning two surfaces. Which
+    // list a value belongs to is settled by the pair check below; this one only asks whether the
+    // string names a stage at all. Spelling only the event stages here refused every survey
+    // brief's own stage with a 400, so the surface could save a brief and never read one back.
+    const knownStages: readonly string[] = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES];
     const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
-    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+    if (stageParam !== '' && !knownStages.includes(stageParam)) {
       next(
-        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+        ServiceValidationError.forField('stage', `stage must be one of: ${knownStages.join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -1952,20 +1958,27 @@ export class CampaignController {
     }
     const stage = stageParam;
 
-    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // Read from the SUPPORTED set rather than a two-way ternary. The ternary predated the third
+    // surface and silently turned `survey` into `paid-marketing`, so a survey lookup was answered
+    // with the paid brief under a 200 -- a wrong brief, not an error, which is the harder failure
+    // to notice. The parameter was already validated against that same set above.
+    const deliveryType: CampaignDeliveryType = SUPPORTED_DELIVERY_TYPES.has(deliveryTypeParam) ? (deliveryTypeParam as CampaignDeliveryType) : 'paid-marketing';
     // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
     // is not: paid has no series, so its stage must be empty, and an email send is always some
     // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
     // service guard above it), so without this check the BFF forwards a request that cannot
     // succeed and relays an upstream error for something it could have named here.
-    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    // Each surface against ITS OWN list: the stages are two separate vocabularies, and upstream
+    // refuses a pair drawn from both (`campaign_briefs_delivery_stage_pair_valid`).
+    const stagesForSurface: readonly string[] = deliveryType === 'survey' ? CAMPAIGN_SURVEY_STAGES : CAMPAIGN_EMAIL_STAGES;
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : stagesForSurface.includes(stage);
     if (!pairIsValid) {
       next(
         ServiceValidationError.forField(
           'stage',
           deliveryType === 'paid-marketing'
             ? 'a paid-marketing brief has no series, so stage must be empty'
-            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+            : `a ${deliveryType} brief names one send, so stage must be one of: ${stagesForSurface.join(', ')}`,
           { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
         )
       );
