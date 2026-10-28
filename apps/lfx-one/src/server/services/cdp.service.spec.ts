@@ -126,3 +126,93 @@ describe('CdpService.getWorkExperiencesForKnownUser', () => {
     expect(requestedUrls(fetchMock).some((url) => url.includes(`/v1/members/${MEMBER_ID}/work-experiences`))).toBe(true);
   });
 });
+
+/** A write whose settlement the test controls, recording when it starts. */
+function deferredWrite(started: string[], name: string): { write: () => Promise<void>; resolve: () => void; reject: (err: Error) => void } {
+  let resolve!: () => void;
+  let reject!: (err: Error) => void;
+  const settled = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return {
+    write: () => {
+      started.push(name);
+      return settled;
+    },
+    resolve,
+    reject,
+  };
+}
+
+/**
+ * #4523 — parallel identity writes against one member deadlock CDP, so a reconcile runs its writes
+ * one at a time and a second reconcile for the same member on this pod is dropped.
+ */
+describe('CdpService.runMemberIdentityWrites', () => {
+  it('runs the writes one at a time, in order', async () => {
+    const started: string[] = [];
+    const first = deferredWrite(started, 'first');
+    const second = deferredWrite(started, 'second');
+
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-serial', [first.write, second.write])).toBe(true);
+
+    expect(started).toEqual(['first']);
+    first.resolve();
+    await vi.waitFor(() => expect(started).toEqual(['first', 'second']));
+    second.resolve();
+  });
+
+  it('skips a second chain for a member already writing, across CdpService instances, until the first settles', async () => {
+    const started: string[] = [];
+    const first = deferredWrite(started, 'first');
+    const duplicate = deferredWrite(started, 'duplicate');
+    const other = deferredWrite(started, 'other-member');
+
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [first.write])).toBe(true);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [duplicate.write])).toBe(false);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-other', [other.write])).toBe(true);
+    expect(started).toEqual(['first', 'other-member']);
+
+    first.resolve();
+    other.resolve();
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [duplicate.write])).toBe(true));
+    expect(started).toEqual(['first', 'other-member', 'duplicate']);
+    duplicate.resolve();
+  });
+
+  it('keeps going after a failed write and logs it as a warning', async () => {
+    const started: string[] = [];
+    const failing = deferredWrite(started, 'failing');
+    const next = deferredWrite(started, 'next');
+
+    new CdpService().runMemberIdentityWrites(undefined, 'member-failing', [failing.write, next.write]);
+    failing.reject(new Error('deadlock'));
+
+    await vi.waitFor(() => expect(started).toEqual(['failing', 'next']));
+    expect(loggerCalls.some(([, operation]) => operation === 'run_cdp_member_identity_writes')).toBe(true);
+    next.resolve();
+  });
+});
+
+describe('CdpService.getMemberIdentitiesForUser', () => {
+  it('returns the resolved member id alongside the identities', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ memberId: MEMBER_ID }))
+      .mockResolvedValueOnce(
+        jsonResponse({ identities: [{ id: 'id-1', platform: 'github', type: 'username', value: 'dev-gh', verified: true, source: 'cdp' }] })
+      );
+
+    const result = await new CdpService().getMemberIdentitiesForUser(undefined, LFID);
+
+    expect(result.memberId).toBe(MEMBER_ID);
+    expect(result.identities).toEqual([expect.objectContaining({ id: 'id-1', platform: 'github', value: 'dev-gh' })]);
+    expect(requestedUrls(fetchMock)[1]).toContain(CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(MEMBER_ID));
+  });
+
+  it('reports no member and no identities when CDP has no profile', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: MEMBER_ID })).mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404));
+
+    await expect(new CdpService().getMemberIdentitiesForUser(undefined, LFID)).resolves.toEqual({ memberId: null, identities: [] });
+  });
+});

@@ -74,9 +74,12 @@ const {
   },
   cdpSvc: {
     getIdentitiesForUser: vi.fn(),
+    getMemberIdentitiesForUser: vi.fn(),
     verifyIdentityForUser: vi.fn(),
+    verifyIdentity: vi.fn(),
     rejectIdentityForUser: vi.fn(),
-    createIdentityForUser: vi.fn(),
+    createIdentity: vi.fn(),
+    runMemberIdentityWrites: vi.fn(),
   },
   auth0Svc: {
     getUserIdentities: vi.fn(),
@@ -2244,10 +2247,15 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
 describe('ProfileController.getIdentities — primary email and multi-LFID reconciliation (#4123)', () => {
   const lfid = 'dev-user';
   const primary = 'dev@example.com';
+  const memberId = 'member-1';
   let controller: ProfileController;
 
   function cdpRow(overrides: Record<string, unknown> & { id: string; platform: string; type: string; value: string }): Record<string, unknown> {
     return { verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '', ...overrides };
+  }
+
+  function mockCdpIdentities(identities: Record<string, unknown>[]): void {
+    cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId, identities });
   }
 
   const ownLfidRow = cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid, verified: true, verifiedBy: lfid });
@@ -2293,8 +2301,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     isImpersonatingMock.mockReturnValue(false);
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: primary, alternate_emails: [] });
     auth0Svc.getUserIdentities.mockResolvedValue([rootIdentity]);
-    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
-    cdpSvc.createIdentityForUser.mockResolvedValue(undefined);
+    cdpSvc.verifyIdentity.mockResolvedValue(undefined);
+    cdpSvc.createIdentity.mockResolvedValue(undefined);
+    // Start every queued write synchronously so assertions can run right after the response.
+    cdpSvc.runMemberIdentityWrites.mockImplementation((_req: unknown, _memberId: string, writes: (() => Promise<void>)[]) => {
+      writes.forEach((write) => void write());
+      return true;
+    });
     controller = new ProfileController();
   });
 
@@ -2354,7 +2367,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   it('uses the same current primary for the profile and identities after a mid-session change', async () => {
     const currentPrimary = 'new-primary@example.org';
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${currentPrimary} `, alternate_emails: [primary] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     expect(await fetchProfileEmail()).toBe(currentPrimary);
     const rows = await fetchIdentities();
@@ -2369,7 +2382,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       emailVerificationSvc.getUserEmails.mockResolvedValue(scenario === 'blank' ? { primary_email: '  ', alternate_emails: [] } : null);
     }
     getEffectiveEmailMock.mockReturnValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     expect(await fetchProfileEmail()).toBe(primary);
     const rows = await fetchIdentities();
@@ -2383,7 +2396,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     getUsernameFromAuthMock.mockResolvedValue('operator-shortcut');
     getEffectiveEmailMock.mockReturnValue('target-old@example.org');
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: targetPrimary, alternate_emails: [] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
     const operator = { sub: 'auth0|operator', email: 'operator@example.org' };
 
     expect(await fetchProfileEmail(operator)).toBe(targetPrimary);
@@ -2408,7 +2421,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('shows a primary email that CDP attributes to another LFID on a merged profile, without writing to CDP', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2417,13 +2430,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     const rows = await fetchIdentities();
 
     expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ displayState: 'verified', isPrimary: true }));
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('shows the primary as unverified when the session has not passed email_verified', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2435,7 +2448,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('adds one display-only synthetic primary row when neither CDP nor auth-service has the address', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2453,11 +2466,11 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
         inAuth0: false,
       }),
     ]);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('on a merged profile hides only rows verified by a different owner', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-other-owner', platform: 'email', type: 'email', value: 'old@example.org', verified: true, verifiedBy: 'other-lfid' }),
@@ -2471,7 +2484,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('never treats a LinkedIn row as the primary email', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow, cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: primary })]);
+    mockCdpIdentities([ownLfidRow, cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: primary })]);
 
     const rows = await fetchIdentities();
 
@@ -2489,7 +2502,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: shared } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-shared-email', platform: 'email', type: 'email', value: shared }),
       cdpRow({ id: 'cdp-shared-linkedin', platform: 'linkedin', type: 'email', value: shared }),
@@ -2500,7 +2513,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     expect(byId(rows, 'cdp-shared-email')).toEqual(expect.objectContaining({ displayState: 'unverified', inAuth0: false }));
     expect(byId(rows, 'cdp-shared-email').isPrimary).toBeUndefined();
     expect(byId(rows, 'cdp-shared-linkedin')).toEqual(expect.objectContaining({ displayState: 'verified', inAuth0: true }));
-    expect(cdpSvc.verifyIdentityForUser.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
+    expect(cdpSvc.verifyIdentity.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
   });
 
   it('matches an auth-service email identity against CDP case-insensitively', async () => {
@@ -2508,16 +2521,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: 'Dev@Example.com' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
-      ownLfidRow,
-      cdpRow({ id: 'cdp-email', platform: 'email', type: 'email', value: 'dev@example.com', verified: true, verifiedBy: lfid }),
-    ]);
+    mockCdpIdentities([ownLfidRow, cdpRow({ id: 'cdp-email', platform: 'email', type: 'email', value: 'dev@example.com', verified: true, verifiedBy: lfid })]);
 
     const rows = await fetchIdentities();
 
     const emailRows = visible(rows).filter((row) => row.type === 'email');
     expect(emailRows).toEqual([expect.objectContaining({ id: 'cdp-email', displayState: 'verified', inAuth0: true, isPrimary: true })]);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps linked Google and email logins on the primary address visible and removable', async () => {
@@ -2526,7 +2536,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       { provider: 'google-oauth2', user_id: 'google-oauth2|1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2538,7 +2548,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('shows the primary address once when CDP holds duplicate rows for it', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-dup-1', platform: 'email', type: 'email', value: primary }),
       cdpRow({ id: 'cdp-dup-2', platform: 'email', type: 'email', value: 'DEV@example.com' }),
@@ -2552,7 +2562,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
 
   it('falls back to the session email when the auth-service email read fails', async () => {
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2562,7 +2572,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
 
   it('trusts a primary changed mid-session while the session still holds the old verified email', async () => {
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'new-primary@example.com', alternate_emails: [] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2574,7 +2584,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   it('keeps an unverified session email as an unverified primary when the auth-service read fails', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities({ sub: 'auth0|dev-user', email: 'Unverified@example.com', email_verified: false });
 
@@ -2587,7 +2597,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     isImpersonatingMock.mockReturnValue(true);
     getEffectiveEmailMock.mockReturnValue('target@example.com');
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities({ sub: 'auth0|admin', email: 'admin@example.com', email_verified: true });
 
@@ -2599,7 +2609,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-lower', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: lfid }),
       cdpRow({ id: 'cdp-upper', platform: 'email', type: 'email', value: 'DEV@example.com', verified: true, verifiedBy: lfid }),
@@ -2618,7 +2628,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-linkedin-username', platform: 'linkedin', type: 'username', value: primary }),
       cdpRow({ id: 'cdp-linkedin-email', platform: 'linkedin', type: 'email', value: primary }),
@@ -2630,8 +2640,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-linkedin-email', type: 'email', displayState: 'verified', auth0UserId: 'linkedin|1' }),
     ]);
     expect(byId(rows, 'cdp-linkedin-username')).toBeUndefined();
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-linkedin-username', lfid);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalledWith(expect.anything(), memberId, 'cdp-linkedin-username', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps a linked Google email visible when an unsupported email username row comes first', async () => {
@@ -2639,7 +2649,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'google-oauth2', user_id: 'google-1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-email-username', platform: 'email', type: 'username', value: primary }),
       cdpRow({ id: 'cdp-google-email', platform: 'email', type: 'email', value: primary }),
@@ -2651,8 +2661,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-google-email', type: 'email', displayState: 'verified', auth0UserId: 'google-1' }),
     ]);
     expect(byId(rows, 'cdp-email-username')).toBeUndefined();
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-email-username', lfid);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalledWith(expect.anything(), memberId, 'cdp-email-username', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps linked accounts from different providers visible when their provider-specific user IDs collide', async () => {
@@ -2661,7 +2671,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       { provider: 'github', user_id: '12345', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
       { provider: 'linkedin', user_id: '12345', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-linkedin@example.org' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-github', platform: 'github', type: 'username', value: 'dev-gh', verified: true, verifiedBy: lfid }),
       cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: 'dev-linkedin@example.org', verified: true, verifiedBy: lfid }),
@@ -2673,8 +2683,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-github', platform: 'github', displayState: 'verified', auth0UserId: '12345' }),
       expect.objectContaining({ id: 'cdp-linkedin', platform: 'linkedin', displayState: 'verified', auth0UserId: '12345' }),
     ]);
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('marks the primary without any CDP writes while impersonating', async () => {
@@ -2683,7 +2693,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'github', user_id: 'github|1', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid }),
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2692,8 +2702,54 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     const rows = await fetchIdentities();
 
     expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.runMemberIdentityWrites).not.toHaveBeenCalled();
+  });
+
+  // #4523: parallel writes on one member deadlock CDP, so they go through one sequential chain.
+  describe('CDP write queue (#4523)', () => {
+    beforeEach(() => {
+      auth0Svc.getUserIdentities.mockResolvedValue([
+        rootIdentity,
+        { provider: 'github', user_id: 'github|1', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
+        { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-li@example.org' } },
+      ]);
+      // An unverified own LFID row plus two auth-service identities missing from CDP: three writes.
+      mockCdpIdentities([cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid })]);
+    });
+
+    it('hands every write for one GET to a single member-scoped chain, without re-resolving the member', async () => {
+      await fetchIdentities();
+
+      expect(cdpSvc.runMemberIdentityWrites).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, expect.any(Array));
+      expect(cdpSvc.runMemberIdentityWrites.mock.calls[0][2]).toHaveLength(3);
+      expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-lfid-own', lfid);
+      expect(cdpSvc.createIdentity.mock.calls.map(([, id, body]) => [id, body.platform, body.value])).toEqual([
+        [memberId, 'github', 'dev-gh'],
+        [memberId, 'linkedin', 'dev-li@example.org'],
+      ]);
+      expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    });
+
+    it('does not start any write before the chain runs them', async () => {
+      cdpSvc.runMemberIdentityWrites.mockReturnValue(false);
+
+      await fetchIdentities();
+
+      expect(cdpSvc.runMemberIdentityWrites).toHaveBeenCalledOnce();
+      expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+      expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+    });
+
+    it('skips writes when CDP has no member to write to, still returning the synthetic rows', async () => {
+      cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId: null, identities: [] });
+
+      const rows = await fetchIdentities();
+
+      expect(byId(rows, 'auth0:github|1')).toEqual(expect.objectContaining({ displayState: 'verified', value: 'dev-gh' }));
+      expect(cdpSvc.runMemberIdentityWrites).not.toHaveBeenCalled();
+    });
   });
 });
 

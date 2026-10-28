@@ -46,6 +46,9 @@ interface CachedToken {
  * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
+  // Static: several controllers/services each construct their own CdpService.
+  private static readonly memberIdentityWritesInFlight = new Set<string>();
+
   private cachedToken: CachedToken | null = null;
 
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
@@ -344,18 +347,22 @@ export class CdpService {
   }
 
   /**
-   * Create an identity for a user by resolving their member ID first
-   */
-  public async createIdentityForUser(req: Request | undefined, lfids: string[], body: CdpCreateIdentityRequest): Promise<void> {
-    const memberId = await this.resolveMember(req, lfids);
-    await this.createIdentity(req, memberId, body);
-  }
-
-  /**
    * Orchestrates the full flow: token → resolve → get identities
    * Maps raw CDP identities to frontend-ready CdpIdentity format
    */
   public async getIdentitiesForUser(req: Request | undefined, sub: string, email?: string): Promise<CdpIdentity[]> {
+    return (await this.getMemberIdentitiesForUser(req, sub, email)).identities;
+  }
+
+  /**
+   * {@link getIdentitiesForUser} plus the resolved member id, so a caller writing back to the same
+   * member skips a resolve per write. `memberId` is null when CDP has no profile for the user.
+   */
+  public async getMemberIdentitiesForUser(
+    req: Request | undefined,
+    sub: string,
+    email?: string
+  ): Promise<{ memberId: string | null; identities: CdpIdentity[] }> {
     const startTime = logger.startOperation(req, 'get_cdp_identities_for_user', { sub });
 
     try {
@@ -395,17 +402,46 @@ export class CdpService {
         identity_count: identities.length,
       });
 
-      return identities;
+      return { memberId, identities };
     } catch (error) {
       // Return empty array on 404 (user has no CDP profile)
       if (error instanceof MicroserviceError && error.statusCode === 404) {
         logger.warning(req, 'get_cdp_identities_for_user', 'No CDP profile found for user', { sub });
-        return [];
+        return { memberId: null, identities: [] };
       }
 
       logger.error(req, 'get_cdp_identities_for_user', startTime, error, { sub });
       throw error;
     }
+  }
+
+  /**
+   * Fire-and-forget: run one member's identity writes one at a time. Parallel writes on a member
+   * deadlock CDP (#4523), so a second chain for a member already writing on this pod is skipped.
+   * Returns false when skipped. Each write should catch and log its own failure.
+   */
+  public runMemberIdentityWrites(req: Request | undefined, memberId: string, writes: (() => Promise<void>)[]): boolean {
+    if (CdpService.memberIdentityWritesInFlight.has(memberId)) {
+      logger.debug(req, 'run_cdp_member_identity_writes', 'Identity writes already in flight for member; skipping', {
+        member_id: memberId,
+        write_count: writes.length,
+      });
+      return false;
+    }
+
+    CdpService.memberIdentityWritesInFlight.add(memberId);
+    void (async () => {
+      try {
+        for (const write of writes) {
+          await write().catch((err: unknown) => {
+            logger.warning(req, 'run_cdp_member_identity_writes', 'CDP identity write failed (non-blocking)', { member_id: memberId, err });
+          });
+        }
+      } finally {
+        CdpService.memberIdentityWritesInFlight.delete(memberId);
+      }
+    })();
+    return true;
   }
 
   /**
