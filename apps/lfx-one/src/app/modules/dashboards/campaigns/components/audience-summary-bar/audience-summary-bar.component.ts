@@ -14,6 +14,9 @@ import { Component, input, output } from '@angular/core';
 @Component({
   selector: 'lfx-audience-summary-bar',
   templateUrl: './audience-summary-bar.component.html',
+  // Sticky on the HOST: the host is only as tall as the bar, so a sticky inner element had nowhere
+  // to move and the bar stayed at the end of the page instead of following the viewport.
+  host: { class: 'sticky bottom-0 z-10 block' },
 })
 export class AudienceSummaryBarComponent {
   public readonly included = input.required<number>();

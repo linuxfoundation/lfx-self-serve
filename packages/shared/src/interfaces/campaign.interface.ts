@@ -6176,6 +6176,8 @@ export interface AudiencePendingReuseAttach {
   id: string;
   /** What the operator is attaching, for the confirmation. */
   label: string;
+  /** The lists this attach would create, as one phrase: it can differ from the step-6 attach's. */
+  creates: string;
 }
 
 /**

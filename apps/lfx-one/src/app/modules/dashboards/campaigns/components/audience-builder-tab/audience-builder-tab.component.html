@@ -331,7 +331,7 @@
         <div class="flex flex-col gap-0.5">
           <dt class="text-xs text-gray-500">Exclusions</dt>
           <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-excluded">
-            {{ suppressionLoading() ? '—' : summary().excluded }}
+            {{ suppressionLoading() ? '—' : composeExcludeCount() }}
           </dd>
         </div>
         <div class="flex flex-col gap-0.5">
@@ -573,7 +573,7 @@
             aria-labelledby="audience-reuse-attach-confirm-title"
             data-testid="campaigns-audience-reuse-attach-confirming">
             <p id="audience-reuse-attach-confirm-title" class="text-xs font-medium text-gray-900">
-              Using {{ pending.label }} for this email also creates {{ writeCreatesText() }} in HubSpot. Continue?
+              Using {{ pending.label }} for this email also creates {{ pending.creates }} in HubSpot. Continue?
             </p>
             <p class="text-xs text-gray-700">Later emails reuse these lists by name rather than creating them again.</p>
             <div class="flex flex-wrap gap-2">
@@ -892,14 +892,14 @@
             <button
               type="button"
               (click)="composeOpen.set(!composeOpen())"
-              [attr.aria-expanded]="composeOpen() || composeAttempted()"
+              [attr.aria-expanded]="composeOpen()"
               aria-controls="audience-compose-options"
               class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-gray-900"
               data-testid="campaigns-audience-compose-toggle">
-              <i [class]="composeOpen() || composeAttempted() ? 'fa-light fa-chevron-down' : 'fa-light fa-chevron-right'" aria-hidden="true"></i>
+              <i [class]="composeOpen() ? 'fa-light fa-chevron-down' : 'fa-light fa-chevron-right'" aria-hidden="true"></i>
               Or combine them into one HubSpot master list
             </button>
-            <div id="audience-compose-options" class="flex flex-col gap-2" [class.hidden]="!composeOpen() && !composeAttempted()">
+            <div id="audience-compose-options" class="flex flex-col gap-2" [class.hidden]="!composeOpen()">
               <label class="flex flex-col gap-1 text-xs text-gray-700">
                 Master list name (optional)
                 <input
@@ -1164,10 +1164,10 @@
   @if (showSelection()) {
     <lfx-audience-summary-bar
       [included]="summary().included"
-      [excluded]="suppressionLoading() ? null : summary().excluded"
+      [excluded]="suppressionLoading() ? null : composeExcludeCount()"
       [reachText]="summary().reachText"
       [reachLabel]="summary().reachLabel"
-      [attached]="!!attachedListId()"
+      [attached]="selectionAttached()"
       (review)="onGoToStep('compose')" />
   }
 </div>

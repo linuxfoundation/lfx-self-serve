@@ -4170,7 +4170,7 @@ describe('AudienceBuilderTabComponent', () => {
         })
       );
 
-      click('campaigns-audience-use-direct');
+      useSelectionDirectly();
 
       const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null };
       expect(tab.attachedMasterId(), 'the saved audience read as stale after a failed reload').toBe('101');
@@ -4246,7 +4246,7 @@ describe('AudienceBuilderTabComponent', () => {
       const partial: AudienceComposeMasterPartial = { error: 'Master list create failed', suppression: { ...STANDING, name: 'Renamed standing list' } };
       composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
 
-      click('campaigns-audience-compose');
+      composeMaster();
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent).toContain("project's shared standard suppression list");
     });
@@ -4291,6 +4291,143 @@ describe('AudienceBuilderTabComponent', () => {
       ).toHaveLength(0);
       click('campaigns-audience-mode-reuse');
       expect(host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-url"]')?.value).toBe('https://events.example.org/a');
+    });
+  });
+
+  describe('PR review fixes (#4462)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const OPT_OUT: AudienceSuppressionList = { ...GDPR, key: 'global_opt_out', listId: '202', name: 'Global Opt-out' };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const AUDIENCE: CampaignAudience = { id: 'aud-9', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '101', status: 'built', version: 1 };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    function barText(testId: string): string {
+      return host().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
+    }
+
+    it('moves focus into the compose confirmation, and back to Compose on cancel', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-compose');
+      await fixture.whenStable();
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-compose-cancel');
+
+      click('campaigns-audience-compose-cancel');
+      await fixture.whenStable();
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-compose');
+    });
+
+    it('keeps the compose disclosure a working toggle after a compose', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(NEVER);
+      composeMaster();
+      const options = (): HTMLElement | null => host().querySelector('#audience-compose-options');
+      expect(options()?.classList.contains('hidden')).toBe(false);
+
+      click('campaigns-audience-compose-toggle');
+
+      expect(options()?.classList.contains('hidden'), 'the toggle did nothing once a compose was attempted').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('shows the same excluded count in the summary bar as the compose confirmation', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, OPT_OUT], standardList: STANDING }));
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      // Upstream excludes the two standard rows as ONE standing list.
+      expect(barText('campaigns-audience-summary-bar-excluded')).toBe('1');
+      expect(barText('campaigns-audience-summary-excluded')).toBe('1');
+    });
+
+    it('stops reading as attached once the selection on screen differs from the recorded one', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'fixture precondition').toBeNull();
+
+      (fixture.componentInstance as unknown as { add: (id: string, name: string) => boolean }).add('102', 'Another list');
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'an edited selection read as attached').not.toBeNull();
+    });
+
+    it('withdraws an open confirmation when the email it was opened for changes', async () => {
+      await discover('brief-1');
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-use-direct');
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+
+      expect(
+        host().querySelector('[data-testid="campaigns-audience-use-direct-confirming"]'),
+        'a confirmation for one email stayed open for another'
+      ).toBeNull();
+    });
+
+    it('asks before a past-send attach whose own exclusions complete the standard set', async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-9',
+        emailName: 'Synthetic Summit 2026 - Last call',
+        sentAt: '2026-02-20T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-9/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '202', name: 'Global Opt-out', size: 900, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, OPT_OUT] }));
+      await discover('brief-1');
+      toggleStandardRow('global_opt_out');
+      attachExistingAudience.mockReturnValue(NEVER);
+      expect((fixture.componentInstance as unknown as { writeCreates: () => readonly string[] }).writeCreates(), 'fixture precondition').toEqual([]);
+
+      click('audience-last-sent-use-em-9');
+
+      expect(attachExistingAudience, 'the attach created the standing list without asking').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')?.textContent).toContain(
+        "the project's shared standard suppression list"
+      );
+    });
+
+    it('names the suppression step by its heading, not a fixed number', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await discover('brief-1');
+      toggleStandardRow('lf_events_gdpr');
+      const tab = fixture.componentInstance as unknown as { attachUnavailableMessage: () => string };
+
+      expect(tab.attachUnavailableMessage()).toContain('under Standard suppressions');
+      expect(tab.attachUnavailableMessage()).not.toContain('step 3');
     });
   });
 });

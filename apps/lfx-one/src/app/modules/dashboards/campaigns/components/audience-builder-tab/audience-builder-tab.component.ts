@@ -767,17 +767,7 @@ export class AudienceBuilderTabComponent {
    * The lists the next attach or compose CREATES in HubSpot, by name: the standing standard list
    * on first use, and the edition's current-registrants list while it does not exist yet.
    */
-  protected readonly writeCreates = computed<readonly string[]>(() => {
-    const created: string[] = [];
-    if (this.standingWillCreate()) {
-      created.push("the project's shared standard suppression list");
-    }
-    const edition = this.registrantsToCreate();
-    if (edition !== '') {
-      created.push(`"${this.registrantsRow()?.name || `${edition} - Current Registrants`}"`);
-    }
-    return created;
-  });
+  protected readonly writeCreates = computed<readonly string[]>(() => this.createsFor([]));
 
   /** `writeCreates` as one phrase, for the confirmations. */
   protected readonly writeCreatesText = computed(() => this.writeCreates().join(' and '));
@@ -795,7 +785,17 @@ export class AudienceBuilderTabComponent {
 
   /** Everything an attach or compose would send, so a confirmation is tied to exactly that request. */
   private readonly writeRequestKey = computed(() =>
-    JSON.stringify([[...this.inclusion().keys()].sort(), [...this.sentExcludeIds()].sort(), this.registrantsEvent(), this.writeCreates()])
+    JSON.stringify([
+      // The target too: an email-stage switch keeps the selection, and a confirmation opened for one
+      // email must not dispatch against the next.
+      this.projectSlug(),
+      this.briefId(),
+      this.audienceScope(),
+      [...this.inclusion().keys()].sort(),
+      [...this.sentExcludeIds()].sort(),
+      this.registrantsEvent(),
+      this.writeCreates(),
+    ])
   );
 
   /** The compose confirmation is open, and still describes what compose would send. */
@@ -807,7 +807,35 @@ export class AudienceBuilderTabComponent {
   /** The step-4 reuse attach awaiting confirmation, while it still describes what would be sent. */
   protected readonly reuseAttachConfirming = computed<AudiencePendingReuseAttach | null>(() => {
     const pending = this.pendingReuseAttach();
-    return pending !== null && this.attachConfirmedFor() === this.attachKey(`${pending.kind}:${pending.id}`) ? pending : null;
+    return pending !== null && this.attachConfirmedFor() === this.attachKey(`${pending.kind}:${pending.id}|${pending.creates}`) ? pending : null;
+  });
+
+  /**
+   * Whether the selection ON SCREEN is the one recorded as this email's audience. An attach leaves
+   * the grids editable, so "an attach succeeded" is not "this is attached": after adding a list the
+   * bar still read "Attached to this email" and hid "Review and attach".
+   */
+  protected readonly selectionAttached = computed(() => {
+    const listId = this.attachedListId();
+    if (listId === null) {
+      return false;
+    }
+    const same = (a: Iterable<string>, b: ReadonlySet<string>): boolean => {
+      const set = new Set(a);
+      return set.size === b.size && [...set].every((id) => b.has(id));
+    };
+    const included = new Set(this.inclusion().keys());
+    const excluded = new Set(this.excludeIds());
+    const attached = this.attachResult();
+    if (attached !== null && attached.master.listId === listId) {
+      return same(this.attachedIncludeIds(), included) && same(this.attachedExclusions(), excluded);
+    }
+    const composed = this.composeResult();
+    if (composed !== null && composed.master.listId === listId) {
+      const exclusions = this.composedExclusions();
+      return same(composed.sourceListIds, included) && (exclusions === null || same(exclusions, excluded));
+    }
+    return false;
   });
 
   /** Step 4's "Use for this email" note: whether its attach creates anything in HubSpot. */
@@ -860,12 +888,12 @@ export class AudienceBuilderTabComponent {
       return '';
     }
     if (this.registrantsEvent() !== '') {
-      return "The current-registrants list cannot be the send's only suppression: it is applied by edition beside the others. Keep at least one other suppression list ticked in step 3 too.";
+      return "The current-registrants list cannot be the send's only suppression: it is applied by edition beside the others. Keep at least one other suppression list ticked under Standard suppressions too.";
     }
     // Nothing to tick is a different problem from nothing ticked: telling the operator to select a
     // list when none resolves in this portal gave them an instruction they could not follow.
     return this.suppressionLists().some((list) => list.listId !== '')
-      ? 'Select at least one suppression list in step 3 first. Every send must keep at least one suppression list.'
+      ? 'Select at least one suppression list under Standard suppressions first. Every send must keep at least one suppression list.'
       : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
   });
 
@@ -1358,7 +1386,6 @@ export class AudienceBuilderTabComponent {
     const preview = this.previewCountLabel();
     return {
       included: included.length,
-      excluded: this.excludeIds().length,
       reachText: preview === '' ? reachText : preview,
       reachExact: preview !== '',
       reachLabel: this.reachLabel(preview !== '', known.length, included.length),
@@ -1538,10 +1565,10 @@ export class AudienceBuilderTabComponent {
       return this.briefStateMessage();
     }
     if (this.suppressionLoading()) {
-      return 'The suppression lists are still loading in step 3.';
+      return 'The suppression lists are still loading under Standard suppressions.';
     }
     if (this.suppressionFailed()) {
-      return 'The suppression lists in step 3 could not be loaded. Reload them before attaching.';
+      return 'The suppression lists under Standard suppressions could not be loaded. Reload them before attaching.';
     }
     if (this.suppressionMissing()) {
       return this.suppressionMissingMessage();
@@ -1998,7 +2025,9 @@ export class AudienceBuilderTabComponent {
     if (includes.length === 0 || !this.canUseExistingMaster()) {
       return;
     }
-    if (!confirmed && this.askToConfirmReuse({ kind: 'send', id: email.emailId, label: `the lists of "${email.emailName}"` })) {
+    // The past send's own exclusions join the request, and can complete the standard set.
+    const extras = email.suppressionLists.map((list) => list.listId);
+    if (!confirmed && this.askToConfirmReuse({ kind: 'send', id: email.emailId, label: `the lists of "${email.emailName}"`, creates: '' }, extras)) {
       return;
     }
     this.attachExisting(
@@ -2024,7 +2053,7 @@ export class AudienceBuilderTabComponent {
     if (!this.canUseExistingMaster()) {
       return;
     }
-    if (!confirmed && this.askToConfirmReuse({ kind: 'master', id: list.listId, label: `"${list.name}"` })) {
+    if (!confirmed && this.askToConfirmReuse({ kind: 'master', id: list.listId, label: `"${list.name}"`, creates: '' }, [])) {
       return;
     }
     this.attachExisting(list.listId, [list.listId], [], '');
@@ -2039,6 +2068,7 @@ export class AudienceBuilderTabComponent {
     if (!confirmed && this.writeCreates().length > 0) {
       this.pendingReuseAttach.set(null);
       this.attachConfirmedFor.set(this.attachKey('selection'));
+      this.scrollTo('campaigns-audience-use-direct-cancel', true);
       return;
     }
     const entries = this.inclusionEntries();
@@ -2173,11 +2203,8 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onSetMode(mode: AudienceBuildMode): void {
+    // One event page field serves both modes in this layout, so there is no second input to refresh.
     this.mode.set(mode);
-    // The Build and Reuse panels both bind eventUrlControl, and an edit in one never writes back to
-    // the other (Reactive Forms skips the view that made the change, and the hidden panel stays
-    // mounted). Re-writing the value updates every bound input, so the panel shown is current.
-    this.eventUrlControl.setValue(this.eventUrlControl.value, { emitEvent: false });
   }
 
   /** Arrow, Home and End keys move between the mode tabs, as the WAI-ARIA tabs pattern expects. */
@@ -2213,7 +2240,11 @@ export class AudienceBuilderTabComponent {
 
   /** Compose creates real HubSpot lists, so the first click asks; only the confirmation composes. */
   protected onRequestCompose(): void {
-    if (this.canCompose()) this.composeConfirmedFor.set(this.writeRequestKey());
+    if (!this.canCompose()) return;
+    this.composeConfirmedFor.set(this.writeRequestKey());
+    // The Compose button leaves the DOM as the confirmation replaces it, so focus moves into the
+    // confirmation -- to Cancel, the safe default for a create that cannot be undone.
+    this.scrollTo('campaigns-audience-compose-cancel', true);
   }
 
   protected onConfirmCompose(): void {
@@ -2226,6 +2257,7 @@ export class AudienceBuilderTabComponent {
 
   protected onCancelCompose(): void {
     this.composeConfirmedFor.set(null);
+    this.scrollTo('campaigns-audience-compose', true);
   }
 
   /** Direct attach that creates a list asks first, naming the lists, as compose does. */
@@ -2238,8 +2270,12 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onCancelUseSelection(): void {
+    const reuse = this.pendingReuseAttach() !== null;
     this.attachConfirmedFor.set(null);
     this.pendingReuseAttach.set(null);
+    if (!reuse) {
+      this.scrollTo('campaigns-audience-use-direct', true);
+    }
   }
 
   /** Runs the step-4 reuse attach the operator confirmed. */
@@ -2483,6 +2519,8 @@ export class AudienceBuilderTabComponent {
     }
 
     const event = this.identity();
+    // The options stay open with the result: the disclosure would otherwise hide what was composed.
+    this.composeOpen.set(true);
     this.composing.set(true);
     this.composeOnWire.set(true);
     this.composeAttempted.set(true);
@@ -2981,13 +3019,34 @@ export class AudienceBuilderTabComponent {
   }
 
   /** Opens the confirmation for a reuse attach that creates lists; false when none is needed. */
-  private askToConfirmReuse(pending: AudiencePendingReuseAttach): boolean {
-    if (this.writeCreates().length === 0) {
+  private askToConfirmReuse(pending: AudiencePendingReuseAttach, extraExclusions: readonly string[]): boolean {
+    const creates = this.createsFor(extraExclusions).join(' and ');
+    if (creates === '') {
       return false;
     }
-    this.pendingReuseAttach.set(pending);
-    this.attachConfirmedFor.set(this.attachKey(`${pending.kind}:${pending.id}`));
+    this.pendingReuseAttach.set({ ...pending, creates });
+    this.attachConfirmedFor.set(this.attachKey(`${pending.kind}:${pending.id}|${creates}`));
+    this.scrollTo('campaigns-audience-reuse-attach-cancel', true);
     return true;
+  }
+
+  /**
+   * The lists an attach or compose would CREATE in HubSpot, by name, given exclusions it adds to
+   * the ticked ones (a past send's own): the standing standard list when they complete the standard
+   * set and it does not exist yet, and the edition's registrants list while it does not exist.
+   */
+  private createsFor(extraExclusions: readonly string[]): string[] {
+    const created: string[] = [];
+    const excluded = new Set([...this.excludeIds(), ...extraExclusions]);
+    const standard = this.standardRowIds();
+    if (this.standardList() === null && standard.length > 0 && standard.every((id) => excluded.has(id))) {
+      created.push("the project's shared standard suppression list");
+    }
+    const edition = this.registrantsToCreate();
+    if (edition !== '') {
+      created.push(`"${this.registrantsRow()?.name || `${edition} - Current Registrants`}"`);
+    }
+    return created;
   }
 
   /** Runs a reload that was asked for while the previous load was on the wire. */
@@ -3037,7 +3096,7 @@ export class AudienceBuilderTabComponent {
       return;
     }
     if (sentExclusions.length === 0) {
-      this.attachError.set('Select at least one suppression list in step 3 first.');
+      this.attachError.set('Select at least one suppression list under Standard suppressions first.');
       return;
     }
     const run = this.runGeneration;
