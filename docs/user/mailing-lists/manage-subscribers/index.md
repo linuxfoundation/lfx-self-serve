@@ -18,7 +18,7 @@ This article is for people who manage a mailing list. It explains how to see who
 
 The subscribers are in the table at the bottom of the page. The top of the page shows how many subscribers the list has, for example "42 subscribers".
 
-Everyone who can open a list's page sees the subscriber controls, but they only work if you can manage the list. If you can't, a change fails with an error such as "Failed to update role" or "Failed to remove subscriber".
+Everyone who can open a list's page sees the subscriber controls. You need permission to manage the list to change other people's subscriptions or roles. You can always remove your own subscription, and if you were added directly to the list as a regular subscriber, you can also change your own delivery mode. Changes you don't have permission to make fail with an error such as "Failed to update role" or "Failed to remove subscriber".
 
 Members of any group linked to the list are subscribed automatically. See [Manage Mailing Lists](../manage-mailing-lists/) for how to link a group.
 

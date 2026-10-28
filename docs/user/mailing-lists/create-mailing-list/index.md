@@ -35,7 +35,7 @@ A name must follow these rules:
 
 - At least 3 characters
 - Letters and numbers only, with single hyphens allowed between characters
-- Short enough to fit the limit. The generated address can include a prefix for your project, which uses up part of the limit, so a long name can be rejected even though it looks short.
+- No more than 34 characters. When a project prefix applies, the prefix and its hyphen count toward the 34, so the name itself has to be shorter. The **Email address** preview shows the full address, including any prefix, and an error such as "Name cannot exceed N characters (prefix … uses M of 34 allowed)" tells you how much room the name has.
 
 You see an error under the field when a rule isn't met, for example "Mailing list name is required", "Name must be at least 3 characters", or "Name can only contain letters and numbers, with single hyphens allowed between characters". If a list with the same name already exists, you see "A mailing list with this name already exists".
 
