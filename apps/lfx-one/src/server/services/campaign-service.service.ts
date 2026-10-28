@@ -534,6 +534,18 @@ export function canCreateWithBidding(): boolean {
 }
 
 /**
+ * Whether a Google create may carry postal-code ids in `geoTargets` or any `proximityTargets`.
+ *
+ * Needs only the campaign-service create path — upstream has read both since LFXV2-3283, so there
+ * is no second flag. The LEGACY creator is the hazard: it resolves `geoTargets` through the
+ * 30-country map and drops every other entry, and never reads `proximityTargets` at all, so a
+ * postal-only or radius-only create would serve with no location limit while reporting success.
+ */
+export function canCreateWithFinerGoogleGeo(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
@@ -543,6 +555,16 @@ export function canCreateWithBidding(): boolean {
  */
 export function canCreateMicrosoftSchedule(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftSchedule);
+}
+
+/**
+ * Whether this deployment's create path can carry Google `audienceSegments` at all — the
+ * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
+ * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
+ * creator never does, and would create the campaign without the user lists while reporting success.
+ */
+export function canCreateWithAudienceSegments(): boolean {
+  return cutoverOwnsCreate();
 }
 
 /**
@@ -564,16 +586,19 @@ export function canUseRedditCreativeAssets(): boolean {
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
  * Reddit sibling the flag is NOT about URL signing — Google's dispatch path POSTs the stored bytes
  * to `assets:mutate` and never builds a URL — it is about whether the deployed service resolves the
- * ids at all. Either half missing is silent: the legacy creator reads no Google creative key, and an
- * older campaign-service ignores the ids and dispatches a campaign with no images.
+ * ids at all. The legacy creator reads no Google creative key, so the cutover half missing would
+ * drop the image silently; a campaign-service older than v1.0.21 types the image arrays as strings,
+ * cannot decode an `{ imageAssetId }` entry, and fails the Google create.
  *
- * It gates the upload route alongside `canUseRedditCreativeAssets` — either flag admits an upload,
- * because the stored library is one library and either platform having a use for it is reason enough
- * to let an image into it.
+ * It gates the create field — a `{ imageAssetId }` entry in any Google creative image slot, which
+ * `createCampaign` refuses by name while this is false rather than letting the normalizer forward or
+ * drop it — and is served to the client as `googleAssetUploadEnabled`, which offers the library
+ * controls in those slots. It also admits an upload into the brief's library alongside the Reddit
+ * and Meta flags: the stored library is one library, and any platform having a use for it is reason
+ * enough to let an image in.
  *
- * At this commit the upload route is ALL it gates: the Google creative interfaces carry image URLs
- * only, with no asset-id key, so there is no create field for a true answer to unlock yet. It is
- * served to the client as `googleAssetUploadEnabled` and wired ahead of that field.
+ * Every campaign-service release from v1.0.21 resolves the ids (lfx-v2-campaign-service#394), which
+ * is why the chart turns the flag on.
  */
 export function canUseGoogleCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleAssets);
@@ -589,6 +614,19 @@ export function canUseGoogleCreativeAssets(): boolean {
  */
 export function canUseMetaCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAssets);
+}
+
+/**
+ * Whether a LinkedIn create may reference an uploaded image by `imageAssetId` on its variants.
+ *
+ * Needs the campaign-service create path to serve the create AND the LinkedIn-assets flag. Like the
+ * Meta sibling, the flag is not about URL signing: LinkedIn's dispatch path uploads the stored bytes
+ * through the Images API and uses the image as the dark post's thumbnail. The legacy creator reads
+ * no `imageAssetId`, hence the cutover half. Admits an upload into the brief's library alongside the
+ * other asset flags.
+ */
+export function canUseLinkedInCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAssets);
 }
 
 /**
@@ -787,8 +825,11 @@ export class CampaignServiceClient {
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+        linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+        googleAudienceSegmentsEnabled: false,
       };
     }
 
@@ -849,8 +890,11 @@ export class CampaignServiceClient {
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+      linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+      googleAudienceSegmentsEnabled: false,
     };
   }
 

@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'google-image-library-' + slot().key">
+  <p class="text-xs font-medium text-gray-700">Images from the brief's library</p>
+  <p class="text-xs text-gray-500" [attr.data-testid]="'google-image-library-requirement-' + slot().key">Each needs {{ slot().requirement }}.</p>
+
+  @if (slot().held.length > 0) {
+    <ul class="flex flex-col gap-1" [attr.data-testid]="'google-image-library-held-' + slot().key">
+      @for (image of slot().held; track image.id) {
+        <li class="flex flex-col gap-0.5">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-gray-800"> <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ image.label }} </span>
+            <lfx-button
+              label="Remove"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              [ariaLabel]="'Remove ' + image.label + ' from ' + slot().label"
+              (onClick)="remove.emit(image.id)"
+              [attr.data-testid]="'google-image-library-remove-' + slot().key + '-' + image.id" />
+          </div>
+          @if (image.problem) {
+            <span class="text-xs text-red-600" [attr.data-testid]="'google-image-library-problem-' + slot().key + '-' + image.id">{{ image.problem }}</span>
+          }
+        </li>
+      }
+    </ul>
+  }
+
+  @if (slot().canAdd && slot().options.length > 0) {
+    <div [attr.data-testid]="'google-image-library-pick-' + slot().key">
+      <lfx-select
+        [form]="pickForm"
+        control="asset"
+        [options]="slot().options"
+        placeholder="Add a stored image"
+        [ariaLabel]="'Add a stored image to ' + slot().label"
+        [autoDisplayFirst]="false"
+        styleClass="w-full"
+        (onChange)="onPick()" />
+    </div>
+  }
+  @if (slot().optionsNote) {
+    <p class="text-xs text-gray-500" [attr.data-testid]="'google-image-library-note-' + slot().key">{{ slot().optionsNote }}</p>
+  }
+
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">{{ slot().uploading ? 'Uploading image…' : '' }}</div>
+  @if (slot().uploading) {
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-700" [attr.data-testid]="'google-image-library-uploading-' + slot().key">
+        <i class="fa-light fa-spinner-third fa-spin mr-1" aria-hidden="true"></i>Uploading image…
+      </span>
+      <lfx-button
+        label="Cancel upload"
+        size="small"
+        severity="secondary"
+        [text]="true"
+        (onClick)="cancelUpload.emit()"
+        [attr.data-testid]="'google-image-library-cancel-' + slot().key" />
+    </div>
+  } @else if (slot().canAdd) {
+    <lfx-file-upload
+      mode="basic"
+      [accept]="accept()"
+      [auto]="true"
+      [customUpload]="true"
+      chooseLabel="Upload an image"
+      chooseIcon="fa-light fa-cloud-arrow-up"
+      [dataTest]="'google-image-library-upload-' + slot().key"
+      (onSelect)="onFileSelect($event)" />
+  }
+  @if (slot().error) {
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'google-image-library-error-' + slot().key">{{ slot().error }}</p>
+  }
+</div>

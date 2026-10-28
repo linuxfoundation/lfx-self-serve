@@ -62,3 +62,41 @@ describe('CampaignService creative-asset plan request', () => {
     expect(plan).toBeNull();
   });
 });
+
+// The Google image slots read the library to tell which stored images fit them. A failed read must
+// stay a failure: an empty library would read as "every held image was deleted".
+describe('CampaignService creative-asset library request', () => {
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+
+  let service: CampaignService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(CampaignService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('reads the library for the project and brief', () => {
+    let count = -1;
+    service.listCreativeAssets('tlf', BRIEF_ID).subscribe((library) => (count = library.count));
+
+    const req = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('project')).toBe('tlf');
+    expect(req.request.params.get('brief_id')).toBe(BRIEF_ID);
+    req.flush({ assets: [], count: 0, countLimit: 50, bytesUsed: 0, bytesLimit: 1 });
+    expect(count).toBe(0);
+  });
+
+  it('rethrows a refused read instead of defaulting to an empty library', () => {
+    let status = 0;
+    service.listCreativeAssets('tlf', BRIEF_ID).subscribe({ error: (e: { status: number }) => (status = e.status) });
+
+    http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets').flush({ message: 'down' }, { status: 503, statusText: 'Unavailable' });
+
+    expect(status).toBe(503);
+  });
+});
