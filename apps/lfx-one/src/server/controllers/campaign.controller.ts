@@ -28,6 +28,7 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignDeviceBidModifier,
+  CampaignListResult,
   CampaignMetricsWindow,
   CampaignNegativeKeywordInput,
   CampaignNegativeKeywordMatchType,
@@ -105,6 +106,8 @@ import {
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
   GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
+  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
@@ -646,6 +649,33 @@ export class CampaignController {
 
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+
+      // Google audience segments are ROOT-ONLY until a user list can be mapped to a project. Every
+      // foundation's Google Ads connection points at one shared LF customer, so a segment is a
+      // resource name on THAT account, and a non-root operator could name another foundation's list
+      // (campaign-service refuses to list user lists on the shared account for the same reason,
+      // linuxfoundation/lfx-v2-campaign-service#411). First of every guard, so nothing is
+      // normalised, judged or created for a caller who may not send the field at all, and on either
+      // path: the legacy creator drops the list, but the request still asked for it.
+      //
+      // A 403 with a code, not a 400 naming the field: the body is well formed and the refusal is
+      // about WHO is asking, which is how `requireSharedAccountMonitorAccess` answers the same
+      // shared-account question for reads. Any present value other than an empty list counts as
+      // carrying segments, so a malformed one cannot slip past to a shape refusal a non-root caller
+      // could probe with.
+      const rawSegments = body?.audienceSegments as unknown;
+      const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
+      if (platforms.includes('google-ads') && carriesSegments && !(await this.isRootCampaignPrincipal(req))) {
+        next(
+          new AuthorizationError(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+            path: req.path,
+            code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+          })
+        );
+        return;
+      }
 
       // BEFORE `createConfigEnvelope`, which sanitises both HubSpot bodies unconditionally. This
       // route validates the body's SHAPE only — no field schema — so the only other bound on that
@@ -2690,7 +2720,12 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'list_brief_campaigns', { projectSlug, briefId });
 
     try {
-      const result = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
+      const listed = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
+      // The one PER-CALLER capability, so it is decided here where the caller is known rather than
+      // in the service. Only on the campaign-service create path (`googleCreativeEnabled`), and that
+      // test runs first so a deployment that cannot send segments asks no persona question at all.
+      const googleAudienceSegmentsEnabled = listed.googleCreativeEnabled === true && (await this.isRootCampaignPrincipal(req));
+      const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
     } catch (error) {
@@ -4263,6 +4298,16 @@ export class CampaignController {
   }
 
   /**
+   * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
+   * `global_marketing_ops`. The one test for every shared-account question — monitor reads and the
+   * root-only Google audience segments. Both checks are request-cached and fail closed, and a ROOT
+   * writer returns without a second lookup.
+   */
+  private async isRootCampaignPrincipal(req: Request): Promise<boolean> {
+    return (await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req));
+  }
+
+  /**
    * Whether the caller may read shared-account monitor data or legacy Google insights, or `false`
    * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
    *
@@ -4274,7 +4319,7 @@ export class CampaignController {
    * returns immediately without a second ROOT marketing lookup.
    */
   private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
-    if ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req))) {
+    if (await this.isRootCampaignPrincipal(req)) {
       return true;
     }
     // `apiErrorHandler` logs the 403 itself; this only names the platform for tracing.

@@ -789,6 +789,8 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+        googleAudienceSegmentsEnabled: false,
       };
     }
 
@@ -851,6 +853,8 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+      googleAudienceSegmentsEnabled: false,
     };
   }
 

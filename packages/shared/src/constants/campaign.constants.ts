@@ -1237,6 +1237,17 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
+/**
+ * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
+ * caller is not a ROOT writer or ROOT campaign manager. Every foundation's Google Ads connection
+ * points at one shared LF customer and a user list cannot yet be mapped to a project, so a non-root
+ * operator could otherwise target another foundation's list (linuxfoundation/lfx-v2-campaign-service#411).
+ */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE =
+  'Google audience segments can only be added by LF administrators, because every foundation shares one Google Ads account. Remove the audience segments and create again.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 

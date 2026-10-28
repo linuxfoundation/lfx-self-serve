@@ -6112,8 +6112,16 @@ describe('ImplementationTabComponent google audience segments', () => {
     await fixture.whenStable();
   });
 
+  /** `seedChannel`, plus the per-caller capability a ROOT caller is answered with. */
+  function seedAudience(patch: Record<string, unknown>, enabled: boolean | null = true): Record<string, any> {
+    const c = seedChannel(fixture, patch);
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', enabled);
+    fixture.detectChanges();
+    return c;
+  }
+
   it('trims an added user list and declines a repeat or a blank', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
 
     expect(c['addGoogleAudienceSegment'](`  ${LIST_A}\u00a0`)).toBe(true);
     // Upstream collapses a repeat rather than refusing it, so a second chip would claim a segment
@@ -6131,7 +6139,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     ['a trailing path segment', `${LIST_A}/extra`, 'shape'],
     ['an interest category', 'customers/1234567890/userInterests/80', 'shape'],
   ])('refuses %s and says why while the text is still in the box', (_label, text, kind) => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
 
     expect(c['addGoogleAudienceSegment'](text)).toBe(false);
     c['googleAudienceSegmentDraft'].set(text);
@@ -6148,7 +6156,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   it('keeps refused text in the box and clears it on a successful add', () => {
-    seedChannel(fixture, { includeSearch: true });
+    seedAudience({ includeSearch: true });
     const c = fixture.componentInstance as unknown as Record<string, any>;
     const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segment-add"]') as HTMLInputElement;
 
@@ -6167,7 +6175,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   it('refuses an add at the cap and swaps the box for the full notice', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['googleAudienceSegments'].set(Array.from({ length: GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS }, (_, i) => `customers/1/userLists/${i + 1}`));
     fixture.detectChanges();
 
@@ -6178,7 +6186,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   it('removes a chip by index', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     c['addGoogleAudienceSegment'](LIST_B);
     fixture.detectChanges();
@@ -6189,7 +6197,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   it('sends the entered segments as audienceSegments on Search', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     c['addGoogleAudienceSegment'](LIST_B);
 
@@ -6198,7 +6206,7 @@ describe('ImplementationTabComponent google audience segments', () => {
 
   /** An absent key, not `[]`: the absent-key route every caller predating the field takes. */
   it('sends nothing when no segment was entered', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
 
     expect(c['googleAudienceSegmentsPayload']()).toEqual({});
   });
@@ -6208,7 +6216,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     ['performance-max', { includePerformanceMax: true }],
     ['display', { includeDisplay: true }],
   ])('closes the section on %s, where upstream refuses audience segments', (_channel, patch) => {
-    const c = seedChannel(fixture, patch);
+    const c = seedAudience(patch);
     fixture.detectChanges();
 
     expect(c['googleAudienceSegmentsAvailable']()).toBe(false);
@@ -6220,7 +6228,7 @@ describe('ImplementationTabComponent google audience segments', () => {
    * the payload carries nothing a non-Search create would be refused for, and a notice says so.
    */
   it('withholds a list entered under Search once the channel moves, and says so', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-withheld"]');
     // Always mounted, so a screen reader hears the sentence when the channel switch gives it text.
@@ -6248,7 +6256,7 @@ describe('ImplementationTabComponent google audience segments', () => {
 
   /** The legacy road reads nothing on `googleAdsConfig`, so a segment there would be dropped. */
   it.each([[null], [false]])('withholds the section and the payload while googleCreativeEnabled is %s', (capability) => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     fixture.componentRef.setInput('googleCreativeEnabled', capability);
     fixture.detectChanges();
@@ -6259,7 +6267,7 @@ describe('ImplementationTabComponent google audience segments', () => {
   });
 
   it('round-trips the chips through a draft without sharing the array', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     let emitted: CampaignImplementationDraft | undefined;
     fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
     c['addGoogleAudienceSegment'](LIST_A);
@@ -6275,66 +6283,105 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(saved).toEqual([LIST_B]);
   });
 
-  /**
-   * The capability reason. The section and payload gate on `googleBiddingChannel`, which is null
-   * while the create capability is not an explicit yes, so segments are withheld then — and the
-   * extensions capability block is what says so, with a Retry, even when no extension was added.
-   */
-  function withholdForCapability(read: 'pending' | 'failed', withCallout = false): Record<string, any> {
-    const c = seedChannel(fixture, { includeSearch: true });
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** A Search draft holding one segment, then the per-caller answer and the read set as given. */
+  function holdSegment(enabled: boolean | null, read: 'pending' | 'ready' | 'failed' | 'unknown', briefId: string | null = 'brief-1'): Record<string, any> {
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
-    if (withCallout) c['addGoogleCallout']('Hands-On Labs');
-    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'brief-1', message: null, approved: true });
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
     fixture.componentRef.setInput('createCapabilityRead', read);
-    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', enabled);
     fixture.detectChanges();
     return c;
   }
 
-  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  /**
+   * ROOT-ONLY. A non-root caller is answered `false`: the section hides, nothing is sent, and a
+   * draft that still holds segments HOLDS Create with a way out rather than dropping them.
+   */
+  it('hides the section and holds Create for a non-root caller whose draft still has segments', () => {
+    const c = holdSegment(false, 'ready');
 
-  it('names withheld segments in the capability block, with a Retry, on an audience-only draft', () => {
+    expect(find('implementation-google-audience-segments-section')).toBeNull();
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({});
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('restricted');
+    expect(find('implementation-google-audience-segments-block-restricted')?.textContent).toContain('Only LF administrators can add Google audience segments');
+    expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe(c['googleAudienceSegmentsBlockMessage']());
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-audience-segments-block-retry')).toBeNull();
+
+    (find('implementation-google-audience-segments-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegments']()).toEqual([]);
+    expect(c['googleAudienceSegmentsBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('hides the section for a non-root caller with no segments, and holds nothing', () => {
+    const c = seedAudience({ includeSearch: true }, false);
+
+    expect(find('implementation-google-audience-segments-section')).toBeNull();
+    expect(c['googleAudienceSegmentsBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('holds Create while the per-caller answer is still being read', () => {
+    const c = holdSegment(null, 'pending');
+
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('pending');
+    expect(find('implementation-google-audience-segments-block-pending')?.textContent).toContain('1 audience segment');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it.each([['failed'], ['unknown']])('offers a Retry when the read is %s', (read) => {
     const retried = vi.fn();
     fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
-    const c = withholdForCapability('failed');
+    const c = holdSegment(null, read as 'failed' | 'unknown');
 
-    expect(c['googleAudienceSegmentsPayload']()).toEqual({});
-    const block = find('implementation-google-extensions-capability-failed')?.textContent ?? '';
-    expect(block).toContain('Could not confirm that Google audience segments can be sent');
-    expect(block).toContain('1 audience segment');
-    expect(block).not.toContain('ad extensions');
-    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe(c['googleExtensionsCapabilityMessage']());
-    // The channel warning stays silent: Search takes segments, so the channel is not the reason.
-    expect(c['googleAudienceSegmentsWithheldWarning']()).toBeNull();
-
-    (find('implementation-google-extensions-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('failed');
+    (find('implementation-google-audience-segments-block-retry')?.querySelector('button') as HTMLButtonElement).click();
     expect(retried).toHaveBeenCalledTimes(1);
   });
 
-  it('counts segments beside extensions while the read is in flight', () => {
-    const c = withholdForCapability('pending', true);
+  it('asks for the brief to be saved when there is no brief to check against', () => {
+    const c = holdSegment(null, 'unknown', null);
 
-    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
-    const block = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
-    expect(block).toContain('Checking whether Google ad extensions and audience segments can be sent');
-    expect(block).toContain('1 callout and 1 audience segment');
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('unsaved');
   });
 
-  it('still names the channel reason on demand-gen while the capability is unanswered', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
-    c['addGoogleAudienceSegment'](LIST_A);
-    fixture.componentRef.setInput('googleCreativeEnabled', null);
+  it('names the deployment, not the caller, when the create path does not serve', () => {
+    const c = holdSegment(false, 'ready');
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegmentsBlock']()?.kind).toBe('unsupported');
+  });
+
+  it('clears the block once a root caller is answered yes', () => {
+    const c = holdSegment(null, 'pending');
+    fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    fixture.componentRef.setInput('googleAudienceSegmentsEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegmentsBlock']()).toBeNull();
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({ audienceSegments: [LIST_A] });
+    expect(find('implementation-google-audience-segments-block-live')?.textContent?.trim()).toBe('');
+  });
+
+  it('leaves a non-search channel to the channel warning, whatever the capability answers', () => {
+    const c = holdSegment(false, 'ready');
     c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
     fixture.detectChanges();
 
     expect(c['googleAudienceSegmentsWithheldWarning']()).toContain('Demand Gen campaigns do not take audience segments');
-    // The capability block stays out of it: no answer could send segments on Demand Gen.
-    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleAudienceSegmentsBlock']()).toBeNull();
   });
 
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
   it('leaves the chips alone when the draft carries no segment key', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedAudience({ includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
 
     restoreGoogleDraft(fixture, c, {});
