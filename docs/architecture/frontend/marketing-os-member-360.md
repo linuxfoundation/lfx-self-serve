@@ -56,6 +56,10 @@ share `buildMktgRunDocumentId`; repeated result polls address that same document
 including after a storage failure. The sanitized envelope is stored once as the typed
 sidecar, independently of the summary's Markdown hash.
 
+## Run-page questions
+
+Generate stays on the Member 360 run page, polling with the creator capability kept in the subject-keyed attempt registry (same visit; cross-entry = B2). The shared activity feed covers pending work; `needs_input` opens the shared one-question-at-a-time stepper under “Member 360 needs your answers to finish.” Accepted answers resume the same poll, ignoring the answered digest, and a stored ready result opens the finished document. Guild failures open the existing classified document failure view. At the Member ceiling polling slows and says “Still running”; a clock never fails the run. Same-visit re-entry restores the subject-keyed attempt; the explicit cross-entry `?run=` receiver is a separate layer. Documents questions entries target the Member 360 run page; the document page shows only a plain continuation notice for its creator.
+
 ## One Document component
 
 Generate navigates to `documents/member-360/:documentId?run=<opaqueRunId>` after the
@@ -78,7 +82,7 @@ subject-independent Member document. A response begun for another viewer cannot 
 come from the registered type. No questions text or reasoning reaches this feed.
 Member's `needs_input` maps to `questions` with validated `member-360-questions/v1` items and a SHA-256 digest of the boundary-trimmed turn. Internal question `basis` is omitted from the creator response. Unlike the agent's strict schemas, the BFF intentionally strips unknown question extensions for forward compatibility.
 
-`POST /api/mktg-agents/member-360/answers` requires the creator/project-bound owner token, the questions digest and one bounded `{id,text,origin}` answer per question. It rereads the current turn, rejects stale answers after the next turn is queued, renders guarded `member-360-answers/v1` blocks and sends them on the same Guild session with the catalog mention on its own line. Tracking resumes to writing. A superseded questions turn cannot pause a resumed run again; Guild-ended sessions retain the existing failure precedence (#4267). Questions UI wiring is a separate layer; this BFF change does not select its page placement.
+`POST /api/mktg-agents/member-360/answers` requires the creator/project-bound owner token, the questions digest and one bounded `{id,text,origin}` answer per question. It rereads the current turn, rejects stale answers after the next turn is queued, renders guarded `member-360-answers/v1` blocks and sends them on the same Guild session with the catalog mention on its own line. Tracking resumes to writing. A superseded questions turn cannot pause a resumed run again; Guild-ended sessions retain the existing failure precedence (#4267).
 
 Follow-ups: concurrent-submit idempotency keyed on `questionsId`, and self-healing a failed `resumeAfterQuestions` tracking write (today durable `questions` can remain until a ready/failed result). A classified
 failure keeps the short reason, collapsed Details and host-scoped Run again; the

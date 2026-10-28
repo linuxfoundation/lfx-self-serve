@@ -618,17 +618,15 @@ describe('MktgDocumentsComponent', () => {
     expect(action?.getAttribute('href')).toContain('run=' + run.runId);
   });
 
-  it('labels a Member 360 questions run as paused in the started list and navigation', async () => {
+  it('links Member 360 questions to its run page with waiting labels', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=member-360');
-    expect(query('mktg-documents-started-runs')?.textContent).toContain('Paused — the run needs input');
-    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Waiting for your answers');
-    expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Paused');
-    expect(query('mktg-documents-nav-member-360')?.textContent).not.toContain('Needs answers');
-    expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toContain('type=member-360');
-    expect(query('mktg-documents-open-started-' + run.runId)?.textContent?.trim()).toBe('Open');
-    expect(query('mktg-documents-open-started-' + run.runId)?.getAttribute('href')).toContain('run=' + run.runId);
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Needs answers');
+    expect(query('mktg-documents-open-started-' + run.runId)?.textContent?.trim()).toBe('Answer the questions');
+    expect(query('mktg-documents-open-started-' + run.runId)?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
+    expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {

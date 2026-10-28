@@ -257,7 +257,7 @@ export class MktgDocumentViewComponent {
   protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
   protected readonly pausedWithoutAnswers = computed(() => {
     const run = this.selectedRun();
-    return run?.state === 'questions' && !findMktgRunIntake(run.agentKey, true)?.endpoints.answers;
+    return run?.state === 'questions' && (run.agentKey === 'member-360' || !findMktgRunIntake(run.agentKey, true)?.endpoints.answers);
   });
   protected readonly runDocumentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === this.params().agentKey));
   protected readonly unconfirmedFailure = computed(() => this.unconfirmed() && !this.selectedRun());
@@ -423,7 +423,17 @@ export class MktgDocumentViewComponent {
 
   protected readonly liveState: Signal<string> = this.initLiveState();
 
+  protected readonly memberQuestionsCreator = computed(() => {
+    const run = this.selectedRun();
+    const project = this.projectContext.activeContextUid();
+    return (
+      run?.agentKey === 'member-360' &&
+      !!this.userService.user()?.sub &&
+      this.attempts.load(project, 'member-360', this.params().documentId)?.attempt?.runId === run.runId
+    );
+  });
   protected readonly runAgentId = computed(() => {
+    if (this.params().agentKey === 'member-360') return '';
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
     const id = type?.catalogAgentId;
     const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
@@ -593,6 +603,7 @@ export class MktgDocumentViewComponent {
             // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
             const intake = findMktgRunIntake(request.agentKey, true);
             const saved =
+              request.agentKey !== 'member-360' &&
               request.subject &&
               !request.generation &&
               !request.revisionId &&
