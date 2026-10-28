@@ -1144,63 +1144,57 @@ describe('MktgAgentRunComponent', () => {
     });
   }
 
-  it.each([false, true])(
-    'restores an ICP failure without rechecking the dead session; explicit Retry creates a fresh handoff (reattach=%s)',
-    async (reattach) => {
-      await configure('browser', ICP_INTAKE.agentId);
-      const attempts = TestBed.inject(MktgRunAttemptService);
-      const request: MktgGenerateRequest = {
-        projectUid: PROJECT_1.uid,
-        agentId: ICP_INTAKE.agentId,
-        intake: ICP_INTAKE,
-        answers: { project_name: 'Retained synthetic ICP', github_url: 'https://github.com/synthetic-org/synthetic-orbit' },
-        feedback: 'Keep this synthetic retry feedback',
-      };
-      attempts.save({
-        request,
-        state: 'failed',
-        requiresReattachment: reattach,
-        updatedAt: new Date().toISOString(),
-        attempt: {
-          runId: 'b'.repeat(64),
-          priorVersion: 0,
-          session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' },
-        },
-        pendingQuestions: {
-          questionsId: 'a'.repeat(64),
-          questions: [],
-          attempt: { priorVersion: 0, session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' } },
-        },
-      });
-      const token = attempts.prepare(request, true);
-      queryParams.next(convertToParamMap({ questions: token, project: PROJECT_1.slug }));
-      activeContext.set(PROJECT_1);
+  it.each([false, true])('restores an ICP failure without rechecking the dead session; explicit Retry starts here (reattach=%s)', async (reattach) => {
+    await configure('browser', ICP_INTAKE.agentId);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const request: MktgGenerateRequest = {
+      projectUid: PROJECT_1.uid,
+      agentId: ICP_INTAKE.agentId,
+      intake: ICP_INTAKE,
+      answers: { project_name: 'Retained synthetic ICP', github_url: 'https://github.com/synthetic-org/synthetic-orbit' },
+      feedback: 'Keep this synthetic retry feedback',
+    };
+    attempts.save({
+      request,
+      state: 'failed',
+      requiresReattachment: reattach,
+      updatedAt: new Date().toISOString(),
+      attempt: {
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' },
+      },
+      pendingQuestions: {
+        questionsId: 'a'.repeat(64),
+        questions: [],
+        attempt: { priorVersion: 0, session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' } },
+      },
+    });
+    const token = attempts.prepare(request, true);
+    queryParams.next(convertToParamMap({ questions: token, project: PROJECT_1.slug }));
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('form');
+    expect(component['intakeForm'].get('project_name')?.value).toBe(request.answers['project_name']);
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    if (reattach) {
+      expect(query('mktg-agent-run-retry')).toBeNull();
+      expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach');
+    } else {
+      const prepare = vi.spyOn(attempts, 'prepare');
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      navigate.mockClear();
+      query('mktg-agent-run-retry')?.querySelector('button')?.click();
       await fixture.whenStable();
-      fixture.detectChanges();
-      expect(component['phase']()).toBe('form');
-      expect(component['intakeForm'].get('project_name')?.value).toBe(request.answers['project_name']);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledExactlyOnceWith([], expect.objectContaining({ queryParams: { questions: null }, replaceUrl: true }));
+      expect(generate).toHaveBeenCalledExactlyOnceWith(request);
+      expect(component['phase']()).toBe('running');
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
-      expect(generate).not.toHaveBeenCalled();
-      if (reattach) {
-        expect(query('mktg-agent-run-retry')).toBeNull();
-        expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach');
-      } else {
-        const prepare = vi.spyOn(attempts, 'prepare');
-        const navigate = vi.mocked(TestBed.inject(Router).navigate);
-        navigate.mockClear();
-        query('mktg-agent-run-retry')?.querySelector('button')?.click();
-        await fixture.whenStable();
-        expect(prepare).toHaveBeenCalledExactlyOnceWith(request, false);
-        const generation = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['generation'];
-        const fresh = attempts.consume(generation, PROJECT_1.uid, ICP_INTAKE.agentId)?.pending;
-        expect(fresh).toMatchObject({ state: 'draft', request });
-        expect(fresh?.attempt).toBeUndefined();
-        if (!fresh) throw new Error('Missing synthetic fresh retry draft');
-        expect(attempts.takeFreshDraft(fresh)).toBe(true); // Only this explicit Retry grants a fresh Generate.
-        expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
-      }
     }
-  );
+  });
 
   it('restores an intake-only transport signal to the form, never a document or automatic submission', async () => {
     await configure();
@@ -1379,7 +1373,7 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
-  describe('intake-only asset handoff', () => {
+  describe('run-page progress until stored-revision landing', () => {
     const target = Object.values(MKTG_AGENT_INTAKES).find((intake) => intake.regenerateViaGenerate && !intake.endpoints.answers);
     if (!target) {
       throw new Error('Missing registered direct intake');
@@ -1429,6 +1423,15 @@ describe('MktgAgentRunComponent', () => {
       component['activeRequest'] = request;
       component['phase'].set('running');
       return { request, attempts };
+    };
+    const complete = () => {
+      const { request } = accepted();
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === target.agentId);
+      if (!type) throw new Error('Missing registered document type');
+      const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
+      run.agentId = target.agentId;
+      run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+      component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
     };
     const checking: MktgGenerateProgress = {
       type: 'activity',
@@ -1487,58 +1490,47 @@ describe('MktgAgentRunComponent', () => {
       expect(progress.observed).toBe(true);
       progress.next(checking);
       await fixture.whenStable();
-      const token = component['navigation']()?.generation;
-      expect(token).toBeTruthy();
-      expect(component['navigation']()).not.toBeNull();
+      expect(component['navigation']()).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(component['phase']()).toBe('running');
       progress.error(new HttpErrorResponse({ status: 503 }));
       await fixture.whenStable();
       expect(component['navigation']()).toBeNull();
       expect(component['navigating']()).toBe(false);
       expect(component['recheckingAttempt']()).toBe(false);
-      expect(attempts.consume(token ?? '', PROJECT_1.uid, intake.agentId)).toBeNull();
+      expect(attempts.load(PROJECT_1.uid, intake.agentId)?.attempt).toEqual(pending.attempt);
       expect(component['phase']()).toBe('form');
       expect(component['submitDisabled']()).toBe(false);
       component['onRetryHandoff']();
-      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledTimes(origin === 'generate' ? 1 : 0);
       expect(answerQuestions).not.toHaveBeenCalled();
     });
 
-    it.each(['cancelled', 'rejected'] as const)('clears a terminal failure after checking navigation was %s', async (outcome) => {
+    it.each(['failed', 'refused'] as const)('opens a recorded %s run on the document failed card, not at checking', async (event) => {
       await configure('browser', target.agentId);
       await fill();
-      const { attempts } = accepted();
-      let finish: ((opened: boolean) => void) | undefined;
-      let fail: ((error: Error) => void) | undefined;
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(
-        () =>
-          new Promise<boolean>((resolve, reject) => {
-            finish = resolve;
-            fail = reject;
-          })
-      );
-      const discard = vi.spyOn(attempts, 'discard');
+      const { request, attempts } = accepted();
+      const pending = attempts.load(PROJECT_1.uid, target.agentId);
+      if (!pending?.attempt) throw new Error('Missing accepted attempt');
+      const runId = 'c'.repeat(64);
+      attempts.save({ ...pending, state: 'failed', attempt: { ...pending.attempt, runId } });
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
       component['onProgress'](checking, PROJECT_1.uid);
-      const token = component['navigation']()?.generation;
-      expect(token).toBeTruthy();
-      expect(component['navigating']()).toBe(true);
-      if (!finish || !fail) throw new Error('Expected deferred navigation');
-      if (outcome === 'cancelled') finish(false);
-      else fail(new Error('Synthetic navigation rejection'));
+      expect(navigate).not.toHaveBeenCalled();
+      component['onProgress'](
+        event === 'failed' ? { type: 'failed', failureText: 'Synthetic failure' } : { type: 'refused', reply: 'Synthetic refusal' },
+        PROJECT_1.uid
+      );
       await fixture.whenStable();
-      expect(component['navigation']()).not.toBeNull();
-      component['onProgress']({ type: 'failed', failureText: 'Synthetic terminal failure' }, PROJECT_1.uid);
-      await fixture.whenStable();
-      expect(discard).toHaveBeenCalledWith(token);
-      expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)).toBeNull();
-      expect(component['navigation']()).toBeNull();
-      expect(component['navigating']()).toBe(false);
-      expect(component['phase']()).toBe('form');
-      expect(component['submitDisabled']()).toBe(false);
-      expect(query('mktg-agent-run-error')?.textContent).toContain(MKTG_RUN_FAILURE_REASON);
-      expect(query('mktg-agent-run-error')?.textContent).not.toContain('Synthetic terminal failure');
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === request.agentId);
+      expect(navigate).toHaveBeenCalledWith(
+        ['..', 'documents', type?.agentKey, 'living'],
+        expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ run: runId, revision: null, generation: null }) })
+      );
       component['onRetryHandoff']();
-      expect(navigate).toHaveBeenCalledTimes(1);
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledTimes(2);
       expect(generate).not.toHaveBeenCalled();
       expect(answerQuestions).not.toHaveBeenCalled();
     });
@@ -1567,19 +1559,20 @@ describe('MktgAgentRunComponent', () => {
         const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
         component['onProgress'](mktgRunProgressFixture(event, run, 1, attempt), PROJECT_1.uid);
         await fixture.whenStable();
-        expect(navigate).toHaveBeenCalledTimes(1);
-        expect(navigate.mock.calls[0]?.[1]?.replaceUrl).toBe(true);
-        expect(navigate.mock.calls[0]?.[1]?.queryParamsHandling).toBeUndefined();
         if (receipted) {
+          expect(navigate).toHaveBeenCalledTimes(1);
+          expect(navigate.mock.calls[0]?.[1]?.replaceUrl).toBe(true);
+          expect(navigate.mock.calls[0]?.[1]?.queryParamsHandling).toBeUndefined();
           expect(navigate).toHaveBeenCalledWith(
             expect.anything(),
             expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT_1.slug, revision: location.revisionId }) })
           );
         } else {
-          const token = component['navigation']()?.generation;
-          expect(token).toBeTruthy();
-          expect(component['navigation']()?.revisionId).toBeUndefined();
-          expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)?.pending.attempt).toEqual(attempt);
+          expect(navigate).not.toHaveBeenCalled();
+          expect(component['navigation']()).toBeNull();
+          expect(component['phase']()).toBe('running');
+          expect(component['writingStretch']()).toBe(true);
+          expect(attempts.load(PROJECT_1.uid, target.agentId)?.attempt).toEqual(attempt);
         }
         expect(generate).not.toHaveBeenCalled();
         expect(answerQuestions).not.toHaveBeenCalled();
@@ -1635,13 +1628,14 @@ describe('MktgAgentRunComponent', () => {
       const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
       run.agentId = target.agentId;
       component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
-      const destination = component['navigation']();
-      expect(destination?.generation).toBeTruthy();
+      expect(component['navigation']()).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
       const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
-      if (!type || !finish || !fail) throw new Error('Missing deferred document navigation');
+      if (!type) throw new Error('Missing document type');
       run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
       component['onProgress'](mktgRunProgressFixture('persisted', run, 1), PROJECT_1.uid);
-      expect(component['navigation']()).toBe(destination);
+      if (!finish || !fail) throw new Error('Missing deferred document navigation');
+      expect(component['navigation']()?.revisionId).toBe(run.versions[0].documentLocation.revisionId);
       expect(navigate).toHaveBeenCalledTimes(1);
       if (outcome === 'rejected') fail(new Error('Synthetic navigation rejection'));
       else finish(outcome === 'opened');
@@ -1670,15 +1664,16 @@ describe('MktgAgentRunComponent', () => {
           })
       );
       component['onProgress'](checking, PROJECT_1.uid);
-      const destination = component['navigation']();
-      expect(destination?.generation).toBeTruthy();
+      expect(component['navigation']()).toBeNull();
       component['onProgress'](checking, PROJECT_1.uid);
+      expect(navigate).not.toHaveBeenCalled();
       const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
       if (!type) throw new Error('Missing registered document type');
       const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
       run.agentId = target.agentId;
       run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
       component['onProgress'](mktgRunProgressFixture('document', run, 1), PROJECT_1.uid);
+      const destination = component['navigation']();
       component['onProgress'](mktgRunProgressFixture('persisted', run, 1), PROJECT_1.uid);
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(component['navigation']()).toBe(destination);
@@ -1695,7 +1690,7 @@ describe('MktgAgentRunComponent', () => {
       await configure('browser', target.agentId);
       await fill();
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValueOnce(false).mockResolvedValue(true);
-      component['onSubmit']();
+      complete();
       await fixture.whenStable();
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(generate).not.toHaveBeenCalled();
@@ -1712,16 +1707,12 @@ describe('MktgAgentRunComponent', () => {
       await configure('browser', target.agentId);
       await fill();
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
-      const attempts = TestBed.inject(MktgRunAttemptService);
-      const discard = vi.spyOn(attempts, 'discard');
-      component['onSubmit']();
+      complete();
       await fixture.whenStable();
-      const token = component['navigation']()?.generation;
-      expect(token).toBeTruthy();
+      expect(component['navigation']()?.revisionId).toBeTruthy();
       if (change === 'project') activeContext.set(PROJECT_2);
       else userSignal.update((user) => (user ? { ...user, sub: 'synthetic-other-subject' } : user));
       component['onRetryHandoff']();
-      expect(discard).toHaveBeenCalledWith(token);
       expect(component['navigation']()).toBeNull();
       expect(component['navigating']()).toBe(false);
       expect(component['phase']()).toBe('form');
@@ -1742,17 +1733,13 @@ describe('MktgAgentRunComponent', () => {
             finish = resolve;
           })
       );
-      const attempts = TestBed.inject(MktgRunAttemptService);
-      const discard = vi.spyOn(attempts, 'discard');
-      component['onSubmit']();
+      complete();
       await fixture.whenStable();
-      const token = component['navigation']()?.generation;
-      expect(token).toBeTruthy();
+      expect(component['navigation']()?.revisionId).toBeTruthy();
       if (change === 'subject') userSignal.update((user) => (user ? { ...user, sub: 'synthetic-other-subject' } : user));
       else activeContext.set(change === 'project' ? PROJECT_2 : null);
       await fixture.whenStable();
-      expect(discard).toHaveBeenCalledWith(token);
-      expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)).toBeNull();
+      expect(component['navigation']()).toBeNull();
       finish(false);
       await fixture.whenStable();
       expect(component['navigation']()).toBeNull();
@@ -2720,7 +2707,15 @@ describe('MktgAgentRunComponent', () => {
               sessionId: 'sess-bp',
               ownerToken: 'token-bp',
               answers: {},
-              versions: [{ version: 1, document: '', asset: BOILERPLATES, createdAt: '2026-10-19T09:00:00.000Z' }],
+              versions: [
+                {
+                  version: 1,
+                  document: '',
+                  asset: BOILERPLATES,
+                  createdAt: '2026-10-19T09:00:00.000Z',
+                  documentLocation: { agentKey: 'boilerplates', documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` },
+                },
+              ],
               savedAt: '2026-10-19T09:00:00.000Z',
             },
             1
@@ -3477,8 +3472,7 @@ describe('MktgAgentRunComponent', () => {
       component['intakeForm'].controls['business_outcome'].setValue('Membership growth');
     };
     const siblingDoc = (agentId: string, document: string, version = 2): MktgDependencyDocument => ({ agentId, source: 'server', version, document });
-    const submittedAnswers = (): Record<string, string> =>
-      TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, component['agent']?.id ?? '')?.request.answers ?? {};
+    const submittedAnswers = (): Record<string, string> => generate.mock.calls.at(-1)?.[0].answers ?? {};
 
     beforeEach(async () => configure('browser', 'icp'));
 
@@ -3505,8 +3499,9 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
 
-      expect(generate).not.toHaveBeenCalled();
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+      expect(component['phase']()).toBe('running');
       expect(submittedAnswers()).toEqual({
         project_name: 'TestOrbit',
         github_url: 'https://github.com/example-org/testorbit',
@@ -3652,8 +3647,8 @@ describe('MktgAgentRunComponent', () => {
         expect(fieldError('github_url')).toBeNull();
         expect(component['submitDisabled']()).toBe(false);
         component['onSubmit']();
-        expect(TestBed.inject(Router).navigate).toHaveBeenCalledTimes(1);
-        expect(generate).not.toHaveBeenCalled();
+        expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+        expect(generate).toHaveBeenCalledTimes(1);
       });
 
       it('blocks a full submission on the same format rule before any handoff or generation', async () => {
