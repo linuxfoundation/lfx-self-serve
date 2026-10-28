@@ -1949,6 +1949,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -1989,6 +1990,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2040,6 +2042,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2076,6 +2079,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2108,6 +2112,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: true,
             googleAudienceSegmentsEnabled: true,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2210,6 +2215,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2260,6 +2266,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2281,6 +2288,7 @@ describe('CampaignsComponent brief persistence', () => {
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
           googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2318,6 +2326,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2356,6 +2365,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2389,6 +2399,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2435,6 +2446,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2482,6 +2494,7 @@ describe('CampaignsComponent brief persistence', () => {
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
           googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2529,6 +2542,7 @@ describe('CampaignsComponent brief persistence', () => {
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
           googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2560,6 +2574,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2593,6 +2608,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2616,6 +2632,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2648,6 +2665,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2692,6 +2710,7 @@ describe('CampaignsComponent brief persistence', () => {
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
           googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2730,6 +2749,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2768,6 +2788,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2809,6 +2830,7 @@ describe('CampaignsComponent brief persistence', () => {
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
           googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2881,6 +2903,7 @@ describe('CampaignsComponent brief persistence', () => {
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
             googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -11234,7 +11257,12 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean, microsoftScheduleEnabled = false, googleAudienceSegmentsEnabled = false): Observable<CampaignListResult> =>
+  const capability = (
+    biddingEnabled: boolean,
+    microsoftScheduleEnabled = false,
+    googleAudienceSegmentsEnabled = false,
+    googleGeoSearchEnabled = false
+  ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11250,6 +11278,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       biddingEnabled,
       microsoftScheduleEnabled,
       googleAudienceSegmentsEnabled,
+      googleGeoSearchEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11349,6 +11378,17 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
+  });
+
+  /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */
+  it.each([[true], [false]])('hands a google geo search capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+
+    expect(tab()['googleGeoSearchEnabled']()).toBe(enabled);
   });
 
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {

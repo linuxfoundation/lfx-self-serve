@@ -15,6 +15,8 @@ import {
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
+  GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
@@ -46,8 +48,10 @@ import type {
   CampaignPlatformResult,
   CampaignSitelink,
   CampaignStructuredSnippet,
+  GoogleAdsGeoTargetSuggestion,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
+  ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -6325,6 +6329,241 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
  * The review fixes on #4455: what the postal-code and radius controls do once the capability is not
  * an explicit yes, and the edge spellings each box has to judge.
  */
+/**
+ * The location picker (campaign-service #411): with `googleGeoSearchEnabled`, the postal-code box
+ * becomes a debounced search of Google's geo target table, and a picked row adds its id to the same
+ * list a typed id goes into, with Google's canonical name kept as its display label.
+ */
+describe('ImplementationTabComponent google location picker', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let search: ReturnType<typeof vi.fn>;
+
+  const AUSTIN: GoogleAdsGeoTargetSuggestion = {
+    id: '1026201',
+    name: 'Austin',
+    canonicalName: 'Austin,Texas,United States',
+    countryCode: 'US',
+    targetType: 'City',
+    status: 'ENABLED',
+  };
+  const ZIP: GoogleAdsGeoTargetSuggestion = {
+    id: '9031945',
+    name: '78701',
+    canonicalName: '78701,Texas,United States',
+    countryCode: 'US',
+    targetType: 'Postal Code',
+    status: 'ENABLED',
+  };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
+    search = vi.fn(() => of({ suggestions: [AUSTIN, ZIP], truncated: false }));
+    vi.spyOn(TestBed.inject(CampaignService), 'searchGoogleAdsGeoTargets').mockImplementation(search as never);
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** Search on, Search channel, campaign-service road. */
+  function seedPicker(enabled: boolean | null = true): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleGeoSearchEnabled', enabled);
+    fixture.detectChanges();
+    return c;
+  }
+
+  /** Let the debounce elapse, then settle the signal the search answers into. */
+  async function afterDebounce(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS + 50));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it.each([[null], [false]])('keeps the typed-id box while googleGeoSearchEnabled is %s', (enabled) => {
+    const c = seedPicker(enabled);
+
+    expect(c['googleGeoSearchAvailable']()).toBe(false);
+    expect(find('implementation-google-postal-add')).not.toBeNull();
+    expect(find('implementation-google-geo-search')).toBeNull();
+  });
+
+  it('replaces the typed-id box with the lfx-autocomplete picker once enabled', () => {
+    seedPicker();
+
+    expect(find('implementation-google-geo-search')?.tagName.toLowerCase()).toBe('lfx-autocomplete');
+    expect(find('implementation-google-postal-add')).toBeNull();
+    expect(find('implementation-google-postal-hint')?.textContent).toContain("Search Google's location table");
+    // `inputId` lands on the focusable input, so the section's `<label for>` still names it.
+    expect(fixture.nativeElement.querySelector('#google-postal-add')).not.toBeNull();
+  });
+
+  /** A picked id rides the campaign-service road only, so the picker is withheld wherever the ids are. */
+  it('is not offered on the legacy road even with the capability on', () => {
+    const c = seedPicker();
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+
+    expect(c['googleGeoSearchAvailable']()).toBe(false);
+    expect(find('implementation-google-geo-search')).toBeNull();
+  });
+
+  it('debounces the search, asks once for the latest query, and marks an already-added row disabled', async () => {
+    const c = seedPicker();
+    c['addGooglePostalGeoTarget'](ZIP.id);
+
+    c['onGoogleGeoSearch']({ query: 'Aus' });
+    c['onGoogleGeoSearch']({ query: '  Austin ' });
+    await afterDebounce();
+
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledWith('tlf', 'Austin', { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT });
+    expect(c['googleGeoSearchOptions']()).toEqual([
+      { ...AUSTIN, disabled: false },
+      { ...ZIP, disabled: true },
+    ]);
+  });
+
+  it('sends no request for a blank query', async () => {
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: '   ' });
+    await afterDebounce();
+
+    expect(search).not.toHaveBeenCalled();
+    expect(c['googleGeoSearchOptions']()).toEqual([]);
+  });
+
+  it("cuts a query to upstream's 100 characters rather than sending one it refuses", () => {
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: 'a'.repeat(120) });
+
+    expect(c['googleGeoSearchQuery']()).toBe('a'.repeat(100));
+  });
+
+  it('adds a picked id to the postal list, labelled by its canonical name, and clears the box', () => {
+    const c = seedPicker();
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['googleGeoSearchForm'].controls.location.setValue('Austin');
+
+    c['onGoogleGeoSearchSelect']({ value: { ...AUSTIN, disabled: false } });
+    fixture.detectChanges();
+
+    expect(c['googlePostalGeoTargets']()).toEqual([AUSTIN.id]);
+    expect(find(`implementation-google-postal-chip-${AUSTIN.id}`)?.textContent).toContain('Austin,Texas,United States');
+    expect(c['googleGeoSearchForm'].controls.location.value).toBeNull();
+    expect(c['googleGeoSearchQuery']()).toBe('');
+    // The draft the add emitted already carries the label: it is recorded before the add, not after.
+    expect(emitted?.googlePostalGeoTargets).toEqual([AUSTIN.id]);
+    expect(emitted?.googlePostalGeoLabels).toEqual({ [AUSTIN.id]: 'Austin,Texas,United States' });
+  });
+
+  it('does not add a disabled row, and records no label for it', () => {
+    const c = seedPicker();
+    c['addGooglePostalGeoTarget'](ZIP.id);
+
+    c['onGoogleGeoSearchSelect']({ value: { ...ZIP, disabled: true } });
+
+    expect(c['googlePostalGeoTargets']()).toEqual([ZIP.id]);
+    expect(c['googlePostalGeoLabels']()).toEqual({});
+  });
+
+  it('withdraws the label when the shared cap refuses the pick', () => {
+    const c = seedPicker();
+    c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS }, (_, i) => String(9031900 + i)));
+
+    expect(c['addGooglePickedGeoTarget'](AUSTIN)).toBe(false);
+    expect(c['googlePostalGeoLabels']()).toEqual({});
+  });
+
+  /** A picked id dispatches exactly as a typed one does: the bare id, in `geoTargets`. */
+  it('submits the picked id in geoTargets, with no label on the wire', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedPicker();
+    c['addGoogleGeoTarget']('US');
+    c['onGoogleGeoSearchSelect']({ value: { ...ZIP, disabled: false } });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(request['geoTargets']).toEqual(['US', ZIP.id]);
+    expect(JSON.stringify(request)).not.toContain('78701,Texas');
+  });
+
+  it('removes a picked chip together with its label', () => {
+    const c = seedPicker();
+    c['onGoogleGeoSearchSelect']({ value: { ...AUSTIN, disabled: false } });
+    c['onGoogleGeoSearchSelect']({ value: { ...ZIP, disabled: false } });
+
+    c['removeGooglePostalGeoTarget'](0);
+
+    expect(c['googlePostalGeoTargets']()).toEqual([ZIP.id]);
+    expect(c['googlePostalGeoLabels']()).toEqual({ [ZIP.id]: '78701,Texas,United States' });
+  });
+
+  it('round-trips the labels through a draft, dropping a non-string one', () => {
+    const c = seedPicker();
+
+    restoreGoogleDraft(fixture, c, {
+      includeSearch: true,
+      googlePostalGeoTargets: [AUSTIN.id, ZIP.id],
+      googlePostalGeoLabels: { [AUSTIN.id]: 'Austin,Texas,United States', [ZIP.id]: { bad: true } },
+    });
+
+    expect(c['googlePostalGeoLabels']()).toEqual({ [AUSTIN.id]: 'Austin,Texas,United States' });
+    // An id with no label renders as itself, as a typed one always has.
+    expect(c['googlePostalGeoChips']()).toEqual([
+      { id: AUSTIN.id, label: 'Austin,Texas,United States' },
+      { id: ZIP.id, label: ZIP.id },
+    ]);
+  });
+
+  /** "The search failed" is not "nothing matched": it gets its own line, wired to the input. */
+  it('names a failed search and points the input at the failure line', async () => {
+    search.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    await afterDebounce();
+
+    expect(c['googleGeoSearchFailed']()).toBe(true);
+    expect(find('implementation-google-geo-search-failed')).not.toBeNull();
+    expect(c['googleGeoSearchDescribedBy']()).toBe('google-geo-search-failed');
+  });
+
+  it('recovers from a failed search on the next query', async () => {
+    search.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const c = seedPicker();
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    await afterDebounce();
+
+    c['onGoogleGeoSearch']({ query: 'Austin TX' });
+    await afterDebounce();
+
+    expect(c['googleGeoSearchFailed']()).toBe(false);
+    expect(c['googleGeoSearchOptions']()).toHaveLength(2);
+  });
+
+  it('says when more locations matched than were listed', async () => {
+    search.mockReturnValueOnce(of({ suggestions: [AUSTIN], truncated: true }));
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    await afterDebounce();
+
+    expect(find('implementation-google-geo-search-truncated')).not.toBeNull();
+  });
+});
+
 describe('ImplementationTabComponent google location targets held by the capability', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 

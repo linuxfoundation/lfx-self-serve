@@ -435,20 +435,61 @@
             <div class="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4" data-testid="implementation-google-postal-section">
               <label class="block text-xs font-medium text-gray-700" for="google-postal-add">Postal-code targets</label>
               <div class="flex flex-wrap items-center gap-2">
-                @for (id of googlePostalGeoTargets(); track id; let i = $index) {
-                  <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    {{ id }}
+                @for (chip of googlePostalGeoChips(); track chip.id; let i = $index) {
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                    [attr.title]="chip.label === chip.id ? null : chip.id"
+                    [attr.data-testid]="'implementation-google-postal-chip-' + chip.id">
+                    {{ chip.label }}
                     <button
                       type="button"
                       (click)="removeGooglePostalGeoTarget(i)"
                       class="ml-0.5 text-blue-600 hover:text-blue-800"
-                      [attr.aria-label]="'Remove postal-code target ' + id"
-                      [attr.data-testid]="'implementation-google-postal-remove-' + id">
+                      [attr.aria-label]="'Remove postal-code target ' + chip.label"
+                      [attr.data-testid]="'implementation-google-postal-remove-' + chip.id">
                       <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                     </button>
                   </span>
                 }
-                @if (!googleGeoTargetsFull()) {
+                @if (!googleGeoTargetsFull() && googleGeoSearchAvailable()) {
+                  <!--
+                    The location picker, when campaign-service can search Google's geo target table
+                    (#411, `googleGeoSearchAvailable`). `lfx-autocomplete` per frontend-checklist 14.1,
+                    `[delay]="0"` because the component debounces the search itself, the
+                    org-search-field pattern. A row whose id is already a chip is listed but disabled.
+                  -->
+                  <lfx-autocomplete
+                    [form]="googleGeoSearchForm"
+                    control="location"
+                    inputId="google-postal-add"
+                    [suggestions]="googleGeoSearchOptions()"
+                    optionLabel="canonicalName"
+                    optionDisabled="disabled"
+                    placeholder="Search a postal code or place"
+                    [delay]="0"
+                    [forceSelection]="true"
+                    [invalid]="googleGeoSearchFailed()"
+                    [describedBy]="googleGeoSearchDescribedBy()"
+                    styleClass="w-72"
+                    dataTestId="implementation-google-geo-search-input"
+                    (completeMethod)="onGoogleGeoSearch($event)"
+                    (onSelect)="onGoogleGeoSearchSelect($event)"
+                    (onClear)="onGoogleGeoSearchClear()"
+                    class="block"
+                    data-testid="implementation-google-geo-search">
+                    <ng-template #item let-option>
+                      <div class="flex flex-col" [attr.data-testid]="'implementation-google-geo-search-option-' + option.id">
+                        <span class="text-xs font-medium text-gray-900">{{ option.name }}</span>
+                        <span class="text-[10px] text-gray-500"
+                          >{{ option.canonicalName }} · {{ option.targetType }}
+                          @if (option.disabled) {
+                            · already added
+                          }
+                        </span>
+                      </div>
+                    </ng-template>
+                  </lfx-autocomplete>
+                } @else if (!googleGeoTargetsFull()) {
                   <!--
                     `lfx-input-text` over `googlePostalGeoForm`, as frontend-checklist 14.1 requires.
                     `change` and `keydown.enter` are listened for on the HOST: both bubble from the
@@ -475,10 +516,25 @@
                   </span>
                 }
               </div>
-              <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
-                Enter the postal code's numeric criterion id from Google's geo-targets table, not the postal code itself — there is no lookup here, and Google
-                refuses an id that names nothing only after the campaign is created.
-              </span>
+              @if (googleGeoSearchAvailable()) {
+                <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
+                  Search Google's location table by postal code or place name, then pick a result — its id is what the campaign targets.
+                </span>
+                @if (googleGeoSearchFailed()) {
+                  <p id="google-geo-search-failed" role="alert" class="text-xs text-red-600" data-testid="implementation-google-geo-search-failed">
+                    The location search did not come back. Try again in a moment.
+                  </p>
+                } @else if (googleGeoSearchTruncated()) {
+                  <span class="text-xs text-gray-500" data-testid="implementation-google-geo-search-truncated">
+                    More locations match than are listed — add a postal code or region to narrow the search.
+                  </span>
+                }
+              } @else {
+                <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
+                  Enter the postal code's numeric criterion id from Google's geo-targets table, not the postal code itself — there is no lookup here, and Google
+                  refuses an id that names nothing only after the campaign is created.
+                </span>
+              }
               @if (googlePostalGeoDraftNotId()) {
                 <p id="google-postal-not-id" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-id">
                   A geo target id is digits only — look the postal code up in Google's geo-targets table and enter its id.

@@ -1383,6 +1383,35 @@ export const GOOGLE_ADS_GEO_TARGET_ID_PATTERN = /^[0-9]+$/;
 export const GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS = 7;
 
 /**
+ * campaign-service's bounds on a geo target search (`suggest-google-ads-geo-targets`,
+ * linuxfoundation/lfx-v2-campaign-service#411): the query is 1-100 characters with at least one
+ * non-space, the optional country is ISO alpha-2, at most 10 location types of 1-40 characters each
+ * (each with a letter or digit), and `limit` is 1-50 — upstream defaults an omitted one to 20.
+ * Mirrored by the BFF so a malformed search is refused by name rather than as an opaque upstream 400.
+ */
+export const GOOGLE_ADS_GEO_SEARCH_BOUNDS = {
+  maxQueryLength: 100,
+  maxTargetTypes: 10,
+  maxTargetTypeLength: 40,
+  maxLimit: 50,
+} as const;
+
+/** The country code shape a geo target search accepts — `^[A-Za-z]{2}$` upstream. */
+export const GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN = /^[A-Za-z]{2}$/;
+
+/**
+ * A suggestion id the BFF will pass on: upstream's own pattern for the field, `^[1-9][0-9]{0,18}$`.
+ * A row that fails it cannot be sent as a `geoTargets` entry, so it is dropped rather than offered.
+ */
+export const GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
+
+/** How many suggestions the Implement tab's location picker asks for. */
+export const GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT = 20;
+
+/** How long the location picker waits after the last keystroke before it searches, in milliseconds. */
+export const GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS = 400;
+
+/**
  * A plain decimal number as typed into the radius sub-form: optional sign, digits, optional
  * fraction (`-33.8688`, `25`, `.5`, `-33.`).
  *

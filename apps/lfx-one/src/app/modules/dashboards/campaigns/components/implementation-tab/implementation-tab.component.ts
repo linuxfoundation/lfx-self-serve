@@ -18,6 +18,7 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
@@ -59,6 +60,9 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
+  GOOGLE_ADS_GEO_SEARCH_BOUNDS,
+  GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
+  GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
@@ -127,9 +131,10 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { filter, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { catchError, debounceTime, filter, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -170,6 +175,9 @@ import type {
   CampaignType,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
+  GoogleAdsGeoTargetOption,
+  GoogleAdsGeoTargetSearchState,
+  GoogleAdsGeoTargetSuggestion,
   GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
@@ -246,6 +254,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
   imports: [
     ReactiveFormsModule,
     ButtonComponent,
+    AutocompleteComponent,
     InputTextComponent,
     SelectComponent,
     LowerCasePipe,
@@ -456,6 +465,21 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
+
+  /**
+   * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
+   * `CampaignListResult.googleGeoSearchEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH`.
+   * `null` (unanswered) and `false` keep the typed-id box, which is the section exactly as it was
+   * before campaign-service could search the table (linuxfoundation/lfx-v2-campaign-service#411).
+   */
+  public readonly googleGeoSearchEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether the location picker replaces the typed-id box: an explicit yes from the capability AND
+   * the postal-code section itself being offered (`googlePostalGeoAvailable` — the campaign-service
+   * road with a Google channel selected). A picked id is sent exactly as a typed one is.
+   */
+  protected readonly googleGeoSearchAvailable = computed<boolean>(() => this.googleGeoSearchEnabled() === true && this.googlePostalGeoAvailable());
 
   /**
    * Where the create-capability read stands — what tells "still checking" from "the check failed"
@@ -738,6 +762,12 @@ export class ImplementationTabComponent implements OnInit {
    * not a unit — upstream supplies no default and neither does the form.
    */
   protected readonly googlePostalGeoForm = this.fb.nonNullable.group({ postalId: '' });
+  /**
+   * The location picker's control, used when `googleGeoSearchAvailable` replaces the typed-id box. It
+   * holds the autocomplete's own value — the typed text, then the picked option — and is cleared on
+   * every pick, so like the boxes above it never reaches the draft itself; the picked id does.
+   */
+  protected readonly googleGeoSearchForm = this.fb.group({ location: this.fb.control<GoogleAdsGeoTargetOption | string | null>(null) });
   protected readonly googleProximityForm = this.fb.nonNullable.group<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
 
   // === WritableSignals ===
@@ -1041,6 +1071,29 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googlePostalGeoDraft: Signal<string> = computed(() => this.googlePostalGeoFormDraft().postalId);
   private readonly googlePostalGeoFormDraft: Signal<{ postalId: string }> = this.initFormDraft(this.googlePostalGeoForm);
   protected readonly googlePostalGeoIdMinDigits = GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  /**
+   * Display labels for picked postal-code ids, by id — Google's canonical name, recorded when an id
+   * comes from the location picker. Display only: the request carries the ids, and an id with no
+   * label (typed, or restored from a draft saved before labels existed) renders as itself.
+   */
+  protected readonly googlePostalGeoLabels = signal<Record<string, string>>({});
+  /** The postal-code chips with the label each renders, so the template binds data, not a lookup. */
+  protected readonly googlePostalGeoChips = computed(() => {
+    const labels = this.googlePostalGeoLabels();
+    return this.googlePostalGeoTargets().map((id) => ({ id, label: Object.hasOwn(labels, id) ? labels[id] : id }));
+  });
+  /** The location picker's latest query text, trimmed; the search below is debounced off it. */
+  protected readonly googleGeoSearchQuery = signal('');
+  private readonly googleGeoSearchState: Signal<GoogleAdsGeoTargetSearchState> = this.initGoogleGeoSearchState();
+  /** The picker's rows, an id already on the list marked `disabled` so it cannot be picked twice. */
+  protected readonly googleGeoSearchOptions = computed<GoogleAdsGeoTargetOption[]>(() => {
+    const added = new Set(this.googlePostalGeoTargets());
+    return this.googleGeoSearchState().suggestions.map((s) => ({ ...s, disabled: added.has(s.id) }));
+  });
+  protected readonly googleGeoSearchFailed = computed(() => this.googleGeoSearchState().failed);
+  protected readonly googleGeoSearchTruncated = computed(() => this.googleGeoSearchState().truncated);
+  /** What the picker's input points `aria-describedby` at: the failure line when a search failed, else the hint. */
+  protected readonly googleGeoSearchDescribedBy = computed(() => (this.googleGeoSearchFailed() ? 'google-geo-search-failed' : 'google-postal-hint'));
   /**
    * Google's radius targets — "everyone within N miles of the venue" — the one location shape that
    * is not a place in Google's table.
@@ -3278,8 +3331,46 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected removeGooglePostalGeoTarget(index: number): void {
+    const removed = this.googlePostalGeoTargets()[index];
     this.googlePostalGeoTargets.update((ids) => ids.filter((_, i) => i !== index));
+    // Its label goes with it, so the draft never carries a label for an id it does not hold.
+    if (removed !== undefined && Object.hasOwn(this.googlePostalGeoLabels(), removed)) {
+      this.googlePostalGeoLabels.update((labels) => Object.fromEntries(Object.entries(labels).filter(([id]) => id !== removed)));
+    }
     this.emitDraft();
+  }
+
+  /**
+   * Add one location PICKED from the search, reporting whether it was added.
+   *
+   * Through {@link addGooglePostalGeoTarget}, so a picked id passes every check a typed one does —
+   * the shared cap, the canonical shape, the repeat — and dispatches identically. The label is
+   * recorded first so the draft that add emits already carries it, and withdrawn if the add refuses.
+   */
+  protected addGooglePickedGeoTarget(suggestion: GoogleAdsGeoTargetSuggestion): boolean {
+    const previous = this.googlePostalGeoLabels();
+    this.googlePostalGeoLabels.set({ ...previous, [suggestion.id]: suggestion.canonicalName || suggestion.name });
+    if (this.addGooglePostalGeoTarget(suggestion.id)) return true;
+    this.googlePostalGeoLabels.set(previous);
+    return false;
+  }
+
+  protected onGoogleGeoSearch(event: AutoCompleteCompleteEvent): void {
+    // Cut to upstream's 100 characters rather than sent long and refused; a postal code or place
+    // name never needs more.
+    this.googleGeoSearchQuery.set([...googleAdsTrimSpace(event.query)].slice(0, GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength).join(''));
+  }
+
+  protected onGoogleGeoSearchSelect(event: AutoCompleteSelectEvent): void {
+    const option = event.value as GoogleAdsGeoTargetOption;
+    if (option && !option.disabled) this.addGooglePickedGeoTarget(option);
+    // Cleared whatever the outcome, so the box reads "search another" rather than naming the pick.
+    this.googleGeoSearchForm.controls.location.setValue(null);
+    this.googleGeoSearchQuery.set('');
+  }
+
+  protected onGoogleGeoSearchClear(): void {
+    this.googleGeoSearchQuery.set('');
   }
 
   /**
@@ -3333,6 +3424,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected removeHeldGoogleLocationTargets(): void {
     this.googlePostalGeoTargets.set([]);
+    this.googlePostalGeoLabels.set({});
     // Radius targets only when the block COUNTED them. On Demand Gen they are held by the channel,
     // not the capability, for a switch back — the banner does not name them, so it must not drop them.
     const channel = this.resolveGoogleChannel();
@@ -4520,6 +4612,11 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googlePostalGeoTargets !== undefined) {
       this.googlePostalGeoTargets.set([...draft.googlePostalGeoTargets]);
     }
+    // Copied, and only string labels kept: the draft is in-memory, but a label is display text and a
+    // non-string one would render as "[object Object]". Absent leaves the labels alone, as every field does.
+    if (draft.googlePostalGeoLabels !== undefined) {
+      this.googlePostalGeoLabels.set(Object.fromEntries(Object.entries(draft.googlePostalGeoLabels).filter(([, label]) => typeof label === 'string')));
+    }
     // Each entry copied as well as the array, for the reason the sitelinks below are: an entry is an
     // object. Restored whatever the channel is — a list saved under Search and reopened on Demand Gen
     // is held by `googleProximityChannel`, not sent, and is still there on a switch back.
@@ -4752,6 +4849,8 @@ export class ImplementationTabComponent implements OnInit {
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
       googlePostalGeoTargets: [...this.googlePostalGeoTargets()],
+      // Copied, as the list is. Pruned by `removeGooglePostalGeoTarget`, so it names held ids only.
+      googlePostalGeoLabels: { ...this.googlePostalGeoLabels() },
       // Entries copied too, matching the restore.
       googleProximityTargets: this.googleProximityTargets().map((t) => ({ ...t })),
       googleLanguages: [...this.googleLanguages()],
@@ -6236,6 +6335,33 @@ export class ImplementationTabComponent implements OnInit {
    * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
    * `0b11` and `1e2` and put a value on the chip the operator never typed.
    */
+  /**
+   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
+   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
+   *
+   * `switchMap`, so a slower answer to an older query can never overwrite a newer one. A blank query,
+   * no active project, or the picker not being offered answers the empty state without a request —
+   * the last because a query typed before the capability flipped off must not reach a 404 route.
+   */
+  private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
+    return toSignal(
+      toObservable(this.googleGeoSearchQuery).pipe(
+        debounceTime(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS),
+        switchMap((query) => {
+          const projectSlug = this.activeFoundationSlug();
+          if (query === '' || projectSlug === '' || !this.googleGeoSearchAvailable()) {
+            return of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: false });
+          }
+          return this.campaignService.searchGoogleAdsGeoTargets(projectSlug, query, { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT }).pipe(
+            map((result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false })),
+            catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true }))
+          );
+        })
+      ),
+      { initialValue: { suggestions: [], truncated: false, failed: false } }
+    );
+  }
+
   private parseGoogleProximityNumber(text: string): number | null {
     const trimmed = googleAdsTrimSpace(text);
     if (trimmed === '') return null;

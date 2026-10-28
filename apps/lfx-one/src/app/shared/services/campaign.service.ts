@@ -65,6 +65,8 @@ import {
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   GoogleAdsAccountOption,
+  GoogleAdsGeoTargetSearchOptions,
+  GoogleAdsGeoTargetSearchResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -491,6 +493,27 @@ export class CampaignService {
    */
   public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
     return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search Google's geo target table for the Implement tab's location picker (campaign-service #411).
+   * 404 while the server's geo-search flag is off. `targetTypes` repeats on the query string; an
+   * omitted option is left off rather than sent empty, so upstream's own default applies.
+   */
+  public searchGoogleAdsGeoTargets(
+    projectSlug: string,
+    query: string,
+    options: GoogleAdsGeoTargetSearchOptions = {}
+  ): Observable<GoogleAdsGeoTargetSearchResult> {
+    return this.http.get<GoogleAdsGeoTargetSearchResult>('/api/campaigns/google/geo-targets', {
+      params: {
+        project: projectSlug,
+        q: query,
+        ...(options.countryCode ? { countryCode: options.countryCode } : {}),
+        ...(options.targetTypes && options.targetTypes.length > 0 ? { targetTypes: options.targetTypes } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      },
+    });
   }
 
   public getMetaMonitorData(
