@@ -576,11 +576,16 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
   });
 
-  it('routes both Documents entries to private questions while the server still reports writing', async () => {
+  it.each([
+    { state: 'writing', sameRun: true, waiting: true },
+    { state: 'writing', sameRun: false, waiting: false },
+    { state: 'failed', sameRun: true, waiting: false },
+  ] as const)('matches private questions to a non-failed run ($state, same run: $sameRun)', async ({ state, sameRun, waiting }) => {
     const intake = MKTG_AGENT_INTAKES[BRAND_KIT.catalogAgentId ?? ''];
     if (!intake) throw new Error('Missing synthetic intake');
+    const run = startedRun(state);
     const attempt = {
-      runId: startedRun().runId,
+      runId: sameRun ? run.runId : 'c'.repeat(64),
       priorVersion: 0,
       session: { agentId: intake.agentId, sessionId: 'synthetic-waiting', ownerToken: 'synthetic-proof' },
     };
@@ -595,15 +600,22 @@ describe('MktgDocumentsComponent', () => {
         questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: '', basis: [] }],
       },
     });
-    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=brand-kit&mode=new&questions=old&generation=old&revision=old&run=old');
-    const row = query('mktg-documents-open-started-' + startedRun().runId);
+    const row = query('mktg-documents-open-started-' + run.runId);
     const nav = query('mktg-documents-nav-brand-kit');
-    expect(row?.textContent?.trim()).toBe('Answer the questions');
-    expect(nav?.textContent).toContain('Needs answers');
-    const expected = `/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}`;
-    expect(row?.getAttribute('href')).toBe(expected);
-    expect(nav?.getAttribute('href')).toBe(expected);
+    if (waiting) {
+      expect(row?.textContent?.trim()).toBe('Answer the questions');
+      expect(nav?.textContent).toContain('Needs answers');
+      const expected = `/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}`;
+      expect(row?.getAttribute('href')).toBe(expected);
+      expect(nav?.getAttribute('href')).toBe(expected);
+    } else {
+      expect(row?.textContent?.trim()).toBe('Open');
+      expect(row?.getAttribute('href')).toContain(`run=${run.runId}`);
+      expect(nav?.textContent).not.toContain('Needs answers');
+      expect(nav?.getAttribute('href')).toContain('type=brand-kit');
+    }
   });
 
   it('keeps a LinkedIn questions row on its document filter and Open action', async () => {

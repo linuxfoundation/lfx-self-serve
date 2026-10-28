@@ -4,11 +4,14 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY } from '@lfx-one/shared/constants';
+import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
+
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import { OverviewCardComponent } from './overview-card.component';
 
-import type { HealthMetricsOverviewCardStatus } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyStateCopy } from '@lfx-one/shared/interfaces';
 
 /** The card with an action, an empty-state action and a body, as a real card projects them. */
 const HOST_TEMPLATE =
@@ -73,7 +76,8 @@ describe('OverviewCardComponent', () => {
   it("shows the card's own empty state and its action when there is nothing to show", () => {
     show('ready', true);
 
-    expect(query('card-empty')?.textContent).toContain('All invoices are paid');
+    expect(query('card-empty-title')?.textContent).toBe('All invoices paid');
+    expect(query('card-empty')?.textContent).toContain('No invoice is 60 or more days overdue');
     expect(query('card-empty-action')).not.toBeNull();
     expect(query('card-meta')).toBeNull();
   });
@@ -85,5 +89,38 @@ describe('OverviewCardComponent', () => {
     expect(query('card-meta')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('As of: today · Audience: Board');
     expect(query('card-meta')?.querySelector('span')?.className).toContain('text-gray-600');
     expect(query('card-empty')).toBeNull();
+  });
+});
+
+/** An empty card whose period wording the test switches. */
+const PERIOD_HOST_TEMPLATE =
+  '<lfx-overview-card heading="Membership churn" info="Lapsed members" status="ready" [isEmpty]="true" [emptyCopy]="copy()" testId="card" />';
+
+@Component({
+  selector: 'lfx-overview-card-period-host',
+  imports: [OverviewCardComponent],
+  template: PERIOD_HOST_TEMPLATE,
+})
+class PeriodHostComponent {
+  public readonly copy = signal<HealthMetricsOverviewEmptyStateCopy>(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.churn);
+}
+
+describe('OverviewCardComponent empty state by period', () => {
+  it("words a past year's empty state for that year, or today's for a card with no past-year words", async () => {
+    await TestBed.configureTestingModule({
+      imports: [PeriodHostComponent],
+      providers: [HealthMetricsChromeService, { provide: UserService, useValue: { impersonating: signal(false) } }],
+    }).compileComponents();
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    const fixture = TestBed.createComponent(PeriodHostComponent);
+    fixture.detectChanges();
+    const title = () => fixture.nativeElement.querySelector('[data-testid="card-empty-title"]')?.textContent;
+
+    expect(title()).toBe(`No churn in ${new Date().getFullYear() - 1}`);
+
+    fixture.componentInstance.copy.set(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance);
+    fixture.detectChanges();
+
+    expect(title()).toBe('All invoices paid');
   });
 });

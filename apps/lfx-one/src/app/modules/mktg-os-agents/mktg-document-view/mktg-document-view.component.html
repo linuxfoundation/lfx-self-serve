@@ -16,6 +16,9 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
+        @if (view() && !runState()) {
+          <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
+        }
       </div>
       <div class="grow"></div>
       @if (!loading() && hasAssetView() && proseView(); as current) {
@@ -37,7 +40,7 @@
                 [loading]="approvingId() === current.revision.id"
                 [disabled]="writePending()"
                 data-testid="mktg-document-view-approve"
-                (onClick)="onApprove()" />
+                (onClick)="requestApproval()" />
               @if (approvalError()) {
                 <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
               }

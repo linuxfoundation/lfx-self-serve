@@ -58,7 +58,14 @@ import {
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgSentenceCaseLabel, mktgKitAssetLabel } from '@lfx-one/shared/utils';
+import {
+  mktgKitRootPath,
+  mktgAgentDocumentName,
+  mktgJsonAttachmentUsable,
+  mktgSentenceCaseLabel,
+  mktgKitAssetLabel,
+  mktgLinkWarnings,
+} from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -344,6 +351,15 @@ export class MktgAgentRunComponent {
     if (!this.intakeValid()) return 'Complete the required fields and correct any highlighted sources.';
     return '';
   });
+  protected readonly linkValues = computed(() =>
+    Object.fromEntries(
+      (this.intake?.fields ?? [])
+        .filter((field) => field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url')
+        .map((field) => [field.key, this.intakeValue()[field.key] ?? ''])
+    )
+  );
+  protected readonly linkUrls = computed(() => Object.values(this.linkValues()).flatMap((value) => value.split(/\r?\n/)));
+  protected readonly linkWarnings = computed(() => mktgLinkWarnings(this.linkValues()));
   protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
   protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
   protected readonly missingFiles = computed(() => this.missingDocuments() + this.missingLogos());
@@ -739,8 +755,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
-    // Removing entry-only mode uses the same restoration path as a plain run URL.
-    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (this.waitingQuestions()) {
+      // Removing entry-only mode uses the same restoration path as a plain run URL.
+      this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.router.navigate(this.waitingRunLink(), { queryParams: this.waitingRunParams() });
   }
 
   protected onStartOverWaiting(): void {
@@ -873,7 +893,10 @@ export class MktgAgentRunComponent {
           this.discardedRunId = runId;
           action();
         },
-        () => this.keepExistingRun()
+        (reason) => {
+          this.keepExistingRun();
+          if (reason === ConfirmEventType.REJECT) this.onContinueWaiting();
+        }
       ),
     });
   }
