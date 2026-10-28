@@ -764,10 +764,16 @@ as long as the twin route is deployed, which is why step 1 precedes it.
 
 #### AI Service Configuration
 
-| Parameter                  | Description                              | Required | Default |
-| -------------------------- | ---------------------------------------- | -------- | ------- |
-| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
-| `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
+| Parameter                  | Description                                                                                                                                                                           | Required | Default             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible)                                                                                                                                              | **Yes**  | -                   |
+| `environment.AI_MODEL`     | Model sent to the proxy — a short name its `model_list` publishes. Unset or empty falls back to the code default. `temperature` is sent only to models known to accept it (see below) | No       | `claude-sonnet-4-5` |
+| `environment.AI_API_KEY`   | API key for AI service                                                                                                                                                                | **Yes**  | -                   |
+
+`AI_MODEL` makes a model swap a values change rather than a release. The server logs the resolved
+model and its sampling mode once at startup (`ai_model_config`). Claude Opus 4.7 or later, any
+5-series Claude model and any name the server does not recognise are sent no sampling parameter,
+because those models answer a non-default `temperature` with a `400`.
 
 #### Guild AI Integration
 

@@ -1035,6 +1035,13 @@ environment:
   AI_PROXY_URL:
     value:
 
+  # Model sent to the LiteLLM proxy. Must be a short name the proxy publishes in its model_list
+  # (lfit-litellm.yaml), never a Bedrock id. Swapping it is a values change, not a release; the
+  # server decides at runtime whether to send temperature (Claude Opus 4.7+, any 5-series model and
+  # unknown names get none). Keep equal to AI_MODEL in packages/shared/src/constants/ai.constants.ts.
+  AI_MODEL:
+    value: "claude-sonnet-4-5"
+
   AI_API_KEY:
     value:
 

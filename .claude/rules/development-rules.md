@@ -29,8 +29,8 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 ## AI Service
 
-- **AI Service Integration**: a Claude model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content). The model is `AI_MODEL` in `packages/shared/src/constants/ai.constants.ts`, and must be one of the short names the proxy publishes — never a provider-prefixed Bedrock id nor a bare inference-profile id, and, while the send sites pass `AI_REQUEST_CONFIG.TEMPERATURE`, not a 5-series-or-later Claude model, which rejects that parameter with a `400` (#4333; `ai.constants.spec.ts` enforces both halves)
-- **AI Environment Variables**: `AI_PROXY_URL` and `AI_API_KEY` required for AI functionality
+- **AI Service Integration**: a Claude model via LiteLLM proxy for AI generation features (meeting agendas and newsletter content). The model is the `AI_MODEL` env var (chart `environment.AI_MODEL`), read by `getAiModel()` in `apps/lfx-one/src/server/helpers/ai-model.helper.ts` and falling back to `AI_MODEL` in `packages/shared/src/constants/ai.constants.ts` — so a model swap is an argocd values change, not a release. It must be one of the short names the proxy publishes — never a provider-prefixed Bedrock id nor a bare inference-profile id (#4333; `ai.constants.spec.ts` rejects both spellings of a Bedrock routing id in the default, though a well-formed name the proxy does not publish still passes). Send sites never set `temperature` themselves: they spread `getAiSamplingParams()`, which sends it only to a family `AI_SAMPLING_COMPATIBILITY` allows. Claude Opus 4.7 or later, any 5-series Claude model, and any unknown name get no sampling parameter, because those reject `temperature`/`top_p`/`top_k` with a `400` (#4460)
+- **AI Environment Variables**: `AI_PROXY_URL` and `AI_API_KEY` required for AI functionality; `AI_MODEL` optional
 - **M2M Environment Variables**: `M2M_AUTH_CLIENT_ID`, `M2M_AUTH_CLIENT_SECRET` for machine-to-machine auth
 
 ## Authentication: User Tokens vs M2M Tokens
