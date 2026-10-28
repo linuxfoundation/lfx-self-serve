@@ -15,7 +15,7 @@ import {
   MKTG_LAST_INTAKE_SCHEMA,
 } from '@lfx-one/shared/constants';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn(), resolve: vi.fn(), author: vi.fn(), warning: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn(), list: vi.fn(), resolve: vi.fn(), author: vi.fn(), warning: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async (original) => ({
   ...(await original<typeof import('@lfx-one/shared/constants')>()),
 }));
@@ -24,6 +24,7 @@ vi.mock('./object-store.service', () => ({
     public getObject = mocks.get;
     public putContentAddressedObject = mocks.put;
     public deletePrivateObject = mocks.delete;
+    public listObjects = mocks.list;
   },
 }));
 vi.mock('./mktg-document-run.service', () => ({
@@ -70,12 +71,44 @@ beforeEach(() => {
   mocks.get.mockResolvedValue(null);
   mocks.put.mockResolvedValue(true);
   mocks.delete.mockResolvedValue(undefined);
+  mocks.list.mockResolvedValue([]);
   mocks.author.mockReturnValue('auth0|synthetic-writer');
 });
 
 afterEach(() => vi.useRealTimers());
 
 describe('MktgLastIntakeService', () => {
+  it.each(['read', 'write'])('sweeps expired project siblings on LinkedIn %s without reading their bodies', async (operation) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-28T12:00:00Z'));
+    const service = new MktgLastIntakeService();
+    const payload = { ...input('linkedin-post'), answers: { content_source: 'text', content_text: 'Synthetic source' } };
+    await service.recordStartBestEffort(req, payload);
+    const record = written();
+    const expired = writerKey('linkedin-post', 'synthetic-expired-writer');
+    const fresh = writerKey('linkedin-post', 'synthetic-fresh-writer');
+    mocks.list.mockResolvedValue([
+      { key: expired, lastModified: new Date('2026-09-01T12:00:00Z') },
+      { key: fresh, lastModified: new Date() },
+      { key: expired.replace(project, 'other-project'), lastModified: new Date('2026-09-01T12:00:00Z') },
+    ]);
+    mocks.get.mockResolvedValue({ body: JSON.stringify(record) });
+    if (operation === 'read') await service.read(req, project, 'linkedin-post');
+    else await service.recordStartBestEffort(req, payload);
+    expect(mocks.list).toHaveBeenLastCalledWith(req, 'marketing-os-artifacts', `document-last-intake/${project}/linkedin-post/`);
+    expect(mocks.delete).toHaveBeenCalledExactlyOnceWith(req, 'marketing-os-artifacts', expired);
+    expect(mocks.get.mock.calls).toEqual(operation === 'read' ? [[req, 'marketing-os-artifacts', writerKey('linkedin-post')]] : []);
+  });
+  it.each(['list', 'delete'])('keeps cleanup best-effort on %s failure with one count-only warning', async (failure) => {
+    const keys = [writerKey('linkedin-post'), writerKey('linkedin-post', 'other-writer')];
+    mocks.list.mockResolvedValue(keys.map((key) => ({ key, lastModified: new Date('2000-01-01T00:00:00Z') })));
+    if (failure === 'list') mocks.list.mockRejectedValue(new Error('PRIVATE_CLEANUP'));
+    else mocks.delete.mockRejectedValue(new Error('PRIVATE_CLEANUP'));
+    await expect(new MktgLastIntakeService().sweepExpired(req, project)).resolves.toBeUndefined();
+    expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_last_intake_cleanup', expect.any(String), { failed: failure === 'list' ? 1 : 2 });
+    expect(JSON.stringify(mocks.warning.mock.calls)).not.toMatch(/PRIVATE_CLEANUP|document-last-intake|other-writer/);
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
   it.each([...types.map((type) => ({ agentKey: type.agentKey, agentId: type.catalogAgentId ?? '' })), { agentKey: 'linkedin-post', agentId: 'linkedin-post' }])(
     '$agentKey reads fresh history through 30 days, then deletes expired history and treats it as absent',
     async ({ agentKey, agentId }) => {

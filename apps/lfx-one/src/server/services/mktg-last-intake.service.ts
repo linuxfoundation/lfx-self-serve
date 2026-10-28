@@ -24,17 +24,18 @@ import { logger } from './logger.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { ObjectStoreService } from './object-store.service';
 
-/** Shared project snapshots for living intakes; writer-scoped LinkedIn snapshots. No listing or session-record reads. */
+/** Scalar snapshots with metadata-only cleanup; no session-record or sibling-body reads. */
 export class MktgLastIntakeService {
   private readonly store = new ObjectStoreService();
-  private readonly runs = new MktgDocumentRunService();
+  private runs?: MktgDocumentRunService;
 
   /** A missing key is empty history; storage failures are not reported as absence. */
   public async read(req: Request, rawProject: unknown, rawAgentKey: unknown): Promise<MktgLastIntake | null> {
     const { agentKey, intake } = this.registration(rawAgentKey);
-    const project = await this.runs.resolveProject(req, rawProject);
+    const project = await (this.runs ??= new MktgDocumentRunService()).resolveProject(req, rawProject);
     const subject = agentKey === LINKEDIN_POST_INTAKE.agentId ? getEffectiveSub(req) : null;
     if (agentKey === LINKEDIN_POST_INTAKE.agentId && !subject) throw new AuthenticationError('A signed-in writer subject is required.');
+    if (subject) await this.sweepExpired(req, project);
     logger.debug(req, 'mktg_last_intake_read', 'Reading scalar intake history', { project, agentKey });
     try {
       const key = this.key(project, agentKey, subject);
@@ -62,7 +63,7 @@ export class MktgLastIntakeService {
         try {
           await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
         } catch {
-          logger.warning(req, 'mktg_last_intake_expire', 'Expired scalar intake history could not be deleted', { project, agentKey });
+          logger.warning(req, 'mktg_last_intake_expire', 'Expired scalar intake history could not be deleted', { failed: 1 });
         }
         return null;
       }
@@ -103,6 +104,7 @@ export class MktgLastIntakeService {
         body = Buffer.from(JSON.stringify(record));
       }
       if (body.length > MKTG_LAST_INTAKE_MAX_BYTES) throw ServiceValidationError.forField('intake', 'Scalar intake history exceeds its storage limit.');
+      if (agentKey === LINKEDIN_POST_INTAKE.agentId) await this.sweepExpired(req, input.project);
       await this.store.putContentAddressedObject(
         req,
         'marketing-os-artifacts',
@@ -120,6 +122,42 @@ export class MktgLastIntakeService {
       // Neither source text, the submitted request, author nor session capability belongs in logs.
       logger.warning(req, 'mktg_last_intake_write', 'Run accepted, but scalar intake history could not be saved', { err: this.unavailable() });
     }
+  }
+
+  public async eraseWriter(req: Request, subject: string): Promise<void> {
+    if (!subject) return;
+    const writer = createHash('sha256').update(subject).digest('hex');
+    const pattern = new RegExp(`^${MKTG_LAST_INTAKE_PREFIX}/[^/]+/${LINKEDIN_POST_INTAKE.agentId}/${writer}\\.json$`);
+    await this.removeSnapshots(req, `${MKTG_LAST_INTAKE_PREFIX}/`, (key) => pattern.test(key));
+  }
+
+  public async sweepExpired(req: Request, project: string): Promise<void> {
+    if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project)) return;
+    const prefix = `${MKTG_LAST_INTAKE_PREFIX}/${project}/${LINKEDIN_POST_INTAKE.agentId}/`;
+    const pattern = /^[a-f0-9]{64}\.json$/;
+    const cutoff = Date.now() - MKTG_LAST_INTAKE_RETENTION_DAYS * 86400e3;
+    await this.removeSnapshots(
+      req,
+      prefix,
+      (key, modified) => key.startsWith(prefix) && pattern.test(key.slice(prefix.length)) && !!modified && modified.getTime() < cutoff
+    );
+  }
+
+  private async removeSnapshots(req: Request, prefix: string, matches: (key: string, modified?: Date) => boolean): Promise<void> {
+    let failed = 0;
+    try {
+      for (const entry of await this.store.listObjects(req, 'marketing-os-artifacts', prefix)) {
+        if (!matches(entry.key, entry.lastModified)) continue;
+        try {
+          await this.store.deletePrivateObject(req, 'marketing-os-artifacts', entry.key);
+        } catch {
+          failed++;
+        }
+      }
+    } catch {
+      failed++;
+    }
+    if (failed) logger.warning(req, 'mktg_last_intake_cleanup', 'Scalar intake cleanup was incomplete', { failed });
   }
 
   private registration(rawAgentKey: unknown): { agentKey: string; intake: MktgAgentIntake } {
