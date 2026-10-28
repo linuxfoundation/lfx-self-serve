@@ -26,7 +26,7 @@
       <div>
         <button
           type="button"
-          (click)="onStartOver()"
+          (click)="onStartOverClicked()"
           class="rounded border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
           data-testid="audience-custom-builder-another">
           Build another
@@ -399,7 +399,7 @@
           </button>
           <button
             type="button"
-            (click)="onStartOver()"
+            (click)="onStartOverClicked()"
             [disabled]="creating()"
             class="rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             data-testid="audience-custom-builder-reset">

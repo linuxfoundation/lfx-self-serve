@@ -56,7 +56,7 @@
         <p class="text-xs text-gray-600" data-testid="campaigns-audience-build-panel">
           Draft from the event page, or describe the audience below. Nothing is created in HubSpot until you preview and confirm.
         </p>
-        <div class="flex flex-wrap items-center gap-2">
+        <div>
           <button
             type="button"
             (click)="onGenerateEventPlan()"
@@ -66,13 +66,6 @@
             <i class="fa-light fa-wand-magic-sparkles" aria-hidden="true"></i>
             Draft from event page
           </button>
-          <details class="text-xs text-gray-500">
-            <summary class="cursor-pointer hover:text-gray-700">What does it draft?</summary>
-            <p class="mt-1">
-              A segmented audience: contacts in the host city and country, past registrants of events there, education enrollees in the brand's courses, and the
-              event page's visitors.
-            </p>
-          </details>
         </div>
         @if (pendingStartOver() === 'draft') {
           <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-draft">
@@ -98,6 +91,83 @@
             </div>
           </div>
         }
+        <p class="text-xs text-gray-500" data-testid="campaigns-audience-event-generate-scope">
+          Drafts this event's past registrants, education enrollees in the brand's courses, and the event page's visitors, and adds the project's and the LF
+          Newsletter's existing opt-in lists once the drafted list is created. Not limited to the host city or country unless you ask for it.
+        </p>
+        <!-- Opt-ins come from lists the portal already keeps, never from new filters: see lookUpOptIns. -->
+        @if (optInView(); as lookup) {
+          @if (lookup.status === 'loading') {
+            <p class="flex items-center gap-2 text-xs text-gray-600" role="status" data-testid="campaigns-audience-opt-ins-loading">
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+              Finding the existing opt-in lists...
+            </p>
+          } @else if (lookup.status === 'failed') {
+            <p class="text-xs text-amber-700" role="alert" data-testid="campaigns-audience-opt-ins-failed">
+              The opt-in lists could not be looked up. Search for them under "Or use an existing list" below.
+            </p>
+          } @else if (lookup.status === 'done') {
+            <div class="flex flex-col gap-1 rounded-md border border-gray-100 bg-gray-50 p-2 text-xs text-gray-700" data-testid="campaigns-audience-opt-ins">
+              @for (list of lookup.added; track list.listId) {
+                <span class="flex flex-wrap items-center gap-1" [attr.data-testid]="'campaigns-audience-opt-in-added-' + list.listId">
+                  <i class="fa-light fa-circle-check text-emerald-600" aria-hidden="true"></i>
+                  Added to Include:
+                  @if (list.hubspotUrl) {
+                    <a
+                      [attr.data-testid]="'campaigns-audience-opt-in-link-' + list.listId"
+                      [href]="list.hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="font-medium text-blue-600 hover:underline"
+                      >{{ list.name }}</a
+                    >
+                  } @else {
+                    <span class="font-medium">{{ list.name }}</span>
+                  }
+                  @if (list.size !== undefined) {
+                    <span class="text-gray-500">· {{ list.size | number }} contacts</span>
+                  }
+                </span>
+              }
+              @for (list of lookup.pending; track list.listId) {
+                <span class="flex flex-wrap items-center gap-1" [attr.data-testid]="'campaigns-audience-opt-in-pending-' + list.listId">
+                  <i class="fa-light fa-clock text-gray-500" aria-hidden="true"></i>
+                  Joins Include once the drafted list is created:
+                  <span class="font-medium">{{ list.name }}</span>
+                  @if (list.size !== undefined) {
+                    <span class="text-gray-500">· {{ list.size | number }} contacts</span>
+                  }
+                </span>
+              }
+              @for (signal of lookup.missing; track signal) {
+                <span class="text-amber-700" [attr.data-testid]="'campaigns-audience-opt-in-missing-' + signal">
+                  No {{ signal === 'project_opt_in' ? 'project opt-in' : 'LF Newsletter opt-in' }} list was found in HubSpot.
+                </span>
+              }
+              @if (lookup.others.length > 0) {
+                <span class="text-gray-500">Also found:</span>
+                @for (list of lookup.others; track list.listId) {
+                  <span class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="break-words">
+                      {{ list.name }}
+                      @if (list.size !== undefined) {
+                        <span class="text-gray-500">· {{ list.size | number }}</span>
+                      }
+                    </span>
+                    <button
+                      type="button"
+                      (click)="onAddOptIn(list)"
+                      [disabled]="selectionLocked() || selectedIds().has(list.listId)"
+                      class="rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'campaigns-audience-opt-in-add-' + list.listId">
+                      {{ selectedIds().has(list.listId) ? 'Added' : 'Add' }}
+                    </button>
+                  </span>
+                }
+              }
+            </div>
+          }
+        }
       </div>
     }
     @if (mode() === 'reuse') {
@@ -121,6 +191,7 @@
         [resetKey]="customResetKey()"
         (created)="onCustomCreated($event)"
         (reuse)="onCustomReuse($event)"
+        (startedOver)="onCustomStartedOver()"
         (eventPlanned)="onEventPlanned($event)"
         (creatingChange)="customCreating.set($event)" />
     </div>
@@ -168,7 +239,7 @@
   </section>
 
   <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse'" data-testid="campaigns-audience-reuse-view">
-    <!-- === 1. Discover === -->
+    <!-- === Discover === -->
     <lfx-audience-step-card
       [step]="stepNumbers().discover"
       heading="Discover qualifying lists"
@@ -428,10 +499,10 @@
       }
     </section>
 
-    <!-- Steps 2-5 each ADD to the selection, so compose (6) comes after all of them: composing
+    <!-- Include, Exclude, Reuse and Fill gaps each ADD to the selection, so compose comes after all of them: composing
          before Reuse and Fill gaps built a master list that the next two steps then changed. -->
     <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse' || !hasDiscovered()" data-testid="campaigns-audience-discovered-steps">
-      <!-- === 2. Include === -->
+      <!-- === Include === -->
       <lfx-audience-step-card
         [step]="stepNumbers().include"
         heading="Include lists"
@@ -457,7 +528,7 @@
       </lfx-audience-step-card>
     </div>
 
-    <!-- === 3. Exclude === -->
+    <!-- === Exclude === -->
     <lfx-audience-step-card
       [step]="stepNumbers().exclude"
       heading="Standard suppressions"
@@ -538,7 +609,7 @@
     </lfx-audience-step-card>
 
     <div class="flex flex-col gap-4" [class.hidden]="mode() !== 'reuse' || !hasDiscovered()">
-      <!-- === 4. Reuse === -->
+      <!-- === Reuse === -->
       <lfx-audience-step-card
         [step]="stepNumbers().reuse"
         heading="Reuse a previous audience"
@@ -604,7 +675,7 @@
         }
       </lfx-audience-step-card>
 
-      <!-- === 5. Fill gaps === -->
+      <!-- === Fill gaps === -->
       <lfx-audience-step-card
         [step]="stepNumbers().gaps"
         heading="Fill the gaps"
@@ -630,7 +701,7 @@
       </lfx-audience-step-card>
     </div>
 
-    <!-- === 6. Review & compose === -->
+    <!-- === Review & compose === -->
     <lfx-audience-step-card
       [step]="stepNumbers().compose"
       heading="Review and attach"
@@ -679,7 +750,9 @@
         @if (suppressionMissing()) {
           <p class="text-xs font-medium text-red-700" role="alert" data-testid="campaigns-audience-exclude-none">
             {{ suppressionMissingMessage() }}
-            <button type="button" (click)="onGoToStep('exclude')" class="underline hover:text-red-900">Go to Standard suppressions</button>
+            <button type="button" (click)="onGoToStep('exclude')" data-testid="campaigns-audience-goto-exclude" class="underline hover:text-red-900">
+              Go to Standard suppressions
+            </button>
           </p>
         }
         @if (suppressionEntries().length > 0) {
@@ -1038,7 +1111,13 @@
                   Not attached to this email — it had no saved plan when this list was composed. Once the plan is saved, choose "Use for this email" on this
                   list under
                   @if (hasDiscovered()) {
-                    <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>;
+                    <button
+                      type="button"
+                      (click)="onGoToStep('reuse')"
+                      data-testid="campaigns-audience-goto-reuse-not-attached"
+                      class="text-blue-600 underline hover:text-blue-800">
+                      Master lists already built</button
+                    >;
                   } @else {
                     Master lists already built (run Discover under Use existing lists first);
                   }
@@ -1048,7 +1127,13 @@
                 <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-confirmed">
                   Attachment to this email was not confirmed. Choose "Use for this email" on this list under
                   @if (hasDiscovered()) {
-                    <button type="button" (click)="onGoToStep('reuse')" class="text-blue-600 underline hover:text-blue-800">Master lists already built</button>
+                    <button
+                      type="button"
+                      (click)="onGoToStep('reuse')"
+                      data-testid="campaigns-audience-goto-reuse-not-confirmed"
+                      class="text-blue-600 underline hover:text-blue-800">
+                      Master lists already built
+                    </button>
                   } @else {
                     Master lists already built (run Discover under Use existing lists first)
                   }
