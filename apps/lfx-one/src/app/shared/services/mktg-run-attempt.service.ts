@@ -95,6 +95,12 @@ export class MktgRunAttemptService {
       prepared.subject !== this.subject() ||
       prepared.pending.request.projectUid !== projectUid ||
       prepared.pending.request.agentId !== agentId ||
+      (prepared.pending.request.intake.oneOffDocument &&
+        (!documentId ||
+          documentId === MKTG_LIVING_DOCUMENT_ID ||
+          !MKTG_DOCUMENT_ID_REGEX.test(documentId) ||
+          prepared.pending.request.documentId !== documentId ||
+          (prepared.pending.attempt ? prepared.pending.attempt.documentId !== documentId : prepared.pending.state !== 'failed'))) ||
       !Number.isFinite(Date.parse(prepared.pending.updatedAt)) ||
       Date.now() - Date.parse(prepared.pending.updatedAt) > MKTG_RUN_STORAGE_TTL_MS
     ) {
@@ -293,6 +299,12 @@ export class MktgRunAttemptService {
       if (
         parsed.request?.projectUid !== project ||
         parsed.request.agentId !== agentId ||
+        parsed.request.documentId !== documentId ||
+        (MKTG_AGENT_INTAKES[agentId]?.oneOffDocument &&
+          (!documentId ||
+            documentId === MKTG_LIVING_DOCUMENT_ID ||
+            !MKTG_DOCUMENT_ID_REGEX.test(documentId) ||
+            (parsed.attempt ? parsed.attempt.documentId !== documentId : parsed.state !== 'failed'))) ||
         !parsed.request.answers ||
         !MKTG_AGENT_INTAKES[agentId] ||
         !Number.isFinite(Date.parse(parsed.updatedAt)) ||

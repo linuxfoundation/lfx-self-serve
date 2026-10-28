@@ -47,11 +47,8 @@ export class LinkedinPostService {
   public save(body: { setup?: LinkedinSetup; profile?: LinkedinProfile }): Observable<{ profile: LinkedinStoredProfile }> {
     return this.http.put<{ profile: LinkedinStoredProfile }>(`${LINKEDIN_API}/profile`, body).pipe(take(1));
   }
-  public start(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
-    const owner = this.user.user()?.sub;
-    return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}) }).pipe(
-      take(1),
-      map((run) => ({ ...run, retryInputs: { answers: { ...answers }, ...(setup ? { setup: { ...setup } } : {}) } })),
+  public startForDocument(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
+    return this.create(intake, project, answers, setup).pipe(
       tap((run) => {
         if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
           throw new Error('The run belongs to a different user or has no document destination.');
@@ -150,7 +147,7 @@ export class LinkedinPostService {
       );
   }
 
-  public wait(intake: MktgAgentIntake, project: string, run: LinkedinGeneration, onProgress?: (result: LinkedinResult) => void): Observable<LinkedinResult> {
+  private create(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
     const owner = this.user.user()?.sub;
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
       exhaustMap(() =>

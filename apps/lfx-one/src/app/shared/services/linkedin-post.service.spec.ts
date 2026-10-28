@@ -29,7 +29,8 @@ describe('LinkedIn pending document recovery', () => {
     vi.useFakeTimers();
     const service = TestBed.inject(LinkedinPostService);
     const http = TestBed.inject(HttpTestingController);
-    service.start(LINKEDIN_POST_INTAKE, 'project-one', {}).subscribe();
+    const setup = { name: 'Synthetic author', role: 'Maintainer', focus_areas: 'Open source', primary_audience: 'Developers' };
+    service.startForDocument(LINKEDIN_POST_INTAKE, 'project-one', { content_source: 'text', content_text: 'private-source' }, setup).subscribe();
     http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate).flush(run);
     const progress = vi.fn();
     const next = vi.fn();

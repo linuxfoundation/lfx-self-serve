@@ -71,6 +71,7 @@ import {
   mktgRunRouteFor,
   mktgRunModeFor,
   parseMktgLegacyRevisionId,
+  parseLinkedinContentSource,
   normalizeLinkedinShareLink,
   readBrandKitRevision,
   readLinkedinDocumentContent,
@@ -220,6 +221,7 @@ export class MktgDocumentViewComponent {
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
+  protected readonly profileWarning = signal(false);
   protected readonly runDetail = signal<MktgDocumentDetailResponse | null>(null);
   private readonly activityContext = signal<[string, MktgRunActivity[] | undefined]>(['', undefined]);
   protected readonly localProgress = signal<MktgDocumentLocalProgress>(null);
@@ -337,6 +339,7 @@ export class MktgDocumentViewComponent {
     project: this.projectContext.activeContext()?.slug || this.routeProject(),
     mode: mktgRunModeFor(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.catalogAgentId ?? ''),
     ...MKTG_RUN_RESUME_QUERY_CLEAR,
+    ...(this.isLinkedinDocument() && { source: this.sourceParam() }),
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
@@ -388,6 +391,9 @@ export class MktgDocumentViewComponent {
     );
   });
 
+  private readonly sourceParam = toSignal(this.route.queryParamMap.pipe(map((params) => parseLinkedinContentSource(params.get('source')))), {
+    initialValue: 'text',
+  });
   private readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
   private readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
 
@@ -409,6 +415,9 @@ export class MktgDocumentViewComponent {
   protected readonly runState: Signal<MktgDocumentRunProgress['state'] | null> = this.initRunState();
 
   protected readonly runFailure = computed(() => this.selectedRun()?.failureText || this.failureText() || '');
+  protected readonly waitingForQuestions = computed(
+    () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
+  );
 
   protected readonly runRecorded = computed(() => !this.submittingGeneration() && (!!this.handoffRunId() || !!this.selectedRun()));
 
@@ -528,6 +537,7 @@ export class MktgDocumentViewComponent {
               this.editingLink.set(false);
               this.savingLink.set(false);
               this.linkError.set('');
+              this.profileWarning.set(false);
               this.linkForm.enable({ emitEvent: false });
               this.view.set(null);
               this.runDetail.set(null);
@@ -576,6 +586,7 @@ export class MktgDocumentViewComponent {
               this.localProgress.set('writing');
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
               if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
+              if (type?.kind === 'run' && prepared.pending.attempt?.runId) this.onProgress({ type: 'submitted' }, prepared.pending);
               this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
@@ -589,7 +600,11 @@ export class MktgDocumentViewComponent {
               intake?.endpoints.result
                 ? this.attempts.load(request.project, intake.agentId, type?.kind === 'run' ? request.documentId : undefined)
                 : null;
-            const recoverable = saved?.state === 'writing' && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId) ? saved : null;
+            const needsQuestions = intake?.oneOffDocument && intake.endpoints.answers && saved?.state === 'questions' && !saved.pendingQuestions;
+            const recoverable =
+              saved && (saved.state === 'writing' || needsQuestions) && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId)
+                ? saved
+                : null;
             const resume = (pending: MktgPendingGeneration) =>
               this.runService.resume(pending).pipe(
                 tap((progress) => this.onProgress(progress, pending)),
@@ -878,7 +893,21 @@ export class MktgDocumentViewComponent {
     const agentId = this.runAgentId();
     if (!agentId) return;
     const project = this.projectContext.activeContextUid();
-    const pending = project ? this.attempts.load(project, agentId) : null;
+    const oneOff = MKTG_AGENT_INTAKES[agentId]?.oneOffDocument;
+    let pending = project ? this.attempts.load(project, agentId, oneOff ? this.params().documentId : undefined) : null;
+    const intake = MKTG_AGENT_INTAKES[agentId];
+    if (pending && oneOff && this.selectedRun()?.state === 'failed' && pending.attempt?.runId === this.selectedRun()?.runId && pending.state !== 'failed') {
+      pending = { ...pending, state: 'failed', pendingQuestions: undefined };
+      this.attempts.save(pending); // The server is authoritative even before the private poll has settled.
+    }
+    if (!pending && project && oneOff && intake && this.selectedRun()?.state === 'failed') {
+      pending = {
+        request: { projectUid: project, agentId, intake, documentId: this.params().documentId, answers: {} },
+        state: 'failed',
+        updatedAt: new Date().toISOString(),
+      };
+      this.attempts.save(pending); // Public re-entry hint only: no session proof or authority to poll/start.
+    }
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
       queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
@@ -943,7 +972,7 @@ export class MktgDocumentViewComponent {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
       state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
-      queryParams: { profile: 'edit', revision: null, type: null },
+      queryParams: { profile: 'edit', revision: null, type: null, ...(this.profileWarning() && { profileDocument: this.params().documentId }) },
       queryParamsHandling: 'merge',
     });
   }
@@ -1242,7 +1271,8 @@ export class MktgDocumentViewComponent {
       return;
     }
     if (progress.type === 'submitted') {
-      const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
+      const runId =
+        this.attempts.load(pending.request.projectUid, pending.request.agentId, pending.request.documentId)?.attempt?.runId ?? pending.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
       if (runId) {
         this.preparedRunIds.add(runId);
@@ -1276,6 +1306,7 @@ export class MktgDocumentViewComponent {
         this.errorText.set('The completed run receipt belongs to another asset. Your intake is kept; open Documents to check it.');
         return;
       }
+      if (this.isLinkedinDocument() && progress.type === 'document' && progress.profileSaved === false) this.profileWarning.set(true);
       this.dependencyService.notifyDocumentsChanged(pending.request.projectUid);
       if (location) {
         this.localProgress.set(null);
