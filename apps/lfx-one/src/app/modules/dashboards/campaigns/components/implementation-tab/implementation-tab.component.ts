@@ -1447,6 +1447,12 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleGeoTargetCount = computed(() => this.googleGeoTargets().length + this.googleDispatchedPostalGeoTargets().length);
   protected readonly googleGeoTargetsFull = computed(() => this.googleGeoTargetCount() >= GOOGLE_ADS_MAX_GEO_TARGETS);
+  /**
+   * Whether the list a create would send is OVER the cap — reachable only when postal ids held while
+   * the capability was unanswered are released by a late yes, after countries were added in the
+   * meantime (the add guards cannot see held ids). Create waits rather than letting the BFF refuse it.
+   */
+  protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
 
   /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
   private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
@@ -2311,6 +2317,8 @@ export class ImplementationTabComponent implements OnInit {
     // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
     // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
+    // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
+    if (googleSelected && this.googleGeoTargetsOverCap()) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;

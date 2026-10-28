@@ -6500,6 +6500,37 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(c['googleGeoTargets']()).toEqual(['CA']);
   });
 
+  /**
+   * Postal ids held while the capability is unanswered do not count against the cap, so countries
+   * can still be added; a late yes then releases a list over 60. Create waits, and says why.
+   */
+  it('blocks Create when a late capability yes releases more than the cap allows', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+    // `includeSearch` kept on: the base draft unticks every channel, which would close the section.
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePostalGeoTargets: Array.from({ length: 40 }, (_, i) => String(9031900 + i)) });
+    for (const code of c['googleGeoOptions']) c['addGoogleGeoTarget'](code);
+    expect(c['googleGeoTargets']()).toHaveLength(c['googleGeoOptions'].length);
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleGeoTargetCount']()).toBe(40 + c['googleGeoOptions'].length);
+    expect(c['googleGeoTargetsOverCap']()).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-geo-over-cap')?.textContent).toContain('at most 60');
+
+    c['removeGooglePostalGeoTarget'](0);
+    for (let i = 0; i < 9; i++) c['removeGooglePostalGeoTarget'](0);
+    fixture.detectChanges();
+
+    expect(c['googleGeoTargetCount']()).toBe(60);
+    expect(c['googleGeoTargetsOverCap']()).toBe(false);
+    expect(c['canSubmit']()).toBe(true);
+    expect(find('implementation-google-geo-over-cap')).toBeNull();
+  });
+
   /** `Number()` reads these as 26, 3 and 100; the form takes decimal degrees only. */
   it.each([['0x1A'], ['0b11'], ['1e2'], ['Infinity']])('refuses the non-decimal spelling %s and names it', (text) => {
     const c = seedChannel(fixture, { includeSearch: true });
