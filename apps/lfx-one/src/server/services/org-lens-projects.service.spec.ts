@@ -386,7 +386,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
     // The serialized comparison additionally pins key ORDER: `decodeProjectsResponse` deliberately
     // rebuilds each project in `mapProject`'s field order and appends `noActivityYet` last, exactly
-    // as `fetchNoActivityProjects` does. Reordering either list breaks this — deliberately, since a
+    // as `mapNoActivityProject` does. Reordering either list breaks this — deliberately, since a
     // warm and a cold cache must put the same bytes on the wire.
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(fromMiss.projects.map((project) => project.noActivityYet)).toEqual([undefined, undefined, true]);
@@ -650,6 +650,33 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
     expect(response.maintainerRolesUnavailable).toBe(true);
     expect(response.projects.map((project) => project.maintainers)).toEqual([[]]);
     expect(cacheValues.size).toBe(0);
+  });
+
+  it('lists the maintainer roles on a requested project hydrated from the catalog for want of activity rows', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return {
+          rows: [
+            { INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: 'Ada Lovelace', MAINTAINER_AVATAR_URL: null },
+            { INSIGHTS_PROJECT_SLUG: 'ghost', MEMBER_ID: 'm-3', MAINTAINER_NAME: 'Grace Hopper', MAINTAINER_AVATAR_URL: null },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' })] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) return { rows: [] };
+      // The onboarded catalog hydrates the requested slug the account has no activity row for.
+      return { rows: [projectsRow({ PROJECT_ID: 'proj-3', PROJECT_SLUG: 'Ghost', PROJECT_NAME: 'Ghost' })] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, ['K8s', ' Ghost ']);
+
+    expect(response.projects.map((project) => [project.slug, project.noActivityYet, project.maintainers])).toEqual([
+      ['K8s', undefined, [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }]],
+      ['Ghost', true, [{ id: 'm-3', name: 'Grace Hopper', avatarUrl: '' }]],
+    ]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('r.INSIGHTS_PROJECT_SLUG IN (?, ?)');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 'ghost', 730]);
   });
 
   it('no longer reads maintainers from the project people table', async () => {

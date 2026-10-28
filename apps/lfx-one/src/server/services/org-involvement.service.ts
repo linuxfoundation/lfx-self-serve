@@ -11,8 +11,9 @@ import {
   OrgMaintainerRolesMonthlyRow,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
-import { ORG_OVERVIEW_MAINTAINER_ROLES_RANGE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_COMMIT_FILTERS, ORG_LENS_DEFAULT_TIME_RANGE, ORG_OVERVIEW_MAINTAINER_ROLES_RANGE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 
+import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -29,11 +30,8 @@ interface FoundationCoverageRow {
 }
 
 interface ContributorsMonthlyRow {
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
   MONTH_START_DATE: Date;
   UNIQUE_CONTRIBUTORS: number;
-  TOTAL_ACTIVE_CONTRIBUTORS: number;
 }
 
 interface EventAttendanceMonthlyRow {
@@ -89,9 +87,11 @@ export class OrgInvolvementService {
   }
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    // `contributors:v2`: the headline is now the live People -> Contributors default count, not the monthly table's
+    // frozen 12-month total, so a `contributors` entry must not be read.
     return withOrgCache(
       accountId,
-      'contributors',
+      'contributors:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributorsMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -181,31 +181,39 @@ export class OrgInvolvementService {
     };
   }
 
+  /**
+   * Overview Active Contributors card. The headline is the People -> Contributors default tile, counted live with the
+   * same rule — distinct people with code in LF projects, the past 365 days to today — so the two agree; the frozen
+   * 12-month total of ORG_CONTRIBUTORS_MONTHLY (calendar months, built once a day) drifted from it. The trend stays the
+   * monthly table's distinct contributors per month. Either read failing fails the card, as before.
+   */
   private async fetchContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    const query = `
+    const headlineQuery = `
+      SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id = ?
+        ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
+    `;
+    const trendQuery = `
       SELECT
-        ACCOUNT_ID,
         MONTH_START_DATE,
-        UNIQUE_CONTRIBUTORS,
-        TOTAL_ACTIVE_CONTRIBUTORS
+        UNIQUE_CONTRIBUTORS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<ContributorsMonthlyRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return { accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] };
-    }
-
-    const firstRow = result.rows[0];
+    const [headline, trend] = await Promise.all([
+      this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(headlineQuery, [accountId]),
+      this.snowflakeService.execute<ContributorsMonthlyRow>(trendQuery, [accountId]),
+    ]);
 
     return {
-      accountId: firstRow.ACCOUNT_ID,
-      totalActiveContributors: firstRow.TOTAL_ACTIVE_CONTRIBUTORS || 0,
-      monthlyData: result.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
-      monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      accountId,
+      totalActiveContributors: headline.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
+      monthlyData: trend.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+      monthlyLabels: trend.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }
 

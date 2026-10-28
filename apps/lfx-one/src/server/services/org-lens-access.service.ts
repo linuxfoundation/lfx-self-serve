@@ -108,7 +108,7 @@ export class OrgLensAccessService {
     // (compute directly, no read/write). The caller's own earlier-read entries are dropped by the write
     // path's invalidateCallerCaches; any other caller's per-user entry ages out within the TTL.
     if (knownCanManage !== undefined) {
-      return (await this.computeAccessList(req, orgUid, knownCanManage)).response;
+      return this.computeAccessList(req, orgUid, knownCanManage);
     }
     const username = getEffectiveUsername(req) ?? '';
     // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
@@ -117,24 +117,21 @@ export class OrgLensAccessService {
     // fail-closed `false`, not a verdict — served but never cached, or one authorizer blip would hide Access
     // management for the whole TTL while the other tabs (no-store `edit-check`) still show their controls.
     let canManageVerified = true;
-    let formerVerified = true;
     return withPerUserCache(
       `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
       username,
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      async () => {
+      () => {
         const canManage = resolveOrgLensEdit(req, orgUid, 'resolve_org_access_can_manage').then((decision) => {
           canManageVerified = decision.kind !== 'unverifiable';
           return decision.kind === 'allowed';
         });
-        const list = await this.computeAccessList(req, orgUid, canManage);
-        formerVerified = list.formerVerified;
-        return list.response;
+        return this.computeAccessList(req, orgUid, canManage);
       },
       isAccessListResponse,
-      // A list whose former employees could not be read flags nobody former; it is served but never cached.
-      () => canManageVerified && formerVerified
+      // A list whose former employees could not be read flags nobody former; it is served, flagged, but never cached.
+      (list) => canManageVerified && list.employmentUnavailable !== true
     );
   }
 
@@ -220,19 +217,22 @@ export class OrgLensAccessService {
     ]);
   }
 
-  private async computeAccessList(
-    req: Request,
-    orgUid: string,
-    canManage: boolean | Promise<boolean>
-  ): Promise<{ response: OrgAccessListResponse; formerVerified: boolean }> {
+  private async computeAccessList(req: Request, orgUid: string, canManage: boolean | Promise<boolean>): Promise<OrgAccessListResponse> {
     const [settings, resolvedCanManage, formerUsernames] = await Promise.all([
       this.fetchSettings(req, orgUid),
       canManage,
       this.readFormerUsernames(req, orgUid),
     ]);
     const enriched = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
+    // `mapPrincipals` stores the username trimmed and lowercased, the form `readOrgFormerUsernames` returns.
     const users = enriched.map((user) => ({ ...user, isFormer: user.username !== null && formerUsernames?.has(user.username) === true }));
-    return { response: { orgUid, users, summary: this.buildSummary(users), canManage: resolvedCanManage }, formerVerified: formerUsernames !== null };
+    return {
+      orgUid,
+      users,
+      summary: this.buildSummary(users),
+      canManage: resolvedCanManage,
+      ...(formerUsernames === null ? { employmentUnavailable: true as const } : {}),
+    };
   }
 
   /**

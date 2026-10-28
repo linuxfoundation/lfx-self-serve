@@ -23,6 +23,7 @@ import {
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_MAINTAINER_ROLES_DEFINITION,
   ORG_MAINTAINER_ROLES_LABEL,
+  ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -97,6 +98,7 @@ export class ContributorsComponent {
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly maintainerRolesLabel = ORG_MAINTAINER_ROLES_LABEL;
   protected readonly maintainerRolesTooltip = ORG_MAINTAINER_ROLES_DEFINITION;
+  protected readonly maintainerRolesUnavailableHint = ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT;
   protected readonly statSkeletonLabels: readonly string[] = [ORG_MAINTAINER_ROLES_LABEL, 'Contributors', 'Projects', 'Foundations'];
 
   // The commit filters follow `?projectScope=` / `?metric=` (shared with All Employees), the range follows `?range=`
@@ -160,7 +162,8 @@ export class ContributorsComponent {
     describeContributorsTooltip(
       this.commitFilters().projectScope,
       this.accountContext.selectedAccount().accountName,
-      describeContributionsWindow(this.timeRange())
+      describeContributionsWindow(this.timeRange()),
+      this.employment()
     )
   );
 

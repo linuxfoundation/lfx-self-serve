@@ -94,3 +94,63 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482)', ()
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 });
+
+describe('OrgInvolvementService.getContributorsMonthly — the People -> Contributors default count', () => {
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+    execute.mockImplementation(async (sql: string) =>
+      sql.includes('ORG_CONTRIBUTORS_MONTHLY')
+        ? {
+            rows: [
+              { MONTH_START_DATE: new Date(2030, 0, 15), UNIQUE_CONTRIBUTORS: 310 },
+              { MONTH_START_DATE: new Date(2030, 1, 15), UNIQUE_CONTRIBUTORS: null },
+            ],
+          }
+        : { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] }
+    );
+  });
+
+  it('answers the live count as the headline and the monthly table as the trend', async () => {
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+
+    expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [310, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v2');
+  });
+
+  it('counts distinct people with code in LF projects over the past 365 days, the Contributors default rule, binding only the account', async () => {
+    await new OrgInvolvementService().getContributorsMonthly('acc-1');
+
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_PEOPLE_CONTRIBUTORS_DAILY'))!;
+    expect(sql).toContain('COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS');
+    expect(sql).toContain('WHERE account_id = ?');
+    expect(sql).toContain('AND activity_date >= DATEADD(day, -365, CURRENT_DATE())');
+    expect(sql).toContain('AND is_lf_project = TRUE');
+    expect(binds).toEqual(['acc-1']);
+    const [trendSql] = execute.mock.calls.find(([query]) => String(query).includes('ORG_CONTRIBUTORS_MONTHLY'))!;
+    expect(trendSql).not.toContain('TOTAL_ACTIVE_CONTRIBUTORS');
+  });
+
+  it('answers zero and an empty trend for an account without code', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    expect(await new OrgInvolvementService().getContributorsMonthly('acc-1')).toEqual({
+      accountId: 'acc-1',
+      totalActiveContributors: 0,
+      monthlyData: [],
+      monthlyLabels: [],
+    });
+  });
+
+  it.each(['ORG_PEOPLE_CONTRIBUTORS_DAILY', 'ORG_CONTRIBUTORS_MONTHLY'])(
+    'fails the card when the %s read fails, as the monthly read always has',
+    async (table) => {
+      execute.mockImplementation(async (sql: string) => {
+        if (sql.includes(table)) throw new Error('Warehouse timeout');
+        return { rows: [] };
+      });
+
+      await expect(new OrgInvolvementService().getContributorsMonthly('acc-1')).rejects.toThrow('Warehouse timeout');
+    }
+  );
+});

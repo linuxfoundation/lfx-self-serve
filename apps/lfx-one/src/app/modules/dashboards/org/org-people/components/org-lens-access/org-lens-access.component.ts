@@ -127,6 +127,8 @@ export class OrgLensAccessComponent {
   protected readonly users: Signal<OrgAccessUser[]> = computed(() => this.listData().users);
   protected readonly summary: Signal<OrgAccessSummary> = computed(() => this.listData().summary);
   protected readonly canManage: Signal<boolean> = computed(() => this.listData().canManage);
+  // The former employees could not be read: nobody is flagged former, so a Current or Former pick cannot be trusted.
+  protected readonly showEmploymentUnavailable = computed(() => this.listData().employmentUnavailable === true && this.employment() !== 'all');
 
   protected readonly filteredUsers: Signal<OrgAccessUser[]> = computed(() => this.initFilteredUsers());
   protected readonly totalFiltered = computed(() => this.filteredUsers().length);

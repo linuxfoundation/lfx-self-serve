@@ -44,7 +44,7 @@ async function settle(): Promise<void> {
   fixture.detectChanges();
 }
 
-async function mount(users: OrgAccessUser[], initialUrl = '/'): Promise<void> {
+async function mount(users: OrgAccessUser[], initialUrl = '/', overrides: Partial<OrgAccessListResponse> = {}): Promise<void> {
   const list: OrgAccessListResponse = {
     orgUid: SYNTHETIC_ORG_ACCOUNT_ID,
     users,
@@ -54,6 +54,7 @@ async function mount(users: OrgAccessUser[], initialUrl = '/'): Promise<void> {
       viewers: users.filter((u) => !u.isPending && u.role === 'viewer').length,
     },
     canManage: true,
+    ...overrides,
   };
   await TestBed.configureTestingModule({
     imports: [OrgLensAccessComponent],
@@ -195,5 +196,25 @@ describe('OrgLensAccessComponent — employment filter', () => {
     await mount([CURRENT, INVITE], '/?tab=access&employment=former');
 
     expect(el().querySelector('[data-testid="org-access-empty"]')?.textContent).toContain('No users match the current search or filter.');
+  });
+
+  it('warns under Current or Former, not under All employees, when the former employees could not be read', async () => {
+    const unflagged = { ...FORMER, isFormer: false };
+    await mount([CURRENT, unflagged, INVITE], '/?tab=access&employment=former', { employmentUnavailable: true });
+    const warning = (): Element | null => el().querySelector('[data-testid="org-access-employment-unavailable"]');
+
+    expect(warning()?.textContent).toContain("Former employees couldn't be identified right now");
+
+    await pick('current');
+    expect(warning()).not.toBeNull();
+
+    await pick('all');
+    expect(warning()).toBeNull();
+  });
+
+  it('shows no warning when the former employees were read', async () => {
+    await mount([CURRENT, FORMER, INVITE], '/?tab=access&employment=former');
+
+    expect(el().querySelector('[data-testid="org-access-employment-unavailable"]')).toBeNull();
   });
 });

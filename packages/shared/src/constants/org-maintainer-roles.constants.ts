@@ -12,6 +12,9 @@ export const ORG_MAINTAINER_ROLES_LABEL = 'Maintainer roles';
 /** Label where the count covers LF projects only (Overview Foundations & Projects, Memberships projects drawer). */
 export const ORG_LF_MAINTAINER_ROLES_LABEL = 'LF maintainer roles';
 
+/** Hint on the "—" shown in place of a Maintainer/Contributor role when the maintainer roles cannot be read. */
+export const ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT = 'Maintainer data is currently unavailable';
+
 /** The counting rule for People → Contributors' tile, which follows the range but not the Employment filter (lfx-self-serve#4627). */
 export const ORG_MAINTAINER_ROLES_DEFINITION =
   "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment filter.";

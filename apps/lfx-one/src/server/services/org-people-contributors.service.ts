@@ -24,18 +24,10 @@ import type {
   OrgLensTimeRange,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
-import {
-  dedupeByKey,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  orgLensTimeRangeDays,
-  toColumnar,
-  tupleKey,
-} from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
@@ -104,8 +96,6 @@ export class OrgPeopleContributorsService {
    * per-scope count then matches the Code page's distinct commits for that scope.
    */
   private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
-    const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
-    const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
     const [commitsColumn, mergedCommitsColumn] =
       projectScope === 'all' ? ['daily_commits', 'daily_merged_commits'] : ['daily_scope_commits', 'daily_scope_merged_commits'];
 
@@ -129,7 +119,7 @@ export class OrgPeopleContributorsService {
         MAX(activity_date) AS last_active_date
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ?
-        ${datePredicate}
+        ${orgContributorsActivityPredicate(timeRange)}
         ${orgProjectScopePredicate(projectScope)}
       GROUP BY person_key, project_id
     `;
@@ -154,11 +144,6 @@ export class OrgPeopleContributorsService {
     `;
     return readMaintainerRoles<OrgContributorMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', query, [accountId, ...overlap.binds]);
   }
-}
-
-/** Snowflake date-cutoff SQL fragment (inline, not bound — the day count comes from the allow-listed range) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
-function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
-  return timeRange === 'all' ? null : `DATEADD(day, -${orgLensTimeRangeDays(timeRange)}, CURRENT_DATE())`;
 }
 
 /**

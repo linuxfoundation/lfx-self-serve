@@ -627,4 +627,18 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     const info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-maintainers-info"]'));
     expect(info.injector.get(Tooltip).content).toContain('It does not follow the Employment filter.');
   });
+
+  it('says on the Contributors tile who the employment pick counts', async () => {
+    await mount('/?tab=contributors&employment=current');
+    const tooltip = (): string | undefined =>
+      fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content as string | undefined;
+
+    expect(tooltip()).toContain(`only people who still work at ${SYNTHETIC_ORG_NAME} are counted.`);
+    expect(tooltip()).not.toContain('people who have since left are included');
+
+    form().controls['employment'].setValue('all');
+    await settle();
+
+    expect(tooltip()).toContain('people who have since left are included.');
+  });
 });

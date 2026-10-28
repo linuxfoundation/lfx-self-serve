@@ -78,6 +78,11 @@ export interface OrgAccessListResponse {
   summary: OrgAccessSummary;
   /** Caller may edit this org: a direct or inherited admin, or `writer` from the authorizer (#3136). UX-only gate; backend enforces. */
   canManage: boolean;
+  /**
+   * Present (`true`) only when the account's former employees could not be read (lfx-self-serve#4627): nobody is
+   * flagged `isFormer`, so the Employment filter cannot tell current from former. Such a list is never cached.
+   */
+  employmentUnavailable?: true;
 }
 
 /** GET /api/orgs/:orgUid/lens/edit-check — #3136: whether the caller may edit this organization. UX-only; every write is authorized again. */

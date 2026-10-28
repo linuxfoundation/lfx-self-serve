@@ -84,13 +84,31 @@ describe('OrgLensAccessService.listAccessUsers — former employees who still ho
     expect(summary).toEqual({ totalUsers: 3, administrators: 1, viewers: 1 });
   });
 
-  it('flags nobody former and caches nothing when the former employees read fails', async () => {
+  it('flags nobody former, marks the employment classification unavailable and caches nothing when the former employees read fails', async () => {
     readOrgFormerUsernames.mockRejectedValue(new Error('warehouse down'));
+
+    const list = await new OrgLensAccessService().listAccessUsers(req, ORG_UID);
+
+    expect(list.users.every((user) => user.isFormer === false)).toBe(true);
+    expect(list.employmentUnavailable).toBe(true);
+    expect(cacheStorable.last).toBe(false);
+  });
+
+  it('leaves the employment classification available when the former employees read succeeds', async () => {
+    readOrgFormerUsernames.mockResolvedValue([]);
+
+    const list = await new OrgLensAccessService().listAccessUsers(req, ORG_UID);
+
+    expect('employmentUnavailable' in list).toBe(false);
+  });
+
+  it('matches a mixed-case, padded settings username against the lowercased former employees', async () => {
+    proxyRequest.mockResolvedValue({ auditors: [{ email: 'grace@acme-motors.example', username: '  GrAce ', name: 'Grace Hopper' }] });
+    readOrgFormerUsernames.mockResolvedValue(['grace']);
 
     const { users } = await new OrgLensAccessService().listAccessUsers(req, ORG_UID);
 
-    expect(users.every((user) => user.isFormer === false)).toBe(true);
-    expect(cacheStorable.last).toBe(false);
+    expect(users).toEqual([expect.objectContaining({ username: 'grace', isFormer: true })]);
   });
 
   it('flags former principals on the refreshed list a write returns', async () => {

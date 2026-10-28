@@ -65,8 +65,8 @@ describe('describeContributionsCaption', () => {
 });
 
 describe('describeContributorsTooltip', () => {
-  it('names the scope and window and credits the employer at the time', () => {
-    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history')).toBe(
+  it('names the scope and window and credits the employer at the time, people who left included under All employees', () => {
+    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history', 'all')).toBe(
       'People with at least one code contribution (commit, pull request, review or comment) credited to Acme in LF projects, across all recorded history. ' +
         'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
         'Maintainers with code are counted here too. Bots excluded.'
@@ -74,8 +74,19 @@ describe('describeContributorsTooltip', () => {
   });
 
   it('names LF and non-LF projects', () => {
-    expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)')).toContain(
+    expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)', 'all')).toContain(
       'credited to Acme in LF and non-LF projects, from Oct 21, 2025 to Oct 21, 2026 (UTC).'
     );
+  });
+
+  // lfx-self-serve#4627 — the Employment filter narrows who is counted.
+  it.each([
+    ['current', 'Each contribution is credited to the employer the person had at the time, and only people who still work at Acme are counted. '],
+    ['former', 'Each contribution is credited to the employer the person had at the time, and only people who have since left Acme are counted. '],
+  ] as const)('says who is counted under %s employees', (employment, sentence) => {
+    const tooltip = describeContributorsTooltip('lf', 'Acme', 'across all recorded history', employment);
+
+    expect(tooltip).toContain(sentence);
+    expect(tooltip).not.toContain('people who have since left are included');
   });
 });

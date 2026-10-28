@@ -3,6 +3,8 @@
 
 // Server-internal shapes for reads of ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES and
 // ORG_MAINTAINER_ROLES_MONTHLY (lfx-self-serve#4482). A role is one (person, Insights project) pair.
+// They live in the shared package because AGENTS.md prohibits module-level interfaces inside
+// apps/lfx-one/; they are NOT part of the wire contract consumed by the frontend.
 
 /** The overlap predicate for maintainer roles and the values its placeholders bind, in order. */
 export interface OrgMaintainerRoleOverlap {

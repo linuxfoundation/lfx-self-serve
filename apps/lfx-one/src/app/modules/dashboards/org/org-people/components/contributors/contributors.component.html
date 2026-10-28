@@ -282,12 +282,17 @@
                 </td>
                 <td class="px-4 py-3 align-middle">
                   @if (maintainerRolesUnavailable()) {
-                    <span
-                      class="text-xs text-gray-400"
-                      title="Maintainer data is currently unavailable"
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded bg-transparent p-0 text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                      [pTooltip]="maintainerRolesUnavailableHint"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
                       [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-role-unavailable'"
-                      >&mdash;</span
-                    >
+                      (click)="$event.stopPropagation()">
+                      &mdash;
+                    </button>
                   } @else if (row.role === 'Maintainer') {
                     <span
                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
@@ -345,12 +350,16 @@
                                 </td>
                                 <td class="px-3 py-2.5">
                                   @if (maintainerRolesUnavailable()) {
-                                    <span
-                                      class="text-gray-400"
-                                      title="Maintainer data is currently unavailable"
-                                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-' + sub.projectId + '-role-unavailable'"
-                                      >&mdash;</span
-                                    >
+                                    <button
+                                      type="button"
+                                      class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                                      [pTooltip]="maintainerRolesUnavailableHint"
+                                      tooltipPosition="top"
+                                      tooltipEvent="both"
+                                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-' + sub.projectId + '-role-unavailable'">
+                                      &mdash;
+                                    </button>
                                   } @else if (sub.role === 'Maintainer') {
                                     <span
                                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
