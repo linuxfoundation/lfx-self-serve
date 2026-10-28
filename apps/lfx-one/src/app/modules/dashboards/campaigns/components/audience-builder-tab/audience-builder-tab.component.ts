@@ -799,16 +799,17 @@ export class AudienceBuilderTabComponent {
 
   /**
    * The lists the exact count unions: what the send excludes. When every standard row applies and
-   * the standing list exists, that list is counted in their place: it is only ever grown, so it can
-   * hold older standard lists the current rows no longer name.
+   * the standing list exists, that list is counted beside them: it is only ever grown, so it can hold
+   * older standard lists the current rows no longer name.
    */
   protected readonly countedExcludeIds = computed<readonly string[]>(() => {
     const standing = this.standardList();
     if (standing === null || !this.standardApplied()) {
       return this.excludeIds();
     }
-    const standard = new Set(this.standardRowIds());
-    return [standing.listId, ...this.excludeIds().filter((id) => !standard.has(id) && id !== standing.listId)];
+    // The standing list AND the rows: the next attach or compose grows the standing list to cover a
+    // newly resolved row, so until then the rows can hold contacts the standing list does not.
+    return [standing.listId, ...this.excludeIds().filter((id) => id !== standing.listId)];
   });
 
   /**
