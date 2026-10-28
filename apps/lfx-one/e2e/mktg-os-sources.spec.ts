@@ -13,6 +13,50 @@ import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 
 test.describe('Marketing OS new run Sources', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  for (const choice of ['Open it', 'Discard and start over'])
+    test(`catalog active-run conflict: ${choice}`, async ({ page }, info) => {
+      const sources = await setupFreshSources(page);
+      const bodies: Record<string, unknown>[] = [];
+      const activeRunId = 'b'.repeat(64);
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+        bodies.push(route.request().postDataJSON());
+        if (bodies.length === 1)
+          return route.fulfill({
+            status: 409,
+            json: {
+              code: 'MKTG_RUN_ACTIVE',
+              message: 'A run is in progress.',
+              activeRunId,
+              state: 'writing',
+              agentKey: 'brand-kit',
+              documentId: 'living',
+              startedBy: 'Synthetic writer',
+            },
+          });
+        return route.fallback();
+      });
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
+        route.fulfill({
+          json: {
+            status: 'questions',
+            questionsId: 'c'.repeat(64),
+            questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+          },
+        })
+      );
+      await sources.open();
+      await page.getByTestId('mktg-run-start').getByRole('button').click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
+      await dialog.getByRole('button', { name: choice, exact: true }).click();
+      if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+      else {
+        await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
+        expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+      }
+      expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
+      await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
+    });
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
     const sources = await setupFreshSources(page);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
