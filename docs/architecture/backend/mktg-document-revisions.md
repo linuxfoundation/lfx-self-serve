@@ -449,7 +449,14 @@ that revision. `POST` to the same path takes `project`, `revisionId`,
 revision membership and the source JSON's own field paths. The Brand Kit uses
 a stable JSON field key internally and captures its verbatim stored string as
 the agent's passage; caller-supplied passages, authors and timestamps are
-rejected. Framework and Boilerplates use their contract's field paths.
+rejected. Framework and Boilerplates use their contract's field paths. FAQ uses
+only answer paths `faq[g][1][q][1]`, resolved against the stored grouped tuples;
+a null answer is a valid target, but missing indexes, group names, questions and
+source labels are not. FAQ allows at most 30 comments per send, matching its agent
+form. The server renders them as `revision: { mode: 'redraft', prior_version,
+previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
+stored approved framework. The agent publishes a supplied answer with source
+label Notes; the host never edits the answer or its source itself.
 
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different
