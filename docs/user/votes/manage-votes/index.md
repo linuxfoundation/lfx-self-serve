@@ -4,7 +4,7 @@ description: How to view, update, and close polls in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-18
+last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
@@ -26,6 +26,17 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## View results
 
 Select a poll to view its current results and status.
+
+## Present a poll in a meeting
+
+If you can manage a poll, you can show it on a shared screen while it is active or after it ends.
+
+1. Open the votes dashboard in the **Project** or **Foundation** lens, or the **Votes** tab of a group.
+2. Select the **More** (⋮) menu on the poll's row and select **Present**, or open the poll's results and select **Present**. The presenter view opens in a new tab, without the LFX navigation.
+3. While the poll is open, the view shows how many voters have cast a ballot, the vote link, and a QR code that people in the room can scan. Choices and tallies are not shown until the poll closes. If LFX doesn't have a count of ballots cast, the view shows **Count unavailable**. If the view loses its connection, a **Reconnecting** badge appears and the last count stays on screen until it reconnects. If no eligible voters are assigned to the poll, the view shows **No eligible voters** instead. After the poll ends, the view shows the result for each option and the turnout.
+4. Select **Exit** or press Escape to leave the presenter view and go to the poll's page.
+
+To add the poll to your own slides instead, open the poll's results and select **Copy slide**. LFX copies an image with the poll title, vote link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy the image, it downloads it as a file instead.
 
 ## Send a reminder
 
