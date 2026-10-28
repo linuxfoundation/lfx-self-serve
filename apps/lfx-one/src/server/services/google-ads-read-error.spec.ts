@@ -5,6 +5,7 @@ import { ERROR_CODES, GOOGLE_ADS_NOT_CONFIGURED_MESSAGE, GOOGLE_ADS_READ_FAILED_
 import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors';
+import { customErrorSerializer } from '../helpers/error-serializer';
 import { GoogleAdsNotConfiguredError, googleAdsFailureCode, toGoogleAdsReadError } from './google-ads-read-error';
 
 /** A synthetic `GoogleAdsFailure`-shaped rejection: not an `Error`, with `errors[0].error_code`. */
@@ -35,6 +36,31 @@ describe('toGoogleAdsReadError (#4526)', () => {
     expect(error.operation).toBe('campaign_monitor');
     expect(JSON.stringify(error.toResponse())).not.toContain('synthetic upstream detail');
     expect(error.getLogContext()['original_error']).toBe('synthetic upstream detail for acme-foundation');
+  });
+
+  // A GoogleAdsFailure is not an Error: kept whole on a log-only property, so the serializer logs its
+  // codes, locations and request id, while the response carries none of them.
+  it('logs a GoogleAdsFailure whole, with its codes, locations and request id, and never sends it', () => {
+    const googleAdsFailure = {
+      errors: [
+        {
+          error_code: { query_error: 'PROHIBITED_RESOURCE_TYPE_IN_SELECT_CLAUSE' },
+          message: 'synthetic upstream detail',
+          location: { field_path_elements: [{ field_name: 'synthetic_field' }] },
+        },
+      ],
+      request_id: 'synthetic-request-id-0001',
+    };
+
+    const error = toGoogleAdsReadError(googleAdsFailure, 'campaign_monitor') as MicroserviceError;
+    const logged = JSON.stringify(customErrorSerializer(error));
+    const response = JSON.stringify(error.toResponse());
+
+    expect(logged).toContain('synthetic-request-id-0001');
+    expect(logged).toContain('synthetic_field');
+    expect(logged).toContain('PROHIBITED_RESOURCE_TYPE_IN_SELECT_CLAUSE');
+    expect(response).not.toContain('synthetic-request-id-0001');
+    expect(response).not.toContain('synthetic_field');
   });
 
   it('falls back to a generic advisory for a plain error, logging its message', () => {

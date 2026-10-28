@@ -14,6 +14,23 @@ export class GoogleAdsNotConfiguredError extends Error {
 }
 
 /**
+ * The 502 advisory for a failed Google Ads read. `googleAdsFailure` keeps a `GoogleAdsFailure` (which is
+ * not an `Error`) whole, as an own property, so the error serializer logs its error codes, locations and
+ * request id under `err` (after its credential scrub). `toResponse` never reads it, so it is log-only.
+ */
+export class GoogleAdsReadError extends MicroserviceError {
+  public readonly googleAdsFailure?: unknown;
+
+  public constructor(message: string, operation: string, originalError: Error, googleAdsFailure?: unknown) {
+    super(message, 502, ERROR_CODES.SERVICE_ADVISORY, { operation, service: 'google_ads', originalError });
+    this.name = 'GoogleAdsReadError';
+    if (googleAdsFailure !== undefined) {
+      this.googleAdsFailure = googleAdsFailure;
+    }
+  }
+}
+
+/**
  * The first Google Ads API error code on a `google-ads-api` failure (`errors[0].error_code`), kept only
  * when it looks like an enum value. The value is untrusted wire data that ends up in a rendered
  * message, so anything but a short identifier is dropped rather than shown.
@@ -40,8 +57,8 @@ export function googleAdsFailureCode(error: unknown): string | null {
  *
  * The answer carries `SERVICE_ADVISORY` because its message is written here for the reader, and
  * names at most the Google Ads error code, never the upstream's free text. The original error is
- * attached as `originalError` only, which the error handler logs (`original_error`) and never sends
- * to the client. An error that is already an API error passes through unchanged.
+ * attached as `originalError` (logged as `original_error`) and, for a `GoogleAdsFailure`, whole as
+ * `googleAdsFailure` (see {@link GoogleAdsReadError}); neither is ever sent to the client. An error that is already an API error passes through unchanged.
  */
 export function toGoogleAdsReadError(error: unknown, operation: string): unknown {
   if (error instanceof BaseApiError) {
@@ -57,11 +74,7 @@ export function toGoogleAdsReadError(error: unknown, operation: string): unknown
   }
   const code = googleAdsFailureCode(error);
   const message = code ? `${GOOGLE_ADS_READ_FAILED_MESSAGE} Google Ads error: ${code}.` : `${GOOGLE_ADS_READ_FAILED_MESSAGE} Please try again.`;
-  return new MicroserviceError(message, 502, ERROR_CODES.SERVICE_ADVISORY, {
-    operation,
-    service: 'google_ads',
-    originalError,
-  });
+  return new GoogleAdsReadError(message, operation, originalError, error instanceof Error ? undefined : error);
 }
 
 /**
