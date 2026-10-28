@@ -117,6 +117,20 @@ describe('OrgContributionsService — range window', () => {
     expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -365, CURRENT_DATE())');
   });
 
+  it('windows Past 2 years as 730 calendar days on the commit reads and on code activity', async () => {
+    await service.getContributions(ACCOUNT, query({ dateRange: '730d' }));
+
+    for (const { sql } of calls()) {
+      expect(sql).toContain('activity_ts::date >= DATEADD(day, -730, CURRENT_DATE())');
+    }
+
+    execute.mockClear();
+    await service.getContributions(ACCOUNT, query({ metric: 'code', dateRange: '730d' }));
+
+    expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -730, CURRENT_DATE())');
+    expect(feedCall().sql).toContain('activity_ts::date >= DATEADD(day, -730, CURRENT_DATE())');
+  });
+
   it('reads all time without a date predicate', async () => {
     await service.getContributions(ACCOUNT, query({ dateRange: 'all' }));
 

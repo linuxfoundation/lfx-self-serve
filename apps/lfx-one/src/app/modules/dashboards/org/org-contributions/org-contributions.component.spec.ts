@@ -297,7 +297,21 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('90d');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '90d' }));
-    expect(fixture.componentInstance['dateRangeOptions'].map((option) => option.label)).toEqual(['Past 30 days', 'Past 90 days', 'Past 365 days', 'All time']);
+    expect(fixture.componentInstance['dateRangeOptions'].map((option) => option.label)).toEqual([
+      'Past 30 days',
+      'Past 90 days',
+      'Past 365 days',
+      'Past 2 years',
+      'All time',
+    ]);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('opens on Past 2 years and keeps ?range=730d in the URL', async () => {
+    const { fixture, getContributions, navigate } = await render(null, { queryParams: { range: '730d' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('730d');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '730d' }));
     expect(navigate).not.toHaveBeenCalled();
   });
 

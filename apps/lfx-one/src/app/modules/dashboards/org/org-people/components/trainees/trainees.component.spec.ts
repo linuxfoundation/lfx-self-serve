@@ -98,6 +98,10 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     TestBed.resetTestingModule();
     await mount('/?tab=training&range=30d');
     expect(getTrainees).toHaveBeenLastCalledWith(ORG, '30d');
+
+    TestBed.resetTestingModule();
+    await mount('/?tab=training&range=730d');
+    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '730d');
   });
 
   it('fetches the picked range, writes it to the URL and recomputes the stat cards for it', async () => {
