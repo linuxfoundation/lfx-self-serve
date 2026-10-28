@@ -17,10 +17,13 @@ test('names the discarding writer and opens the exact replacement run', async ({
   await expect(page.getByTestId('mktg-document-view-closed-message')).toContainText('This run was discarded by Synthetic writer at');
   const link = page.getByTestId('mktg-document-view-newer-run');
   await expect(link).toHaveText('Open the newer run');
+  await expect(link).toHaveAttribute('href', `${DOCUMENT_VIEW_URL}&run=${newer.runId}`);
   await link.click();
-  await expect(page).toHaveURL(`${DOCUMENT_VIEW_URL}&run=${newer.runId}`);
+  await expect(page).toHaveURL(
+    (url) => url.pathname === `${DOCUMENT_VIEW_URL.split('/documents/')[0]}/${DOCUMENT_TYPE.catalogAgentId}` && url.searchParams.get('run') === newer.runId
+  );
   await expect(page.getByTestId('mktg-document-view-closed-run')).toHaveCount(0);
-  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
   await page.screenshot({ path: info.outputPath('replacement-run.png'), fullPage: true });
 });
 

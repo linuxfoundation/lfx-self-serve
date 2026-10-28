@@ -6,6 +6,8 @@ import {
   BRAND_KIT_KIND,
   BRAND_KIT_REVISE_FORM_TYPE,
   FOUNDATION_MESSAGE_FORM_TYPE,
+  FAQ_FORM_TYPE,
+  FAQ_KIND,
   MKTG_ARTIFACT_SPECS,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_KIT_FRAMEWORK_KEY,
@@ -24,6 +26,10 @@ import {
   isFoundationMessageEnvelope,
   isBrandKitEnvelope,
   isBoilerplatesEnvelope,
+  isFaqEnvelope,
+  renderFaqFormText,
+  validateFaqEnvelope,
+  toFaqFormDocument,
 } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { createHash } from 'node:crypto';
@@ -41,6 +47,7 @@ export class MktgDocumentRedraftInputService {
     let valid: boolean;
     if (agent === MKTG_KIT_FRAMEWORK_KEY) valid = validateFoundationMessageEnvelope(data).valid;
     else if (agent === BRAND_KIT_KIND) valid = validateBrandKitEnvelope(data).valid;
+    else if (agent === FAQ_KIND) valid = validateFaqEnvelope(data).valid;
     else valid = validateBoilerplatesEnvelope(data).valid;
     if (!valid) throw this.invalid();
     const bytes = view.revision.format === 'json' ? JSON.stringify(data['content']) : view.markdown;
@@ -106,6 +113,31 @@ export class MktgDocumentRedraftInputService {
           brand_page_url: base.inputs.brand_page_url ?? undefined,
           messaging_framework: messaging,
           comments: comments.map((row) => ({ passage: row.anchor.passage ?? '', comment: row.text })),
+        }),
+      };
+    }
+    if (agent === FAQ_KIND) {
+      if (!isFaqEnvelope(data)) throw this.invalid();
+      return {
+        context,
+        framework,
+        message: renderFaqFormText({
+          type: FAQ_FORM_TYPE,
+          project_name: data.project_name,
+          project_uid: view.project,
+          website_url: data.inputs_record.website?.url,
+          links: data.inputs_record.links.map((link) => link.url),
+          // Input summaries retain URLs, not uploaded text: replay only fetchable documents.
+          documents: data.inputs_record.documents
+            .filter((doc) => doc.url)
+            .map((doc) => toFaqFormDocument({ kind: 'link', title: doc.title, url: doc.url ?? undefined, tag: doc.kind })),
+          messaging_framework: messaging,
+          revision: {
+            mode: 'redraft',
+            prior_version: data.version,
+            previous: data.content,
+            comments: comments.map((row) => ({ field: row.anchor.key, comment: row.text })),
+          },
         }),
       };
     }

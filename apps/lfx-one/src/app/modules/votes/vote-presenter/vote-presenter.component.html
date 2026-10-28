@@ -277,7 +277,11 @@
                 @if (copyFailed()) {
                   <p class="m-0 text-center text-base text-gray-600" role="status">Couldn't copy. Select the link and press Ctrl/⌘+C.</p>
                 }
-                <p class="m-0 text-base text-gray-400">In the room? Scan instead</p>
+                @if (v.status === PollStatus.ACTIVE) {
+                  <!-- votePresenterGuard already proved vote#writer for this route; the BFF re-checks it on send. -->
+                  <lfx-vote-send-ballots [voteUid]="v.uid" data-testid="vote-presenter-send-ballots" />
+                }
+                <p class="m-0 text-base text-gray-400">Didn't get the email? Scan to open your ballot</p>
                 <lfx-vote-qr [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
                 <p class="m-0 text-center text-base text-gray-400">Sign in with your LF account. Only eligible voters can cast.</p>
               </div>

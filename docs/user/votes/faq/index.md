@@ -1,45 +1,68 @@
 ---
 title: Votes FAQ
-description: Frequently asked questions about votes and polls in LFX Self Serve.
+description: Frequently asked questions about creating, voting on, and managing votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, faq, polls, governance, elections]
-last_updated: 2026-10-27
+tags: [votes, faq, governance, elections, abstain, results, present, clone]
+last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
-## Who can create a poll?
+## Who can create a vote?
 
-Users with **maintainer**, **board-member**, or **executive-director** personas can create polls. Contributors can participate in polls they are eligible to vote in but cannot create new ones.
+Users who can manage votes for the project, foundation, or group, typically the **maintainer**, **board-member**, and **executive-director** personas. Everyone else can vote on the votes they are invited to but won't see **Create Vote**. See [Create a Vote](../create-vote/).
 
-## Who can vote in a poll?
+## Who can vote?
 
-Voter eligibility and anonymity settings are configured when the poll is created. Contact your project administrator for details on your specific poll setup.
+The person who creates the vote picks **Eligible Participants** from the vote's group: **Voting Reps Only**, **Voting Reps and Alternates**, or **All Members of the Group**. You can vote only if you are in that set. If you think you should be, contact your project administrator.
 
 ## Can I change my vote after submitting?
 
-Vote change availability depends on the poll configuration. Check the poll detail view for options after submitting.
+No. After you select **Submit Vote**, the **Review** button shows only a confirmation that your vote was recorded. There is no way to edit or resubmit.
+
+## What does Abstain do?
+
+If the creator turned on **Allow Abstain**, voters can select **Abstain from this vote** instead of choosing options. An abstention is recorded as a non-vote and replaces any choices you made. Abstentions are shown separately in the [results](../vote-results/), and any comments you wrote are still submitted.
+
+## What are comment questions?
+
+Comment questions are optional open-ended questions the creator adds, such as "Why did you vote this way?" Voters answer them under **Additional Comments (Optional)**. Comment responses appear in the results with the commenter's name and the date. Managers see them, and voters see them too once the vote closes, so write comments as if others can read them.
+
+## Who can see the results?
+
+- **From the Me lens list**, you see the voter view. There are no tallies while the vote is open, and after it closes you see the final results.
+- **From the Project or Foundation Votes dashboard, or a group's Votes tab**, people who manage the vote see live results while it is open and final results after it closes.
+- A shared link to a vote opens the full results view if you manage the vote, unless you still have a ballot to cast. Then it opens the cast drawer.
+- Anyone watching a [presenter screen](../present-extend-clone/#present-a-vote) sees only how many people have voted until the vote ends.
 
 ## Are votes anonymous?
 
-Voter eligibility and anonymity settings are configured when the poll is created. Contact your project administrator for details on your specific poll setup.
+Votes created in LFX One are not secret ballots, and the Create Vote form has no setting for it. A vote that was set up as a secret ballot elsewhere is marked that way. For those votes, the presenter says **Ballots are secret**, and the voter results view doesn't show **You voted on this motion**. Secret-ballot votes can't be cloned yet. On any vote, comment responses show the commenter's name. For questions about how a specific vote handles anonymity, contact your project administrator.
 
-## How do I see the poll results?
+## Can a vote be extended?
 
-Vote results are visible within the poll detail view. The display format depends on the poll configuration.
+Yes, while it is still active. Select **⋮ → Extend** on the vote's row and choose a later close date and time. See [Extend the deadline](../present-extend-clone/#extend-the-deadline). Once a vote has ended it can't be reopened or extended. [Clone](../present-extend-clone/#clone-a-vote) it into a new vote instead.
+
+## Can I edit or close an active vote?
+
+No. Only drafts can be edited, and there is no action to close a vote early. To fix a mistake, clone the vote and open the corrected copy. Ranked-choice and secret-ballot votes can't be cloned yet.
+
+## How do I show a vote in a meeting?
+
+Select **⋮ → Present** on the vote's row. See [Present a vote](../present-extend-clone/#present-a-vote).
+
+## How do I reuse an earlier vote?
+
+Select **⋮ → Clone**. The questions and settings are copied into a new **Create Vote** form. See [Create a vote from an existing one](../create-vote/#create-a-vote-from-an-existing-one).
 
 ## What is the difference between Votes and Surveys?
 
-**Votes** are formal governance polls with defined voter eligibility, specific options, and recorded decisions. **Surveys** collect general feedback and opinions from a broader audience. Use Votes for committee decisions and elections; use Surveys for community feedback.
+**Votes** are formal governance decisions with defined voter eligibility, specific options, and recorded results. **Surveys** collect general feedback and opinions from a broader audience. Use Votes for committee decisions and elections; use Surveys for community feedback.
 
-## Can a poll be extended after it closes?
+## Why can't I see a vote I should be able to vote in?
 
-Contact your project administrator if you need to reopen or extend a closed poll.
-
-## Why can't I see a poll I should be able to vote in?
-
-Make sure you have the correct project selected in the lens switcher. Polls are scoped to a project or foundation context. If you believe you should be eligible to vote in a specific poll, contact your project administrator.
+Make sure you have the correct project selected in the lens switcher. Votes are scoped to a project or foundation context, and the **Me** lens lists every vote you are invited to. If you believe you should be eligible to vote in a specific vote, contact your project administrator.
 
 ## Who do I contact if there is an error with a vote result?
 
-Contact LFX support. Include the poll name, the project, and a description of the discrepancy.
+Contact LFX support. Include the vote name, the project, and a description of the discrepancy.
