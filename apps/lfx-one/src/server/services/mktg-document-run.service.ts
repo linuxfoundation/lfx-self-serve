@@ -360,12 +360,12 @@ export class MktgDocumentRunService {
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
             }
-            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity, getEffectiveSub(req));
+            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity, getEffectiveSub(req) ?? undefined);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
             if (coverage) coverage.lookupFailed = true;
-            return stored ? mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req)) : null;
+            return stored ? mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined) : null;
           }
         })
       );
@@ -443,7 +443,8 @@ export class MktgDocumentRunService {
               return;
             }
             const stored = await this.read(req, project, key);
-            const row = stored && matchesMktgRunProgress(mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req)), agentKey, documentId);
+            const row =
+              stored && matchesMktgRunProgress(mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined), agentKey, documentId);
             if (row && stored) {
               rows.set(id, row);
               staleWindow ||=
@@ -468,11 +469,11 @@ export class MktgDocumentRunService {
   public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
-      return mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req));
+      return mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined);
     }
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
-    return mktgRunProgress(record, result.failureText ?? result.reply, undefined, getEffectiveSub(req));
+    return mktgRunProgress(record, result.failureText ?? result.reply, undefined, getEffectiveSub(req) ?? undefined);
   }
 
   /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */

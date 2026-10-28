@@ -1877,10 +1877,64 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-again')).toBeNull();
   });
 
-  it('keeps a failed check inside the run card above the two actions, without a duplicate Retry', async () => {
-    store.getDocument.mockReturnValue(of({ ...detail, runs: [started('failed')] }));
+  it.each(['writing', 'failed', 'missing', 'mismatch'] as const)(
+    'returns an ICP generation failure to intake with %s retained recovery, never retrying the dead session',
+    async (state) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === ICP_INTAKE.agentId);
+      if (!type) throw new Error('Missing registered ICP document type');
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const cache = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+      const request = {
+        projectUid: PROJECT.uid,
+        agentId: ICP_INTAKE.agentId,
+        intake: ICP_INTAKE,
+        answers: { project_name: 'Retained synthetic ICP', github_url: 'https://github.com/synthetic-org/synthetic-orbit' },
+      };
+      if (state !== 'missing')
+        cache.save({
+          request,
+          state: state === 'failed' ? 'failed' : 'writing',
+          updatedAt: new Date().toISOString(),
+          attempt: {
+            runId: (state === 'mismatch' ? 'c' : 'b').repeat(64),
+            priorVersion: 0,
+            session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-dead-session', ownerToken: 'synthetic-proof' },
+          },
+        });
+      vi.mocked(attempts.load).mockImplementation((...args) => cache.load(...args));
+      vi.mocked(attempts.save).mockImplementation((...args) => cache.save(...args));
+      vi.mocked(attempts.prepare).mockImplementation((...args) => cache.prepare(...args));
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      store.getDocument.mockReturnValue(of({ ...detail, type, revisions: [], runs: [{ ...started('failed'), agentKey: type.agentKey }] }));
+      await render('/documents/icp/living?run=' + 'b'.repeat(64));
+      expect(query('mktg-document-view-retry-note')?.textContent).toContain(`start the ${mktgSentenceCaseLabel(type.itemLabel)} over`);
+      expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
+      expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
+      query('mktg-document-view-intake-link')?.querySelector('button')?.click();
+      await settle();
+      expect(store.retryRun).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/mktg-os-agents', ICP_INTAKE.agentId], expect.anything());
+      const params = navigate.mock.calls.at(-1)?.[1]?.queryParams;
+      expect(JSON.stringify(params)).not.toContain('synthetic-proof');
+      if (state === 'missing' || state === 'mismatch') {
+        expect(params?.['questions']).toBeNull();
+        expect(attempts.save).not.toHaveBeenCalled();
+      } else {
+        const restored = cache.consume(params?.['questions'], PROJECT.uid, ICP_INTAKE.agentId)?.pending;
+        expect(restored).toMatchObject({ state: 'failed', request });
+        expect(restored?.pendingQuestions).toBeUndefined();
+      }
+    }
+  );
+
+  it('keeps persistence Retry distinct from load Retry when a recorded-run check fails', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...started('failed'), persistenceFailed: true }] }));
     store.retryRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-retry-note')?.textContent).toContain('The result could not be saved');
+    expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).not.toContain('p-button-text');
+    expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).toContain('p-button-text');
     query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
     await settle();
     expect(store.retryRun).toHaveBeenCalledTimes(1);

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_SCHEMA } from '../constants/mktg-document-store.constants';
+import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '../constants/mktg-run.constants';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import type { MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 import type { MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
@@ -94,6 +95,14 @@ describe('mktg-document-store utils', () => {
     expect(mktgRunProgress({ ...run, agentKey: 'member-360', failureText: 'SYNTHETIC redacted Member reply' })?.failureText).toBe(
       'SYNTHETIC redacted Member reply'
     );
+  });
+
+  it('projects same-session recovery only for exhausted persistence failures, never from failure prose', () => {
+    const failureText = 'Synthetic failure mentioning storage';
+    expect(mktgRunProgress(startedRun({ state: 'failed', failureText }))).not.toHaveProperty('persistenceFailed');
+    expect(mktgRunProgress(startedRun({ state: 'failed', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS - 1 }))).not.toHaveProperty('persistenceFailed');
+    expect(mktgRunProgress(startedRun({ state: 'failed', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS }))).toMatchObject({ persistenceFailed: true });
+    expect(mktgRunProgress(startedRun({ state: 'storing', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS }))).not.toHaveProperty('persistenceFailed');
   });
 
   it('derives run membership from the active catalog and registered intake', () => {

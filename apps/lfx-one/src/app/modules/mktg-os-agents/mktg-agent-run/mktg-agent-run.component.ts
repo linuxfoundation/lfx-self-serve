@@ -1334,7 +1334,7 @@ export class MktgAgentRunComponent {
     const draft = this.runAttempts.load(context.uid, this.agent.id);
     if (draft) {
       this.restoreInputs(draft.request, 'restored');
-      if (draft.pendingQuestions) {
+      if (draft.pendingQuestions && draft.state !== 'failed') {
         this.activeRequest = draft.request;
         this.showQuestions(draft.pendingQuestions);
       } else if (draft.requiresReattachment && draft.state !== 'writing') {
@@ -1345,9 +1345,18 @@ export class MktgAgentRunComponent {
     // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
     const token = this.route.snapshot.queryParamMap?.get('questions');
     const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
-    if (returned?.pending.requiresReattachment && !returned.pending.pendingQuestions) {
+    if (returned?.pending.requiresReattachment && (returned.pending.state === 'failed' || !returned.pending.pendingQuestions)) {
       this.restoreInputs(returned.pending.request, 'returned');
       this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
+    } else if (returned?.pending.state === 'failed' || (!returned && draft?.state === 'failed' && !draft.requiresReattachment)) {
+      const failed = returned?.pending ?? draft;
+      if (failed) {
+        this.activeRequest = failed.request;
+        this.restoreInputs(failed.request, 'returned');
+        this.clearQuestions();
+        this.runFailed.set(true);
+        this.errorText.set(MKTG_RUN_FAILURE_REASON);
+      }
     } else if (returned?.pending.pendingQuestions) {
       this.activeRequest = returned.pending.request;
       this.restoreInputs(returned.pending.request, 'returned');

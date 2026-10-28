@@ -72,6 +72,8 @@ export interface MktgDocumentRunProgress {
   failureText?: string;
   /** Server-classified failure code, independent of private agent text. */
   failureReason?: MktgRunFailureReason;
+  /** Only exhausted revision persistence can be retried on the existing Guild session. */
+  persistenceFailed?: boolean;
 }
 
 /** Public rows only; read unavailability is not evidence of active work or current selection. */

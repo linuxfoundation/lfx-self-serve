@@ -8,7 +8,7 @@
 // every sha with node:crypto.
 
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '../constants/mktg-run.constants';
 import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
 import type { Member360FailureReason } from '../interfaces/member-360.interface';
@@ -192,6 +192,7 @@ export function mktgRunProgress(
     ...(activity && { activity }),
     ...(run.state === 'failed' && failureText !== undefined && { failureText }),
     ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
+    ...(run.state === 'failed' && (run.persistRetries ?? 0) >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS && { persistenceFailed: true }),
   };
   return progress;
 }

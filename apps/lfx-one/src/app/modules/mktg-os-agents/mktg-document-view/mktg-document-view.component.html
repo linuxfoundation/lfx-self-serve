@@ -152,6 +152,8 @@
           <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
             @if (unconfirmedFailure()) {
               The run could not be confirmed. Your intake is kept; open the intake form to continue.
+            } @else if (selectedRun()?.persistenceFailed) {
+              The result could not be saved. Check on it again checks the same session and retries saving; starts nothing new.
             } @else {
               Try again opens the run page with your sources kept, so you can start the {{ failureAssetLabel() }} over.
             }
@@ -193,16 +195,25 @@
               <div class="flex-1 text-sm text-gray-500">
                 <lfx-button
                   label="Check on it again"
-                  [text]="true"
+                  [text]="!selectedRun()?.persistenceFailed"
                   [loading]="retrying()"
                   [disabled]="retrying()"
                   (onClick)="onRetryRun()"
                   data-testid="mktg-document-view-progress-retry" />
-                · only if you think it is still running; starts nothing new
+                @if (selectedRun()?.persistenceFailed) {
+                  · retries saving the existing result; starts nothing new
+                } @else {
+                  · only if you think it is still running; starts nothing new
+                }
               </div>
             }
             @if (runAgentId()) {
-              <lfx-button class="ml-auto" label="Try again" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
+              <lfx-button
+                class="ml-auto"
+                label="Try again"
+                [text]="!!selectedRun()?.persistenceFailed"
+                (onClick)="onOpenIntake()"
+                data-testid="mktg-document-view-intake-link" />
             }
           </div>
         } @else if (runAgentId() && !pausedWithoutAnswers() && state === 'questions') {
