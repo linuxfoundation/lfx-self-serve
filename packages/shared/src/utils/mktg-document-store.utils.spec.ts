@@ -92,7 +92,7 @@ describe('mktg-document-store utils', () => {
     for (const reader of [undefined, '', 'synthetic-visitor'])
       expect(mktgRunProgress(run, undefined, undefined, reader)?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
     expect(mktgRunProgress({ ...run, creatorSubject: null }, undefined, undefined, 'synthetic-creator')?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
-    for (const agentKey of ['member-360', 'brand-kit', 'faq']) {
+    for (const agentKey of ['member-360', 'brand-kit', 'faq'] as const) {
       const privateRun = { ...run, agentKey, failureText: 'SYNTHETIC private agent reply' };
       expect(mktgRunProgress(privateRun, undefined, undefined, 'synthetic-creator')?.failureText).toBe(privateRun.failureText);
       for (const reader of [undefined, '', 'synthetic-visitor'])
