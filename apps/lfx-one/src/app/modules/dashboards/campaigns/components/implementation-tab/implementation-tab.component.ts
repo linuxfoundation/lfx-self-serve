@@ -4671,17 +4671,19 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The sentence saying an entered segment list is being WITHHELD, or null when nothing is — the
-   * audience twin of {@link initGoogleLanguagesWithheldOn}, on the same terms: non-null only on a
-   * dispatched channel that takes no segments, with segments entered. A whole sentence rather than
-   * a channel label, as {@link initGoogleCalloutsWithheldWarning} is, so one string feeds both the
+   * The sentence saying an entered segment list is being WITHHELD because of the CHANNEL, or null
+   * when it is not — the audience twin of {@link initGoogleCalloutsWithheldWarning}, on the same
+   * terms and for the same reason: it asks {@link resolveGoogleChannel} and tests the channel
+   * directly, so it neither goes quiet on Demand Gen while a capability read is unanswered nor claims
+   * Search takes no segments. The capability reason belongs to
+   * {@link initGoogleExtensionsCapabilityBlock}, which counts segments too. One string feeds both the
    * visible notice and its live region.
    */
   private initGoogleAudienceSegmentsWithheldWarning(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
+      const channel = this.resolveGoogleChannel();
       const count = this.googleAudienceSegments().length;
-      if (!channel || this.googleAudienceSegmentsAvailable() || count === 0) return null;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel) || count === 0) return null;
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take audience segments, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
@@ -4730,8 +4732,12 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Why the callouts, sitelinks and structured snippets on this brief are being withheld for want of
-   * a capability answer.
+   * Why the callouts, sitelinks, structured snippets and audience segments on this brief are being
+   * withheld for want of a capability answer.
+   *
+   * Audience segments ride on the same read: their section and payload gate on
+   * `googleBiddingChannel`, which is null while the capability is not an explicit yes, so without a
+   * place here an audience-only draft would be withheld with no notice and no Retry.
    *
    * The sibling of {@link initBiddingCapabilityBlock}, on the SAME read — `loadCreateCapabilitiesFor`
    * sets `googleCreativeEnabled` and `biddingEnabled` from one response, so `createCapabilityRead`
@@ -4761,13 +4767,19 @@ export class ImplementationTabComponent implements OnInit {
       // silent there instead: nothing is lost that the answer could recover, and
       // `googleCalloutsWithheldWarning` is already saying the true reason — it reads the same
       // resolved channel, so it does not wait for the capability either.
+      //
+      // Each list is counted only on a channel that takes it — the extension fence and the
+      // audience-segment fence are separate upstream, so each is asked separately here.
       const channel = this.resolveGoogleChannel();
-      if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
+      if (channel === null) return null;
+      const takesExtensions = (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel);
+      const takesSegments = (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
 
-      const callouts = this.googleCallouts().length;
-      const sitelinks = this.googleSitelinks().length;
-      const snippets = this.googleStructuredSnippets().length;
-      if (callouts + sitelinks + snippets === 0) return null;
+      const callouts = takesExtensions ? this.googleCallouts().length : 0;
+      const sitelinks = takesExtensions ? this.googleSitelinks().length : 0;
+      const snippets = takesExtensions ? this.googleStructuredSnippets().length : 0;
+      const segments = takesSegments ? this.googleAudienceSegments().length : 0;
+      if (callouts + sitelinks + snippets + segments === 0) return null;
 
       // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty. The
       // counts are the point: they are what the operator is about to lose, and they are the only way
@@ -4776,13 +4788,21 @@ export class ImplementationTabComponent implements OnInit {
       if (callouts > 0) parts.push(`${callouts} callout${callouts === 1 ? '' : 's'}`);
       if (sitelinks > 0) parts.push(`${sitelinks} sitelink${sitelinks === 1 ? '' : 's'}`);
       if (snippets > 0) parts.push(`${snippets} structured snippet${snippets === 1 ? '' : 's'}`);
+      if (segments > 0) parts.push(`${segments} audience segment${segments === 1 ? '' : 's'}`);
       // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
       const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
+      // What is being checked for, named for what is actually on the brief so an audience-only draft
+      // is not told about ad extensions it never added.
+      const extensions = callouts + sitelinks + snippets > 0;
+      let subject = 'Google ad extensions';
+      if (segments > 0) subject = extensions ? 'Google ad extensions and audience segments' : 'Google audience segments';
+      // The unsaved notice names the SUPPORT, singular, as it always has for extensions alone.
+      const supportSubject = segments > 0 ? subject : 'Google ad extension';
 
       if (this.googleCreativeEnabled() === false) {
         return {
           kind: 'unsupported',
-          message: `Google ad extensions are not available on this deployment, so the ${lost} on this brief will not be sent. The campaign is created without them.`,
+          message: `${subject} are not available on this deployment, so the ${lost} on this brief will not be sent. The campaign is created without them.`,
         };
       }
       // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
@@ -4797,18 +4817,18 @@ export class ImplementationTabComponent implements OnInit {
       if (this.createCapabilityRead() === 'pending') {
         return {
           kind: 'pending',
-          message: `Checking whether Google ad extensions can be sent. Creating the campaign before the check finishes sends it without the ${lost} on this brief.`,
+          message: `Checking whether ${subject} can be sent. Creating the campaign before the check finishes sends it without the ${lost} on this brief.`,
         };
       }
       if (!this.briefPersistence().briefId) {
         return {
           kind: 'unsaved',
-          message: `Google ad extension support can't be checked until this brief is saved, so the ${lost} on it will not be sent. Save the brief to send them.`,
+          message: `${supportSubject} support can't be checked until this brief is saved, so the ${lost} on it will not be sent. Save the brief to send them.`,
         };
       }
       return {
         kind: 'failed',
-        message: `Could not confirm that Google ad extensions can be sent, so the ${lost} on this brief will not be sent. Retry the check to send them.`,
+        message: `Could not confirm that ${subject} can be sent, so the ${lost} on this brief will not be sent. Retry the check to send them.`,
       };
     });
   }

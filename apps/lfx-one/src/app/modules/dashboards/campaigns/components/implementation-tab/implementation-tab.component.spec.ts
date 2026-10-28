@@ -6275,6 +6275,63 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(saved).toEqual([LIST_B]);
   });
 
+  /**
+   * The capability reason. The section and payload gate on `googleBiddingChannel`, which is null
+   * while the create capability is not an explicit yes, so segments are withheld then — and the
+   * extensions capability block is what says so, with a Retry, even when no extension was added.
+   */
+  function withholdForCapability(read: 'pending' | 'failed', withCallout = false): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleAudienceSegment'](LIST_A);
+    if (withCallout) c['addGoogleCallout']('Hands-On Labs');
+    fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'brief-1', message: null, approved: true });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+    return c;
+  }
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('names withheld segments in the capability block, with a Retry, on an audience-only draft', () => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = withholdForCapability('failed');
+
+    expect(c['googleAudienceSegmentsPayload']()).toEqual({});
+    const block = find('implementation-google-extensions-capability-failed')?.textContent ?? '';
+    expect(block).toContain('Could not confirm that Google audience segments can be sent');
+    expect(block).toContain('1 audience segment');
+    expect(block).not.toContain('ad extensions');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe(c['googleExtensionsCapabilityMessage']());
+    // The channel warning stays silent: Search takes segments, so the channel is not the reason.
+    expect(c['googleAudienceSegmentsWithheldWarning']()).toBeNull();
+
+    (find('implementation-google-extensions-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts segments beside extensions while the read is in flight', () => {
+    const c = withholdForCapability('pending', true);
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
+    const block = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
+    expect(block).toContain('Checking whether Google ad extensions and audience segments can be sent');
+    expect(block).toContain('1 callout and 1 audience segment');
+  });
+
+  it('still names the channel reason on demand-gen while the capability is unanswered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleAudienceSegment'](LIST_A);
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleAudienceSegmentsWithheldWarning']()).toContain('Demand Gen campaigns do not take audience segments');
+    // The capability block stays out of it: no answer could send segments on Demand Gen.
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
   /** A draft saved before this section shipped carries no key, and must not clear the chips. */
   it('leaves the chips alone when the draft carries no segment key', () => {
     const c = seedChannel(fixture, { includeSearch: true });
