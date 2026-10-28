@@ -91,7 +91,7 @@ test.describe('Marketing family content', () => {
     // Nothing is stale, so the header offers no rebuild.
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');
-    await expect(page.getByTestId('mktg-family-exports')).toContainText("Exports use the family's approved current assets.");
+    await expect(page.getByTestId('mktg-family-exports')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
   });
   test('a blocked next step links to the document that needs approval', async ({ page }) => {
     const listing = kitDocuments(true);

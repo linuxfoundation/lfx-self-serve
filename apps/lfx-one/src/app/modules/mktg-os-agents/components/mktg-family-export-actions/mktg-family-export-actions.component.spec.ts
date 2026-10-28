@@ -327,7 +327,7 @@ describe('Family export slot', () => {
     const { fixture, root } = await setup();
     fixture.componentRef.setInput('familyId', 'social-community');
     await fixture.whenStable();
-    expect(root.querySelector('h2')?.textContent).toBe('Export the whole family');
+    expect(root.querySelector('h2')?.textContent).toBe('Export the family');
     expect(root.querySelector('[data-testid="family-export-unsupported"]')?.textContent).toBe('This family has no assets supported by the exporter yet.');
     expect(root.querySelectorAll('section p')).toHaveLength(1);
     expect(root.querySelector('lfx-button')).toBeNull();
