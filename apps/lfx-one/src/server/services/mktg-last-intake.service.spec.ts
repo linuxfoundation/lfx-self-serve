@@ -3,12 +3,19 @@
 
 import '@angular/compiler';
 import { createHash } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request } from 'express';
 import type { MktgLastIntakeStart, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
-import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_LAST_INTAKE_MAX_BYTES, MKTG_LAST_INTAKE_SCHEMA } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENTS,
+  MKTG_AGENT_INTAKES,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_LAST_INTAKE_MAX_BYTES,
+  MKTG_LAST_INTAKE_RETENTION_DAYS,
+  MKTG_LAST_INTAKE_SCHEMA,
+} from '@lfx-one/shared/constants';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), resolve: vi.fn(), author: vi.fn(), warning: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn(), resolve: vi.fn(), author: vi.fn(), warning: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async (original) => ({
   ...(await original<typeof import('@lfx-one/shared/constants')>()),
 }));
@@ -16,6 +23,7 @@ vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
     public getObject = mocks.get;
     public putContentAddressedObject = mocks.put;
+    public deletePrivateObject = mocks.delete;
   },
 }));
 vi.mock('./mktg-document-run.service', () => ({
@@ -61,10 +69,44 @@ beforeEach(() => {
   mocks.resolve.mockResolvedValue(project);
   mocks.get.mockResolvedValue(null);
   mocks.put.mockResolvedValue(true);
+  mocks.delete.mockResolvedValue(undefined);
   mocks.author.mockReturnValue('auth0|synthetic-writer');
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe('MktgLastIntakeService', () => {
+  it.each([...types.map((type) => ({ agentKey: type.agentKey, agentId: type.catalogAgentId ?? '' })), { agentKey: 'linkedin-post', agentId: 'linkedin-post' }])(
+    '$agentKey reads fresh history through 30 days, then deletes expired history and treats it as absent',
+    async ({ agentKey, agentId }) => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-28T12:00:00Z'));
+      const service = new MktgLastIntakeService();
+      const answers = agentKey === 'linkedin-post' ? { content_source: 'text', content_text: 'Synthetic retained source' } : input().answers;
+      await service.recordStartBestEffort(req, { ...input(agentId), answers });
+      const record = written();
+      const limit = MKTG_LAST_INTAKE_RETENTION_DAYS * 86400e3;
+      for (const age of [limit - 1, limit]) {
+        mocks.get.mockResolvedValue({ body: JSON.stringify({ ...record, startedAt: new Date(Date.now() - age).toISOString() }) });
+        expect(await service.read(req, project, agentKey)).toMatchObject({ answers: record.answers });
+        expect(mocks.delete).not.toHaveBeenCalled();
+      }
+      mocks.get.mockResolvedValue({ body: JSON.stringify({ ...record, startedAt: new Date(Date.now() - limit - 1).toISOString() }) });
+      expect(await service.read(req, project, agentKey)).toBeNull();
+      expect(mocks.delete).toHaveBeenCalledExactlyOnceWith(req, 'marketing-os-artifacts', writerKey(agentKey));
+    }
+  );
+  it('keeps expired inputs absent even when best-effort deletion fails, without logging private content', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-28T12:00:00Z'));
+    const service = new MktgLastIntakeService();
+    await service.recordStartBestEffort(req, { ...input('linkedin-post'), answers: { content_source: 'text', content_text: 'private retention marker' } });
+    mocks.get.mockResolvedValue({ body: JSON.stringify({ ...written(), startedAt: '2026-09-01T12:00:00Z' }) });
+    mocks.delete.mockRejectedValue(new MicroserviceError('private deletion error', 503, 'TEST'));
+    await expect(service.read(req, project, 'linkedin-post')).resolves.toBeNull();
+    expect(mocks.warning).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.warning.mock.calls)).not.toMatch(/private retention marker|private deletion error/);
+  });
   it.each(types)('$agentKey stores only registered scalar fields and supported attachment counts', async (type) => {
     const service = new MktgLastIntakeService();
     const intake = MKTG_AGENT_INTAKES[type.catalogAgentId ?? ''];

@@ -657,6 +657,9 @@ export class MktgDocumentRunService {
   private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
     const result = await this.agentResult(req, record);
     const endpoint = findMktgRunIntake(record.agentKey, true)?.endpoints.result;
+    // Member 360 ends only when Guild ends its session (member360TerminalResult); the settled-error
+    // overlay never applies to it, as the controller (#4267) and the deadline branch already hold.
+    if (endpoint === `${MEMBER_360_API}/result`) return result;
     const outcome = await this.guild.resolveRunOutcome(req, record.sessionId, result, endpoint);
     return outcome.status === 'failed' && outcome.failure ? { ...outcome, failureText: outcome.failure.reason } : outcome;
   }

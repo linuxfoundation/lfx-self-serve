@@ -13,6 +13,7 @@ import {
   MKTG_LAST_INTAKE_SCHEMA,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
+import { MKTG_LAST_INTAKE_RETENTION_DAYS } from '@lfx-one/shared/constants/mktg-last-intake.constants';
 import { MktgAgentIntake, MktgLastIntake, MktgLastIntakeInput, MktgStoredLastIntake } from '@lfx-one/shared/interfaces';
 import { normalizeLinkedinShareAnswers } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -36,7 +37,8 @@ export class MktgLastIntakeService {
     if (agentKey === LINKEDIN_POST_INTAKE.agentId && !subject) throw new AuthenticationError('A signed-in writer subject is required.');
     logger.debug(req, 'mktg_last_intake_read', 'Reading scalar intake history', { project, agentKey });
     try {
-      const stored = await this.store.getObject(req, 'marketing-os-artifacts', this.key(project, agentKey, subject));
+      const key = this.key(project, agentKey, subject);
+      const stored = await this.store.getObject(req, 'marketing-os-artifacts', key);
       if (!stored) return null;
       if (Buffer.byteLength(stored.body) > MKTG_LAST_INTAKE_MAX_BYTES) throw this.unavailable();
       // Parse errors can quote source text. Never log or return the original error.
@@ -55,8 +57,17 @@ export class MktgLastIntakeService {
       ) {
         throw this.unavailable();
       }
+      const answers = this.scalarAnswers(intake, record.answers);
+      if (Date.now() - Date.parse(record.startedAt) > MKTG_LAST_INTAKE_RETENTION_DAYS * 86400e3) {
+        try {
+          await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
+        } catch {
+          logger.warning(req, 'mktg_last_intake_expire', 'Expired scalar intake history could not be deleted', { project, agentKey });
+        }
+        return null;
+      }
       // Explicit projection: even unexpected private fields can never escape on reads.
-      return { answers: this.scalarAnswers(intake, record.answers), documentCount: record.documentCount, logoCount: record.logoCount };
+      return { answers, documentCount: record.documentCount, logoCount: record.logoCount };
     } catch {
       throw this.unavailable();
     }

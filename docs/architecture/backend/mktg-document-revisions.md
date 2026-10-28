@@ -273,6 +273,8 @@ read a snapshot. Older per-project LinkedIn records are ignored, never read, sho
 migrated. LinkedIn's explicit `lastIntakeFields` allowlist contains source kind, selected
 pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
 Both schemes use the existing `marketing-os-artifacts` purpose and server-resolved project partition.
+Per-writer last intake is kept 30 days from its `startedAt`; expired records are deleted on read.
+The same expiry rule applies to shared per-project records; deletion is best-effort and expired inputs are never returned.
 The BFF starts this best-effort write only after sending the Generate acknowledgement;
 a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
 blank fields are retained; absent fields are not invented as last-run answers.

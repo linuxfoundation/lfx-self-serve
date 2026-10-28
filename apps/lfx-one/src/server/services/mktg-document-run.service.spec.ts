@@ -236,20 +236,34 @@ describe('MktgDocumentRunService core', () => {
     expect((await reader.readProgress(req, project, agent, id)).runs).toEqual([]);
   });
 
-  it.each(['linkedin-post', 'member-360'])('classifies a settled %s runtime failure on a Documents read before its writing deadline', async (agent) => {
+  it('classifies a settled linkedin-post runtime failure on a Documents read before its writing deadline', async () => {
+    const agent = 'linkedin-post';
     await service.startForOneOff(req, agent, project, session);
     const startedAt = new Date().toISOString();
     vi.advanceTimersByTime(61_000);
     flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
     const visitor = { originalUrl: '/api/mktg-agents/documents/' + agent } as Request;
     const progress = await service.readProgress(visitor, project, agent);
-    expect(progress.runs[0]).toMatchObject({
-      state: 'failed',
-      failureText: agent === 'linkedin-post' ? MKTG_ONE_OFF_STOPPED_MESSAGE : MKTG_RUN_FAILURE_REASON,
-    });
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
     expect(Date.now() - Date.parse(startedAt)).toBeLessThan(MKTG_RUN_POLL.timeoutMs);
     expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
     expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
+  });
+
+  it('keeps a member-360 run open past an aged runtime error without a Guild session end on a Documents read', async () => {
+    const outcome = vi.spyOn(service['guild'], 'resolveRunOutcome');
+    const agent = 'member-360';
+    await service.startForOneOff(req, agent, project, session);
+    const startedAt = new Date().toISOString();
+    vi.advanceTimersByTime(61_000);
+    flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
+    const visitor = { originalUrl: '/api/mktg-agents/documents/' + agent } as Request;
+    const progress = await service.readProgress(visitor, project, agent);
+    // Only a Guild session end fails Member 360 (member360TerminalResult); the settled-error overlay is not applied.
+    expect(outcome).not.toHaveBeenCalled();
+    expect(progress.runs[0]?.state).toBe('writing');
+    expect(progress.runs[0]?.failureText).toBeUndefined();
+    expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
   });
 
   it('uses one completion policy for owned and Documents reads, retaining the record through completion', async () => {
@@ -412,7 +426,7 @@ describe('MktgDocumentRunService core', () => {
       expect(JSON.stringify(paused)).not.toContain('private question text');
       expect(flows.beforePut).not.toHaveBeenCalled();
       expect(flows.member).toHaveBeenCalledTimes(2);
-      expect(flows.events).toHaveBeenCalledTimes(2); // Reads only; no session send/start is available in this flow.
+      expect(flows.events).not.toHaveBeenCalled(); // Member 360 skips the settled-error overlay, so no raw-event read happens here.
     }
   );
 

@@ -31,7 +31,7 @@ test('Kit → Member family → run has fixed linked parents and browser Back', 
   await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
   await page.getByTestId('mktg-kit-family-link-member-sponsor').click();
   const familyRun = page.getByTestId('mktg-family-run').getByRole('link');
-  await expect(familyRun).toHaveAccessibleName('Run next agent: Member 360');
+  await expect(familyRun).toHaveAccessibleName('Create Member 360');
   await familyRun.click();
   await expect(page.getByTestId('member-360-run-page')).toBeVisible();
   await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/member-sponsor\?project=sample-foundation$/);

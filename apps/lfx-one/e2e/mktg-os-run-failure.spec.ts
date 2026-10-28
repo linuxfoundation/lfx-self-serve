@@ -97,6 +97,8 @@ test('ICP document failure returns its retained inputs and explicit Retry starts
       .fill(field.format === 'github-repo-url' ? 'https://github.com/synthetic-org/synthetic-orbit' : 'Synthetic ICP input');
   }
   await page.getByTestId('mktg-agent-run-submit-button').getByRole('button').click();
+  await page.getByTestId('mktg-document-view-failure-details').locator('summary').click();
+  await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
   await expect(page.getByTestId('mktg-document-view-failure-reply')).toContainText(MKTG_RUN_FAILURE_REASON, { timeout: 20000 });
   expect(submitted).toHaveLength(1);
   await page.getByTestId('mktg-document-view-intake-link').getByRole('button', { name: 'Try again', exact: true }).click();
