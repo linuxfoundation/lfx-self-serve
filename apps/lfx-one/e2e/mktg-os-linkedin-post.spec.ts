@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR } from '../../../packages/shared/src/constants/mktg-run.constants';
 import {
   createLinkedinRuns,
   json,
@@ -416,10 +417,13 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
     await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
     await expect(page.getByTestId('mktg-run-questions-error-tendency')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toHaveText(MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR);
     expect(generates).toBe(1);
     await answerBox.fill(suggestion);
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 2 of 3 · Admired style');
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 3 of 3 · Avoid');
     await answerBox.fill('None'); // Only the stable avoid question accepts literal none.
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
