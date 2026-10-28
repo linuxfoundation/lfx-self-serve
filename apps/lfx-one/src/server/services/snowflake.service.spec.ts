@@ -337,6 +337,35 @@ describe('SnowflakeService circuit breaker', () => {
       expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
     });
 
+    /**
+     * HALF_OPEN is the only state `releaseProbe` has any effect in — `probeInFlight` is set by
+     * `checkCircuit` and nowhere else — so the CLOSED-state tests above would all still pass if the
+     * call were deleted outright. Without it a probe that hits the exempt object leaves
+     * `probeInFlight` stuck true, and `checkCircuit` then 503s every Snowflake query on the pod until
+     * the process restarts. Mirrors the pool-queue and row-count probe tests.
+     *
+     * Note what this does NOT assert: that the expected miss closes the circuit. It used to, under
+     * `recordSuccess`. A query that never reached a table proves nothing about recovery, so the
+     * circuit stays HALF_OPEN and waits for a real success — which is what the second call here is.
+     */
+    it('frees the HALF_OPEN probe slot when the probe hits the NAMED missing object', async () => {
+      const use = vi
+        .fn()
+        .mockImplementationOnce(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`))
+        .mockImplementation(querySuccess);
+      const { service, internals } = serviceWithPool(use);
+      internals.circuitState = SnowflakeCircuitState.OPEN;
+      internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+      await expect(service.execute('SELECT 1', [], { expectMissingObject: OPTIONAL_TABLE })).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+
+      // The slot is free, so this one is admitted rather than fast-failed — and it is a real success,
+      // so it is what closes the circuit.
+      await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+    });
+
     it('does not exempt an unrelated failure just because an object was named', async () => {
       const { service } = serviceWithPool(vi.fn(queryFailure));
 

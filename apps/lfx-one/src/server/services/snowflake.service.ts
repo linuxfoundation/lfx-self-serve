@@ -614,9 +614,14 @@ export class SnowflakeService {
   }
 
   /**
-   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it,
-   * or it carried an out-of-range row count/unrecognized value. Leaves failure count and state untouched,
-   * but frees the HALF_OPEN probe slot so the next caller can probe.
+   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, it
+   * carried an out-of-range row count/unrecognized value, or it hit a schema-rollout error the caller
+   * named through `expectMissingObject`/`expectInvalidIdentifier`. Leaves failure count and state
+   * untouched, but frees the HALF_OPEN probe slot so the next caller can probe.
+   *
+   * Deliberately not `recordSuccess` for the expected-error cases: none of them is a successful query, and
+   * resetting the shared count would discard failures booked by unrelated queries. A HALF_OPEN probe that
+   * ends here therefore stays HALF_OPEN, waiting for a real success to close the circuit.
    * @private
    */
   private releaseProbe(): void {

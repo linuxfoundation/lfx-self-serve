@@ -279,7 +279,11 @@ export class OrgLensEventsService {
     // Names only. Matching `er.EMAIL` made this an existence oracle — a caller could test whether a
     // given address registered for an event without ever being shown it. The shipped drawer filters
     // client-side on name and job title and never sends `searchQuery`, so nothing in the UI regresses.
-    const searchFilter = searchQuery ? `AND UPPER(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) LIKE UPPER(?)` : '';
+    // One expression, used by both the projection and the search, as `getEventSpeakers` does with
+    // `speakerName`. Two copies could drift, and the guard only works if the rendered name and the
+    // searchable name are the same thing — dropping it from either side alone reopens one of the leaks.
+    const attendeeName = `COALESCE(${nonAddressName('p.NAME')}, ${nonAddressName('er.FULL_NAME')})`;
+    const searchFilter = searchQuery ? `AND UPPER(${attendeeName}) LIKE UPPER(?)` : '';
 
     /**
      * The drawer in TWO spellings, not three: scoped, and unscoped for the address table being
@@ -291,7 +295,7 @@ export class OrgLensEventsService {
       ${scoped ? `WITH ${COMPANY_EMAIL_COVERAGE_CTE}` : ''}
       SELECT
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
-        MAX(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) AS NAME,
+        MAX(${attendeeName})                           AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
@@ -452,7 +456,7 @@ export class OrgLensEventsService {
 
   /**
    * Is the caller LF staff? #4432 removes the event-wide registration goal from EXTERNAL admins'
-   * view and payload; LF staff keep it.
+   * view and payload; LF staff keep it, except while impersonating (see below).
    *
    * Deliberately NOT `RoleGrantsResponse.isStaff`, which an earlier revision of this used.
    * `OrgRoleGrantsService` sets that for membership of any team in `ORG_WIDE_READ_TEAM_IDS` —
@@ -674,8 +678,9 @@ const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)
  * rejected by `isContactRowArray`, refusing the whole entry on every read. The scoped predicate used
  * to carry this clause, so splitting the fallback out of it originally dropped the guard on exactly
  * the degraded path.
- * (A null `NAME` is now ordinary, not a symptom: it is what a registrant with no resolved person and
- * no `FULL_NAME` looks like once the address is out of the coalesce, and it maps to a neutral label.)
+ * (A null `NAME` is now ordinary, not a symptom: it is what no surviving name source looks like once the
+ * address is out of the coalesce — no resolved person and no `FULL_NAME`, or only `@`-bearing names,
+ * which `nonAddressName` treats as absent — and it maps to a neutral label.)
  *
  * KNOWN, DELIBERATE GAP, and this is the guard that drops the row. Applying it on the fallback path
  * too means a registration with no address at all is dropped there, where before this rule it would
@@ -753,11 +758,14 @@ function registrationCountsCte(scoped: boolean): string {
  * value parses as an address, it is whether it might be one. A real name containing `@` is a false
  * positive that costs a neutral label, which is the safe direction to be wrong in.
  */
-const NON_ADDRESS_NAME = (column: string): string => `CASE WHEN ${column} LIKE '%@%' THEN NULL ELSE ${column} END`;
+function nonAddressName(column: string): string {
+  return `CASE WHEN ${column} LIKE '%@%' THEN NULL ELSE ${column} END`;
+}
 
 /**
- * Shown when a registrant resolves to no person and the registration carries no name. It used to fall
- * back to the raw address, which rendered a personal email in the drawer on the degraded tiers.
+ * Shown when no name source survives: no resolved person and no `FULL_NAME`, or only `@`-bearing names,
+ * which `nonAddressName` treats as absent. It used to fall back to the raw address, which rendered a
+ * personal email in the drawer on the degraded tiers.
  */
 const ANONYMOUS_ATTENDEE_NAME = 'Registered attendee';
 

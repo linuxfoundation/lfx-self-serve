@@ -605,8 +605,8 @@ describe('OrgLensEventsService company-email scoping', () => {
     await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
     // A missing EVENT_REGISTRATIONS sends the list straight to platinum, so this is the platinum
-    // query alone — not the unscoped retry, which never runs on this path. Flagging it would
-    // suppress the error telemetry for a genuinely broken warehouse and reset the shared breaker.
+    // query alone — not the unscoped retry, which never runs on this path. Flagging it would suppress
+    // the error telemetry for a genuinely broken warehouse and spend its breaker failure.
     const platinumCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
     expect(platinumCalls).toHaveLength(1);
     expect(platinumCalls[0][2]).toBeUndefined();
@@ -646,10 +646,9 @@ describe('OrgLensEventsService company-email scoping', () => {
     await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
     await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    // Both surfaces retry unscoped here, and both retries read core tables only. Flagging one would
-    // let a missing core table call recordSuccess() and reset the pod-wide breaker — the gap that
-    // naming the object in `expectMissingObject` closes, pinned at `execute` level in
-    // `snowflake.service.spec.ts`.
+    // Both surfaces retry unscoped here, and both retries read core tables only. Flagging one would let
+    // a missing core table take the exempt branch, which books no failure at all — the gap that naming the
+    // object in `expectMissingObject` closes, pinned at `execute` level in `snowflake.service.spec.ts`.
     const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
     expect(unscopedCalls).toHaveLength(2);
     for (const [, , options] of unscopedCalls) {
@@ -944,6 +943,23 @@ describe('OrgLensEventsService attendee address redaction', () => {
     const hit = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'nameless@gmail.example');
 
     expect(hit.total).toBe(0);
+  });
+
+  it('does not let the search term match an address held on the roster profile', async () => {
+    // The profile side of the same guard. The projection test above never searches this row, so
+    // without this the `p.NAME` half of the search clause could be dropped and the suite would pass
+    // while the address-search oracle stayed open for roster names.
+    addCompanyEmail('ada@company.example');
+    addProfile('ada@company.example', 'ada@company.example', 'Principal Engineer');
+    addRegistration('ada@company.example', null as unknown as string);
+
+    const byAddress = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada@company.example');
+    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(byAddress.total).toBe(0);
+    // The row is there — so the miss above is the guard rejecting the term, not an empty result set.
+    expect(unsearched.total).toBe(1);
+    expect(unsearched.data[0].name).toBe('Registered attendee');
   });
 
   it('does not let the search term test whether an address registered', async () => {
