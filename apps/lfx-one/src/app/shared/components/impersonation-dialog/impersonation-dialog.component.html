@@ -19,7 +19,7 @@
         : 'Search for the user you want to view the app as by name, email, or username.'
     }}
   </p>
-  <div class="flex flex-col gap-1" (keydown.enter)="submit()">
+  <div class="flex flex-col gap-1" (keydown.enter)="onEnter()">
     <label for="targetUser" class="text-sm font-medium text-gray-700">User</label>
     <lfx-autocomplete
       [form]="targetUserForm"
@@ -36,7 +36,8 @@
       inputId="targetUser"
       dataTestId="impersonation-target-input"
       (completeMethod)="onSearchComplete($event)"
-      (onSelect)="onSuggestionSelected($event)">
+      (onSelect)="onSuggestionSelected($event)"
+      (onClear)="onSearchCleared()">
       <ng-template #item let-entry>
         <div class="flex w-full items-center gap-2">
           @if (entry.picture) {

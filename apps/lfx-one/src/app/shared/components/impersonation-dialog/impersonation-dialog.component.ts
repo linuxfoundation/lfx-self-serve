@@ -45,9 +45,9 @@ export class ImpersonationDialogComponent {
   protected loading = signal(false);
   protected loadingMessage = computed(() => (this.loading() ? IMPERSONATION_TRANSITION_MESSAGES[this.switching ? 'switching' : 'starting'] : ''));
   protected error = signal('');
-  // While switching, the signed-in user is the current target, so their recent entry is left out: picking it
-  // would only be refused as already impersonated.
-  protected recentImpersonations = signal<RecentImpersonation[]>(this.withoutCurrentTarget(this.impersonationService.getRecentImpersonations()));
+  // The admin and, while switching, the current target are left out of the recents, as the server leaves them out
+  // of the directory results: picking either is pointless, and the target would only be refused as already impersonated.
+  protected recentImpersonations = signal<RecentImpersonation[]>(this.withoutOwnIdentities(this.impersonationService.getRecentImpersonations()));
 
   // Typed text goes through a subject rather than a valueChanges pipeline: PrimeNG's `delay` already
   // coalesces keystrokes before `completeMethod` fires, and its panel only opens for a suggestions
@@ -97,6 +97,29 @@ export class ImpersonationDialogComponent {
 
   public cancel(): void {
     this.dialogRef.close(false);
+  }
+
+  /**
+   * Enter submits what is typed only when that is plainly the intended target. With suggestions showing and none
+   * matching the text exactly (a half-typed name, say), it is left to the suggestion list, because sending the
+   * fragment would impersonate whoever happens to hold it as a username.
+   */
+  protected onEnter(): void {
+    const value = this.targetUserForm.controls.targetUser.value;
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    const suggestions = this.suggestions();
+    const matchesSuggestion = suggestions.some((entry) => [entry.targetUser, entry.username, entry.email].some((field) => field.toLowerCase() === typed));
+
+    if (suggestions.length > 0 && !matchesSuggestion) {
+      return;
+    }
+
+    this.submit();
+  }
+
+  // Emptying the field must cancel a lookup still in flight (switchMap) and bring the recents back.
+  protected onSearchCleared(): void {
+    this.searchQuery$.next('');
   }
 
   protected onSearchComplete(event: AutoCompleteCompleteEvent): void {
@@ -155,12 +178,15 @@ export class ImpersonationDialogComponent {
     );
   }
 
-  private withoutCurrentTarget(recents: RecentImpersonation[]): RecentImpersonation[] {
-    if (!this.switching) {
-      return recents;
+  private withoutOwnIdentities(recents: RecentImpersonation[]): RecentImpersonation[] {
+    // Not impersonating, the signed-in user is the admin. While switching it is the current target, and the admin
+    // is the impersonator.
+    const user = this.userService.user();
+    const identities = [{ username: user?.['https://sso.linuxfoundation.org/claims/username'], email: user?.email }];
+    if (this.switching) {
+      identities.push({ username: undefined, email: this.userService.impersonator()?.email });
     }
 
-    const target = this.userService.user();
-    return excludeUserSearchIdentities(recents, [{ username: target?.['https://sso.linuxfoundation.org/claims/username'], email: target?.email }]);
+    return excludeUserSearchIdentities(recents, identities);
   }
 }

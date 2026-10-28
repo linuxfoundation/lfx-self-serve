@@ -24,6 +24,8 @@ interface DialogHarness {
   error: () => string;
   submit: () => void;
   onSearchComplete: (event: AutoCompleteCompleteEvent) => void;
+  onEnter: () => void;
+  onSearchCleared: () => void;
   onSuggestionSelected: (event: AutoCompleteSelectEvent) => void;
 }
 
@@ -47,6 +49,7 @@ describe('ImpersonationDialogComponent', () => {
   let searchUsers: ReturnType<typeof vi.fn>;
   let recents: RecentImpersonation[];
 
+  let currentImpersonator: { email: string } | null;
   let currentUser: { email: string; 'https://sso.linuxfoundation.org/claims/username': string } | null;
 
   async function createDialog(dialogData?: Record<string, unknown>): Promise<void> {
@@ -60,7 +63,7 @@ describe('ImpersonationDialogComponent', () => {
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
         { provide: DynamicDialogConfig, useValue: { closable: true, data: dialogData } },
         { provide: SearchService, useValue: { searchUsers } },
-        { provide: UserService, useValue: { user: signal(currentUser) } },
+        { provide: UserService, useValue: { user: signal(currentUser), impersonator: signal(currentImpersonator) } },
         {
           provide: ImpersonationService,
           useValue: {
@@ -85,6 +88,7 @@ describe('ImpersonationDialogComponent', () => {
     searchUsers = vi.fn().mockReturnValue(of([]));
     recents = [];
     currentUser = null;
+    currentImpersonator = null;
     await createDialog();
   });
 
@@ -254,10 +258,86 @@ describe('ImpersonationDialogComponent', () => {
       expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
     });
 
+    it('cancels a pending lookup and restores the recents when the field is cleared', async () => {
+      searchUsers.mockReturnValue(of([directoryRow({})]));
+      expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
+
+      dialog().onSearchCleared();
+      await fixture.whenStable();
+
+      expect(dialog().suggestions()).toEqual([recent]);
+    });
+
     it('falls back to the recents when the directory search yields nothing', async () => {
       searchUsers.mockReturnValue(of([]));
 
       expect(await search('al')).toEqual([recent]);
+    });
+  });
+
+  describe('Enter', () => {
+    const recent: RecentImpersonation = { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', name: 'Alex Smith', lastUsedAt: 1 };
+
+    beforeEach(async () => {
+      recents = [recent];
+      await createDialog();
+      startImpersonation.mockReturnValue(NEVER);
+    });
+
+    it('leaves a half-typed name to the suggestion list instead of submitting it', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('al');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    it('submits text that exactly matches a suggestion', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('ASmith');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('ASmith', false);
+    });
+
+    it('submits typed text when nothing is suggested', async () => {
+      dialog().onSearchComplete({ query: 'zz' } as AutoCompleteCompleteEvent);
+      await fixture.whenStable();
+      dialog().targetUserForm.controls.targetUser.setValue('zz.exact');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('zz.exact', false);
+    });
+  });
+
+  describe('own identities in the recents', () => {
+    const admin: RecentImpersonation = { targetUser: 'admin', username: 'admin', email: 'admin@example.com', lastUsedAt: 3 };
+    const other: RecentImpersonation = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', lastUsedAt: 2 };
+
+    it('leaves the signed-in admin out when starting', async () => {
+      recents = [admin, other];
+      currentUser = { email: 'ADMIN@example.com', 'https://sso.linuxfoundation.org/claims/username': 'admin' };
+      await createDialog();
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
+    });
+
+    it('leaves the impersonating admin out, as well as the current target, when switching', async () => {
+      recents = [admin, other, { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', lastUsedAt: 1 }];
+      currentUser = { email: 'alex.smith@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+      currentImpersonator = { email: 'Admin@example.com' };
+      await createDialog({ switching: true });
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
     });
   });
 
