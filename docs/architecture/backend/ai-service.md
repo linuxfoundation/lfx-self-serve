@@ -2,14 +2,14 @@
 
 ## 🤖 Overview
 
-The LFX One AI Service provides AI-backed content generation using **Claude Sonnet 4** through a **LiteLLM proxy**. It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
+The LFX One AI Service provides AI-backed content generation using a **Claude** model through a **LiteLLM proxy** — whichever one `AI_MODEL` names (see [Model Configuration](#model-configuration)). It now powers more than one feature: structured **meeting agenda** generation (based on meeting type, context, and project information), **newsletter content** generation, and **weekly-brief action-item extraction** (LFXV2-3043). The three public entry points are `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`, and the service is consumed by the meetings, newsletters, campaigns, and weekly-brief flows.
 
 ## 🏗 Architecture
 
 ### Service Architecture
 
 ```text
-Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude Sonnet 4
+Frontend Request → Feature API → AI Service → LiteLLM Proxy → Claude (AI_MODEL)
      ↓             ↓             ↓             ↓
    Angular      Express.js    Business     OpenAI-Compatible
    Service      Controller     Logic           Proxy
@@ -21,7 +21,7 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 - **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration; exposes `generateMeetingAgenda`, `generateNewsletter`, and `extractBriefActionItems`
 - **Feature controllers**: `meeting.controller.ts` and `newsletter.controller.ts` expose the HTTP endpoints for AI-powered features directly; `weekly-brief.controller.ts` never calls `AiService` itself — `WeeklyBriefService.getActionItems` does, on its behalf; the campaigns flow consumes the same service
-- **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
+- **LiteLLM Proxy**: OpenAI-compatible proxy for Claude model access; it accepts only the short model names it publishes in its own `model_list`
 - **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 
 ## 🔧 Implementation Details
@@ -214,19 +214,51 @@ AI_API_KEY=your-ai-api-key
 
 ### Model Configuration
 
-The model name is tied to which LiteLLM instance `AI_PROXY_URL` names. The v2 instances
-(`litellm.*.v2.cluster.linuxfound.info`) route on the `bedrock/`-prefixed name and answer `400`
-to the bare inference profile id. The retired OCI instance (`litellm.tools.lfx.dev`) routed on
-the bare id and answered `401` to the prefixed name.
+`AI_MODEL` must name a model the LiteLLM proxy actually publishes. The proxy's own `model_list`
+lives in `lfx-v2-argocd` at `values/global/lfit-litellm.yaml`, and every name it publishes is
+short — `claude-sonnet-5-5`, `claude-sonnet-4`, `amazon-nova-pro`. A provider-prefixed Bedrock id
+appears in that file only on the other side of the mapping, as the `litellm_params.model` each
+short name resolves to:
 
-Those two codes say different things, and the difference is what to read when generation fails: a
-`400` is the key being accepted and the request body rejected — auth is fine and the model name is
-wrong for this host — while a `401` is the key itself being refused. The host and the name have to
-move together; #4087 is the case where the host moved alone.
+```yaml
+- model_name: 'claude-sonnet-4-5' # what a caller sends
+  litellm_params:
+    model: 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0' # where it routes
+```
+
+Sending the routing destination asks the router for a model it publishes no deployment for, and
+that answers `429` rather than a `400` that would name the real problem — the failure mode in #4333,
+where every AI feature returned `AI streaming request failed (429)`.
+
+Read the status code when generation fails: a `429` is the model name not matching anything the
+proxy serves (or a genuine rate limit), a `400` is the request body being rejected with auth fine,
+and a `401` is the key itself being refused. Neither the host nor the published name can be checked
+from this repo — both live in argocd — so the two have to move together; #4087 is the case where
+the host moved alone. `litellm.tools.lfx.dev` is the retired OCI instance from before that move: it
+routed on the bare inference-profile id and answered `401` to a prefixed name. Anything still
+pointing at that host is stale whichever model name it sends.
+
+A published name is necessary but not sufficient: the list spans two sampling contracts. Every send
+site here reads `AI_REQUEST_CONFIG.TEMPERATURE` into the request body, and on Claude Sonnet 5 and
+later Anthropic's model reference states that "Setting `temperature`, `top_p`, or `top_k` returns a
+400 error". The proxy does not absorb that — `lfit-litellm.yaml`'s `litellm_settings` sets no
+`drop_params`, so the value reaches Bedrock as sent. Naming `claude-sonnet-5-5` or any other
+5-series-or-later Claude model while still sending `temperature` therefore trades #4333's `429` for
+a `400` on every AI feature. Moving to one is a two-part change: drop `temperature` from all six
+send sites first. `ai.constants.spec.ts` pins the pair so the halves cannot drift apart silently,
+and `claude-(sonnet|opus|haiku)-[5-9]` is the exact set it rejects.
+
+`lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var, set in argocd, and builds
+its own request body with an unconditional `temperature` field (`internal/platform/llm/client.go`,
+no `omitempty`). The two services are not currently on the same name: argocd pins campaign-service
+to `claude-sonnet-5-5` (`values/global/lfx-v2-campaign-service.yaml`) while this repo sends
+`claude-sonnet-4-5`. By the paragraph above, that service's pairing is the one that returns `400`.
+Closing the gap is a change in that repo — a non-5-series name, or dropping `temperature` from its
+request body — not one this repo can make.
 
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0';
+export const AI_MODEL = 'claude-sonnet-4-5';
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
