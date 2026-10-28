@@ -30,9 +30,14 @@ Comment questions are optional open-ended questions the creator adds, such as "W
 
 ## Who can see the results?
 
-- **From the Me lens**, you see the voter view. There are no tallies while the vote is open, and after it closes you see the final results.
+- **From the Me lens list**, you see the voter view. There are no tallies while the vote is open, and after it closes you see the final results.
 - **From the Project or Foundation Votes dashboard, or a group's Votes tab**, people who manage the vote see live results while it is open and final results after it closes.
+- A shared link to a vote opens the full results view if you manage the vote, unless you still have a ballot to cast. Then it opens the cast drawer.
 - Anyone watching a [presenter screen](../present-extend-clone/#present-a-vote) sees only how many people have voted until the vote ends.
+
+## Are votes anonymous?
+
+Votes created in LFX One are not secret ballots, and the Create Vote form has no setting for it. A vote that was set up as a secret ballot elsewhere is marked that way. For those votes, the presenter says **Ballots are secret**, and the voter results view doesn't show **You voted on this motion**. Secret-ballot votes can't be cloned yet. On any vote, comment responses show the commenter's name. For questions about how a specific vote handles anonymity, contact your project administrator.
 
 ## Can a vote be extended?
 

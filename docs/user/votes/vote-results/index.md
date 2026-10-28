@@ -8,13 +8,14 @@ last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
-This article explains the **Results** drawer, which shows how a vote turned out. What you see depends on whether you manage the vote or are a voter.
+This article explains the **Results** drawer, which shows how a vote turned out. What you see depends on how you open the vote.
 
 ## Open the results
 
 - On the **Votes** dashboard, select **Results** on an ended vote. Select **View** on an active vote you manage to see its live results.
 - Select the vote's name in the table to open the same drawer.
-- In the **Me** lens, you get the voter view described below. **Review** on an active vote you have already voted on opens the drawer with a confirmation of your vote.
+- In the **Me** lens list, you get the voter view described below. **Review** on an active vote you have already voted on opens the drawer with a confirmation of your vote.
+- A shared link to a vote (`/votes/:id`) opens the full results view if you manage the vote. If you still have a ballot to cast, it opens the cast drawer instead.
 
 ## From the Project, Foundation, or group view
 
@@ -28,7 +29,7 @@ The drawer shows the vote's status and deadline, how the vote counts ballots, an
 - **Comments**, when the vote has comment questions, lists each comment question with the responses, each with the commenter's name and the date. Voters see the same comments once the vote closes. A response from someone who abstained is marked. Long lists are paged, and if only the most recent responses are shown, the drawer says how many it is showing out of the total.
 - **Present** and **Copy slide** buttons for active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 
-If you are also invited to vote and haven't yet, the drawer shows **You haven't cast your vote yet** with a **Cast Vote** button.
+On the Project and Foundation dashboards, if you are also invited to an active vote and haven't voted yet, the drawer shows **You haven't cast your vote yet** with a **Cast Vote** button. A group's **Votes** tab doesn't show this button. Open **Votes** in the **Me** lens to cast your ballot.
 
 ### Ranked questions
 
@@ -36,15 +37,15 @@ Some votes rank their options instead of counting one choice. For those, each op
 
 ## From the Me lens (voter view)
 
-In the **Me** lens, the drawer is the voter view, even if you also manage the vote. It shows results only after the vote closes.
+When you open a vote from the **Me** lens list, the drawer is the voter view, even if you also manage the vote. It shows results only after the vote closes.
 
-| Your situation                    | What the drawer shows                                                                                                                                                                                     |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| You haven't voted, vote is active | Use **Vote** on the Votes list to cast your ballot. Live results are hidden until the vote closes.                                                                                                        |
-| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**), and a note that results will be available after the vote closes. There is no way to change or resubmit.        |
-| The vote has closed               | If you voted and the vote isn't a secret ballot, **You voted on this motion**. Then the final results for each question, abstentions, and comments. If no one voted, it says **No votes were submitted.** |
-| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                     |
-| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                   |
+| Your situation                    | What the drawer shows                                                                                                                                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| You haven't voted, vote is active | Use **Vote** on the Votes list to cast your ballot. Live results are hidden until the vote closes.                                                                                                                                       |
+| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**), and a note that results will be available after the vote closes. There is no way to change or resubmit.                                       |
+| The vote has closed               | If you voted and the vote isn't a [secret ballot](../faq/#are-votes-anonymous), **You voted on this motion**. Then the final results for each question, abstentions, and comments. If no one voted, it says **No votes were submitted.** |
+| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                                    |
+| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                                  |
 
 If the final results don't load, the drawer says **Couldn't load final results. Try reopening this vote.**
 

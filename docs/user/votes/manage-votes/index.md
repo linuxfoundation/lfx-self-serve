@@ -61,7 +61,7 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 
 1. Find the active vote. Its button reads **Vote** if you haven't voted yet.
 2. Select **Vote**. A drawer opens with the vote's details and questions.
-3. Answer each question. Single-selection questions use radio buttons, and multiple-selection questions use checkboxes. Select all that apply.
+3. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
 4. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 5. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
 6. Select **Submit Vote**.
@@ -74,15 +74,15 @@ Select **⋮ → Copy link** to copy a direct link to the vote. See [Sharing a l
 
 ## Send a reminder
 
-Remind eligible voters who haven't voted yet on an active poll. Only users who can manage the poll, such as project or group writers, see this option.
+Remind eligible voters who haven't voted yet on an active vote. Only users who can manage the vote, such as project or group writers, see this option.
 
 1. Open the votes dashboard, or the **Votes** tab of a group.
-2. Find an active poll and select the **More** (⋮) menu on its row.
+2. Find an active vote and select the **More** (⋮) menu on its row.
 3. Select **Send reminder**. A dialog lists every eligible voter who hasn't voted yet, with all of them selected.
 4. Clear the voters you don't want to remind, or use the header checkbox to select or clear everyone.
-5. Select **Send**. Each selected voter receives the poll email again.
+5. Select **Send**. Each selected voter receives the vote email again.
 
-If everyone has voted, the dialog says so and there is no one to remind. If the poll has closed, it explains that reminders can no longer be sent.
+If everyone has voted, the dialog says so and there is no one to remind. If the vote has closed, it explains that reminders can no longer be sent.
 
 The voter list is checked again before sending. If a selected voter is no longer eligible, no reminders are sent for that batch. Reload the voter list and choose recipients again. A voter who submits while reminders are being queued may still receive one.
 
@@ -92,16 +92,16 @@ While sending, the dialog's close button, Escape, and Cancel are disabled. If th
 
 ## Send a reminder to the mailing list
 
-Draft a reminder to the poll's group mailing list in your own email app. LFX doesn't send this message: you review it and send it yourself. Only users who can manage the poll see this option, and only on active polls.
+Draft a reminder to the vote's group mailing list in your own email app. LFX doesn't send this message: you review it and send it yourself. Only users who can manage the vote see this option, and only on active votes.
 
-1. Find an active poll and select the **More** (⋮) menu on its row.
-2. Select **Send reminder to mailing list**. Your email app opens a draft addressed to the group's mailing list. The draft names the poll, its closing date and time, and links to the poll.
+1. Find an active vote and select the **More** (⋮) menu on its row.
+2. Select **Send reminder to mailing list**. Your email app opens a draft addressed to the group's mailing list. The draft names the vote, its closing date and time, and links to the vote.
 3. If the group has several mailing lists, LFX first asks which one to use. Pick a list and select **Open in email**.
 4. Review and edit the draft in your email app, then send it.
 
 The message goes to everyone on the list, including people who have already voted or can't vote. If nothing opens, check that your device has a default email app set up.
 
-If the group has no mailing list, LFX tells you so. Use **Copy link** to share the poll another way, or **Send reminder** to email the voters directly.
+If the group has no mailing list, LFX tells you so. Use **Copy link** to share the vote another way, or **Send reminder** to email the voters directly.
 
 ## Switch project context
 

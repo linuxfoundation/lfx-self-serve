@@ -77,10 +77,10 @@ Drafts appear under the **Draft** tab on the Votes dashboard. See [Manage Votes]
 To reuse a vote's questions and settings, select **⋮ → Clone** on its row. This opens the **Create Vote** form prefilled:
 
 - The title starts with **Copy of**.
-- The questions, options, comment questions, eligible participants, and **Allow Abstain** setting are copied.
+- The questions, options, comment questions, eligible participants, and **Allow Abstain** setting are copied. Check **Eligible Participants** before you open the copy: if the original included observers or emeritus members, the clone is set to **All Members of the Group**, which can include more people than the original.
 - If the original deadline is still in the future it is kept. Otherwise the close date is set seven days from today at `11:59 PM` in your timezone.
 
-Ranked-choice votes and secret-ballot votes can't be cloned yet. LFX shows **Cannot clone** and doesn't open the form.
+Ranked-choice votes and secret-ballot votes can't be cloned yet. LFX shows **Cannot clone** and leaves you on a blank **Create Vote** form, so nothing is prefilled.
 
 Review and change anything you like, then open the vote or save it as a draft. **Clone** is covered with the other row actions in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 
