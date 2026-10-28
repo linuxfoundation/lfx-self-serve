@@ -576,6 +576,11 @@ export class AudienceBuilderTabComponent {
     const included = this.inclusion();
     const added = lookup.added.filter((list) => included.has(list.listId));
     const removed = lookup.added.filter((list) => !included.has(list.listId));
+    // A locked selection (a compose ran) will never take the held picks: they are offered, not
+    // shown as joining Include once the drafted list exists.
+    if (this.selectionLocked()) {
+      return { ...lookup, added, pending: [], others: [...removed, ...lookup.pending, ...lookup.others] };
+    }
     return { ...lookup, added, others: [...removed, ...lookup.others] };
   });
   /**
@@ -3793,8 +3798,11 @@ export class AudienceBuilderTabComponent {
     const included = this.inclusion();
     const excluded = this.exclusion();
     const offeredOnly = (list: AudienceDiscoveredList): boolean => this.optInsDeclined.has(list.listId) || excluded.has(list.listId);
-    const waiting = added.filter((list) => !included.has(list.listId) && !offeredOnly(list));
-    const declined = added.filter((list) => !included.has(list.listId) && offeredOnly(list));
+    // One list per signal: a signal whose carried list is still owned and included keeps that list,
+    // and a larger pick of it from the re-draft is offered rather than added beside it.
+    const ownedSignals = new Set(stillOwned.map((list) => list.signal));
+    const waiting = added.filter((list) => !included.has(list.listId) && !offeredOnly(list) && !ownedSignals.has(list.signal));
+    const declined = added.filter((list) => !included.has(list.listId) && (offeredOnly(list) || ownedSignals.has(list.signal)));
     const handPicked = added.filter((list) => included.has(list.listId) && !ownedIds.has(list.listId));
     // An owned list is shown once, as added, even when a larger list of its signal appeared.
     this.optIns.set({ status: 'done', added: stillOwned, pending: waiting, others: offered(uniqueLists([...handPicked, ...declined, ...others])), missing });

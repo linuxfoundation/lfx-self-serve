@@ -3671,6 +3671,18 @@ describe('AudienceBuilderTabComponent', () => {
 
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'the owned list also showed under Also found').toBeNull();
         expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-402"]'), 'a second list of the same signal joined Include').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-402"]'), 'and the larger one is offered').not.toBeNull();
+      });
+
+      it('offers the held opt-ins once a compose has locked the selection', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'fixture precondition').not.toBeNull();
+        (fixture.componentInstance as unknown as { composeAttempted: { set: (v: boolean) => void } }).composeAttempted.set(true);
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'still promised to join a locked selection').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
       });
 
       it('says which opt-in signal has no list', async () => {
