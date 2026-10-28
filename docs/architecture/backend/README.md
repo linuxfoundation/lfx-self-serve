@@ -62,6 +62,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
 | [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries |
+| [One-off Result Hook](./mktg-one-off-landing.md)                      | Current-turn terminal facts, root replies, creator-only failure text            |
 
 ### Committee Management
 

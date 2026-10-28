@@ -10,14 +10,16 @@ import {
   describeMktgKitAsset,
   isMktgKitFamilyLive,
   mktgKitCurrentVersion,
+  mktgKitAssetLabel,
   mktgKitSources,
+  mktgKitRunDate,
   resolveMktgKit,
   resolveMktgKitAsset,
   resolveMktgKitLivingState,
   summarizeMktgKit,
 } from './mktg-kit.utils';
 
-function document(agentKey: MktgDocumentListItem['agentKey'], createdAt: string | null = '2026-10-01T12:00:00'): MktgDocumentListItem {
+function document(agentKey: MktgDocumentListItem['agentKey'], createdAt: string | null = '2026-10-01T12:00:00Z'): MktgDocumentListItem {
   return {
     agentKey,
     documentId: 'living',
@@ -64,6 +66,8 @@ describe('Marketing kit plan of record', () => {
     expect(MKTG_KIT_FAMILIES[0].agentIds).toEqual(['foundation-setup', 'boilerplates', 'faq', 'brand-kit']);
   });
   it('keeps board Run wording separate from catalog agent identities and row headings', () => {
+    expect(mktgKitAssetLabel('brand-kit')).toBe('Brand kit');
+    expect(mktgKitAssetLabel('not-registered')).toBeUndefined();
     expect(MKTG_KIT_FAMILIES[0].assets.filter((asset) => asset.runName !== undefined).map((asset) => [asset.label, asset.runName])).toEqual([
       ['Messaging framework', 'messaging framework'],
       ['Boilerplates', 'boilerplates'],
@@ -132,11 +136,11 @@ describe('Marketing kit plan of record', () => {
     }
     expect(summarizeMktgKit([])).toEqual({ level: null, coreFloor: 0, inKit: 0 });
   });
-  it('counts one-off runs by local calendar month, never marking them stale', () => {
+  it('counts one-off runs by UTC calendar month, never marking them stale', () => {
     const data = listing([
       document('linkedin-post'),
-      document('linkedin-post', '2026-10-31T12:00:00'),
-      document('linkedin-post', '2026-09-30T12:00:00'),
+      document('linkedin-post', '2026-10-31T12:00:00Z'),
+      document('linkedin-post', '2026-09-30T12:00:00Z'),
       document('linkedin-post', '2025-10-01T12:00:00'),
       document('linkedin-post', null),
     ]);
@@ -144,6 +148,40 @@ describe('Marketing kit plan of record', () => {
     expect(row).toMatchObject({ state: null, monthlyCount: 2, version: null, badge: '2 this month' });
     expect(summarizeMktgKit(resolveMktgKit(data)).inKit).toBe(0);
     expect(resolveMktgKitAsset(MKTG_KIT_FAMILIES[2].assets[0], listing()).badge).toBe('Not run yet');
+  });
+  it('Not run yet means never run; prior one-offs have a deterministic last-run label and no approval filter state', () => {
+    const asset = MKTG_KIT_FAMILIES[2].assets[0];
+    const now = new Date('2026-10-23T12:00:00Z');
+    expect(resolveMktgKitAsset(asset, listing(), now)).toMatchObject({ state: 'missing', badge: 'Not run yet', monthlyCount: 0 });
+    const data = listing([document('linkedin-post', '2026-08-01T12:00:00Z'), document('linkedin-post', '2026-09-10T12:00:00Z')]);
+    expect(resolveMktgKitAsset(asset, data, now)).toMatchObject({ state: null, badge: 'Last run 10 Sep', monthlyCount: 0 });
+    expect(data.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].createdAt).toBe('2026-08-01T12:00:00Z');
+    expect(resolveMktgKitAsset(asset, listing([document('linkedin-post', null)]), now).badge).toBe('Last run —');
+    expect(mktgKitRunDate('2026-10-01T00:30:00+02:00')).toBe('30 Sep');
+    expect(mktgKitRunDate('invalid')).toBe('—');
+    expect(mktgKitRunDate(null)).toBe('—');
+  });
+  it('uses UTC for both month counts and last-run labels across a local month boundary', () => {
+    const asset = MKTG_KIT_FAMILIES[2].assets[0];
+    const now = new Date('2026-10-01T00:30:00Z');
+    const october = resolveMktgKitAsset(asset, listing([document('linkedin-post', '2026-09-30T23:45:00-02:00')]), now);
+    expect(october).toMatchObject({ monthlyCount: 1, badge: '1 this month' });
+    expect(mktgKitRunDate(october.document?.createdAt)).toBe('1 Oct');
+    const september = resolveMktgKitAsset(asset, listing([document('linkedin-post', '2026-10-01T00:15:00+02:00')]), now);
+    expect(september).toMatchObject({ monthlyCount: 0, badge: 'Last run 30 Sep' });
+    expect(mktgKitRunDate(september.document?.createdAt)).toBe('30 Sep');
+  });
+  it('registered types with an unavailable agent read Coming soon instead of Not run yet or a run count', () => {
+    const asset = MKTG_KIT_FAMILIES[1].assets[0];
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'aeo-geo');
+    if (!agent) throw new Error('Missing synthetic catalog agent');
+    const status = agent.status;
+    agent.status = 'coming-soon';
+    try {
+      expect(resolveMktgKitAsset(asset, listing([document('aeo-geo')]))).toMatchObject({ state: 'coming-soon', badge: 'Coming soon', monthlyCount: null });
+    } finally {
+      agent.status = status;
+    }
   });
   it('renders exact board state labels, with approval reserved for its real producer', () => {
     expect(describeMktgKitAsset({ state: 'approved', version: 3, monthlyCount: null })).toBe('Approved · v3');
@@ -164,7 +202,12 @@ describe('Marketing kit plan of record', () => {
   it('reads only the framework report source fields and omits absent or malformed data', () => {
     expect(
       mktgKitSources({ report: { sources_read: ['project.example', 'Synthetic plan'], sources_failed: [{ name: 'README', reason: 'Timed out' }] } })
-    ).toEqual({ readText: 'Sources read on the last run: project.example, Synthetic plan.', failedText: '1 source failed: README: Timed out.' });
+    ).toEqual({
+      readCount: 2,
+      failedCount: 1,
+      readText: 'Sources read on the last run: project.example, Synthetic plan.',
+      failedText: '1 source failed: README: Timed out.',
+    });
     expect(
       mktgKitSources({
         report: {

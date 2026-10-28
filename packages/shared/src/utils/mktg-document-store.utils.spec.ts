@@ -7,7 +7,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_SCHEMA } from '../constants/mktg-document-store.constants';
+import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS } from '../constants/mktg-run.constants';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import type { MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 import type { MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
@@ -24,6 +26,7 @@ import {
   mktgRunProgress,
   mktgRunResultIdentity,
   findMktgRunIntake,
+  isMktgRunFailureReason,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -48,6 +51,12 @@ function startedRun(overrides: Partial<MktgStartedRunRecord> = {}): MktgStartedR
 }
 
 describe('mktg-document-store utils', () => {
+  it.each(['no_edit_access', 'agent_stopped'])('accepts the classified reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(true);
+  });
+  it.each(['unknown_code', '__proto__', 'constructor', 'no_edit_access extra', '', null, undefined, 12])('rejects non-allow-listed reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(false);
+  });
   it('uses a bounded payload digest and prefers the exact receipt content SHA', () => {
     const result: MktgRunResultResponse = { status: 'ready', version: 1, documentMarkdown: 'Synthetic output marker. '.repeat(5000) };
     const digest = mktgRunResultIdentity(result);
@@ -63,16 +72,51 @@ describe('mktg-document-store utils', () => {
   });
 
   it('projects paused run state without private session fields', () => {
-    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject' });
+    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject', oneOff: { answers: { share_link: 'https://post.example/' } } });
     expect(mktgRunProgress(run)).toMatchObject({ runId: SHA, state: 'questions' });
+    expect(mktgRunProgress(run)).not.toHaveProperty('oneOff');
     expect(mktgRunProgress(run)).not.toHaveProperty('sessionId');
     expect(mktgRunProgress(run)).not.toHaveProperty('creatorSubject');
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
   });
+  it('projects LinkedIn failure prose only to its known creator, while Member redacted text stays public', () => {
+    const run = startedRun({
+      agentKey: 'linkedin-post',
+      documentId: 'run-' + 'a'.repeat(24),
+      state: 'failed',
+      creatorSubject: 'synthetic-creator',
+      failureText: 'SYNTHETIC private source/profile reply',
+    });
+    expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator')?.failureText).toBe(run.failureText);
+    for (const reader of [undefined, '', 'synthetic-visitor'])
+      expect(mktgRunProgress(run, undefined, undefined, reader)?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    expect(mktgRunProgress({ ...run, creatorSubject: null }, undefined, undefined, 'synthetic-creator')?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    expect(mktgRunProgress({ ...run, agentKey: 'member-360', failureText: 'SYNTHETIC redacted Member reply' })?.failureText).toBe(
+      'SYNTHETIC redacted Member reply'
+    );
+  });
+
+  it('projects same-session recovery only for exhausted persistence failures, never from failure prose', () => {
+    const failureText = 'Synthetic failure mentioning storage';
+    expect(mktgRunProgress(startedRun({ state: 'failed', failureText }))).not.toHaveProperty('persistenceFailed');
+    expect(mktgRunProgress(startedRun({ state: 'failed', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS - 1 }))).not.toHaveProperty('persistenceFailed');
+    expect(mktgRunProgress(startedRun({ state: 'failed', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS }))).toMatchObject({ persistenceFailed: true });
+    expect(mktgRunProgress(startedRun({ state: 'storing', persistRetries: MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS }))).not.toHaveProperty('persistenceFailed');
+  });
+
   it('derives run membership from the active catalog and registered intake', () => {
     expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
     expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();
+    expect(findMktgRunIntake('linkedin-post')).toBeUndefined();
+    expect(findMktgRunIntake('member-360')).toBeUndefined();
+    expect(findMktgRunIntake('linkedin-post', true)?.tracksDocumentRun).toBe(true);
+    expect(findMktgRunIntake('member-360', true)?.tracksDocumentRun).toBe(true);
+  });
+  it('adds an optional public activity projection without private completion metadata', () => {
+    const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: '2026-10-19T00:00:00Z' }];
+    expect(mktgRunProgress(startedRun(), undefined, activity)).toMatchObject({ state: 'writing', activity });
+    expect(mktgRunProgress(startedRun())).not.toHaveProperty('activity');
   });
   it('normalizes only the exact snake-case receipt location for UI readers', () => {
     expect(

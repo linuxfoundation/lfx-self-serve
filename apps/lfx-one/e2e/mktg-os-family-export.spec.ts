@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 
@@ -82,8 +82,14 @@ test('shows the stale badge without hiding the last link', async ({ page }, info
 
 test('empty approved family disables both actions and explains approval', async ({ page }, info) => {
   await openFamilyExports(page, { empty: true });
-  await expect(page.getByTestId('family-export-empty')).toContainText('Approve a revision first');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  await expect(page.getByTestId('family-export-empty')).toHaveText('Available once the framework is approved: PDF and Slides use the approved current.');
+  for (const action of ['pdf', 'slides']) {
+    const button = page.getByTestId(`family-export-${action}`).getByRole('button');
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveClass(/p-button-outlined/);
+    await button.hover({ force: true });
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  }
   await page.screenshot({ path: info.outputPath('no-approved-family.png'), fullPage: true });
 });
 
@@ -121,10 +127,11 @@ test('last-export lookup starts even while family document listing is held', asy
   await page.screenshot({ path: info.outputPath('eager-family-lookup.png'), fullPage: true });
 });
 
-test('unsupported family explains its export state and disables both actions', async ({ page }, info) => {
+test('unsupported family shows one line without export buttons or Positioning notes', async ({ page }, info) => {
   await openFamilyExports(page, { familyId: 'website-web' });
   await expect(page.getByTestId('family-export-unsupported')).toContainText('no assets supported by the exporter');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  for (const action of ['pdf', 'slides', 'pdf-note']) await expect(page.getByTestId(`family-export-${action}`)).toHaveCount(0);
+  for (const state of ['access', 'loading', 'empty', 'pdf-note', 'skipped']) await expect(page.getByTestId(`family-export-${state}`)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
