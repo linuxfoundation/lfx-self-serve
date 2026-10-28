@@ -35,7 +35,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
-import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-member-360-run',
@@ -199,7 +199,7 @@ export class Member360RunComponent {
       this.submitting.set(true);
       this.api
         .generate(discard ? { ...body, discard } : body)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(take(1))
         .subscribe({
           next: onSession,
           error: (error: HttpErrorResponse) => {
