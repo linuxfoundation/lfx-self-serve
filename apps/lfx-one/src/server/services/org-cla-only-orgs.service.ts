@@ -7,6 +7,7 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
+import { firstGrant } from '../helpers/first-grant.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import type { EasyClaCompany } from '../types/cla.types';
 import { isImpersonating } from '../utils/auth-helper';
@@ -125,23 +126,25 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * One CLA-only organization for an address, or null. The caller qualifies with `cla_admin` on that
-   * organization or a `cla-manager` scope on it (#3793); a failed `cla_admin` check is "not held",
-   * so the scope decides as before. Null when neither names it, when EasyCLA does not know it, and
+   * organization or a `cla-manager` scope on it (#3793), whichever admits first (`firstGrant`); a
+   * failed `cla_admin` check is "not held", so the scope decides as before. Null when neither names it, when EasyCLA does not know it, and
    * when an upstream the answer depends on cannot answer: an unverifiable address reads as not found,
    * with the outage logged, rather than opening a page whose every call would then fail.
    */
   public async resolveOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
     try {
-      const [claAdmin, managed] = await Promise.all([
-        this.claAdmins.holds(req, uid),
-        this.scopes.getCompanySfids(req).then(
-          (uids) => ({ held: uids.has(uid) }),
-          (failed: unknown) => ({ failed })
-        ),
+      const managedAnswer: Promise<{ held: boolean } | { failed: unknown }> = this.scopes.getCompanySfids(req).then(
+        (uids) => ({ held: uids.has(uid) }),
+        (failed: unknown) => ({ failed })
+      );
+      const qualified = await firstGrant<true>([
+        this.claAdmins.holds(req, uid).then((held) => (held ? true : null)),
+        managedAnswer.then((managed) => ('held' in managed && managed.held ? true : null)),
       ]);
-      if (!claAdmin) {
+      if (!qualified) {
+        const managed = await managedAnswer;
         if ('failed' in managed) throw managed.failed;
-        if (!managed.held) return null;
+        return null;
       }
       const org = await this.lookupCompany(req, uid);
       return org ? { uid: org.uid, slug: null, name: org.name, claOnly: true } : null;

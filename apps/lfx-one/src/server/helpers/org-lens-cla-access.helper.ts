@@ -9,6 +9,7 @@ import { logger } from '../services/logger.service';
 import { OrgClaAdminService } from '../services/org-cla-admin.service';
 import { OrgClaManagerScopesService } from '../services/org-cla-manager-scopes.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { firstGrant } from './first-grant.helper';
 import { assertOrgLensRead, type OrgLensReadQualification } from './org-lens-read-access.helper';
 
 const claManagerScopes = new OrgClaManagerScopesService();
@@ -30,8 +31,9 @@ export type OrgLensClaQualification = OrgLensReadQualification | 'cla-admin' | '
  * also a CLA Manager keeps everything the grant gives them, and never reaches the authorizer's
  * `cla_admin` or user-service. When it refuses — 403, or 503 because it could not check — the
  * `cla_admin` relation on this organization and the caller's own `cla-manager` scopes are asked
- * together, and either admits. Both name this organization only: holding the role somewhere is not
- * enough.
+ * together, and either admits as soon as it answers (`firstGrant`), so a stalled upstream does not
+ * delay a caller the other already admits. Both name this organization only: holding the role
+ * somewhere is not enough.
  *
  * A failed `cla_admin` check answers "not held" (`OrgClaAdminService`), so while the scopes remain a
  * qualification the outcome is theirs. Otherwise neither upstream's failure overrides the other's
@@ -54,18 +56,19 @@ export async function assertOrgLensClaRead(req: Request, orgUid: string, operati
     throw readGateError;
   }
 
-  const [claAdmin, scopes] = await Promise.all([
-    claAdmins.holds(req, orgUid),
-    claManagerScopes.getCompanySfids(req).then(
-      (companySfids) => ({ companySfids }),
-      (failed: unknown) => ({ failed })
-    ),
+  const scopesAnswer: Promise<{ companySfids: ReadonlySet<string> } | { failed: unknown }> = claManagerScopes.getCompanySfids(req).then(
+    (companySfids) => ({ companySfids }),
+    (failed: unknown) => ({ failed })
+  );
+  const granted = await firstGrant<OrgLensClaQualification>([
+    claAdmins.holds(req, orgUid).then((held) => (held ? 'cla-admin' : null)),
+    scopesAnswer.then((scopes) => ('companySfids' in scopes && scopes.companySfids.has(orgUid) ? 'cla-manager-scope' : null)),
   ]);
-
-  if (claAdmin) {
-    return 'cla-admin';
+  if (granted) {
+    return granted;
   }
 
+  const scopes = await scopesAnswer;
   if ('failed' in scopes) {
     logger.warning(req, operation, 'CLA manager scopes lookup failed; cannot verify Org Lens CLA access', {
       org_uid: orgUid,
@@ -82,8 +85,5 @@ export async function assertOrgLensClaRead(req: Request, orgUid: string, operati
     });
   }
 
-  if (scopes.companySfids.has(orgUid)) {
-    return 'cla-manager-scope';
-  }
   throw readGateError;
 }

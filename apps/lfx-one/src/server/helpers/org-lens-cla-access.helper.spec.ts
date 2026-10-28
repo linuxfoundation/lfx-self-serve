@@ -194,6 +194,22 @@ describe('assertOrgLensClaRead role matrix', () => {
     expect(gatewayFetch).not.toHaveBeenCalled();
   });
 
+  it('admits through the cla-manager scope while the cla_admin check never answers', async () => {
+    arrange({ name: 'cla-manager scope only', scopeRoles: ['cla-manager'] }, 'ok');
+    checkSingleAccessStrict.mockImplementation((_req: Request, request: AccessCheckRequest) =>
+      request.access === 'cla_admin' ? new Promise(() => undefined) : Promise.resolve(false)
+    );
+
+    expect(await outcome()).toBe('cla-manager-scope');
+  });
+
+  it('admits through cla_admin while the scopes lookup never answers', async () => {
+    arrange({ name: 'cla_admin only', claAdminOn: [OWN] }, 'ok');
+    gatewayFetch.mockReturnValue(new Promise(() => undefined));
+
+    expect(await outcome()).toBe('cla-admin');
+  });
+
   it('asks nothing beyond the read gate without an authenticated username', async () => {
     arrange({ name: 'anonymous', claAdminOn: [OWN], scopeRoles: ['cla-manager'] }, 'ok');
     getEffectiveUsername.mockReturnValue(undefined);

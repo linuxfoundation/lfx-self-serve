@@ -239,6 +239,17 @@ describe('OrgClaOnlyOrgsService.resolveOrg through cla_admin', () => {
     expect(await service(scopes).resolveOrg(req(), COMPANY_A)).toEqual({ uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true });
   });
 
+  it('resolves on whichever qualification admits first, without waiting for a stalled other', async () => {
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+    const expected = { uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true };
+
+    checkSingleAccessStrict.mockReturnValue(new Promise(() => undefined));
+    expect(await service(scopesOf(COMPANY_A)).resolveOrg(req(), COMPANY_A)).toEqual(expected);
+
+    checkSingleAccessStrict.mockResolvedValue(true);
+    expect(await service({ getCompanySfids: vi.fn().mockReturnValue(new Promise(() => undefined)) }).resolveOrg(req(), COMPANY_A)).toEqual(expected);
+  });
+
   it('falls back to the scope when the cla_admin check fails', async () => {
     checkSingleAccessStrict.mockRejectedValue(new Error('relation cla_admin not found'));
     gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
