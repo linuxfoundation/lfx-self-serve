@@ -77,7 +77,7 @@ Organizers can give a guest the access to run the meeting by marking them as a *
 3. Enter the guest's details and select **Meeting Host**.
 4. Save the meeting.
 
-A guest marked as a host shows a **Host** label in the guest list.
+A guest marked as a host shows a **Host** label in the guest list. For the rest of the guest list, see [Manage Participants](../manage-participants/).
 
 ## Troubleshooting
 

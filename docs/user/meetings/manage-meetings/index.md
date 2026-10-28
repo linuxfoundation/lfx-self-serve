@@ -33,14 +33,7 @@ On the join page of a recurring meeting you organize, the header shows **Edit th
 
 ## Manage guests and registrants
 
-The **Invite Guests** step (in the create/edit meeting form) is where you control who's invited — and for a **Restricted** meeting, this list is exactly what determines who can get past the registrant check on the join page. There are two ways to add people:
-
-- **Direct add** — search for a person and add them as an individual guest.
-- **Committee-based** — link a project committee to the meeting, then filter its members by voting status before adding them as registrants. Everyone added this way is still tracked as an individual registrant.
-
-The invitation list shows a running count split as "X from committees" and "Y direct guests."
-
-From a meeting card in the list, **Invite people** opens the guest list with the **Add Guest** form already open, and **View all** opens it for browsing. For a recurring meeting, the **Add Guest** form asks whether to invite the guest to **All occurrences** (the default) or only the date the card is showing. The same choice appears in the guest list on the meeting's join page.
+Organizers control who is invited from the **Invite guests** step of the meeting editor, or from **Invite people** and **View all** on a meeting card. You can add people one at a time or link a group, resend invitations, remove guests, and mark a guest as a **Meeting Host**. For a **Restricted** meeting, the guest list is exactly who can get past the registrant check on the join page. See [Manage Participants](../manage-participants/) for the full steps.
 
 ## Manage meeting materials
 
@@ -75,6 +68,7 @@ Meetings are scoped to a project (or foundation). Use the lens switcher to chang
 
 ## Related
 
+- [Manage Participants](../manage-participants/) — invite guests, add groups, resend invitations, and remove people
 - [Host Controls and the Host Key](../host-controls/) — find the Zoom host key and make a guest a meeting host
 - [Schedule a Meeting](../schedule-meeting/) — create a new meeting
 - [Join a Meeting](../join-meeting/) — how attendees access the join page

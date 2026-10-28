@@ -22,7 +22,7 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - Generate a draft meeting agenda with AI assistance, or start from a pre-built agenda template
 - View a past meeting's recording, transcript, and AI summary, if you have access
 - Upload or view meeting materials (files and links)
-- Invite guests directly or by linking a project committee
+- Invite guests directly or by linking a project committee, and resend or remove invitations — see [Manage Participants](manage-participants/)
 - Subscribe to a live calendar feed of a project's or foundation's meetings
 - Find the Zoom host key to claim host in a meeting, if you're a meeting host — see [Host Controls and the Host Key](host-controls/)
 
@@ -98,6 +98,7 @@ Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private*
 
 ## Related sections
 
+- [Manage Participants](manage-participants/) — invite guests, add groups, resend invitations, and remove people
 - [Host Controls and the Host Key](host-controls/) — who can see the Zoom host key, when it's available, and how to use it
 - [Committees](../committees/) — committees hold regular meetings
 - [Documents](../documents/) — meeting agendas and notes may be stored as documents
