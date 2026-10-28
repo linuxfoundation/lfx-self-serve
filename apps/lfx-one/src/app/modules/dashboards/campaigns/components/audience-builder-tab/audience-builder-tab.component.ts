@@ -1930,6 +1930,7 @@ export class AudienceBuilderTabComponent {
     const list = this.discoveredLists().find((candidate) => candidate.listId === listId);
     this.dropExclusion(listId);
     this.toggle(this.inclusion, listId, list?.name ?? listId);
+    this.reconcileOptInOwnership();
   }
 
   /** Step 2's Exclude: marks (or unmarks) a discovered list as an exclusion. */
@@ -1959,6 +1960,7 @@ export class AudienceBuilderTabComponent {
     }
     this.exclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   protected onRemoveExclusion(listId: string): void {
@@ -2378,6 +2380,7 @@ export class AudienceBuilderTabComponent {
     }
     this.inclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
@@ -2464,6 +2467,7 @@ export class AudienceBuilderTabComponent {
     next.delete(listId);
     this.inclusion.set(next);
     this.invalidatePreview();
+    this.reconcileOptInOwnership();
   }
 
   // === Protected Methods: manual search ===
@@ -3197,6 +3201,35 @@ export class AudienceBuilderTabComponent {
     return created;
   }
 
+  /**
+   * The one ownership rule for the draft's opt-ins, run after every edit that can take a list out of
+   * Include: they follow the draft's list while it is included, and are withdrawn and offered by hand
+   * when it leaves. A list the operator removed stops being the lookup's, so adding it back -- or a
+   * list picked by hand in the first place -- is never touched by a later draft.
+   */
+  private reconcileOptInOwnership(): void {
+    const lookup = this.optIns();
+    const included = this.inclusion();
+    const draftList = this.draftListId();
+    if (draftList !== null && !included.has(draftList)) {
+      const owned = lookup.added.filter((list) => included.has(list.listId));
+      if (owned.length > 0) {
+        const next = new Map(included);
+        owned.forEach((list) => next.delete(list.listId));
+        this.inclusion.set(next);
+        this.invalidatePreview();
+      }
+      this.draftListId.set(null);
+      this.eventDraftActive.set(false);
+      this.optIns.set({ ...lookup, added: [], pending: [], others: uniqueLists([...lookup.added, ...lookup.pending, ...lookup.others]) });
+      return;
+    }
+    const left = lookup.added.filter((list) => !included.has(list.listId));
+    if (left.length > 0) {
+      this.optIns.set({ ...lookup, added: lookup.added.filter((list) => included.has(list.listId)), others: uniqueLists([...left, ...lookup.others]) });
+    }
+  }
+
   /** The draft's list now exists (created or reused): its held opt-ins join Include beside it. */
   private settleDraftList(listId: string): void {
     if (this.eventDraftActive() && this.draftListId() === null) {
@@ -3636,19 +3669,11 @@ export class AudienceBuilderTabComponent {
     const run = this.runGeneration;
     const seq = ++this.optInSeq;
     const current = (): boolean => run === this.runGeneration && seq === this.optInSeq;
-    // A new draft replaces the last one's opt-ins: lists it added that are still included are
-    // taken out again, so a corrected URL or another event does not leave the first event's
-    // lists in the send with nothing on the panel naming them.
+    // A new draft starts a new lookup, which owns nothing yet. The last draft's opt-ins stay where
+    // they are: they are owned only while that draft's list is included, and that list -- still in
+    // Include on a re-draft of the same page -- keeps them. Another event's draft never gets here
+    // with them, because it starts over first (`onGenerateEventPlan`).
     this.optInSubscription?.unsubscribe();
-    if (!this.selectionLocked()) {
-      const stale = this.optIns().added.filter((list) => this.inclusion().has(list.listId));
-      if (stale.length > 0) {
-        const next = new Map(this.inclusion());
-        stale.forEach((list) => next.delete(list.listId));
-        this.inclusion.set(next);
-        this.invalidatePreview();
-      }
-    }
     // Discovery already ran for this very page: its classified lists hold the opt-in buckets, so a
     // second full discovery stream would only repeat it.
     if (this.hasDiscovered() && eventUrl === this.discoveredEventUrl()) {
@@ -3710,8 +3735,12 @@ export class AudienceBuilderTabComponent {
       return;
     }
     // Held until the drafted list exists. Added now, they let one click attach a send to only the
-    // portfolio-wide newsletter list before the draft was reviewed or created.
-    this.optIns.set({ status: 'done', added: [], pending: added, others, missing });
+    // portfolio-wide newsletter list before the draft was reviewed or created. A pick already in
+    // Include (kept from an earlier draft of this page) waits for nothing: it is shown as added.
+    const included = this.inclusion();
+    const waiting = added.filter((list) => !included.has(list.listId));
+    const present = added.filter((list) => included.has(list.listId));
+    this.optIns.set({ status: 'done', added: [], pending: waiting, others: [...present, ...others], missing });
     if (this.draftListId() !== null) {
       this.addPendingOptIns();
     }
@@ -3778,4 +3807,10 @@ function withEventYear(name: string, dates: readonly string[]): string {
   }
   const year = dates.map((d) => AUDIENCE_EDITION_YEAR_PATTERN.exec(d)?.[0]).find(Boolean);
   return year ? `${trimmed} ${year}` : trimmed;
+}
+
+/** Lists de-duplicated by id, first one kept: an id may be offered from more than one source. */
+function uniqueLists(lists: readonly AudienceDiscoveredList[]): AudienceDiscoveredList[] {
+  const seen = new Set<string>();
+  return lists.filter((list) => !seen.has(list.listId) && seen.add(list.listId) !== undefined);
 }

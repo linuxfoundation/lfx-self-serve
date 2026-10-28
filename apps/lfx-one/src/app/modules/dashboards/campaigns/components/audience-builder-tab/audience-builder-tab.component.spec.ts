@@ -3517,6 +3517,39 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
       });
 
+      it('never removes an opt-in list the operator added back by hand', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        click('campaigns-audience-remove-401');
+        click('campaigns-audience-opt-in-add-401');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'a later draft removed a hand-picked list').not.toBeNull();
+      });
+
+      it('withdraws the auto-added opt-ins when the drafted list leaves Include, and offers them by hand', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-remove-7777');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins stayed without the event audience').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('keeps the opt-ins with the earlier drafted list on a re-draft of the same page, never stranded as pending', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-7777"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in left with the earlier list still included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'stranded as pending').toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 
