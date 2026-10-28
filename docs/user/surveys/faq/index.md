@@ -22,7 +22,7 @@ Net Promoter Score (NPS) measures how likely respondents are to recommend your p
 
 ## Who receives the survey?
 
-The members of the group the survey is created for. A survey is currently created for the first group you select, so create one survey per group you want to reach. The form notes that for Board groups, only voting representatives receive it. The **Review & Confirm** step lists the target groups before you send. The number of people isn't shown there, so check the group carefully.
+The members of the group the survey is created for. A survey is currently created for the first group you select, so create one survey per group you want to reach. The form notes that for Board groups, only voting representatives receive it. The **Review & Confirm** step lists the target groups before you send. The number of people isn't shown there, so check the group carefully. If you started from a group's **Surveys** tab, the review can show "None selected" and 0 participants even though the survey goes to that group, so confirm it in the banner at the top of the form or in the **Audience & Type** step.
 
 ## Can I send a survey later?
 
