@@ -968,8 +968,9 @@ export class CampaignController {
 
       // A per-campaign Reddit pixel is refused, not dropped, when the legacy creator will serve the
       // create — it never reads the field, so the campaign would quietly use (or fail for want of)
-      // the connection's pixel instead of the one the operator chose. The form never sends it in
-      // that state (`redditConversionPixelEnabled` hides the control) (#3484).
+      // the connection's pixel instead of the one the operator chose. A non-string pixel is refused
+      // on EITHER arm, since campaign-service decodes the field into a Go string. The form never
+      // sends a pixel on the legacy arm (`redditConversionPixelEnabled` hides the control) (#3484).
       const redditPixelRefusal = this.redditConversionPixelRefusal(body);
       if (redditPixelRefusal !== null) {
         next(
