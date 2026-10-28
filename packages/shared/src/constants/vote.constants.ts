@@ -157,6 +157,9 @@ export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
 /** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
 export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 
+/** Action keys on the vote detail page's clickable summary cards (#4447): Voters tab, Comments tab and the reminder dialog. */
+export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
+
 /** Display label per voting method — shared by the vote detail page's header and facts. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.GENERIC]: 'Plurality Vote',
