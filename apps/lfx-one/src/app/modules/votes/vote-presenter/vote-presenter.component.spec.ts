@@ -8,7 +8,7 @@ import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VotePresenterComponent } from './vote-presenter.component';
@@ -95,7 +95,7 @@ describe('VotePresenterComponent', () => {
     expect(text('vote-presenter-count')).toBe('7 of 10 voters have cast');
   });
 
-  it('requests results exactly once after the vote ends and stops polling', async () => {
+  it('requests results exactly once while the vote stays ended, though polling continues', async () => {
     fetchVote.mockReturnValueOnce(of(baseVote())).mockReturnValue(of(baseVote({ status: PollStatus.ENDED, early_end_time: '2026-11-01T10:00:00Z' })));
     await mount();
     await tick(5000);
@@ -104,7 +104,7 @@ describe('VotePresenterComponent', () => {
     expect(getVoteResults).toHaveBeenCalledWith('v1');
     expect(has('vote-presenter-result')).toBe(true);
     expect(text('vote-presenter-closed-at')).toContain('Closed automatically at');
-    expect(fetchVote).toHaveBeenCalledTimes(2);
+    expect(fetchVote.mock.calls.length).toBeGreaterThan(2);
   });
 
   it.each([PollType.GENERIC, PollType.MAJORITY, PollType.MEEK_STV, PollType.INSTANT_RUNOFF_VOTE, PollType.CONDORCET_IRV])(
@@ -209,6 +209,105 @@ describe('VotePresenterComponent', () => {
     fixture.detectChanges();
     await tick(0);
     expect(has('vote-presenter-open')).toBe(true);
+  });
+
+  it('polls without the cache so a hidden tab cancels its request', async () => {
+    await mount();
+    expect(fetchVote).toHaveBeenCalledWith('v1', { uncached: true });
+  });
+
+  it('keeps polling after the vote ends and flips back to open on a reopen, with no visibility event', async () => {
+    fetchVote.mockReturnValueOnce(of(baseVote({ status: PollStatus.ENDED }))).mockReturnValue(of(baseVote({ status: PollStatus.ACTIVE })));
+    await mount();
+    expect(has('vote-presenter-result')).toBe(true);
+
+    await tick(5000);
+    expect(has('vote-presenter-open')).toBe(true);
+    expect(has('vote-presenter-result')).toBe(false);
+  });
+
+  it('shows no result-derived numbers while /results is pending, then the turnout once it arrives', async () => {
+    const pending = new Subject<VoteResultsResponse>();
+    getVoteResults.mockReturnValue(pending);
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+    await mount();
+    expect(has('vote-presenter-results-loading')).toBe(true);
+    expect(has('vote-presenter-turnout')).toBe(false);
+    expect(has('vote-presenter-turnout-loading')).toBe(true);
+
+    pending.next(results());
+    await tick(0);
+    expect(has('vote-presenter-results-loading')).toBe(false);
+    expect(text('vote-presenter-turnout')).toContain('9');
+    expect(text('vote-presenter-turnout')).toContain('of 10 cast');
+  });
+
+  it('hides the turnout numbers, rather than showing zeros, when /results fails', async () => {
+    getVoteResults.mockReturnValue(throwError(() => new Error('boom')));
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await mount();
+    expect(has('vote-presenter-results-error')).toBe(true);
+    expect(has('vote-presenter-turnout')).toBe(false);
+    expect(has('vote-presenter-turnout-loading')).toBe(false);
+    expect(has('vote-presenter-results-link')).toBe(true);
+  });
+
+  it('formats the closed time as a clock time, never the raw timestamp', async () => {
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, early_end_time: '2026-12-01T10:42:00Z' })));
+    await mount();
+    expect(text('vote-presenter-turnout')).toMatch(/Closed\s*\d{1,2}:\d{2}\s?[AP]M/);
+    expect(text('vote-presenter-turnout')).not.toContain('2026-12-01T');
+  });
+
+  it('labels each question when a vote has more than one', async () => {
+    getVoteResults.mockReturnValue(
+      of({
+        num_recipients: 10,
+        num_votes_cast: 8,
+        num_abstained: 0,
+        poll_results: [
+          {
+            question: { question_id: 'q1', prompt: 'Approve the budget?', choices: [{ choice_id: 'a', choice_text: 'Yes' }] },
+            generic_choice_votes: [{ choice_id: 'a', vote_count: 8, percentage: 100 }],
+          },
+          {
+            question: { question_id: 'q2', prompt: 'Approve the bylaws?', choices: [{ choice_id: 'b', choice_text: 'Yes' }] },
+            generic_choice_votes: [{ choice_id: 'b', vote_count: 8, percentage: 100 }],
+          },
+        ],
+      } as unknown as VoteResultsResponse)
+    );
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+    await mount();
+    expect(text('vote-presenter-results')).toContain('Approve the budget?');
+    expect(text('vote-presenter-results')).toContain('Approve the bylaws?');
+  });
+
+  it('shows abstentions on an ended ranked vote that allows them', async () => {
+    fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, poll_type: PollType.MEEK_STV, allow_abstain: true })));
+    await mount();
+    expect(has('vote-presenter-abstain')).toBe(true);
+  });
+
+  it('drops the previous vote when :id changes instead of showing it under the new link', async () => {
+    const paramMap = new BehaviorSubject(convertToParamMap({ id: 'v1' }));
+    TestBed.resetTestingModule();
+    fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: VoteService, useValue: { fetchVote, getVoteResults } },
+        { provide: ActivatedRoute, useValue: { paramMap } },
+        { provide: Router, useValue: { navigateByUrl } },
+      ],
+    });
+    await mount();
+    expect(has('vote-presenter-open')).toBe(true);
+
+    paramMap.next(convertToParamMap({ id: 'v2' }));
+    await tick(0);
+    expect(has('vote-presenter-open')).toBe(false);
+    expect(has('vote-presenter-loading')).toBe(true);
   });
 
   it('exits to the vote permalink', async () => {

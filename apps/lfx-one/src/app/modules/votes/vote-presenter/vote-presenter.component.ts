@@ -82,6 +82,7 @@ export class VotePresenterComponent {
   private readonly snapshot = signal<VotePresenterSnapshot | null>(null);
   private readonly failures = signal(0);
   protected readonly resultsError = signal(false);
+  protected readonly resultsLoading = signal(false);
   private readonly locale = inject(LOCALE_ID);
   protected readonly nowMs = signal(Date.now());
   protected readonly copied = signal(false);
@@ -137,6 +138,14 @@ export class VotePresenterComponent {
       })),
     }))
   );
+  /** True once `/results` has arrived; until then (or after a failure) no result-derived number is shown, since the stats default to zeros. */
+  protected readonly resultsReady = computed(() => this.results() !== null);
+  /** Clock time the vote closed, formatted here because a pipe inside `??` would bind to the right operand only. */
+  protected readonly closedClock = computed(() => {
+    const vote = this.vote();
+    const closed = this.closedAt() ?? vote?.end_time;
+    return closed ? formatDate(closed, 'h:mm a', this.locale) : '';
+  });
   protected readonly didNotVote = computed(() => Math.max(0, this.stats().eligibleVoters - this.stats().totalResponses));
   protected readonly ballotLabel = computed(() => (this.vote()?.pseudo_anonymity ? 'Secret' : 'Not secret'));
   /** Header pill: when the open vote closes, or when the ended vote did. */
@@ -148,6 +157,7 @@ export class VotePresenterComponent {
   });
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private polledVoteId: string | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => this.copyResetTimer && clearTimeout(this.copyResetTimer));
@@ -190,13 +200,22 @@ export class VotePresenterComponent {
       .pipe(
         map(({ id }) => id),
         filter((id): id is string => !!id),
-        // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick.
+        // A new :id reuses this component: drop the previous vote's snapshot (and with it the ended-vote results) before polling it.
+        tap((id) => {
+          if (id !== this.polledVoteId) {
+            this.snapshot.set(null);
+            this.failures.set(0);
+            this.resultsError.set(false);
+          }
+          this.polledVoteId = id;
+        }),
+        // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick. They also keep running
+        // after `ended`, so a vote another manager reopens flips back to the open state; /results is still requested once per ended period.
         switchMap((id) =>
-          createVisibilityPoll(this.doc, () => this.voteService.fetchVote(id, { skipCache: true }), {
+          createVisibilityPoll(this.doc, () => this.voteService.fetchVote(id, { uncached: true }), {
             intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
             backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
             backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
-            shouldContinue: (vote) => vote.status !== PollStatus.ENDED,
           })
         ),
         takeUntilDestroyed(this.destroyRef)
@@ -216,7 +235,10 @@ export class VotePresenterComponent {
     return toSignal(
       toObservable(this.endedVoteUid).pipe(
         distinctUntilChanged(),
-        tap(() => this.resultsError.set(false)),
+        tap((uid) => {
+          this.resultsError.set(false);
+          this.resultsLoading.set(!!uid);
+        }),
         switchMap((uid) =>
           uid
             ? this.voteService.getVoteResults(uid).pipe(
@@ -224,7 +246,8 @@ export class VotePresenterComponent {
                   console.error('Failed to load vote results for the presenter', error);
                   this.resultsError.set(true);
                   return of(null);
-                })
+                }),
+                tap(() => this.resultsLoading.set(false))
               )
             : of(null)
         )

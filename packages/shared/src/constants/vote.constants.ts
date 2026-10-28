@@ -108,3 +108,6 @@ export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
 
 /** QR code quiet zone in modules; the spec asks for 4, 2 still scans reliably on a projector and keeps the code large. */
 export const VOTE_QR_QUIET_ZONE_MODULES = 2;
+
+/** How long Copy slide waits for the slide's QR to render before reporting a failed export. */
+export const VOTE_SLIDE_QR_READY_TIMEOUT_MS = 5000;

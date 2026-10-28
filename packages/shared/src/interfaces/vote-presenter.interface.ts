@@ -54,3 +54,6 @@ export interface VotePresenterTallyQuestion {
   question: string;
   rows: VotePresenterTallyRow[];
 }
+
+/** Rendering state of the client-generated QR: `pending` while the encoder loads, `failed` if it could not encode. */
+export type VoteQrState = 'pending' | 'ready' | 'failed';

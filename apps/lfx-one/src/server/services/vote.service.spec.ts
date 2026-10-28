@@ -42,7 +42,7 @@ const {
   stripAuthPrefix,
   computeIsFoundation,
   addAccessToResources,
-  addAccessToResource,
+  checkSingleAccessStrict,
   assertVoteWrite,
   sendEmail,
 } = vi.hoisted(() => ({
@@ -60,7 +60,7 @@ const {
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
   addAccessToResources: vi.fn(async (_req: unknown, resources: unknown[]) => resources),
-  addAccessToResource: vi.fn(async (_req: unknown, resource: object) => ({ ...resource, writer: false })),
+  checkSingleAccessStrict: vi.fn(async () => false),
   assertVoteWrite: vi.fn(),
   sendEmail: vi.fn(),
 }));
@@ -111,7 +111,7 @@ vi.mock('./project.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
-    public addAccessToResource = addAccessToResource;
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('./email.service', () => ({
@@ -227,15 +227,22 @@ describe('VoteService', () => {
 
     it('decorates vote#writer only when includeWriter is set', async () => {
       proxyRequest.mockResolvedValue({ ...voteFixture });
-      addAccessToResource.mockImplementationOnce(async (_req: unknown, resource: object) => ({ ...resource, writer: true }));
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
 
       const withWriter = await service.getVoteById(req, CANONICAL_UID, { includeWriter: true });
-      expect(addAccessToResource).toHaveBeenCalledWith(req, expect.objectContaining({ uid: voteFixture.uid }), 'vote');
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'vote', id: voteFixture.uid, access: 'writer' });
       expect(withWriter.writer).toBe(true);
 
-      addAccessToResource.mockClear();
+      checkSingleAccessStrict.mockClear();
       await service.getVoteById(req, CANONICAL_UID);
-      expect(addAccessToResource).not.toHaveBeenCalled();
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    });
+
+    it('propagates an access-check outage instead of reporting writer: false', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('access-check unavailable'));
+
+      await expect(service.getVoteById(req, CANONICAL_UID, { includeWriter: true })).rejects.toThrow('access-check unavailable');
     });
 
     it('leaves the vote unenriched when the project lookup finds nothing', async () => {

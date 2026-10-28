@@ -372,8 +372,12 @@ export class VoteService {
     }
 
     // Additive `writer` flag (vote#writer) so the presenter guard and entry points share one source of truth.
-    // Opt-in: server-internal callers (reminders, voters, summary) skip the extra FGA lookup.
-    const result = includeWriter ? await this.accessCheckService.addAccessToResource(req, vote, 'vote') : vote;
+    // Opt-in: server-internal callers (reminders, voters, summary) skip the extra FGA lookup. The lookup is strict: an
+    // access-check outage propagates (the presenter guard shows its error path) instead of reading as `writer: false`,
+    // which would send an authorized chair to Access Denied.
+    const result = includeWriter
+      ? { ...vote, writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'vote', id: vote.uid, access: 'writer' }) }
+      : vote;
 
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {
       vote_uid: voteUid,

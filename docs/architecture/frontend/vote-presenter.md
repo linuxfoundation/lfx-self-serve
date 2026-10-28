@@ -12,7 +12,7 @@ Guards: `authGuard`, then `votePresenterGuard`. Route data `preload: false`.
 
 ## Permission: `vote#writer`
 
-`GET /api/votes/:uid?include_writer=true` decorates the vote with `writer` (the `vote#writer` FGA relation, via `AccessCheckService.addAccessToResource`). The flag is opt-in so existing callers and the 5-second polls pay no extra FGA lookup. `votePresenterGuard` reads it once per navigation (uncached) and the Present entry points read the same flag.
+`GET /api/votes/:uid?include_writer=true` decorates the vote with `writer` (the `vote#writer` FGA relation, via `AccessCheckService.checkSingleAccessStrict`, so an access-check outage fails the request instead of reading as `writer: false`). The flag is opt-in so existing callers and the 5-second polls pay no extra FGA lookup. `votePresenterGuard` reads it once per navigation (uncached) and the Present entry points read the same flag.
 
 `writerGuard` is not reused: it checks project and committee writer, not `vote#writer`. On denial the guard redirects to `/votes?_notice=access` (the standard "Access Denied" toast, which also works on an SSR load); a transient lookup failure redirects with `_notice=error`.
 
@@ -25,7 +25,7 @@ Guards: `authGuard`, then `votePresenterGuard`. Route data `preload: false`.
 
 ## Visibility-aware polling
 
-`createVisibilityPoll` (`shared/utils/visibility-poll.util.ts`) is the reusable poller: `timer` plus sequential `expand`, so requests never overlap. It fetches immediately and every `VOTE_PRESENTER_POLL_INTERVAL_MS`, cancels timers and in-flight requests while `document.visibilityState` is `hidden`, fetches immediately on `visible`, and retries failures on capped exponential backoff without ending the stream. `shouldContinue` stops the loop (the presenter stops on `ended`); the next `visible` event restarts it, which is how a reopened or extended vote is noticed.
+`createVisibilityPoll` (`shared/utils/visibility-poll.util.ts`) is the reusable poller: `timer` plus sequential `expand`, so requests never overlap. It fetches immediately and every `VOTE_PRESENTER_POLL_INTERVAL_MS`, cancels timers and in-flight requests while `document.visibilityState` is `hidden`, fetches immediately on `visible`, and retries failures on capped exponential backoff without ending the stream. `shouldContinue` can stop the loop and the next `visible` event restarts it, but the presenter does not use it: it keeps polling after `ended` so a vote another manager reopens or extends returns to the open state on the next tick, while `/results` is still requested once per ended period. Presenter polls use `fetchVote(id, { uncached: true })`, a cold request that is cancelled when the tab hides; the cached detail path's `shareReplay` is not ref-counted, so it would keep running and overlap the next show. A change of `:id` drops the previous vote's snapshot before polling the new one.
 
 It is browser-only: the caller passes `DOCUMENT` and only subscribes when `isPlatformBrowser`. SSR renders the loading skeleton.
 

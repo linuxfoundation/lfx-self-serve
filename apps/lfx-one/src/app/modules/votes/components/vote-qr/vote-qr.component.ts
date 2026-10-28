@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { VOTE_QR_QUIET_ZONE_MODULES } from '@lfx-one/shared/constants';
-import { catchError, EMPTY, from, map, of, switchMap } from 'rxjs';
+import { VoteQrState } from '@lfx-one/shared/interfaces';
+import { catchError, EMPTY, from, map, of, switchMap, tap } from 'rxjs';
 
 /**
  * Client-generated QR code rendered as inline SVG (#4142).
@@ -27,14 +28,17 @@ export class VoteQrComponent {
 
   // === Signals ===
   /** switchMap drops a stale encode if the input changes while the chunk is still loading. */
+  private readonly encodeFailed = signal(false);
   private readonly matrix = toSignal(
     toObservable(this.value).pipe(
+      tap(() => this.encodeFailed.set(false)),
       switchMap((value) =>
         isPlatformBrowser(this.platformId)
           ? from(import('uqr')).pipe(
               map(({ encode }) => encode(value, { ecc: 'M', border: 0 }).data),
               catchError((error) => {
                 console.error('Failed to generate the vote QR code', error);
+                this.encodeFailed.set(true);
                 return of(null);
               })
             )
@@ -43,6 +47,11 @@ export class VoteQrComponent {
     ),
     { initialValue: null }
   );
+  /** Lets an exporter wait for the code instead of capturing an empty box. */
+  public readonly state = computed<VoteQrState>(() => {
+    if (this.matrix()) return 'ready';
+    return this.encodeFailed() ? 'failed' : 'pending';
+  });
   protected readonly size = computed(() => (this.matrix()?.length ?? 0) + VOTE_QR_QUIET_ZONE_MODULES * 2);
   protected readonly path = computed(() => this.buildPath(this.matrix()));
 

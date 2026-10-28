@@ -157,6 +157,7 @@ export class VoteResultsDrawerComponent {
   protected readonly isBrowserRender = isPlatformBrowser(this.platformId);
   protected readonly slideBusy = signal<boolean>(false);
   private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
+  private readonly slideComponent = viewChild(VoteSlideComponent);
   protected readonly presenterPath: Signal<string> = computed(() => votePresenterPath(this.vote()?.uid ?? ''));
 
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
@@ -170,7 +171,8 @@ export class VoteResultsDrawerComponent {
     const name = this.vote()?.name;
     if (!element || !name || this.slideBusy()) return;
     this.slideBusy.set(true);
-    const result = await exportVoteSlide(element, voteSlideFileName(name));
+    // The QR is generated asynchronously; capturing before it renders would copy a slide with a blank code.
+    const result = (await this.slideComponent()?.whenQrReady()) ? await exportVoteSlide(element, voteSlideFileName(name)) : 'failed';
     this.slideBusy.set(false);
     this.messageService.add(voteSlideToast(result));
   }

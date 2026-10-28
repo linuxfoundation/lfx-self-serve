@@ -171,12 +171,12 @@ export class VoteService {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(map((response) => response.data));
   }
 
-  public getVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean }): Observable<Vote> {
+  public getVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
     return this.getVoteDetail(voteUid, options).pipe(tap((vote) => this.vote.set(vote)));
   }
 
   /** Tap-free vote fetch for writerGuard's entity probe and vote-manage's context fallback (getVote's signal write would leak state). */
-  public fetchVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean }): Observable<Vote> {
+  public fetchVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
     return this.getVoteDetail(voteUid, options);
   }
 
@@ -184,11 +184,16 @@ export class VoteService {
    * Short-TTL cached vote detail shared by the writerGuard probe and manage-page init — one request per edit navigation
    * instead of two (the detail endpoint's project enrichment included). Evicts on error and on write; `skipCache` forces a fresh read.
    */
-  public getVoteDetail(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean }): Observable<Vote> {
+  public getVoteDetail(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
     // `vote#writer` is an extra FGA lookup per read, so it is opt-in and never cached: the presenter guard and entry points
     // read it once, while the presenter's 5s polls omit it.
     if (options?.includeWriter) {
       return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`, { params: { include_writer: 'true' } });
+    }
+    // `uncached` is for pollers: a plain cold request that cancels when its subscriber leaves. The cached path's shareReplay is
+    // not ref-counted, so hiding the tab would leave its request running and the next show would overlap it.
+    if (options?.uncached) {
+      return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`);
     }
     const cached = this.voteDetailCache.get(voteUid);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < VOTE_DETAIL_CACHE_TTL_MS) {

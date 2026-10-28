@@ -87,7 +87,7 @@ async function openPresenter(page: Page): Promise<void> {
   await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'me', domain: 'localhost', path: '/', sameSite: 'Lax' }]);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: RENDER_TIMEOUT });
+  await expect(page.getByTestId('main-content')).toBeVisible({ timeout: RENDER_TIMEOUT });
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -122,7 +122,7 @@ test.describe('Vote presenter (#4140)', () => {
     await stubVote(page, state);
     await openPresenter(page);
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
-    await expect(page.getByTestId('vote-qr').locator('path')).toHaveAttribute('d', /.+/, { timeout: RENDER_TIMEOUT });
+    await expect(page.getByTestId('vote-presenter-share').getByTestId('vote-qr').locator('path')).toHaveAttribute('d', /.+/, { timeout: RENDER_TIMEOUT });
     expect((await new AxeBuilder({ page }).include('[data-testid="vote-presenter"]').analyze()).violations).toEqual([]);
 
     state.vote = buildVote({ status: 'ended', num_response_received: 9 });
@@ -183,7 +183,7 @@ test.describe('Vote presenter (#4140)', () => {
 
       await expect(page.getByTestId('vote-presenter-link')).toBeVisible({ timeout: RENDER_TIMEOUT });
       await expect(page.getByTestId('vote-presenter-copy-link')).toBeVisible();
-      await expect(page.getByTestId('vote-qr')).toBeVisible();
+      await expect(page.getByTestId('vote-presenter-share').getByTestId('vote-qr')).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow).toBeLessThanOrEqual(0);
     });
