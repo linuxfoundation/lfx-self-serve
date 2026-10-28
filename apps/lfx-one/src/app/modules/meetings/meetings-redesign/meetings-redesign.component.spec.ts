@@ -80,6 +80,20 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${HEADER_HEIGHT}px`);
   });
 
+  it("subtracts the layout wrapper's bottom padding from the desktop column height", async () => {
+    vi.stubGlobal('innerHeight', 900);
+    const fixture = render();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('900px');
+
+    // The wrapper sits above the route-entry host, not directly over the page.
+    fixture.nativeElement.parentElement.style.paddingBottom = '21px';
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+
+    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('879px');
+  });
+
   it('clears the impersonation banner when the window scrolls', async () => {
     desktop = false;
     impersonating.set(true);

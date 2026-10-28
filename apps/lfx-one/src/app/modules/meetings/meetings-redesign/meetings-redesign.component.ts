@@ -82,9 +82,8 @@ export class MeetingsRedesignComponent {
 
     if (window.matchMedia('(min-width: 1025px)').matches) {
       const host = this.host.nativeElement;
-      const layoutPadding = host.parentElement ? parseFloat(getComputedStyle(host.parentElement).paddingBottom) || 0 : 0;
       const top = host.getBoundingClientRect().top + window.scrollY;
-      this.columnHeight.set(Math.max(Math.floor(window.innerHeight - top - layoutPadding - (this.footer()?.offsetHeight ?? 0)), 0));
+      this.columnHeight.set(Math.max(Math.floor(window.innerHeight - top - this.ancestorPaddingBottom() - (this.footer()?.offsetHeight ?? 0)), 0));
       this.stickyTop.set(0);
     } else {
       // The layout's mobile menu bar is `sticky top-0` (below the banner while impersonating) and is absent on non-touch devices.
@@ -106,6 +105,15 @@ export class MeetingsRedesignComponent {
     const stickyEdge = desktop ? centre.getBoundingClientRect().top : this.stickyTop();
     this.scrolled.set(scrolled);
     this.tabsStuck.set(scrolled && tabsBar.getBoundingClientRect().top - stickyEdge <= this.headerHeight() + 1);
+  }
+
+  /** Bottom padding of every ancestor up to `main` — the layout's content wrapper sits above the route-entry host, not directly over this one. */
+  private ancestorPaddingBottom(): number {
+    let total = 0;
+    for (let el = this.host.nativeElement.parentElement; el && el.tagName !== 'MAIN'; el = el.parentElement) {
+      total += parseFloat(getComputedStyle(el).paddingBottom) || 0;
+    }
+    return total;
   }
 
   private footer(): HTMLElement | null {
