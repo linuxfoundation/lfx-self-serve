@@ -1936,4 +1936,86 @@ describe('VoteDetailComponent', () => {
       expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Voting in progress');
     });
   });
+
+  describe('overview results summary (#4450)', () => {
+    const summary = (fixture: ComponentFixture<VoteDetailComponent>): string =>
+      testId(fixture, 'vote-detail-overview-summary-question-1')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
+    });
+
+    it('shows the leading choice and its share instead of the full breakdown', async () => {
+      const fixture = await setup();
+
+      expect(summary(fixture)).toMatch(/^Yes leads with \d+%$/);
+      expect(testId(fixture, 'vote-detail-overview-results')?.textContent).toContain('Approve the roadmap?');
+      expect(fixture.nativeElement.querySelector('lfx-vote-option-results')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
+    });
+
+    it.each([
+      { status: PollStatus.ACTIVE, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, message: 'No votes were submitted.' },
+    ])('shows the empty state for $status votes without per-question results', async ({ status, message }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 0 }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
+    });
+
+    it('does not describe abstention-only results as no votes', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 1, num_abstained: 1 }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+    });
+
+    it('names the winner once the vote has closed', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toMatch(/^Yes won with \d+%$/);
+    });
+
+    it('summarizes a ranked vote by first choices', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toBe('Most first choices: Yes (2 voters)');
+      expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
+    });
+
+    it('shows only the held panel on a held pseudo-anonymous vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), results_held: true }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(summary(fixture)).toBe('');
+      expect(testId(fixture, 'vote-detail-overview-results')?.textContent).not.toContain('Approve the roadmap?');
+    });
+
+    it('still tells a participant their vote is included', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-you-voted')?.textContent?.trim()).toBe('Your vote is included in these results.');
+      expect(summary(fixture)).toMatch(/^Yes won with \d+%$/);
+    });
+
+    it('opens the Results tab from "View full results"', async () => {
+      const fixture = await setup();
+      const button = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-full-results"]'));
+
+      expect(button.nativeElement.getAttribute('label')).toBe('View full results');
+      button.triggerEventHandler('onClick', undefined);
+      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ tab: 'results' }) }));
+    });
+  });
 });

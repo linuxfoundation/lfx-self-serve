@@ -64,22 +64,24 @@ describe('VoteAbstainResultComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="vote-results-option-abstain"]')).toBeNull();
   });
 
-  describe('voter links (#3914)', () => {
-    const viewLink = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="vote-results-option-abstain-view-voters"] button');
+  describe('voter links (#3914, #4450)', () => {
+    const viewLink = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('button[data-testid="vote-results-option-abstain-view-voters"]');
 
     it('renders no link by default', () => {
       render(stats(2, 40), 'final');
 
       expect(viewLink()).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('2 abstentions');
     });
 
-    it('links the abstentions when shown, and emits on click', () => {
+    it.each(['live', 'final'] as const)('makes the %s abstention count the link, and emits on click', (variant) => {
       fixture.componentRef.setInput('showVoterLinks', true);
-      render(stats(2, 40), 'live');
+      render(stats(2, 40), variant);
       let emitted = 0;
       fixture.componentInstance.viewVoters.subscribe(() => (emitted += 1));
 
-      expect(viewLink()?.textContent).toContain('View 2 voters');
+      expect(viewLink()?.textContent?.trim()).toBe('2 abstentions');
+      expect(viewLink()?.getAttribute('aria-label')).toBe('View the 2 voters who abstained');
       viewLink()!.click();
       expect(emitted).toBe(1);
     });
@@ -89,6 +91,13 @@ describe('VoteAbstainResultComponent', () => {
       render(stats(0, 0), 'final');
 
       expect(viewLink()).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('0 abstentions');
     });
+  });
+
+  it.each(['live', 'final'] as const)('does not italicize the %s abstain label', (variant) => {
+    render(stats(1, 20), variant);
+
+    expect(fixture.nativeElement.querySelector('.italic')).toBeNull();
   });
 });

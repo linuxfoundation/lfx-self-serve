@@ -862,6 +862,20 @@ export interface VoteResultsQuestion {
 }
 
 /**
+ * One-line results summary for a question
+ * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
+ * instead of the full breakdown.
+ */
+export interface VoteResultsSummaryLine {
+  /** Question identifier */
+  questionId: string;
+  /** Question text/prompt */
+  question: string;
+  /** Summary sentence, e.g. "Yes leads with 87%" */
+  text: string;
+}
+
+/**
  * Participation statistics for vote results
  * @description Contains participation metrics for the results header
  */

@@ -105,26 +105,37 @@ describe('VoteOptionResultsComponent', () => {
     expect(row('vote-results-option-c1')).toBeNull();
   });
 
-  describe('voter links (#3914)', () => {
+  describe('voter links (#3914, #4450)', () => {
     const viewLink = (choiceId: string): HTMLButtonElement | null =>
-      fixture.nativeElement.querySelector(`[data-testid="vote-results-option-${choiceId}-view-voters"] button`);
+      fixture.nativeElement.querySelector(`button[data-testid="vote-results-option-${choiceId}-view-voters"]`);
 
     it('renders no links by default', () => {
       render([option({ choiceId: 'c1', voteCount: 2, percentage: 100 })], 'final');
 
       expect(viewLink('c1')).toBeNull();
+      expect(text('vote-results-option-c1')).toContain('2 votes');
     });
 
-    it.each(['live', 'final'] as const)('links each %s option with votes and emits its choice id', (variant) => {
+    it.each(['live', 'final'] as const)('makes the %s vote count the link and emits its choice id', (variant) => {
       fixture.componentRef.setInput('showVoterLinks', true);
-      render([option({ choiceId: 'c1', voteCount: 1, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
+      render([option({ choiceId: 'c1', text: 'Yes', voteCount: 3, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
       const emitted: string[] = [];
       fixture.componentInstance.viewVoters.subscribe((choiceId) => emitted.push(choiceId));
 
-      expect(viewLink('c1')?.textContent).toContain('View 1 voter');
+      expect(viewLink('c1')?.textContent?.trim()).toBe('3 votes');
+      expect(viewLink('c1')?.getAttribute('aria-label')).toBe('View the 3 voters who chose Yes');
       expect(viewLink('c2')).toBeNull();
+      expect(text('vote-results-option-c2')).toContain('0 votes');
       viewLink('c1')!.click();
       expect(emitted).toEqual(['c1']);
+    });
+
+    it('renders no separate view-voters row under an option', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render([option({ choiceId: 'c1', voteCount: 1, percentage: 100 })], 'final');
+
+      expect(fixture.nativeElement.querySelectorAll('[data-testid$="-view-voters"]').length).toBe(1);
+      expect(viewLink('c1')?.textContent).not.toContain('View');
     });
   });
 });

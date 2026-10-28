@@ -20,9 +20,12 @@ import type {
   PollCommentResponse,
   PollCommentResult,
   PollQuestionResult,
+  RankedQuestionView,
   UserChoice,
   Vote,
   VoteFormValue,
+  VoteResultsOption,
+  VoteResultsQuestion,
   VoteResultsResponse,
   VoterResultsState,
   VoteVoter,
@@ -37,6 +40,7 @@ import {
   buildVoteBallotQuestions,
   buildVoteParticipationRowView,
   buildVoteResultsQuestions,
+  buildVoteResultsSummary,
   buildVoteVoterChoiceFilterOptions,
   buildVoteVoterChoiceSummaries,
   buildVoteVoterRowView,
@@ -730,6 +734,94 @@ describe('buildRankedQuestionViews', () => {
       resultsWith([rankedQuestion({ irv_round_summary: { rounds: [] } }), rankedQuestion({ meek_stv_round_summary: { rounds: [] } }), rankedQuestion()])
     );
     expect(views.map((v) => v.hasRoundSummary)).toEqual([true, true, false]);
+  });
+});
+
+describe('buildVoteResultsSummary (#4450)', () => {
+  const option = (choiceId: string, text: string, voteCount: number, percentage: number, flags: Partial<VoteResultsOption> = {}): VoteResultsOption => ({
+    choiceId,
+    text,
+    voteCount,
+    percentage,
+    isWinner: false,
+    isTied: false,
+    isLeading: false,
+    ...flags,
+  });
+  const question = (questionId: string, options: VoteResultsOption[], prompt = `Prompt ${questionId}`): VoteResultsQuestion => ({
+    questionId,
+    question: prompt,
+    options,
+    totalVotes: options.reduce((sum, o) => sum + o.voteCount, 0),
+  });
+  const ranked = (questionId: string, counts: Record<string, number>): RankedQuestionView => ({
+    questionId,
+    prompt: `Prompt ${questionId}`,
+    hasRoundSummary: false,
+    choiceDistributions: Object.entries(counts).map(([choiceId, count]) => ({
+      choiceId,
+      choiceText: choiceId,
+      totalRanked: count,
+      rankCounts: [{ rank: 1, count, percentage: 100 }],
+    })),
+  });
+
+  it('names the open leader and its share', () => {
+    const q = question('q-1', [option('a', 'Yes', 87, 86.6, { isLeading: true }), option('b', 'No', 13, 13.4)]);
+    expect(buildVoteResultsSummary([q], [], true, false)).toEqual([{ questionId: 'q-1', question: 'Prompt q-1', text: 'Yes leads with 87%' }]);
+  });
+
+  it('reports an open tie of two', () => {
+    const q = question('q-1', [option('a', 'Yes', 5, 50, { isLeading: true }), option('b', 'No', 5, 50, { isLeading: true })]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('Tied: Yes and No (50% each)');
+  });
+
+  it('joins an open tie of three with commas and "and"', () => {
+    const q = question('q-1', [
+      option('a', 'A', 3, 33, { isLeading: true }),
+      option('b', 'B', 3, 33, { isLeading: true }),
+      option('c', 'C', 3, 33, { isLeading: true }),
+    ]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('Tied: A, B and C (33% each)');
+  });
+
+  it('says no votes are recorded on an open vote with zero votes', () => {
+    const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('No votes recorded yet');
+  });
+
+  it('names the closed winner', () => {
+    const q = question('q-1', [option('a', 'Yes', 8, 80, { isWinner: true, isLeading: true }), option('b', 'No', 2, 20)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes won with 80%');
+  });
+
+  it('reports a closed tie', () => {
+    const q = question('q-1', [option('a', 'Yes', 4, 50, { isTied: true, isLeading: true }), option('b', 'No', 4, 50, { isTied: true, isLeading: true })]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Tied: Yes and No (50% each)');
+  });
+
+  it('says no votes were submitted on a closed vote with zero votes', () => {
+    const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('No votes were submitted');
+  });
+
+  it('names the ranked leader with a singular voter', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 1, b: 0 })], false, false)[0].text).toBe('Most first choices: a (1 voter)');
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true)[0].text).toBe('Most first choices: a (5 voters)');
+  });
+
+  it('reports a ranked tie at the top', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 3, b: 3, c: 1 })], false, false)[0].text).toBe('Most first choices: a and b (3 each)');
+  });
+
+  it('says no rankings are recorded when nobody ranked a first choice', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 0, b: 0 })], false, false)[0].text).toBe('No rankings recorded yet');
+    expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, false)[0].text).toBe('No rankings recorded yet');
+  });
+
+  it('keeps question order across multiple questions', () => {
+    const qs = [question('q-2', [option('a', 'Yes', 1, 100, { isLeading: true })]), question('q-1', [option('a', 'No', 1, 100, { isLeading: true })])];
+    expect(buildVoteResultsSummary(qs, [], true, false).map((line) => line.questionId)).toEqual(['q-2', 'q-1']);
   });
 });
 

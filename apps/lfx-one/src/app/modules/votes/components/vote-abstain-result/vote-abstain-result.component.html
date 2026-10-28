@@ -5,25 +5,45 @@
 @if (variant() === 'live') {
   <div class="flex flex-col gap-1.5" [attr.data-testid]="testId()">
     <div class="flex items-center justify-between text-sm">
-      <span class="font-normal italic text-slate-500">Abstain</span>
+      <span class="font-normal text-slate-500">Abstain</span>
       <span class="font-normal text-slate-500">
-        {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }} · {{ stats().abstainedRate }}%
+        @if (showVoterLinks() && stats().abstainedVoters > 0) {
+          <button
+            type="button"
+            class="text-blue-600 hover:underline py-1"
+            [attr.aria-label]="'View the ' + stats().abstainedVoters + ' voters who abstained'"
+            (click)="viewVoters.emit()"
+            [attr.data-testid]="testId() + '-view-voters'">
+            {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+          </button>
+        } @else {
+          {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+        }
+        · {{ stats().abstainedRate }}%
       </span>
     </div>
     <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
       <div class="h-full rounded-full bg-slate-300 transition-all" [style.width.%]="stats().abstainedRate"></div>
     </div>
-    @if (showVoterLinks() && stats().abstainedVoters > 0) {
-      <ng-container [ngTemplateOutlet]="voterLink" />
-    }
   </div>
 } @else {
   <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" [attr.data-testid]="testId()">
     <div class="flex items-center justify-between mb-2">
-      <span class="text-sm font-medium italic text-slate-500">Abstain</span>
+      <span class="text-sm font-medium text-slate-500">Abstain</span>
       <div class="flex items-center gap-2">
         <span class="text-sm font-semibold text-slate-600">
-          {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+          @if (showVoterLinks() && stats().abstainedVoters > 0) {
+            <button
+              type="button"
+              class="text-blue-600 hover:underline py-1"
+              [attr.aria-label]="'View the ' + stats().abstainedVoters + ' voters who abstained'"
+              (click)="viewVoters.emit()"
+              [attr.data-testid]="testId() + '-view-voters'">
+              {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+            </button>
+          } @else {
+            {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
+          }
         </span>
         <span class="text-sm text-slate-500">({{ stats().abstainedRate }}%)</span>
       </div>
@@ -31,19 +51,5 @@
     <div class="w-full bg-white rounded-full h-2 overflow-hidden">
       <div class="h-full bg-slate-400 transition-all" [style.width.%]="stats().abstainedRate"></div>
     </div>
-    @if (showVoterLinks() && stats().abstainedVoters > 0) {
-      <ng-container [ngTemplateOutlet]="voterLink" />
-    }
   </div>
 }
-
-<ng-template #voterLink>
-  <div class="flex justify-end">
-    <lfx-button
-      [label]="'View ' + stats().abstainedVoters + (stats().abstainedVoters === 1 ? ' voter' : ' voters')"
-      [text]="true"
-      size="small"
-      (onClick)="viewVoters.emit()"
-      [attr.data-testid]="testId() + '-view-voters'" />
-  </div>
-</ng-template>

@@ -38,11 +38,13 @@ import {
   VoteParticipationStats,
   VoteResultsQuestion,
   VoteResultsResponse,
+  VoteResultsSummaryLine,
   VoterResultsState,
 } from '@lfx-one/shared/interfaces';
 import {
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
+  buildVoteResultsSummary,
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
   getRecentCommentResponses,
@@ -243,6 +245,10 @@ export class VoteDetailComponent {
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
+  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
+  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
+    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+  );
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.commentResults().map((result) => result.prompt));
   protected readonly commentPromptCount: Signal<number> = computed(() =>
