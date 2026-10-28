@@ -12,7 +12,6 @@
   component's SCSS), never the app's palette.
 -->
 @let section = 'flex flex-col gap-[14pt] break-before-page';
-@let head = 'flex items-center justify-between gap-[12pt] border-b border-black/10 pb-[6pt] text-[7.5pt] uppercase tracking-[0.18em]';
 @let sectionTitle = 'flex items-baseline gap-[10pt] text-[22pt] font-medium leading-[1.1] tracking-[-0.01em]';
 @let sectionNumber = 'text-[11pt] font-semibold text-[color:var(--mfp-accent)]';
 @let subTitle = 'text-[11pt] font-semibold';
@@ -73,7 +72,7 @@
   <section [class]="section" aria-label="Framework" data-testid="mktg-framework-print-framework">
     <ng-container *ngTemplateOutlet="runningHead" />
     <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[0].number }}</span
+      <span [class]="sectionNumber">{{ number() ? number() + '.1' : v.sections[0].number }}</span
       >{{ v.sections[0].title }}
     </h2>
     <div class="grid grid-cols-2 gap-[10pt]">
@@ -183,7 +182,7 @@
   <section [class]="section" aria-label="ICPs" data-testid="mktg-framework-print-icps">
     <ng-container *ngTemplateOutlet="runningHead" />
     <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[1].number }}</span
+      <span [class]="sectionNumber">{{ number() ? number() + '.2' : v.sections[1].number }}</span
       >{{ v.sections[1].title }}
     </h2>
     @for (icp of v.icps; track icp.id) {
@@ -245,7 +244,7 @@
   <section [class]="section" aria-label="Message house" data-testid="mktg-framework-print-message-house">
     <ng-container *ngTemplateOutlet="runningHead" />
     <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[2].number }}</span
+      <span [class]="sectionNumber">{{ number() ? number() + '.3' : v.sections[2].number }}</span
       >{{ v.sections[2].title }}
     </h2>
     <div class="flex flex-col gap-[8pt] break-inside-avoid">
@@ -292,7 +291,7 @@
   <section [class]="section" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
     <ng-container *ngTemplateOutlet="runningHead" />
     <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[3].number }}</span
+      <span [class]="sectionNumber">{{ number() ? number() + '.4' : v.sections[3].number }}</span
       >{{ v.sections[3].title }}
     </h2>
     <div class="grid grid-cols-3 gap-[10pt]">
@@ -309,12 +308,5 @@
 
 <!-- The running head of every section: what the document is, and the brand's logo on white. -->
 <ng-template #runningHead>
-  <div [class]="head">
-    <span class="opacity-75">{{ v.runningHead }}</span>
-    @if (v.brand.logoOnLight; as logo) {
-      <img class="h-[16pt] max-w-[1.6in] object-contain object-right" [src]="logo.src" [alt]="logo.alt" />
-    } @else if (v.versionLabel) {
-      <span class="opacity-75">{{ v.versionLabel }}</span>
-    }
-  </div>
+  <lfx-mktg-print-running-head [brand]="v.brand" [label]="v.runningHead" [versionLabel]="v.versionLabel" />
 </ng-template>

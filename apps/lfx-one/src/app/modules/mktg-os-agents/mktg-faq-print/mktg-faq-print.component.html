@@ -16,15 +16,17 @@
       <!-- Keep the document/group headings WITH their first pair, not just with each other. -->
       <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-faq-print-pair">
         @if (firstGroup && firstQuestion) {
+          <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
           <h2 class="mb-[8pt] flex items-baseline gap-[10pt] text-[22pt] font-medium break-after-avoid">
-            <span class="text-[11pt] font-semibold text-[color:var(--mfp-accent)]">04</span>FAQ
+            <span class="text-[11pt] font-semibold text-[color:var(--mfp-accent)]">{{ number() }}</span
+            >FAQ
           </h2>
         }
         @if (firstQuestion) {
           <h3 class="border-b border-black/10 pb-[6pt] text-[14pt] font-medium break-after-avoid" data-testid="mktg-faq-print-group">{{ group.name }}</h3>
         }
         <h4 class="text-[11pt] font-semibold break-after-avoid">{{ row.question }}</h4>
-        <p class="whitespace-pre-line">{{ row.answered ? row.answer : 'Needs an answer' }}</p>
+        <p class="whitespace-pre-line">{{ row.answered ? row.answer : unansweredLabel }}</p>
         @if (row.source) {
           <p class="text-[7.5pt] opacity-70" data-testid="mktg-faq-print-source">Source: {{ row.source }}</p>
         }
