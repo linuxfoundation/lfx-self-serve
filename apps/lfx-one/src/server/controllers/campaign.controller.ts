@@ -5124,12 +5124,12 @@ export class CampaignController {
    * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
    * cannot honour it (see `createCampaign`), else `null`.
    *
-   * The bidding plan and creative entries (`normalized`) count only when the cutover's own normalizers
-   * would send them (see the constant). For every other entry, only a NON-EMPTY value counts: absent,
-   * `null` and an empty list ask for nothing, and the legacy
-   * creator serves those requests exactly as asked, so refusing one would be over-refusal. Any other
-   * present value — a malformed non-list included — is a request for something the legacy creator
-   * cannot do, and is named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
+   * The bidding plan and creative entries (`normalized`) count only when the cutover's own
+   * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
+   * counts: absent, `null` and an empty list ask for nothing, and the legacy creator serves those
+   * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
+   * malformed non-list included — is a request for something the legacy creator cannot do, and is
+   * named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
    */
   private unservedGoogleCriteriaField(body: CampaignCreateRequest): (typeof GOOGLE_CUTOVER_ONLY_CREATE_FIELDS)[number] | null {
     if (canCreateWithGoogleCriteria()) return null;
