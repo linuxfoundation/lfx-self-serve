@@ -325,10 +325,11 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
  * the mapped platforms are protected from.
  *
- * `twitter-ads` is the remaining example: nothing builds a `twitterConfig`, so it is refused here.
- * `microsoft-ads` was one too until LFXV2-3312 added `buildMicrosoftConfig` and mapped it below —
- * which is the order this guard enforces, and why the roster is stated as a rule rather than a
- * list that goes stale the next time a platform is enabled.
+ * `microsoft-ads` was one until LFXV2-3312 added `buildMicrosoftConfig` and mapped it below, and
+ * `twitter-ads` until `buildTwitterConfig` did — which is the order this guard enforces, and why
+ * the roster is stated as a rule rather than a list that goes stale the next time a platform is
+ * enabled. Like Microsoft's, the X builder returns null for a config it would not dispatch, so an
+ * invalid one is refused here by name.
  *
  * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
  * guard is designed to enforce: map a platform only once something builds its config. Note that a
@@ -346,6 +347,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'reddit-ads': 'redditConfig',
     'meta-ads': 'metaConfig',
     'microsoft-ads': 'microsoftConfig',
+    'twitter-ads': 'twitterConfig',
     hubspot: 'hubspotConfig',
   };
   const key = requiredKey[platform];
@@ -679,6 +681,18 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
+ *
+ * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
+ * half is not a formality: the legacy creator has no X path, so with the cutover dark an X create
+ * would be dropped while the rest of the request went ahead. It also admits an upload into the
+ * brief's library alongside the asset flags, since the tweet image is a stored asset.
+ */
+export function canCreateTwitter(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceTwitterCreate);
+}
+
+/**
  * Whether a Microsoft create may reference an uploaded image by `microsoftConfig.imageAssetId`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-assets flag. Like
@@ -892,6 +906,7 @@ export class CampaignServiceClient {
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        twitterCreateEnabled: canCreateTwitter(),
         metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
@@ -961,6 +976,7 @@ export class CampaignServiceClient {
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      twitterCreateEnabled: canCreateTwitter(),
       metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
@@ -3167,6 +3183,27 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-google-ads/accounts`,
+      'GET'
+    );
+  }
+
+  /**
+   * The X Ads accounts the project's connection credential can reach (`list-twitter-ads-accounts`,
+   * LFXV2-3319) — `listGoogleAdsAccounts`'s X sibling, on the same resolution: a project with no X
+   * connection of its own is answered from the LF system credential upstream (`creds.resolve`), so
+   * the list can be the LF's own accounts. Upstream failures are left to the caller.
+   */
+  public async listTwitterAdsAccounts(req: Request, projectSlug: string): Promise<CampaignServiceAccessibleAccounts> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An account discovery read requires the project it belongs to.', {
+        operation: 'list_twitter_ads_accounts',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccessibleAccounts>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-twitter-ads/accounts`,
       'GET'
     );
   }
