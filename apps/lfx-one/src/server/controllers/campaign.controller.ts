@@ -863,7 +863,7 @@ export class CampaignController {
             next(
               ServiceValidationError.forField(
                 'geoTargets',
-                `Google Ads postal-code target ${googleAdsEchoed(nonCanonical)} is not the canonical spelling of a positive geo target constant id. Use the id with no leading zeros and create again.`,
+                `Google Ads location ${googleAdsEchoed(nonCanonical)} is not the canonical spelling of a positive geo target constant id. Use the id with no leading zeros and create again.`,
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -884,8 +884,9 @@ export class CampaignController {
 
           if (googleGeoTargets.length > GOOGLE_ADS_MAX_GEO_TARGETS) {
             next(
+              // `geoTargets`, not `countryCode`: the list now holds postal-code ids as well as countries.
               ServiceValidationError.forField(
-                'countryCode',
+                'geoTargets',
                 `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries and postal codes together on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )

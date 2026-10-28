@@ -56,6 +56,7 @@ import {
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_LABELS,
@@ -75,6 +76,7 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
+  GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -130,6 +132,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignGoogleExtensionsCapabilityBlock,
+  CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
@@ -953,6 +956,7 @@ export class ImplementationTabComponent implements OnInit {
    * reaching the saved draft only when an id is added.
    */
   protected readonly googlePostalGeoDraft = signal('');
+  protected readonly googlePostalGeoIdMinDigits = GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
   /**
    * Google's radius targets — "everyone within N miles of the venue" — the one location shape that
    * is not a place in Google's table.
@@ -1310,8 +1314,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Countries and postal codes count against ONE cap, because they are one list upstream:
    * `resolveGeoList` checks `maxGeoTargets` against the `geoTargets` slice as a whole.
+   *
+   * Only the postal ids that will be SENT are counted. Ids held on the legacy road are neither shown
+   * nor sent there, so counting them would refuse countries for a reason the operator cannot see or
+   * remove. The postal box itself renders only where the ids are sent, so its own cap is unaffected.
    */
-  protected readonly googleGeoTargetCount = computed(() => this.googleGeoTargets().length + this.googlePostalGeoTargets().length);
+  protected readonly googleGeoTargetCount = computed(() => this.googleGeoTargets().length + this.googleDispatchedPostalGeoTargets().length);
   protected readonly googleGeoTargetsFull = computed(() => this.googleGeoTargetCount() >= GOOGLE_ADS_MAX_GEO_TARGETS);
 
   /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
@@ -1349,14 +1357,35 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * A well-formed id SHORTER than any postal-code id in Google's table — most likely a ZIP typed as
+   * itself (`94103`). A WARNING, not a refusal: upstream accepts the entry, which names some other
+   * criterion or nothing, and an operator who really meant a region id must still be able to add it.
+   * Only raised when the box is otherwise clean, so it never competes with a real error line.
+   */
+  protected readonly googlePostalGeoDraftLooksLikePostalCode = computed(() => {
+    if (this.googlePostalGeoDraftErrorId() !== null) return false;
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && text.length < GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  });
+
+  /** What the postal-code box points `aria-describedby` at: its error, else the warning, else the hint. */
+  protected readonly googlePostalGeoDraftDescribedBy = computed(() => {
+    if (this.googlePostalGeoDraftErrorId()) return this.googlePostalGeoDraftErrorId();
+    return this.googlePostalGeoDraftLooksLikePostalCode() ? 'google-postal-looks-like-code' : 'google-postal-hint';
+  });
+
+  /**
    * The radius sub-form's three numbers, parsed: `null` for an empty box (not filled in yet), `NaN`
    * for text that is not a number. Kept apart so the warnings below fire on what was typed, and the
    * add button's disabled state alone covers what was not.
    */
   private readonly googleProximityDraftNumbers = computed(() => {
     const draft = this.googleProximityDraft();
-    const parse = (text: string): number | null => (googleAdsTrimSpace(text) === '' ? null : Number(googleAdsTrimSpace(text)));
-    return { latitude: parse(draft.latitude), longitude: parse(draft.longitude), radius: parse(draft.radius) };
+    return {
+      latitude: this.parseGoogleProximityNumber(draft.latitude),
+      longitude: this.parseGoogleProximityNumber(draft.longitude),
+      radius: this.parseGoogleProximityNumber(draft.radius),
+    };
   });
 
   /** Typed and not a finite latitude in -90..90 — `validateProximityTargets`' first two checks. */
@@ -2065,6 +2094,9 @@ export class ImplementationTabComponent implements OnInit {
     // carries a warning instead ({@link googleCreativeEmptyWarning}), because blocking it would
     // refuse a create upstream makes.
     if (googleSelected && this.googleCreativeError() !== null) return false;
+    // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
+    // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
+    if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -2270,6 +2302,9 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
+  protected readonly googleLocationsCapabilityBlock: Signal<CampaignGoogleLocationsCapabilityBlock | null> = this.initGoogleLocationsCapabilityBlock();
+  /** The always-mounted live region's text for `googleLocationsCapabilityBlock`; `''` when nothing is withheld. */
+  protected readonly googleLocationsCapabilityMessage = computed(() => this.googleLocationsCapabilityBlock()?.message ?? '');
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -2962,11 +2997,10 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected addGoogleProximityTarget(draft: CampaignProximityTargetDraft): boolean {
     if (this.googleProximityTargets().length >= GOOGLE_ADS_MAX_PROXIMITY_TARGETS) return false;
-    const [latitudeText, longitudeText, radiusText] = [draft.latitude, draft.longitude, draft.radius].map((text) => googleAdsTrimSpace(text));
-    if (latitudeText === '' || longitudeText === '' || radiusText === '') return false;
-    const latitude = Number(latitudeText);
-    const longitude = Number(longitudeText);
-    const radius = Number(radiusText);
+    const latitude = this.parseGoogleProximityNumber(draft.latitude);
+    const longitude = this.parseGoogleProximityNumber(draft.longitude);
+    const radius = this.parseGoogleProximityNumber(draft.radius);
+    if (latitude === null || longitude === null || radius === null) return false;
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return false;
     if (!Number.isFinite(radius) || radius <= 0) return false;
@@ -2998,6 +3032,18 @@ export class ImplementationTabComponent implements OnInit {
 
   protected removeGoogleProximityTarget(index: number): void {
     this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Drop every postal-code and radius target held while the capability is not an explicit yes — the
+   * operator's explicit choice to create with country targeting instead, which is the only way past
+   * {@link googleLocationsCapabilityBlock} short of the check succeeding. Their sections are hidden
+   * on that road, so the chips cannot be removed one by one.
+   */
+  protected removeHeldGoogleLocationTargets(): void {
+    this.googlePostalGeoTargets.set([]);
+    this.googleProximityTargets.set([]);
     this.emitDraft();
   }
 
@@ -4901,6 +4947,60 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Why Create is blocked for postal-code or radius targets the capability does not let this request
+   * carry, or null when nothing is held for that reason.
+   *
+   * The extensions block's shape — {@link initGoogleExtensionsCapabilityBlock}: the same kinds, the
+   * same reads, `resolveGoogleChannel` rather than `googleBiddingChannel` because the latter's
+   * capability gate is the thing being reported on — with ONE difference: this block gates Create.
+   * A withheld extension list ships a campaign without extensions; a withheld location list ships a
+   * campaign that falls back to the event country, so a radius around the venue would become the
+   * whole country. Retry the check, or remove the targets explicitly.
+   *
+   * Radius targets on a channel that refuses them (Demand Gen) are NOT counted: they are withheld
+   * whatever the capability answers, and {@link googleProximityWithheldOn} already says so.
+   */
+  private initGoogleLocationsCapabilityBlock(): Signal<CampaignGoogleLocationsCapabilityBlock | null> {
+    return computed(() => {
+      if (this.googleCreativeAvailable()) return null;
+      const channel = this.resolveGoogleChannel();
+      if (channel === null) return null;
+
+      const postal = this.googlePostalGeoTargets().length;
+      const radius = (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel) ? this.googleProximityTargets().length : 0;
+      if (postal + radius === 0) return null;
+
+      const parts: string[] = [];
+      if (postal > 0) parts.push(`${postal} postal-code target${postal === 1 ? '' : 's'}`);
+      if (radius > 0) parts.push(`${radius} radius target${radius === 1 ? '' : 's'}`);
+      const held = parts.join(' and ');
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Postal-code and radius targeting is not available on this deployment, so the ${held} on this brief cannot be sent. Remove them to create the campaign with country targeting instead.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether the ${held} on this brief can be sent. Create waits for the check, because without them this campaign would target the whole event country.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Postal-code and radius support can't be checked until this brief is saved, so the ${held} on it cannot be sent yet. Save the brief, or remove them to create with country targeting.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that the ${held} on this brief can be sent. Retry the check, or remove them to create with country targeting.`,
+      };
+    });
+  }
+
+  /**
    * The sentence saying callouts are held back, or null when none are. Set when the channel a
    * create would carry takes no callouts and the operator added some — in practice callouts typed
    * under Search and left behind by a switch to another channel. Held is not silent: the section
@@ -5552,6 +5652,17 @@ export class ImplementationTabComponent implements OnInit {
   private googleProximityPayload(): Partial<CampaignCreateRequest> {
     const targets = this.googleDispatchedProximityTargets();
     return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
+  }
+
+  /**
+   * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
+   * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
+   * `0b11` and `1e2` and put a value on the chip the operator never typed.
+   */
+  private parseGoogleProximityNumber(text: string): number | null {
+    const trimmed = googleAdsTrimSpace(text);
+    if (trimmed === '') return null;
+    return GOOGLE_ADS_DECIMAL_NUMBER_PATTERN.test(trimmed) ? Number(trimmed) : Number.NaN;
   }
 
   /**

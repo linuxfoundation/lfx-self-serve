@@ -1361,6 +1361,27 @@ export const GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS = 60;
 export const GOOGLE_ADS_GEO_TARGET_ID_PATTERN = /^[0-9]+$/;
 
 /**
+ * The fewest digits a Google Ads POSTAL-CODE geo target constant id has.
+ *
+ * Postal-code criteria in Google's geo-targets table carry seven-digit ids (`9031945`); countries
+ * carry four (`2840`) and regions five. A shorter numeric entry in the postal-code box is therefore
+ * far more likely to be a ZIP or postcode typed as itself than the id it should have been looked up
+ * as. That entry is still well-formed and upstream still accepts it — it names SOME criterion, or
+ * nothing — so this drives a non-blocking warning only, never a refusal.
+ */
+export const GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS = 7;
+
+/**
+ * A plain decimal number as typed into the radius sub-form: optional sign, digits, optional
+ * fraction (`-33.8688`, `25`, `.5`, `-33.`).
+ *
+ * Checked BEFORE `Number()`, which also accepts `0x1A`, `0b11` and `1e2` — finite, in range, and
+ * shown back on the chip as a value the operator never typed. The wire takes decimal degrees, and
+ * so does the form.
+ */
+export const GOOGLE_ADS_DECIMAL_NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+
+/**
  * Upstream's bound on the proximity list (`geo.go`'s `maxProximityTargets`).
  *
  * Checked against the SUBMITTED count, before any collapsing of exact repeats, for the reason the

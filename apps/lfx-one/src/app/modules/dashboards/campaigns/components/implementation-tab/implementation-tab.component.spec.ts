@@ -6286,6 +6286,185 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
 });
 
 /**
+ * The review fixes on #4455: what the postal-code and radius controls do once the capability is not
+ * an explicit yes, and the edge spellings each box has to judge.
+ */
+describe('ImplementationTabComponent google location targets held by the capability', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const SYDNEY_DRAFT = { latitude: '-33.8688', longitude: '151.2093', radius: '25', radiusUnit: 'KILOMETERS' };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** Search with one postal code and one radius added on the campaign-service road, then the answer taken away. */
+  function seedHeld(
+    capability: boolean | null,
+    read: 'unknown' | 'pending' | 'ready' | 'failed',
+    briefId: string | null,
+    channel: Record<string, unknown> = { includeSearch: true }
+  ): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGooglePostalGeoTarget']('9031945');
+    c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+    return c;
+  }
+
+  /**
+   * The finding: withholding the lists does not shrink the campaign, it WIDENS it to the event
+   * country. So Create is blocked, unlike the extensions block, until a retry succeeds or the
+   * operator removes the targets.
+   */
+  it.each([['failed'], ['unknown']])('blocks Create and offers Retry when the read is %s', (read) => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = seedHeld(null, read as 'failed' | 'unknown', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('failed');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-failed')?.textContent).toContain('1 postal-code target and 1 radius target');
+    expect(find('implementation-google-locations-capability-live')?.textContent?.trim()).toBe(c['googleLocationsCapabilityMessage']());
+    (find('implementation-google-locations-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks Create while the check is in flight, and says why waiting matters', () => {
+    const c = seedHeld(null, 'pending', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('pending');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-pending')?.textContent).toContain('whole event country');
+    expect(find('implementation-google-locations-capability-remove')).toBeNull();
+  });
+
+  it('names the deployment when the capability answered no, with no Retry', () => {
+    const c = seedHeld(false, 'ready', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('unsupported');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-retry')).toBeNull();
+    expect(find('implementation-google-locations-capability-remove')).not.toBeNull();
+  });
+
+  it('asks for the brief to be saved when there is nothing to check against', () => {
+    const c = seedHeld(null, 'unknown', null);
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('unsaved');
+  });
+
+  /** The explicit way past the block: drop the held targets and create with country targeting. */
+  it('lets the operator remove the held targets, which unblocks Create', () => {
+    const c = seedHeld(null, 'failed', 'brief-1');
+
+    (find('implementation-google-locations-capability-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googlePostalGeoTargets']()).toEqual([]);
+    expect(c['googleProximityTargets']()).toEqual([]);
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('clears once the capability answers yes, and the lists are sent again', () => {
+    const c = seedHeld(null, 'failed', 'brief-1');
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['9031945']);
+  });
+
+  /** Radius targets on Demand Gen are withheld by the CHANNEL whatever the answer, and their own notice says so. */
+  it('does not count radius targets on demand-gen, where only the postal code is held by the capability', () => {
+    seedHeld(null, 'failed', 'brief-1', { includeDemandGen: true });
+
+    expect(find('implementation-google-locations-capability-failed')?.textContent).toContain('1 postal-code target on this brief');
+  });
+
+  it('says nothing when no postal code or radius is held', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * Ids held on the legacy road are neither shown nor sent there, so they must not take up the
+   * country picker's share of the cap, where the operator could not see or remove them.
+   */
+  it('does not count held postal ids against the country cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS }, (_, i) => String(9031900 + i)));
+    expect(c['googleGeoTargetsFull']()).toBe(true);
+
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+    c['addGoogleGeoTarget']('CA');
+
+    expect(c['googleGeoTargetCount']()).toBe(1);
+    expect(c['googleGeoTargets']()).toEqual(['CA']);
+  });
+
+  /** `Number()` reads these as 26, 3 and 100; the form takes decimal degrees only. */
+  it.each([['0x1A'], ['0b11'], ['1e2'], ['Infinity']])('refuses the non-decimal spelling %s and names it', (text) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleProximityDraft'].set({ ...SYDNEY_DRAFT, latitude: text });
+    fixture.detectChanges();
+
+    expect(c['googleProximityLatitudeInvalid']()).toBe(true);
+    expect(find('implementation-google-proximity-latitude-invalid')).not.toBeNull();
+    expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(false);
+  });
+
+  it.each([['-33.'], ['+33.5'], ['.5']])('accepts the decimal spelling %s', (text) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(true);
+  });
+
+  /** A soft warning: upstream accepts the entry, so the add stays allowed. */
+  it('warns that a short numeric entry looks like a postal code, without refusing it', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoDraft'].set('94103');
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-looks-like-code')).not.toBeNull();
+    expect(find('implementation-google-postal-add')?.getAttribute('aria-describedby')).toBe('google-postal-looks-like-code');
+    expect(find('implementation-google-postal-add')?.getAttribute('aria-invalid')).toBeNull();
+    expect(c['addGooglePostalGeoTarget']('94103')).toBe(true);
+  });
+
+  it('does not warn about a seven-digit postal-code id', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoDraft'].set('9031945');
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-looks-like-code')).toBeNull();
+  });
+
+  it('gives the latitude box its own accessible name', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(find('implementation-google-proximity-latitude')?.getAttribute('aria-label')).toBe('Radius target latitude');
+  });
+});
+
+/**
  * The Google language chips.
  *
  * The control is a `<select>` over the supported table's own keys, so the guards left are the ones

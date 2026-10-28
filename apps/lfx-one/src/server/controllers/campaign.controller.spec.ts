@@ -2995,7 +2995,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(createCampaigns).not.toHaveBeenCalled();
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
-    expect(error.field).toBe('countryCode');
+    expect(error.field).toBe('geoTargets');
     expect(error.message).toContain('61');
   });
 
@@ -3038,6 +3038,8 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('geoTargets');
     expect(error.message).toContain('canonical');
+    // Any numeric id, not only a postal code, so the message names a location.
+    expect(error.message).toContain('Google Ads location');
   });
 
   it('refuses a postal-code id that the event also excludes, compared by resolved id', async () => {

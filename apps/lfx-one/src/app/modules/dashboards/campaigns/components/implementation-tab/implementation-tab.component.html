@@ -105,6 +105,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-extensions-capability-live">
   {{ googleExtensionsCapabilityMessage() }}
 </div>
+<!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
+  {{ googleLocationsCapabilityMessage() }}
+</div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
@@ -424,7 +428,7 @@
                     (change)="onGooglePostalGeoAdd($event)"
                     (keydown.enter)="onGooglePostalGeoAdd($event); $event.preventDefault()"
                     [attr.aria-invalid]="googlePostalGeoDraftErrorId() ? 'true' : null"
-                    [attr.aria-describedby]="googlePostalGeoDraftErrorId() ?? 'google-postal-hint'"
+                    [attr.aria-describedby]="googlePostalGeoDraftDescribedBy()"
                     class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
                     data-testid="implementation-google-postal-add" />
                 } @else {
@@ -448,6 +452,12 @@
               } @else if (googlePostalGeoDraftDuplicate()) {
                 <p id="google-postal-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-duplicate">
                   That postal-code target is already on the list.
+                </p>
+              } @else if (googlePostalGeoDraftLooksLikePostalCode()) {
+                <!-- A warning, not an error: upstream accepts the entry, so the add stays allowed. -->
+                <p id="google-postal-looks-like-code" class="text-xs text-amber-700" data-testid="implementation-google-postal-looks-like-code">
+                  This looks like a postal code, not a geo target id — postal-code ids in Google's table are {{ googlePostalGeoIdMinDigits }} digits or longer.
+                  Adding it targets whatever criterion that number names, if any.
                 </p>
               }
             </div>
@@ -498,6 +508,7 @@
                     type="text"
                     inputmode="decimal"
                     placeholder="Latitude"
+                    aria-label="Radius target latitude"
                     [value]="googleProximityDraft().latitude"
                     (input)="onGoogleProximityDraftInput('latitude', $event)"
                     [attr.aria-invalid]="googleProximityLatitudeInvalid() ? 'true' : null"
@@ -591,6 +602,48 @@
                   That radius target is already on the list.
                 </p>
               }
+            </div>
+          }
+        </div>
+      }
+
+      <!--
+        Postal-code and radius targets withheld because the create capability is not an explicit yes.
+        Unlike the extensions block below this one GATES Create — a withheld location list widens the
+        campaign to the event country — so the operator either retries the check or removes them.
+      -->
+      @if (googleLocationsCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-locations-capability-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (block.kind !== 'pending') {
+            <div class="flex flex-wrap items-center gap-2">
+              @if (block.kind === 'failed') {
+                <lfx-button
+                  label="Retry"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="retryCreateCapabilities.emit()"
+                  data-testid="implementation-google-locations-capability-retry" />
+              }
+              <lfx-button
+                label="Remove them"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="removeHeldGoogleLocationTargets()"
+                data-testid="implementation-google-locations-capability-remove" />
             </div>
           }
         </div>

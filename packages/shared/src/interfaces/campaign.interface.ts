@@ -4918,6 +4918,20 @@ export interface CampaignGoogleExtensionsCapabilityBlock {
 }
 
 /**
+ * Why Create is blocked for postal-code or radius targets the draft holds but the request cannot
+ * carry, because the campaign-service create capability is unanswered or answered no. The kinds
+ * mean what they do on {@link CampaignGoogleExtensionsCapabilityBlock}.
+ *
+ * Unlike that block this one GATES Create: a withheld location list does not shrink the campaign, it
+ * WIDENS it — the request falls back to the event country, so a 25-mile radius would become a
+ * nationwide campaign. The operator retries the check or removes the targets explicitly.
+ */
+export interface CampaignGoogleLocationsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
  * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
  * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
