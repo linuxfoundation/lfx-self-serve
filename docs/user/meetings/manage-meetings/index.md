@@ -64,10 +64,11 @@ Each meeting has a unique join URL at `/meetings/:id`. Use **Copy meeting link**
 
 ## Subscribe to a calendar feed
 
-There's no button to download a single meeting as an ICS file. Instead, from the Meetings dashboard in your Foundation or Project lens, select **Subscribe** to get a live calendar feed (ICS URL) for that project's or foundation's meetings. The feed excludes **Private** meetings, and **Restricted** meetings that are otherwise public still appear on it. Add it once to Google Calendar, Outlook, or Apple Calendar to keep it in sync automatically.
+There's no button to download a single meeting as an ICS file. To keep a project's or foundation's meetings in your calendar app, select **Subscribe** on the Meetings dashboard in your Foundation or Project lens. See [Meetings Dashboard and Filters](../dashboard/).
 
 ## Related
 
+- [Meetings Dashboard and Filters](../dashboard/) — find meetings, filter by response, and subscribe to a calendar
 - [Schedule a Meeting](../schedule-meeting/) — create a new meeting and choose its settings
 - [Manage Participants](../manage-participants/) — invite guests, add groups, resend invitations, and remove people
 - [Meeting Materials](../meeting-materials/) — add and organize files and links

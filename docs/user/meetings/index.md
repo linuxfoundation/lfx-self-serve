@@ -23,7 +23,7 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - View a past meeting's attendance, recording, transcript, and AI summary, if you have access — see [Past Meetings](past-meetings/)
 - Upload or view meeting materials (files and links) — see [Meeting Materials](meeting-materials/)
 - Invite guests directly or by linking a project committee, and resend or remove invitations — see [Manage Participants](manage-participants/)
-- Subscribe to a live calendar feed of a project's or foundation's meetings
+- Subscribe to a live calendar feed of a project's or foundation's meetings — see [Meetings Dashboard and Filters](dashboard/)
 - Find the Zoom host key to claim host in a meeting, if you're a meeting host — see [Host Controls and the Host Key](host-controls/)
 
 ## Who this applies to
@@ -98,6 +98,7 @@ Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private*
 
 ## Related sections
 
+- [Meetings Dashboard and Filters](dashboard/) — find meetings, filter by your response, and subscribe to a calendar
 - [Reconcile Attendance](reconcile-attendance/) — organizers match Zoom attendees to real people after a meeting
 - [Past Meetings](past-meetings/) — attendance, participants, recording, transcript, and AI summary
 - [Meeting Materials](meeting-materials/) — add, organize, and find files and links
