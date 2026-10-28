@@ -809,6 +809,18 @@ describe('NavbarComponent', () => {
       expect(fixture.nativeElement.classList).toContain('is-pinned');
     });
 
+    it('closes a hover peek on a navigation the viewer made', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(false);
+    });
+
     it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
       stubViewport(true);
       const events = new Subject<unknown>();

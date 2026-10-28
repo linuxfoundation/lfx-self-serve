@@ -564,12 +564,14 @@ export class NavbarComponent extends NavMenuBase {
       if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
     });
 
-    // A pick from a click-opened peek navigates under it: close it, as an outside click would. As with the mobile
-    // drawer, only a navigation the viewer made counts — a page rewriting its own address in place (`replaceUrl`, e.g.
-    // Org Lens writing in the default organization) would snap a just-opened peek shut; back/forward still closes it.
+    // A pick from a peek navigates under it: close it, so the overlay doesn't cover the page just opened — a pinned peek
+    // or a hover peek (keyboard focus on the picked link holds one open, see peekInUse). As with the mobile drawer, only
+    // a navigation the viewer made counts — a page rewriting its own address in place (`replaceUrl`, e.g. Org Lens
+    // writing in the default organization) would snap a just-opened peek shut; back/forward still closes it. Focus on
+    // the link the rail now hides moves to the toggle (the railVisible subscription below).
     this.router.events
       .pipe(
-        filter((event) => event instanceof NavigationEnd && this.collapse.peekPinned()),
+        filter((event) => event instanceof NavigationEnd && this.collapse.peek()),
         filter(() => {
           const navigation = this.router.currentNavigation();
           return !navigation?.extras.replaceUrl || navigation.trigger === 'popstate';

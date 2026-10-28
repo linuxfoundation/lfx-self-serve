@@ -1579,6 +1579,11 @@
     0 2px 6px -2px theme('colors.gray.900 / 8%');
 }
 
+// Under the impersonation banner the top 36px are covered: keep the capped menu clear of it. Stacked classes win.
+.lfxn-account-popover.lfxn-account-popover--banner-offset.p-popover {
+  max-height: calc(100dvh - 102px);
+}
+
 .lfxn-account-menu {
   display: flex;
   flex-direction: column;
