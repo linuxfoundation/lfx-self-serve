@@ -1071,6 +1071,35 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     expect(devon?.sources).toContain('keyContact');
   });
 
+  // The access pass runs after the key-contact pass and contributes addresses of its own, so an
+  // ownership map built at key-contact time does not yet know this address belongs to anyone.
+  it('enriches through an address only the access pass contributed', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow({ lfUsername: 'dclarke', emails: ['dclarke@lfx-partner.example'] })]));
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'work@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke' })]);
+    getKeyContactEmployees.mockResolvedValue([{ ...keyContact, email: 'work@lfx-partner.example', roles: ['PR Contact'] }]);
+
+    const result = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
+
+    expect(result.rows.find((row) => row.lfUsername === 'dclarke')?.keyContactRoles).toEqual(['PR Contact']);
+  });
+
+  // The reverse: an address one identity claims at key-contact time and a second claims during the
+  // access pass. Handing it to the first would put one person's key-contact role on another.
+  it('gives the roles to nobody when the access pass makes the address ambiguous', async () => {
+    getAllEmployeesInternal.mockResolvedValue(
+      baseResponse([
+        storedRow({ personKey: 'p-a', lfUsername: 'alpha', emails: ['shared@lfx-partner.example'] }),
+        storedRow({ personKey: 'p-b', lfUsername: 'beta', emails: ['beta@lfx-partner.example'] }),
+      ])
+    );
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'shared@lfx-partner.example', username: 'beta', name: 'Beta Two' })]);
+    getKeyContactEmployees.mockResolvedValue([{ ...keyContact, email: 'shared@lfx-partner.example', roles: ['Legal Contact'] }]);
+
+    const result = await run('365d', { ...FILTERS, projectScope: 'non_lf' });
+
+    expect(result.rows.every((row) => row.keyContactRoles.length === 0)).toBe(true);
+  });
+
   it('leaves an address two identities both claim unenriched, rather than guessing an owner', async () => {
     getAllEmployeesInternal.mockResolvedValue(
       baseResponse([

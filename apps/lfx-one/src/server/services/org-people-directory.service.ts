@@ -374,10 +374,10 @@ export class OrgPeopleDirectoryService {
       this.logSourceFailure(req, accountId, 'committee seats', seats.reason);
     }
 
+    // Key contacts that matched no row, held for the deferred pass below. Enriching them here would read
+    // an ownership map that the access pass and the orphan fold have not contributed their addresses to yet.
+    const unmatchedKeyContacts: { emp: KeyContactEmployee; email: string }[] = [];
     if (keyContacts.status === 'fulfilled') {
-      // Computed once, before the loop: every stored and seat row is already in by this point, and the
-      // key-contact branch only ever reads it.
-      const identityOwners = addLiveOnlyRows ? new Map<string, OrgAllEmployeeRowInternal>() : OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
         // Merged by email even when the document carries a username: the username is safe to carry as a
@@ -395,17 +395,7 @@ export class OrgPeopleDirectoryService {
         } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
         } else {
-          // No live-only row will be created here, so the address fold that normally carries the roles
-          // onto an identity-keyed stored employee never runs. Enrich that employee directly instead,
-          // under the same single-claimant rule the fold uses — otherwise a person whose stored row is
-          // keyed by LF identity loses their pills in every scope that only enriches stored rows.
-          const owner = identityOwners.get(email);
-          if (owner) {
-            this.addSource(owner, 'keyContact');
-            this.addEmail(owner, email);
-            this.fill(owner, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
-            this.addKeyContactRoles(owner, emp.roles);
-          }
+          unmatchedKeyContacts.push({ emp, email });
         }
       }
     } else {
@@ -435,6 +425,7 @@ export class OrgPeopleDirectoryService {
     }
 
     this.absorbIdentitylessRows(byKey);
+    this.enrichStoredOwnersFromKeyContacts(byKey, unmatchedKeyContacts);
     if (formerUsernames) {
       this.tagFormerAccessPrincipals(byKey, formerUsernames);
     } else {
@@ -469,6 +460,35 @@ export class OrgPeopleDirectoryService {
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
    */
+  /**
+   * Carry a key contact's roles onto the stored employee who owns its address.
+   *
+   * Only reached in a scope that enriches stored rows without adding live-only ones: there is no
+   * live-only row for `absorbIdentitylessRows` to fold, so without this an employee keyed by LF identity
+   * loses their pills while an email-keyed one keeps theirs.
+   *
+   * Deliberately last. The access pass and the orphan fold both call `addEmail`, so an ownership map
+   * built before them is wrong in two directions: an address only an access principal contributed is
+   * claimed by nobody and its roles vanish, and an address that a second identity claims later is handed
+   * to the first — putting one person's key-contact role on another, which is the worse of the two.
+   * Reading the final map means both cases resolve the way the full-roster path already resolves them.
+   */
+  private enrichStoredOwnersFromKeyContacts(
+    byKey: Map<string, OrgAllEmployeeRowInternal>,
+    unmatched: readonly { emp: KeyContactEmployee; email: string }[]
+  ): void {
+    if (unmatched.length === 0) return;
+    const identityOwners = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
+    for (const { emp, email } of unmatched) {
+      const owner = identityOwners.get(email);
+      if (!owner) continue;
+      this.addSource(owner, 'keyContact');
+      this.addEmail(owner, email);
+      this.fill(owner, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+      this.addKeyContactRoles(owner, emp.roles);
+    }
+  }
+
   /**
    * Address -> the single identity row listing it.
    *
