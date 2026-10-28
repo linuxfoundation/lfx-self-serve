@@ -94,8 +94,8 @@ export class SnowflakeService {
     }
   }
 
-  public static isMissingObjectError(error: unknown): boolean {
-    return isMissingObjectError(error);
+  public static isMissingObjectError(error: unknown, expectedObject?: string): boolean {
+    return isMissingObjectError(error, expectedObject);
   }
 
   private constructor() {
@@ -228,7 +228,13 @@ export class SnowflakeService {
           } catch (error) {
             // Expected schema-rollout errors still reject so callers can use their fallback,
             // but they must not emit error telemetry or count toward the global circuit breaker.
-            const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
+            // A caller that named an object exempts only that one: a missing CORE table in the same
+            // statement is a genuine fault and must keep its error telemetry and breaker failure.
+            const expectedObject = options?.expectMissingObject;
+            const expectedMissing =
+              expectedObject !== undefined &&
+              expectedObject !== false &&
+              SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
             const expectedIdentifier = options?.expectInvalidIdentifier;
             const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
             const poolQueueFull = isPoolQueueFullError(error);
@@ -238,7 +244,7 @@ export class SnowflakeService {
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : true);
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);

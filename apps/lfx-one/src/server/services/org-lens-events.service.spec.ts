@@ -565,12 +565,13 @@ describe('OrgLensEventsService company-email scoping', () => {
     // The scoped spelling is the one that may legitimately find no table, and the fallback is
     // uncached — so every request would re-run it. Without this flag those failures reach
     // recordFailure() on the POD-WIDE breaker, and enough concurrent loads would fail every
-    // Snowflake surface, blocking the very retry this path exists to perform.
+    // Snowflake surface, blocking the very retry this path exists to perform. It names the table
+    // rather than passing `true`, so a missing CORE table in the same statement is NOT exempted.
     const calls = execute.mock.calls as [string, string[], unknown?][];
     const scopedCalls = calls.filter(([query]) => query.includes('company_email_coverage'));
     expect(scopedCalls).toHaveLength(2);
     for (const [, , options] of scopedCalls) {
-      expect(options).toEqual({ expectMissingObject: true });
+      expect(options).toEqual({ expectMissingObject: 'ORG_PEOPLE_COMPANY_EMAILS' });
     }
 
     // And ONLY the scoped spellings. The flag means "this statement references an object that may

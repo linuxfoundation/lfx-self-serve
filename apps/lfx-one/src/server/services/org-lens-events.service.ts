@@ -469,17 +469,15 @@ export class OrgLensEventsService {
    * reset window. The retry would then be blocked too, turning a degraded Events count into the
    * outage this path exists to prevent. The flag still rejects, so the fallback runs as before.
    *
-   * LIMITATION, raised repeatedly in review on #4414 and not fixable here. The option is a bare
-   * boolean, so it exempts every object in the statement, not the one named above — and the expected
-   * branch calls `recordSuccess()`, which RESETS the shared failure count rather than merely skipping
-   * it. While some core table in this query is genuinely absent, each scoped attempt holds the
-   * pod-wide breaker closed. Narrowing it means giving `SnowflakeQueryOptions` an object name, as
-   * `expectInvalidIdentifier` already has, and changing `isMissingObjectError` and every caller
-   * (`committee-engagement`, `health-metrics-engagement`) with it — a shared-infrastructure change
-   * that wants its own PR.
+   * The option carries the object's NAME, not a bare `true`, so the exemption covers exactly
+   * `ORG_PEOPLE_COMPANY_EMAILS`. That distinction matters: the expected branch calls `recordSuccess()`,
+   * which RESETS the shared failure count rather than merely skipping it, so a blanket exemption would
+   * let a genuinely absent core table hold the pod-wide breaker closed for as long as it stayed
+   * broken. Named, a missing core table misses this branch entirely and keeps its normal failure
+   * handling; only the rollout condition this flag exists for is forgiven.
    */
   private async fetchEventListRows(sql: string, binds: string[], scoped = false): Promise<OrgEventRow[]> {
-    const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
+    const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: COMPANY_EMAILS_TABLE } : undefined);
     return result.rows;
   }
 
@@ -490,7 +488,11 @@ export class OrgLensEventsService {
 
   /** Same reasoning as `fetchEventListRows`: the scoped drawer may legitimately find no address table. */
   private async fetchEventAttendeeRows(sql: string, binds: string[], scoped = false): Promise<OrgEventAttendeesDrawerRow[]> {
-    const result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, binds, scoped ? { expectMissingObject: true } : undefined);
+    const result = await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(
+      sql,
+      binds,
+      scoped ? { expectMissingObject: COMPANY_EMAILS_TABLE } : undefined
+    );
     return result.rows;
   }
 
@@ -688,16 +690,13 @@ function registrationCountsCte(scoped: boolean): string {
 }
 
 /**
- * True when the error says THIS object is the missing one. `isMissingObjectError` only answers "some
- * object is absent", which is not enough to choose a fallback: the unscoped and platinum spellings
- * still read the core tables, so retrying after `EVENT_REGISTRATIONS` goes missing cannot succeed and
- * costs a breaker failure for nothing. Snowflake names the object in the message, so the tier can be
- * chosen rather than guessed at.
+ * True when the error says THIS object is the missing one — not enough to ask of the bare predicate,
+ * which only answers "some object is absent": the unscoped and platinum spellings still read the core
+ * tables, so retrying after `EVENT_REGISTRATIONS` goes missing cannot succeed and costs a breaker
+ * failure for nothing. Snowflake names the object, so the tier can be chosen rather than guessed at.
  */
 function isMissingObject(error: unknown, objectName: string): boolean {
-  if (!SnowflakeService.isMissingObjectError(error)) return false;
-  const message = error instanceof Error ? error.message : String(error);
-  return message.toUpperCase().includes(objectName.toUpperCase());
+  return SnowflakeService.isMissingObjectError(error, objectName);
 }
 
 const COMPANY_EMAILS_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
