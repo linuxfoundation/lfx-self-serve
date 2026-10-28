@@ -219,6 +219,8 @@
                   <button
                     type="button"
                     (click)="onSurveyEmailCountChange(option.count)"
+                    [disabled]="surveySeriesStarted()"
+                    [class.opacity-50]="surveySeriesStarted()"
                     [class.border-blue-500]="surveyEmailCount() === option.count"
                     [class.ring-2]="surveyEmailCount() === option.count"
                     [class.ring-blue-200]="surveyEmailCount() === option.count"
@@ -424,25 +426,28 @@
                 into. The picker's "not connected" state does not block generation, so copy can be
                 drafted before HubSpot is wired up.
               -->
-              <div class="flex flex-col gap-3" data-testid="campaigns-email-content">
-                <div class="flex flex-col gap-1">
-                  <h2 class="text-base font-semibold text-gray-900">Email content</h2>
-                  <p class="text-sm text-gray-500">Generated from the brief by campaign-service. Regenerate to get a fresh draft.</p>
-                </div>
+              <!-- Not in a survey SERIES: Write all and Stage all own its copy and drafts, and this
+                   single-email path would stage send 1 from different copy. -->
+              @if (!surveySeriesMode()) {
+                <div class="flex flex-col gap-3" data-testid="campaigns-email-content">
+                  <div class="flex flex-col gap-1">
+                    <h2 class="text-base font-semibold text-gray-900">Email content</h2>
+                    <p class="text-sm text-gray-500">Generated from the brief by campaign-service. Regenerate to get a fresh draft.</p>
+                  </div>
 
-                @if (emailCopy(); as copy) {
-                  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-copy">
-                    <div class="flex flex-col gap-1">
-                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Subject</span>
-                      <p class="text-sm font-medium text-gray-900" data-testid="campaigns-email-copy-subject">{{ copy.subject }}</p>
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Preview text</span>
-                      <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.preheader }}</p>
-                    </div>
-                    <div class="flex flex-col gap-1">
-                      <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
-                      <!--
+                  @if (emailCopy(); as copy) {
+                    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-copy">
+                      <div class="flex flex-col gap-1">
+                        <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Subject</span>
+                        <p class="text-sm font-medium text-gray-900" data-testid="campaigns-email-copy-subject">{{ copy.subject }}</p>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Preview text</span>
+                        <p class="text-sm text-gray-600" data-testid="campaigns-email-copy-preview">{{ copy.preheader }}</p>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
+                        <!--
                         Framed, not bound. Angular's sanitizer strips `style` on an `[innerHTML]`
                         binding and email HTML is almost entirely inline-styled, so that binding
                         showed the email's structure with none of its styling -- the operator
@@ -452,16 +457,16 @@
                         the security argument, including why its `sandbox` must never gain
                         `allow-scripts` or `allow-same-origin`.
                       -->
-                      <lfx-email-body-preview
-                        class="overflow-hidden rounded-md border border-gray-200"
-                        [html]="emailBodyHtmlForSend()"
-                        [heightPx]="420"
-                        testId="campaigns-email-copy-body" />
+                        <lfx-email-body-preview
+                          class="overflow-hidden rounded-md border border-gray-200"
+                          [html]="emailBodyHtmlForSend()"
+                          [heightPx]="420"
+                          testId="campaigns-email-copy-body" />
+                      </div>
                     </div>
-                  </div>
-                }
+                  }
 
-                <!--
+                  <!--
                   The email TYPE, shown but NOT selectable here. Twelve types map onto six stages:
                   a CFP launch and a co-located CFP reminder are the same stage, sent at different
                   times, so the operator picks the type they recognise and the stage is derived.
@@ -473,30 +478,31 @@
                   sent the new stage against the old brief's id. The choice belongs where the
                   lookup can answer it: above the planner, which re-asks upstream on every change.
                 -->
-                <div class="flex flex-col gap-1">
-                  <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</span>
-                  <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
-                  <p class="text-xs text-gray-500">Change the type above the planner — each stage is its own brief.</p>
-                </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Email type</span>
+                    <p class="text-sm text-gray-900" data-testid="campaigns-email-type-display">{{ selectedEmailTypeLabel() }}</p>
+                    <p class="text-xs text-gray-500">Change the type above the planner — each stage is its own brief.</p>
+                  </div>
 
-                <div class="flex items-center gap-3">
-                  <lfx-button
-                    [label]="emailCopy() ? 'Regenerate' : 'Generate email content'"
-                    icon="fa-light fa-wand-magic-sparkles"
-                    severity="primary"
-                    [disabled]="!canGenerateEmailCopy()"
-                    [loading]="emailCopyState() === 'generating'"
-                    (onClick)="onGenerateEmailCopy()"
-                    data-testid="campaigns-email-generate-btn" />
-                  @if (emailBriefOutput() === null) {
-                    <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      [label]="emailCopy() ? 'Regenerate' : 'Generate email content'"
+                      icon="fa-light fa-wand-magic-sparkles"
+                      severity="primary"
+                      [disabled]="!canGenerateEmailCopy()"
+                      [loading]="emailCopyState() === 'generating'"
+                      (onClick)="onGenerateEmailCopy()"
+                      data-testid="campaigns-email-generate-btn" />
+                    @if (emailBriefOutput() === null) {
+                      <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
+                    }
+                  </div>
+
+                  @if (emailCopyError(); as message) {
+                    <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-copy-error">{{ message }}</p>
                   }
                 </div>
-
-                @if (emailCopyError(); as message) {
-                  <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-copy-error">{{ message }}</p>
-                }
-              </div>
+              }
 
               <!--
                 The template is CHOSEN FOR the survey surface, not by it.
@@ -1135,99 +1141,105 @@
                 </div>
               }
 
-              <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
-                <div class="flex items-center gap-3">
-                  <lfx-button
-                    label="Stage Email Draft"
-                    icon="fa-light fa-paper-plane"
-                    severity="primary"
-                    [disabled]="!canStageEmail()"
-                    [loading]="emailStaging() === 'staging'"
-                    (onClick)="onStageEmailSend()"
-                    data-testid="campaigns-email-stage-btn" />
-                  @if (!canStageEmail() && emailStaging() !== 'staging') {
-                    <span class="text-sm text-gray-500" data-testid="campaigns-email-stage-hint">
-                      @if (emailBriefOutput() === null) {
-                        {{ briefRequiredHint }}
-                      } @else if (selectedEmailTemplateId() === '') {
-                        <!-- Branches on the SURFACE, because the survey one hides the picker: "choose
+              <!-- Not in a survey SERIES: Write all and Stage all own its copy and drafts, and this
+                   single-email path would stage send 1 from different copy. -->
+              @if (!surveySeriesMode()) {
+                <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
+                  <div class="flex items-center gap-3">
+                    <lfx-button
+                      label="Stage Email Draft"
+                      icon="fa-light fa-paper-plane"
+                      severity="primary"
+                      [disabled]="!canStageEmail()"
+                      [loading]="emailStaging() === 'staging'"
+                      (onClick)="onStageEmailSend()"
+                      data-testid="campaigns-email-stage-btn" />
+                    @if (!canStageEmail() && emailStaging() !== 'staging') {
+                      <span class="text-sm text-gray-500" data-testid="campaigns-email-stage-hint">
+                        @if (emailBriefOutput() === null) {
+                          {{ briefRequiredHint }}
+                        } @else if (selectedEmailTemplateId() === '') {
+                          <!-- Branches on the SURFACE, because the survey one hides the picker: "choose
                              a template" would send the operator looking for a control that is not
                              there, when what is actually happening is the portal listing loading. -->
-                        @if (isSurvey()) {
-                          {{ surveyTemplateHint() }}
-                        } @else {
-                          Choose a template to clone.
-                        }
-                      } @else if (activeFoundationSlug() === '') {
-                        Select a foundation to stage this send under.
-                      } @else if (emailStagingUnresolved()) {
-                        <!-- Must not depend on `emailStagingMessage`: `cancelStagingPoll` clears that
+                          @if (isSurvey()) {
+                            {{ surveyTemplateHint() }}
+                          } @else {
+                            Choose a template to clone.
+                          }
+                        } @else if (activeFoundationSlug() === '') {
+                          Select a foundation to stage this send under.
+                        } @else if (emailStagingUnresolved()) {
+                          <!-- Must not depend on `emailStagingMessage`: `cancelStagingPoll` clears that
                              while the unresolved hold stays, which left Stage disabled with no reason. -->
-                        The last stage ended without an answer — check HubSpot, then confirm below.
-                      } @else if (emailAudienceWriteInFlight()) {
-                        <!-- Before the audience-state branches: on a first compose the audience is still
+                          The last stage ended without an answer — check HubSpot, then confirm below.
+                        } @else if (emailAudienceWriteInFlight()) {
+                          <!-- Before the audience-state branches: on a first compose the audience is still
                              null, and "compose it first" told the operator to do what was running. -->
-                        An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish before
-                        staging.
-                      } @else if (emailAudience() === null) {
-                        Compose the send audience on the Audience tab first.
-                      } @else if (emailAudience()?.status === 'building') {
-                        The audience is unconfirmed — reconcile the lists it created before staging.
-                      } @else if (emailAudience()?.status !== 'built') {
-                        The audience failed — compose it again on the Audience tab before staging.
-                      } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
-                        Wait for the copy to finish generating before staging.
+                          An audience write is still running on the Audience tab (possibly started for another email or project) — wait for it to finish before
+                          staging.
+                        } @else if (emailAudience() === null) {
+                          Compose the send audience on the Audience tab first.
+                        } @else if (emailAudience()?.status === 'building') {
+                          The audience is unconfirmed — reconcile the lists it created before staging.
+                        } @else if (emailAudience()?.status !== 'built') {
+                          The audience failed — compose it again on the Audience tab before staging.
+                        } @else if (emailCopyState() === 'generating' || abTestCopyState() === 'generating') {
+                          Wait for the copy to finish generating before staging.
+                        } @else if (sequenceLocksSingleSend()) {
+                          The email series below is staging or has an unconfirmed draft for this campaign &mdash; finish it first.
+                        }
+                      </span>
+                    }
+                  </div>
+                  @if (emailStagingMessage(); as message) {
+                    <p
+                      class="text-sm"
+                      [class.text-green-700]="emailStaging() === 'done'"
+                      [class.text-red-700]="emailStaging() === 'error'"
+                      [attr.role]="emailStaging() === 'error' ? 'alert' : 'status'"
+                      data-testid="campaigns-email-stage-message">
+                      {{ message }}
+                      @if (emailStaging() === 'done' && emailStagingDraftUrl(); as draftUrl) {
+                        <a
+                          [href]="draftUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="font-medium underline hover:no-underline"
+                          data-testid="campaigns-email-stage-draft-link"
+                          >Open in HubSpot</a
+                        >
                       }
-                    </span>
+                    </p>
+                    @if (emailStaging() === 'done' && emailStagingWarnings().length > 0) {
+                      <ul class="flex flex-col gap-1 text-sm text-amber-800" role="status" data-testid="campaigns-email-stage-warnings">
+                        @for (warning of emailStagingWarnings(); track warning) {
+                          <li class="flex items-start gap-2">
+                            <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+                            <span data-testid="campaigns-email-stage-warning">{{ warning }}</span>
+                          </li>
+                        }
+                      </ul>
+                    }
+                  }
+                  <!-- The stage ended without an answer, so a draft may still appear. Everything that could
+                     race it stays locked until the operator says they checked. -->
+                  @if (emailStagingUnresolved()) {
+                    @if (emailStageCreateOnWire()) {
+                      <p class="text-xs text-gray-600" data-testid="campaigns-email-stage-unresolved-waiting">
+                        The create request is still running. Wait for it to finish before checking HubSpot.
+                      </p>
+                    }
+                    <lfx-button
+                      label="I have checked HubSpot"
+                      severity="secondary"
+                      size="small"
+                      [disabled]="emailStageCreateOnWire()"
+                      (onClick)="onAcknowledgeStagingUnresolved()"
+                      data-testid="campaigns-email-stage-unresolved-ack" />
                   }
                 </div>
-                @if (emailStagingMessage(); as message) {
-                  <p
-                    class="text-sm"
-                    [class.text-green-700]="emailStaging() === 'done'"
-                    [class.text-red-700]="emailStaging() === 'error'"
-                    [attr.role]="emailStaging() === 'error' ? 'alert' : 'status'"
-                    data-testid="campaigns-email-stage-message">
-                    {{ message }}
-                    @if (emailStaging() === 'done' && emailStagingDraftUrl(); as draftUrl) {
-                      <a
-                        [href]="draftUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="font-medium underline hover:no-underline"
-                        data-testid="campaigns-email-stage-draft-link"
-                        >Open in HubSpot</a
-                      >
-                    }
-                  </p>
-                  @if (emailStaging() === 'done' && emailStagingWarnings().length > 0) {
-                    <ul class="flex flex-col gap-1 text-sm text-amber-800" role="status" data-testid="campaigns-email-stage-warnings">
-                      @for (warning of emailStagingWarnings(); track warning) {
-                        <li class="flex items-start gap-2">
-                          <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
-                          <span data-testid="campaigns-email-stage-warning">{{ warning }}</span>
-                        </li>
-                      }
-                    </ul>
-                  }
-                }
-                <!-- The stage ended without an answer, so a draft may still appear. Everything that could
-                     race it stays locked until the operator says they checked. -->
-                @if (emailStagingUnresolved()) {
-                  @if (emailStageCreateOnWire()) {
-                    <p class="text-xs text-gray-600" data-testid="campaigns-email-stage-unresolved-waiting">
-                      The create request is still running. Wait for it to finish before checking HubSpot.
-                    </p>
-                  }
-                  <lfx-button
-                    label="I have checked HubSpot"
-                    severity="secondary"
-                    size="small"
-                    [disabled]="emailStageCreateOnWire()"
-                    (onClick)="onAcknowledgeStagingUnresolved()"
-                    data-testid="campaigns-email-stage-unresolved-ack" />
-                }
-              </div>
+              }
 
               <!--
                 The EMAIL SEQUENCE, survey surface only.
@@ -1267,7 +1279,7 @@
                         <!-- A new condition on canGenerateSurveySequence needs a branch HERE, or
                              the button goes dead with nothing said about why. -->
                         @if (sequenceStagedBriefIds().length > 0) {
-                          These emails are staged in HubSpot. Edit the drafts there; writing them again here would not change what HubSpot sends.
+                          These emails are staged in HubSpot. Edit the drafts there, or start the series over below.
                         } @else if (emailBriefOutput() === null) {
                           {{ briefRequiredHint }}
                         } @else if (activeFoundationSlug() === '') {
@@ -1322,19 +1334,12 @@
                                   >open in HubSpot</a
                                 >
                               }
-                              <!-- After a refused workflow build: a draft whose content did not
-                                   finish staging is named in the 409, and only that send needs
-                                   staging again. -->
+                              <!-- No retry here: campaign-service hands back a brief's existing draft
+                                   without re-staging it, so the only repair is in HubSpot. -->
                               @if (sendWorkflowState() === 'error' && sequenceStagedBriefIds().includes(send.briefId)) {
-                                &mdash;
-                                <button
-                                  type="button"
-                                  class="font-medium text-blue-700 underline hover:no-underline disabled:opacity-50"
-                                  [disabled]="sequenceStagingState() === 'staging'"
-                                  (click)="onRestageSequenceSend(send.briefId)"
-                                  [attr.data-testid]="'campaigns-survey-sequence-restage-' + $index">
-                                  Stage this email again
-                                </button>
+                                <span class="block text-amber-800" [attr.data-testid]="'campaigns-survey-sequence-restage-note-' + $index">
+                                  If the workflow names this email, delete its draft in HubSpot, then start the series over.
+                                </span>
                               }
                             </p>
                           }
@@ -1370,6 +1375,27 @@
                     </div>
                   }
 
+                  <!-- The recovery for a series that cannot go on (a held send, a refused workflow):
+                       start over. Drafts already created stay in HubSpot -- this page cannot
+                       change or delete them -- so the note says to deal with them there. -->
+                  @if (surveySeriesStarted() && sequenceStagingState() !== 'staging' && sendWorkflowState() !== 'building') {
+                    <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="campaigns-sequence-start-over">
+                      <p class="text-xs text-amber-900">
+                        The audience is locked because this series has staged drafts. Start the series over to change it. Drafts already created stay in HubSpot
+                        &mdash; check or delete them there.
+                      </p>
+                      <div>
+                        <lfx-button
+                          label="Start the series over"
+                          icon="fa-light fa-rotate-left"
+                          severity="secondary"
+                          size="small"
+                          (onClick)="onStartSeriesOver()"
+                          data-testid="campaigns-sequence-start-over-btn" />
+                      </div>
+                    </div>
+                  }
+
                   @if (surveySequenceSends().length > 0) {
                     <div class="flex flex-col gap-2 border-t border-gray-100 pt-3" data-testid="campaigns-sequence-staging">
                       <div class="flex items-center gap-3">
@@ -1391,8 +1417,10 @@
                               Write every email first &mdash; the last write did not finish.
                             } @else if (emailAudienceWriteInFlight()) {
                               Wait for the audience to finish updating.
+                            } @else if (emailStagingHeld()) {
+                              Wait for the single-email draft above to finish, or confirm it in HubSpot.
                             } @else if (sequenceHasHeldSend()) {
-                              A draft did not confirm. Check HubSpot for it, then write the emails again to stage a fresh series.
+                              A draft did not confirm. Check it in HubSpot, then start the series over.
                             } @else if (emailBriefOutput() === null) {
                               {{ briefRequiredHint }}
                             } @else if (activeFoundationSlug() === '') {

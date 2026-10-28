@@ -2146,9 +2146,7 @@ export class CampaignsComponent {
    * being staged (or has a send held), and a replacement mid-way would leave drafts built against
    * different audiences -- which the series' workflow then refuses.
    */
-  protected readonly audienceLockedByStaging = computed(
-    () => this.emailStagingHeld() || this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend()
-  );
+  protected readonly audienceLockedByStaging = computed(() => this.emailStagingHeld() || this.surveySeriesStarted());
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
@@ -2251,6 +2249,23 @@ export class CampaignsComponent {
       this.emailAudience()?.status === 'built'
   );
 
+  /**
+   * Whether this survey series has started reaching HubSpot: a send staged, staging, held, or a
+   * workflow building. From then on the audience is LOCKED (and the email count with it): every
+   * draft and the workflow were built against it, and nothing can re-point them, so changing it
+   * would leave HubSpot sending to lists the page no longer shows. Starting over is the way out.
+   */
+  protected readonly surveySeriesStarted = computed(
+    () =>
+      this.sequenceStagedBriefIds().length > 0 ||
+      this.sequenceStagingState() === 'staging' ||
+      this.sequenceHasHeldSend() ||
+      this.sendWorkflowState() === 'building'
+  );
+
+  /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
+  protected readonly surveySeriesMode = computed(() => this.surveySupportsSeries() && this.surveyEmailCount() > 1);
+
   /** Whether a survey series is staging, or holds a send, so the single Stage button must wait. */
   protected readonly sequenceLocksSingleSend = computed(() => this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend());
 
@@ -2289,6 +2304,8 @@ export class CampaignsComponent {
     return (
       this.sendWorkflowState() !== 'building' &&
       this.sequenceStagingState() !== 'staging' &&
+      // Not during an audience write: the workflow enrols the lists campaign-service reads now.
+      !this.emailAudienceWriteInFlight() &&
       this.activeFoundationSlug() !== '' &&
       sends.length > 1 &&
       this.surveySequenceComplete() &&
@@ -3871,18 +3888,14 @@ export class CampaignsComponent {
   }
 
   /**
-   * Stage ONE send again, after the workflow build refused it (a draft whose content never
-   * finished staging comes back as a 409 naming that send). The other sends keep their drafts:
-   * only this one is dropped from the staged set before Stage all runs, which skips the rest.
+   * Abandon this series and its staging state, so the page can write and stage a new one. The
+   * drafts already created stay in HubSpot (the page says so): this cannot change or delete them.
    */
-  protected async onRestageSequenceSend(briefId: string): Promise<void> {
-    if (this.sequenceStagingState() === 'staging' || !this.sequenceStagedBriefIds().includes(briefId)) {
+  protected onStartSeriesOver(): void {
+    if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building') {
       return;
     }
-    this.sequenceStagedBriefIds.update((ids) => ids.filter((id) => id !== briefId));
-    this.sendWorkflowState.set('idle');
-    this.sendWorkflowError.set('');
-    await this.onStageSequenceSends();
+    this.resetSurveySequence();
   }
 
   /** Read the portal's templates again after a failed or empty answer on the survey surface. */
@@ -3892,7 +3905,9 @@ export class CampaignsComponent {
 
   /** Change how many emails the survey is promoted by. */
   protected onSurveyEmailCountChange(count: number): void {
-    if (count === this.surveyEmailCount()) {
+    // Locked with the audience once the series has drafts: a new count would rewrite briefs that
+    // HubSpot already holds drafts for, and those drafts would not change.
+    if (count === this.surveyEmailCount() || this.surveySeriesStarted()) {
       return;
     }
     this.surveyEmailCount.set(count);
@@ -7458,7 +7473,13 @@ export class CampaignsComponent {
     // replace the other editor's brief without the conflict ever being shown. Stop and say why,
     // keeping whatever ownership was held before, as `persistEmailBrief` does.
     if (persisted.conflict !== undefined) {
-      throw new Error(this.emailConflictText(persisted.conflict, 'so the emails were not written.'));
+      // Not the single-brief conflict text: that promises an acknowledge-and-overwrite step this
+      // path does not have. The honest recovery is to reload the brief and write again.
+      throw new Error(
+        persisted.conflict === 'unowned-brief-exists'
+          ? 'This survey already has a saved email that this page did not open. Reload the page, restore the brief, then write the emails again.'
+          : 'This survey was changed elsewhere since this page loaded it, so the emails were not written. Reload the page, restore the brief, then write the emails again.'
+      );
     }
     // Saved but not approved: campaign-service will not stage from it, so writing its copy would
     // only lead to a refusal at staging.

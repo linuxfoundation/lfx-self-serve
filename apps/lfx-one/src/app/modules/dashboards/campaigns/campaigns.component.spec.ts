@@ -8306,7 +8306,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
       canStageEmail: Signal<boolean>;
       selectedEmailTab: WritableSignal<string>;
-      onRestageSequenceSend(briefId: string): Promise<void>;
+      onStartSeriesOver(): void;
+      surveySeriesStarted: Signal<boolean>;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
 
@@ -8633,16 +8634,25 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it("stops at a refused save instead of writing over another editor's brief", async () => {
       selectSurvey();
+      seq().onSurveyEmailCountChange(3);
       seq().emailBriefOutput.set(surveyBrief);
+      // The page's own brief is already saved; the REMINDER's save is refused.
+      seq().emailBriefId.set('brief-primary');
       persistBrief.mockImplementation(
         () => of({ enabled: true, briefId: 'brief-x', etag: null, approved: false, created: false, conflict: 'stale-brief' }) as never
       );
 
       await seq().onGenerateSurveySequence();
 
-      expect(generateEmailCopy).not.toHaveBeenCalled();
+      expect(generateEmailCopy).toHaveBeenCalledTimes(1);
       expect(seq().surveySequenceState()).toBe('error');
-      expect(seq().surveySequenceSends()).toEqual([]);
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      ).toEqual(['brief-primary']);
+      // An honest next step, not a promise of an overwrite this path does not have.
+      expect(seq().surveySequenceError()).toContain('Reload the page, restore the brief');
     });
 
     it('names the step that failed when the error carries no message of its own', async () => {
@@ -8714,7 +8724,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const staging = seq().onStageSequenceSends();
       await vi.waitFor(() => expect(service.createCampaign).toHaveBeenCalled());
-      seq().onSurveyEmailCountChange(3);
+      seq().onSelectEmailType('report-promo');
       answer.next({ jobId: '', error: 'unconfirmed', indeterminate: true });
       answer.complete();
       await staging;
@@ -8861,19 +8871,76 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(attach).not.toHaveBeenCalled();
     });
 
-    it('stages only the send the workflow refused when asked to stage it again', async () => {
+    it('locks the audience once the series has staged drafts, and still lets the workflow build', async () => {
       stageable(3);
+      await seq().onGenerateSurveySequence();
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      expect(seq().audienceLockedByStaging(), 'nothing staged yet').toBe(false);
+
       seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
-      const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-2' }) as never);
-      vi.spyOn(service, 'getCreateResult').mockReturnValue(
-        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'em-2' }] }) as never
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      // The Audience tab is handed the lock, so a replace is refused there.
+      expect(seq().audienceLockedByStaging()).toBe(true);
+      const audienceTab = fixture.debugElement.query(By.directive(AudienceBuilderTabComponent));
+      expect((audienceTab.componentInstance as { stagingInFlight(): boolean }).stagingInFlight()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]')?.textContent).toContain(
+        'The audience is locked because this series has staged drafts.'
       );
 
-      await seq().onRestageSequenceSend('brief-2');
+      // The count is locked with it: a new count would rewrite briefs HubSpot holds drafts for.
+      seq().onSurveyEmailCountChange(1);
+      expect(seq().surveySequenceStages()).toHaveLength(3);
 
-      expect(create).toHaveBeenCalledTimes(1);
-      expect(create.mock.calls[0][2]).toBe('brief-2');
-      expect(seq().sequenceStagedBriefIds()).toEqual(expect.arrayContaining(['brief-1', 'brief-2', 'brief-3']));
+      for (const [index, date] of ['2026-11-02', '2026-11-09', '2026-11-16'].entries()) {
+        seq().sequenceDatesForm.controls[`date-${index}`].setValue(date);
+      }
+      expect(seq().canBuildSequenceWorkflow()).toBe(true);
+      seq().emailAudienceWriteInFlight.set(true);
+      expect(seq().canBuildSequenceWorkflow(), 'build during an audience write').toBe(false);
+    });
+
+    it('starts the series over from a held send, clearing its staging so it can be written again', () => {
+      stageable(3);
+      seq().sequenceStagedBriefIds.set(['brief-1']);
+      seq().sequenceUnresolvedBriefIds.set(['brief-2']);
+      expect(seq().canGenerateSurveySequence()).toBe(false);
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesStarted()).toBe(false);
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual([]);
+      expect(seq().surveySequenceSends()).toEqual([]);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('hides the single-email generate and stage controls for a three-email series only', () => {
+      selectSurvey();
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-email-generate-btn"]'), 'one-email survey keeps them').not.toBeNull();
+
+      seq().onSurveyEmailCountChange(3);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-generate-btn"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-email-stage-btn"]')).toBeNull();
+    });
+
+    it('says why each Stage button is off while the other path holds the brief', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailStaging.set('staging');
+      fixture.detectChanges();
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-sequence-stage-hint"]')?.textContent).toContain('single-email draft');
+
+      seq().emailStaging.set('idle');
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent).toContain('email series below');
     });
 
     it('creates no further drafts once the page is left mid-staging', async () => {
