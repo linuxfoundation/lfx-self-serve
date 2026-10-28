@@ -86,8 +86,8 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
  * to "offered unless create is disabled". Whether the read is then served is the server's answer: the
  * panel shows its "metrics not enabled" or "restricted" notice when it is not.
  */
-export function campaignPlatformMonitorable(platform: CampaignPlatform): boolean {
-  const option = CAMPAIGN_PLATFORMS.find((p) => p.id === platform);
+export function campaignPlatformMonitorable(platform: CampaignPlatform, platforms: readonly CampaignPlatformOption[] = CAMPAIGN_PLATFORMS): boolean {
+  const option = platforms.find((p) => p.id === platform);
   return option !== undefined && (option.monitorable ?? !option.disabled);
 }
 

@@ -100,6 +100,11 @@ describe('campaignPlatformMonitorable', () => {
   it('answers false for a platform the list does not know', () => {
     expect(campaignPlatformMonitorable('unknown-ads' as CampaignPlatform)).toBe(false);
   });
+
+  it('lets an explicit monitorable: false hide a create-enabled platform, rather than falling back to its create flag', () => {
+    const platforms = [{ id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta', monitorable: false }] as const;
+    expect(campaignPlatformMonitorable('meta-ads', platforms)).toBe(false);
+  });
 });
 
 /**
