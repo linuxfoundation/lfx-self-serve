@@ -126,8 +126,12 @@
           @if (check.note) {
             <p class="text-xs text-gray-500">{{ check.note }}</p>
           }
+          <!-- A check set aside for the stage has no findings either, but the green line is a pass
+               signal; its note above already says why it does not apply. -->
           @if (check.findings.length === 0) {
-            <p class="text-xs text-emerald-700">No findings.</p>
+            @if (!check.notApplicable) {
+              <p class="text-xs text-emerald-700">No findings.</p>
+            }
           } @else {
             <div class="flex flex-col gap-2">
               @for (finding of check.findings; track finding.message) {

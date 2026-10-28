@@ -382,7 +382,9 @@ describe('AudienceQaPanelComponent', () => {
 
       expect(host().textContent).toContain('Current registrants');
       expect(host().textContent).toContain('NOT APPLICABLE');
-      expect(host().textContent).toContain(note);
+      const row = host().querySelector('[data-testid="audience-qa-panel-check-currentRegistrants"]');
+      expect(row?.textContent).toContain(note);
+      expect(row?.textContent, 'a set-aside check must not carry the green pass line').not.toContain('No findings.');
     });
 
     it('shows the check when upstream ran it', () => {

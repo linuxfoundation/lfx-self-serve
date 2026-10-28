@@ -121,6 +121,7 @@ export class AudienceQaPanelComponent {
     return this.flattenChecks(report).map((check) => ({
       ...check,
       verdictCss: this.verdictClass(check.verdict),
+      notApplicable: check.verdict === 'NOT APPLICABLE',
       findings: check.findings.map((finding) => ({ ...finding, severityCss: this.severityClass(finding.severity) })),
     }));
   });
