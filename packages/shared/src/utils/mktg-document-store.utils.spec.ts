@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_SCHEMA } from '../constants/mktg-document-store.constants';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
 import type { MktgRunResultResponse } from '../interfaces/mktg-run.interface';
@@ -78,6 +79,23 @@ describe('mktg-document-store utils', () => {
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
   });
+  it('projects LinkedIn failure prose only to its known creator, while Member redacted text stays public', () => {
+    const run = startedRun({
+      agentKey: 'linkedin-post',
+      documentId: 'run-' + 'a'.repeat(24),
+      state: 'failed',
+      creatorSubject: 'synthetic-creator',
+      failureText: 'SYNTHETIC private source/profile reply',
+    });
+    expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator')?.failureText).toBe(run.failureText);
+    for (const reader of [undefined, '', 'synthetic-visitor'])
+      expect(mktgRunProgress(run, undefined, undefined, reader)?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    expect(mktgRunProgress({ ...run, creatorSubject: null }, undefined, undefined, 'synthetic-creator')?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    expect(mktgRunProgress({ ...run, agentKey: 'member-360', failureText: 'SYNTHETIC redacted Member reply' })?.failureText).toBe(
+      'SYNTHETIC redacted Member reply'
+    );
+  });
+
   it('derives run membership from the active catalog and registered intake', () => {
     expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
     expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();

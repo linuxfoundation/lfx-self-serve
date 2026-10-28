@@ -22,6 +22,24 @@ export interface MktgDocumentRunStartOptions {
   basedOnId?: string;
 }
 
+/** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
+export interface MktgOneOffTerminalFacts {
+  rootDone: boolean;
+  sessionEnded: boolean;
+  failed: boolean;
+  /** Legacy Member 360 terminal reply: only root runtime_done.content { type: 'text', text }. */
+  doneText: string;
+  /** Root completion/reply after the newest queued-turn marker; suppressed for capped event pages. */
+  currentRootDone: boolean;
+  currentDoneText: string;
+  /** First payload after the latest queued-turn marker, for current questions/output checks. */
+  currentTurnOffset: number;
+  /** Current status on the newest root agent event; one-off public-list evidence, ignored by Member 360. */
+  rootTaskEnded: boolean;
+  /** Last root agent_notification_message with content.type text (.data or .text), never streams or progress. */
+  lastRootMessageText: string;
+}
+
 /** Terminal runtime evidence, without treating arbitrary agent text as a document. */
 export interface MktgSessionOutcome {
   ended: boolean;

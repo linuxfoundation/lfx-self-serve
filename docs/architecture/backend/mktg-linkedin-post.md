@@ -134,6 +134,8 @@ Generate, never the visiting writer. Initialization is disabled if Generate bega
 impersonation, and the existing read-time impersonation restriction remains. Activity on this
 project-readable progress surface is creator-only; other writers receive progress without the feed.
 
+LinkedIn failure text in shared progress is creator-only too; see the [one-off result hook](./mktg-one-off-landing.md) for the terminal and privacy boundary.
+
 ## Source ingestion
 
 - Pasted text: trimmed, nonempty UTF-8, at most 1 MiB.

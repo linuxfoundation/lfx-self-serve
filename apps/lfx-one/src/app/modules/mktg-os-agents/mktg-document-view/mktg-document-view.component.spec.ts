@@ -1855,6 +1855,28 @@ describe('MktgDocumentViewComponent', () => {
     }
   );
 
+  it.each(['creator', 'other reader'] as const)('shows server-projected LinkedIn failure text inside W3 Details for the %s', async (reader) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing synthetic LinkedIn type');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const failureText = reader === 'creator' ? 'Synthetic agent reply.\nKeep these exact bytes <as text>.' : 'The agent stopped before producing a result.';
+    viewer.set({ sub: reader === 'creator' ? 'synthetic-creator' : 'synthetic-other-writer' });
+    // The BFF owns disclosure; a project reader never receives the creator's agent prose.
+    store.getDocument.mockReturnValue(
+      of({ ...detail, type, documentId, revisions: [], runs: [{ ...started('failed'), agentKey: type.agentKey, documentId, failureText }] })
+    );
+    await render(`/documents/linkedin-post/${documentId}`);
+    const details = query('mktg-document-view-failure-details') as HTMLDetailsElement | null;
+    const reply = query('mktg-document-view-failure-reply');
+    expect(details?.open).toBe(false);
+    expect(details?.contains(reply)).toBe(true);
+    expect(reply?.textContent).toBe(failureText);
+    expect(reply?.querySelector('as')).toBeNull();
+    expect(query('mktg-document-view-intake-link')?.textContent?.trim()).toBe('Try again');
+    expect(query('mktg-document-view-progress-retry')?.textContent?.trim()).toBe('Check on it again');
+    expect(query('mktg-document-view-run-again')).toBeNull();
+  });
+
   it('keeps a failed check inside the run card above the two actions, without a duplicate Retry', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started('failed')] }));
     store.retryRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));

@@ -13,6 +13,7 @@ import {
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_ONE_OFF_STOPPED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 const redraft = vi.hoisted(() => ({ forSession: vi.fn(), assertScope: vi.fn(), settle: vi.fn() }));
@@ -242,7 +243,10 @@ describe('MktgDocumentRunService core', () => {
     flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
     const visitor = { originalUrl: '/api/mktg-agents/documents/' + agent } as Request;
     const progress = await service.readProgress(visitor, project, agent);
-    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+    expect(progress.runs[0]).toMatchObject({
+      state: 'failed',
+      failureText: agent === 'linkedin-post' ? MKTG_ONE_OFF_STOPPED_MESSAGE : MKTG_RUN_FAILURE_REASON,
+    });
     expect(Date.now() - Date.parse(startedAt)).toBeLessThan(MKTG_RUN_POLL.timeoutMs);
     expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
     expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
@@ -322,6 +326,40 @@ describe('MktgDocumentRunService core', () => {
     expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_run_record_result', expect.any(String), { project, err });
   });
 
+  it('records a LinkedIn root refusal with its text on the next authorized creator read, without spending the writing deadline', async () => {
+    const creator = Object.assign({}, req, { oidc: { user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
+    const text = 'The synthetic request form could not be read. Open the intake form to try again.';
+    flows.linkedin.mockResolvedValue({ status: 'failed', failureText: text, activity: [] });
+    const progress = await service.readProgress(creator, project, 'linkedin-post');
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: text });
+    expect(stored().metadata['state']).toBe('failed');
+    expect(Buffer.from(stored().metadata['failure-text'], 'base64').toString()).toBe(text);
+    expect(Date.now() - Date.parse(progress.runs[0].startedAt)).toBe(0);
+    const reads = flows.linkedin.mock.calls.length;
+    await new MktgDocumentRunService().readProgress(creator, project, 'linkedin-post');
+    expect(flows.linkedin).toHaveBeenCalledTimes(reads);
+  });
+
+  it.each(['creator-first', 'visitor-first'])('keeps LinkedIn refusal prose creator-only across stable terminal reads and refresh: %s', async (order) => {
+    const creator = Object.assign({}, req, { oidc: { user: { sub: 'synthetic-creator' } } });
+    const visitor = Object.assign({}, req, { oidc: { user: { sub: 'synthetic-visitor' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
+    const text = 'SYNTHETIC private profile and source reply';
+    flows.linkedin.mockResolvedValue({ status: 'failed', failureText: text });
+    vi.advanceTimersByTime(3000);
+    await service.readProgress(order === 'creator-first' ? creator : visitor, project, 'linkedin-post');
+    vi.advanceTimersByTime(3000); // Exercise the shared terminal-cache stability window.
+    for (const reader of [creator, visitor, creator, visitor]) {
+      const expected = reader === creator ? text : MKTG_ONE_OFF_STOPPED_MESSAGE;
+      expect((await service.readProgress(reader, project, 'linkedin-post')).runs[0]?.failureText).toBe(expected);
+    }
+    const documentId = `run-${hash(session).slice(0, 24)}`;
+    expect((await service.refreshFailure(visitor, project, 'linkedin-post', documentId, hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    expect((await service.refreshFailure(creator, project, 'linkedin-post', documentId, hash(session)))?.failureText).toBe(text);
+    expect(Buffer.from(stored().metadata['failure-text'], 'base64').toString()).toBe(text); // Stored privately, not projected to visitors.
+  });
+
   it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
     await service.startForOneOff(req, 'member-360', project, 'second-session');
@@ -396,11 +434,14 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('failed');
   });
 
-  it('preserves the LinkedIn writing deadline', async () => {
-    await service.startForOneOff(req, 'linkedin-post', project, session);
+  it('retains the ten-minute writing deadline for a non-Member one-off and its creator-visible reason', async () => {
+    const creator = Object.assign({}, req, { oidc: { user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
     vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
-    const expired = await service.readProgress(req, project);
-    expect(expired.runs[0]).toMatchObject({ state: 'failed', failureText: 'The run did not finish before its writing deadline.' });
+    expect((await service.readProgress(creator, project, 'linkedin-post')).runs[0]).toMatchObject({
+      state: 'failed',
+      failureText: 'The run did not finish before its writing deadline.',
+    });
   });
 
   it('preserves supported LinkedIn questions beyond the writing deadline', async () => {
