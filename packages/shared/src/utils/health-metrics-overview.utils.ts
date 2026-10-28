@@ -85,9 +85,9 @@ export function toHealthMetricsOverviewPastYear(range: HealthMetricsRange): numb
   return range === 'YTD' ? null : getYearForRange(range);
 }
 
-/** A card's empty state for the period: the YTD words, or a past year's with `{Y}` filled in. */
+/** A card's empty state for the period: the YTD words, or a past year's with `{Y}` filled in when the card has them. */
 export function buildHealthMetricsOverviewEmptyCopy(copy: HealthMetricsOverviewEmptyStateCopy, pastYear: number | null): HealthMetricsOverviewEmptyCopy {
-  const period = pastYear === null ? copy.ytd : copy.past;
+  const period = pastYear === null || !copy.past ? copy.ytd : copy.past;
   const fill = withYear(pastYear);
   return { icon: copy.icon, title: fill(period.title), text: fill(period.text), reasons: period.reasons.map(fill) };
 }

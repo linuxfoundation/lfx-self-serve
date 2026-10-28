@@ -85,13 +85,15 @@ describe('buildHealthMetricsOverviewEmptyCopy', () => {
     });
   });
 
-  it('gives every card a YTD and a past-year title, the past one naming the year', () => {
-    for (const copy of Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY)) {
+  it('names the year in every past-year title, while the balance, a snapshot of today, keeps its present-tense words', () => {
+    const { balance, ...periodCards } = HEALTH_METRICS_OVERVIEW_EMPTY_COPY;
+    for (const copy of Object.values(periodCards)) {
       expect(copy.ytd.title).not.toContain('{Y}');
       expect(buildHealthMetricsOverviewEmptyCopy(copy, 2023).title).toMatch(/ in 2023$/);
       expect(Boolean(copy.ytd.text) !== copy.ytd.reasons.length > 0).toBe(true);
       expect(Boolean(copy.past.text) !== copy.past.reasons.length > 0).toBe(true);
     }
+    expect(buildHealthMetricsOverviewEmptyCopy(balance, 2023).title).toBe('All invoices paid');
   });
 });
 

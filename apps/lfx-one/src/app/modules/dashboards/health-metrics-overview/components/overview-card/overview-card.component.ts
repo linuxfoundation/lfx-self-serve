@@ -37,8 +37,6 @@ export class OverviewCardComponent implements OnInit {
   public readonly status = input.required<HealthMetricsOverviewCardStatus>();
   public readonly isEmpty = input<boolean>(false);
   public readonly emptyCopy = input.required<HealthMetricsOverviewEmptyStateCopy>();
-  /** The card shows today's figures whatever the period, so its empty state always speaks of today. */
-  public readonly snapshot = input<boolean>(false);
   public readonly testId = input.required<string>();
 
   protected readonly errorCopy = HEALTH_METRICS_OVERVIEW_ERROR_COPY;
@@ -55,7 +53,7 @@ export class OverviewCardComponent implements OnInit {
   private initResolvedEmptyCopy(): Signal<HealthMetricsOverviewEmptyCopy> {
     return computed(() => {
       const range = this.chrome?.selectedRange() ?? 'YTD';
-      return buildHealthMetricsOverviewEmptyCopy(this.emptyCopy(), this.snapshot() ? null : toHealthMetricsOverviewPastYear(range));
+      return buildHealthMetricsOverviewEmptyCopy(this.emptyCopy(), toHealthMetricsOverviewPastYear(range));
     });
   }
 }

@@ -11,7 +11,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { OverviewCardComponent } from './overview-card.component';
 
-import type { HealthMetricsOverviewCardStatus } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyStateCopy } from '@lfx-one/shared/interfaces';
 
 /** The card with an action, an empty-state action and a body, as a real card projects them. */
 const HOST_TEMPLATE =
@@ -94,7 +94,7 @@ describe('OverviewCardComponent', () => {
 
 /** An empty card whose period wording the test switches. */
 const PERIOD_HOST_TEMPLATE =
-  '<lfx-overview-card heading="Outstanding balance" info="Unpaid invoices" status="ready" [isEmpty]="true" [emptyCopy]="copy" [snapshot]="snapshot()" testId="card" />';
+  '<lfx-overview-card heading="Membership churn" info="Lapsed members" status="ready" [isEmpty]="true" [emptyCopy]="copy()" testId="card" />';
 
 @Component({
   selector: 'lfx-overview-card-period-host',
@@ -102,12 +102,11 @@ const PERIOD_HOST_TEMPLATE =
   template: PERIOD_HOST_TEMPLATE,
 })
 class PeriodHostComponent {
-  public readonly snapshot = signal(false);
-  protected readonly copy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance;
+  public readonly copy = signal<HealthMetricsOverviewEmptyStateCopy>(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.churn);
 }
 
 describe('OverviewCardComponent empty state by period', () => {
-  it("words a past year's empty state for that year, unless the card is a snapshot of today", async () => {
+  it("words a past year's empty state for that year, or today's for a card with no past-year words", async () => {
     await TestBed.configureTestingModule({
       imports: [PeriodHostComponent],
       providers: [HealthMetricsChromeService, { provide: UserService, useValue: { impersonating: signal(false) } }],
@@ -117,9 +116,9 @@ describe('OverviewCardComponent empty state by period', () => {
     fixture.detectChanges();
     const title = () => fixture.nativeElement.querySelector('[data-testid="card-empty-title"]')?.textContent;
 
-    expect(title()).toBe(`Nothing overdue in ${new Date().getFullYear() - 1}`);
+    expect(title()).toBe(`No churn in ${new Date().getFullYear() - 1}`);
 
-    fixture.componentInstance.snapshot.set(true);
+    fixture.componentInstance.copy.set(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.balance);
     fixture.detectChanges();
 
     expect(title()).toBe('All invoices paid');

@@ -215,7 +215,8 @@ export interface HealthMetricsOverviewEmptyPeriodCopy {
 export interface HealthMetricsOverviewEmptyStateCopy {
   icon: string;
   ytd: HealthMetricsOverviewEmptyPeriodCopy;
-  past: HealthMetricsOverviewEmptyPeriodCopy;
+  /** None for a card that shows today's figures whatever the period, so it always speaks of today. */
+  past?: HealthMetricsOverviewEmptyPeriodCopy;
 }
 
 /** The single card that replaces the Overview when the foundation has no data for the period. */

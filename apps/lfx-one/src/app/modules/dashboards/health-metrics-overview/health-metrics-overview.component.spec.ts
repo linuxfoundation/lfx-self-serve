@@ -142,9 +142,9 @@ describe('HealthMetricsOverviewComponent blank state', () => {
     expect(query(fixture, 'lfx-overview-orgs-card-empty')).not.toBeNull();
   });
 
-  it('shows no blank card while the cards are still loading', async () => {
+  it.each(['loading', 'failed'] as const)('shows no blank card while the cards are %s', async (status) => {
     cardHasData.set({});
-    cardStatus.set('loading');
+    cardStatus.set(status);
     const fixture = await render();
 
     expect(query(fixture, 'health-metrics-overview-blank')).toBeNull();

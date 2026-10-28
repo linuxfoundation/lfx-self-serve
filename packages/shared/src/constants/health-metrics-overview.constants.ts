@@ -139,16 +139,12 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
       ],
     },
   },
+  // The balance is today's whatever the period, so the card keeps the present-tense words for every year.
   balance: {
     icon: 'fa-light fa-file-invoice-dollar',
     ytd: {
       title: 'All invoices paid',
       text: 'No invoice is 60 or more days overdue and no member has said they won’t renew. Late invoices show here as soon as they come up.',
-      reasons: [],
-    },
-    past: {
-      title: 'Nothing overdue in {Y}',
-      text: 'Every member invoice was paid within 60 days, and no member said they wouldn’t renew.',
       reasons: [],
     },
   },
@@ -215,16 +211,13 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
 } as const satisfies Record<keyof typeof HEALTH_METRICS_OVERVIEW_CARDS, HealthMetricsOverviewEmptyStateCopy>;
 
 /** The balance card's empty state when no balance was measured, so the card claims nothing is paid. */
-const BALANCE_UNMEASURED = {
-  title: 'No balance data yet',
-  text: 'Overdue membership invoices appear here once the foundation’s billing data is available.',
-  reasons: [],
-} as const;
-
 export const HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY: HealthMetricsOverviewEmptyStateCopy = {
   icon: 'fa-light fa-file-invoice-dollar',
-  ytd: BALANCE_UNMEASURED,
-  past: BALANCE_UNMEASURED,
+  ytd: {
+    title: 'No balance data yet',
+    text: 'Overdue membership invoices appear here once the foundation’s billing data is available.',
+    reasons: [],
+  },
 };
 
 /** A card's error state; the read failed, so nothing it would show can be trusted. */
@@ -266,7 +259,7 @@ export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsOverview
   { icon: 'fa-light fa-graduation-cap', transform: 'translateY(22px) rotate(14deg)', iconSizePx: 20 },
 ];
 
-/** Where the NPS card's empty state sends a writer to start a survey: the foundation's Surveys page. */
+/** The NPS card's YTD empty-state action: the foundation's Surveys page, where a survey can be started. */
 export const HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK: HealthMetricsOverviewExploreLink = {
   label: 'Create Survey',
   commands: ['/foundation/surveys'],
