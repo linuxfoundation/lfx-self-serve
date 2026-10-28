@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input } from '@angular/core';
-import { FAQ_VIEW_TABS } from '@lfx-one/shared/constants';
+import { MKTG_FAQ_PRINT_UNANSWERED } from '@lfx-one/shared/constants';
 import { FaqPrintView } from '@lfx-one/shared/interfaces';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 
@@ -16,5 +16,5 @@ export class MktgFaqPrintComponent {
   public readonly view = input.required<FaqPrintView>();
   public readonly number = input.required<string>();
   public readonly projectName = input.required<string>();
-  protected readonly unansweredLabel = FAQ_VIEW_TABS.find((tab) => tab.id === 'unanswered')?.label;
+  protected readonly unansweredLabel = MKTG_FAQ_PRINT_UNANSWERED;
 }
