@@ -7282,6 +7282,9 @@ describe('ImplementationTabComponent google call, promotion and price extensions
       expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
       expect(find(testId)?.getAttribute('aria-invalid')).toBe('true');
     }
+    for (const field of ['occasion', 'language', 'start', 'end', 'redemption-start', 'redemption-end']) {
+      expect(find(`implementation-google-promotion-${field}`)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
+    }
     expect(find('implementation-google-promotion-start')?.closest('label')?.textContent).toContain('Shows from');
     expect(find('implementation-google-promotion-redemption-end')?.closest('label')?.textContent).toContain('Redeemable until');
   });
@@ -7319,6 +7322,23 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
     expect(c['addGooglePrice'](draft)).toBe(false);
     expect(find('implementation-google-price-error')?.textContent).toContain('Row 3 repeats the header');
+  });
+
+  it('points every price box at the error line while the table is refused', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePriceDraft'].set(priceDraft(c, { currencyCode: 'DOLLARS' }));
+    fixture.detectChanges();
+
+    expect(c['googlePriceDraftError']()).toContain('three-letter ISO');
+    for (const testId of [
+      'implementation-google-price-type',
+      'implementation-google-price-qualifier',
+      'implementation-google-price-language',
+      'implementation-google-price-currency',
+      'implementation-google-price-row-unit-0',
+    ]) {
+      expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-price-error');
+    }
   });
 
   it("keeps the price form between Google's three and eight rows", () => {

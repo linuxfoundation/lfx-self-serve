@@ -999,6 +999,8 @@
                 <select
                   aria-label="Promotion discount kind"
                   (change)="onGooglePromotionDraftInput('discountKind', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-discount-kind">
                   <option value="percent" [selected]="googlePromotionDraft().discountKind === 'percent'">Percent off</option>
@@ -1020,6 +1022,8 @@
                 <select
                   aria-label="Promotion condition"
                   (change)="onGooglePromotionDraftInput('eligibilityKind', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-eligibility-kind">
                   <option value="none" [selected]="googlePromotionDraft().eligibilityKind === 'none'">No condition</option>
@@ -1080,6 +1084,8 @@
                   aria-label="Promotion occasion"
                   [value]="googlePromotionDraft().occasion"
                   (input)="onGooglePromotionDraftInput('occasion', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                   class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-occasion" />
                 <input
@@ -1088,6 +1094,8 @@
                   aria-label="Promotion language code"
                   [value]="googlePromotionDraft().languageCode"
                   (input)="onGooglePromotionDraftInput('languageCode', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                   class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-language" />
               </div>
@@ -1100,6 +1108,8 @@
                     type="date"
                     [value]="googlePromotionDraft().startDate"
                     (input)="onGooglePromotionDraftInput('startDate', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-start" />
                 </label>
@@ -1109,6 +1119,8 @@
                     type="date"
                     [value]="googlePromotionDraft().endDate"
                     (input)="onGooglePromotionDraftInput('endDate', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-end" />
                 </label>
@@ -1118,6 +1130,8 @@
                     type="date"
                     [value]="googlePromotionDraft().redemptionStartDate"
                     (input)="onGooglePromotionDraftInput('redemptionStartDate', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-redemption-start" />
                 </label>
@@ -1127,6 +1141,8 @@
                     type="date"
                     [value]="googlePromotionDraft().redemptionEndDate"
                     (input)="onGooglePromotionDraftInput('redemptionEndDate', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-redemption-end" />
                 </label>
@@ -1196,6 +1212,7 @@
                 <select
                   id="google-price-type"
                   (change)="onGooglePriceDraftInput('type', $event)"
+                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-price-type">
                   @for (type of googlePriceTypes; track type) {
@@ -1205,6 +1222,7 @@
                 <select
                   aria-label="Price qualifier"
                   (change)="onGooglePriceDraftInput('priceQualifier', $event)"
+                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-price-qualifier">
                   <option value="" [selected]="googlePriceDraft().priceQualifier === ''">No qualifier</option>
@@ -1218,6 +1236,7 @@
                   aria-label="Price extension language code"
                   [value]="googlePriceDraft().languageCode"
                   (input)="onGooglePriceDraftInput('languageCode', $event)"
+                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
                   class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-price-language" />
                 <input
@@ -1226,6 +1245,7 @@
                   aria-label="Price extension currency code"
                   [value]="googlePriceDraft().currencyCode"
                   (input)="onGooglePriceDraftInput('currencyCode', $event)"
+                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
                   class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-price-currency" />
               </div>
@@ -1259,6 +1279,7 @@
                     <select
                       [attr.aria-label]="'Price row ' + (r + 1) + ' unit'"
                       (change)="onGooglePriceRowInput(r, 'unit', $event)"
+                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
                       class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                       [attr.data-testid]="'implementation-google-price-row-unit-' + r">
                       <option value="" [selected]="row.unit === ''">No unit</option>
