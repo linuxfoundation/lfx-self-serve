@@ -235,6 +235,24 @@ describe('MktgRunProgressComponent', () => {
     expect(answer).not.toHaveBeenCalled();
   });
 
+  it('pauses the questions reader while hidden and fetches immediately on return via the shared helper', async () => {
+    await setup();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs * 3);
+    expect(read).toHaveBeenCalledOnce();
+    read.mockReturnValue(of(detail()));
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    visibility.mockRestore();
+  });
+
   it.each(['focus', 'visibilitychange'])('rechecks public state on %s and lets stored completion win', async (event) => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));

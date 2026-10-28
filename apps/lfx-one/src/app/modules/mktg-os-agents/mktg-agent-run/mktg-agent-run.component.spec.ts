@@ -1553,7 +1553,22 @@ describe('MktgAgentRunComponent', () => {
           questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: '', basis: [] }],
         },
       });
-      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
+      const measured = record('questions');
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(
+        of({
+          ...measured,
+          runs: [
+            {
+              ...measured.runs[0],
+              pendingQuestions: {
+                questionsId: 'synthetic-block',
+                askedAt: measured.runs[0].startedAt,
+                questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: '', basis: [] }],
+              },
+            },
+          ],
+        })
+      );
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(component['publicReceiver']()).toBe(true);

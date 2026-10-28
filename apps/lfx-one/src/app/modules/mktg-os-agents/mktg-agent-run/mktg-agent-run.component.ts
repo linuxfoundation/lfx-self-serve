@@ -690,7 +690,7 @@ export class MktgAgentRunComponent {
     if (this.answersSending() && run?.state === 'questions') return;
     if (run?.state === 'questions' || (!run && !cycle.detail.revisions.length)) {
       const privateQuestions = owned?.pendingQuestions;
-      if (owned && privateQuestions && (!run?.pendingQuestions || privateQuestions.questionsId === run.pendingQuestions.questionsId)) {
+      if (owned && privateQuestions && (!run || privateQuestions.questionsId === run.pendingQuestions?.questionsId)) {
         if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
           this.activeRequest = owned.request;
           this.hasAcknowledgement.set(true);

@@ -28,25 +28,8 @@ import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import {
-  catchError,
-  defer,
-  distinctUntilChanged,
-  EMPTY,
-  exhaustMap,
-  expand,
-  filter,
-  finalize,
-  fromEvent,
-  map,
-  merge,
-  of,
-  Subject,
-  switchMap,
-  tap,
-  throwError,
-  timer,
-} from 'rxjs';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 
@@ -147,13 +130,6 @@ export class MktgRunProgressComponent {
   protected readonly liveState = this.initLiveState();
 
   public constructor() {
-    if (isPlatformBrowser(this.platformId)) {
-      merge(fromEvent(window, 'focus'), fromEvent(this.document, 'visibilitychange').pipe(filter(() => this.document.visibilityState === 'visible')))
-        .pipe(takeUntilDestroyed())
-        .subscribe(() => {
-          if (this.runPage() && this.polling()) this.reload.update((count) => count + 1);
-        });
-    }
     let readerScope = '';
     const scope = computed(() => ({
       project: this.project(),
@@ -347,33 +323,42 @@ export class MktgRunProgressComponent {
               })
             );
           };
-          return read(false).pipe(
-            expand((cycle) => {
-              const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-              if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
+          const observe = () =>
+            read(false).pipe(
+              expand((cycle) => {
+                const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
+                if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
+                  this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
+                  return EMPTY;
+                }
+                const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
+                const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
+                const local = this.localProgress();
+                if (!active && !questions && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
+                let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
+                if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
+                return timer(delay).pipe(switchMap(() => read(true)));
+              }),
+              catchError((error: HttpErrorResponse) => {
+                this.loaded.set(null);
+                this.readFailure.set(
+                  error.status === 401 || error.status === 403
+                    ? 'You need write access to this project to see its Marketing OS documents.'
+                    : 'This run could not be loaded. Try again in a moment.'
+                );
+                this.readError.emit(error);
                 return EMPTY;
-              }
-              const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-              const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
-              const local = this.localProgress();
-              if (!active && !questions && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-              let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
-              if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-              if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-              return timer(delay).pipe(switchMap(() => read(true)));
-            }),
-            catchError((error: HttpErrorResponse) => {
-              this.loaded.set(null);
-              this.readFailure.set(
-                error.status === 401 || error.status === 403
-                  ? 'You need write access to this project to see its Marketing OS documents.'
-                  : 'This run could not be loaded. Try again in a moment.'
-              );
-              this.readError.emit(error);
-              return EMPTY;
-            })
-          );
+              })
+            );
+          // The shared helper owns visibility/focus cancellation; this reader retains its
+          // per-state cadence and bounded availability budget inside that visible session.
+          return createVisibilityPoll(this.document, observe, {
+            intervalMs: MKTG_RUN_POLL.intervalMs,
+            backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+            backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+            shouldContinue: () => false,
+          });
         }),
         takeUntilDestroyed()
       )

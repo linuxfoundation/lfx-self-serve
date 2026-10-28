@@ -72,6 +72,31 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
+  it('re-reads immediately on window focus, including after a terminal read', () => {
+    Object.defineProperty(doc, 'defaultView', { value: window, configurable: true });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, { ...options, shouldContinue: () => false }).subscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('never fetches on focus while the document is hidden', () => {
+    Object.defineProperty(doc, 'defaultView', { value: window, configurable: true });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(60000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    state = 'visible';
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+  });
+
   it('backs off on errors, recovers without a reload, and resets the failure count', () => {
     const results: ('fail' | 'ok')[] = ['fail', 'fail', 'ok'];
     const fetch = vi.fn(() => (results.shift() === 'ok' ? of(7) : throwError(() => new Error('down'))));
