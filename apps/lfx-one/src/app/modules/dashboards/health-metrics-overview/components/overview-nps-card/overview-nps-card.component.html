@@ -10,6 +10,12 @@
   [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-nps">
+  @if (isYtd()) {
+    <div overviewEmptyAction class="mt-[8px]">
+      <lfx-overview-explore-link [link]="createSurveyLink()" leadingIcon="fa-light fa-plus" testId="overview-nps-empty-create-survey" />
+    </div>
+  }
+
   @if (view(); as view) {
     <!-- The breakdown sits beside the gauge when it has 360px, and wraps below it otherwise. -->
     <div class="flex flex-wrap items-center gap-x-[48px] gap-y-[18px]">
