@@ -561,7 +561,7 @@ describe('CampaignProxyService email delivery type', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('error');
-      expect(String(events[0].data)).toContain('the limit is 3000');
+      expect(String(events[0].data)).toContain('3000-character limit');
     });
 
     it('refuses a survey with nothing pasted rather than inventing its facts', async () => {

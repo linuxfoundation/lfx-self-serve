@@ -2169,8 +2169,8 @@ export class CampaignsComponent {
   /**
    * The counts on offer, with what each one means.
    *
-   * Read from `CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS`, which states why two sends end on a CLOSING
-   * rather than a reminder.
+   * Read from `CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS`: one email, or the full three-send series, the
+   * one length the configured workflow can send.
    */
   protected readonly surveyEmailCountOptions = CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS;
 
@@ -2180,10 +2180,8 @@ export class CampaignsComponent {
   /**
    * The stages this campaign's sends occupy, in send order.
    *
-   * Two sends are an opening and a CLOSING, not an opening and a reminder: with only two emails
-   * the second is the last one the reader gets, so it is the one that should carry the deadline.
-   * Three adds the reminder in the middle, which is the shape the research team's own campaigns
-   * use and the one the prototype generated.
+   * One send, or three: an opening, a reminder while the survey is in field, and a closing that
+   * carries the deadline -- the shape of the configured workflow every series is copied from.
    */
   protected readonly surveySequenceStages = computed<readonly CampaignSurveyStage[]>(() => {
     if (!this.surveySupportsSeries()) {
@@ -2240,13 +2238,27 @@ export class CampaignsComponent {
       this.surveySequenceState() !== 'generating' &&
       // Nor while the audience is being replaced: `emailAudience()` still holds the old row.
       !this.emailAudienceWriteInFlight() &&
-      this.surveySequenceSends().length > 0 &&
+      // Nor over the single Stage button's own in-flight or unconfirmed create: send 1 is the same
+      // brief, so a series create beside it could clone a second draft.
+      !this.emailStagingHeld() &&
+      // The WHOLE planned series: after a write that failed partway, the sends that did land stay
+      // on screen for review, but staging them would ship a series without its later emails.
+      this.surveySequenceComplete() &&
       !this.sequenceHasHeldSend() &&
       this.emailBriefOutput() !== null &&
       this.activeFoundationSlug() !== '' &&
       this.selectedEmailTemplateId() !== '' &&
       this.emailAudience()?.status === 'built'
   );
+
+  /** Whether a survey series is staging, or holds a send, so the single Stage button must wait. */
+  protected readonly sequenceLocksSingleSend = computed(() => this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend());
+
+  /** Whether every send the operator planned has been written -- not just some of them. */
+  protected readonly surveySequenceComplete = computed(() => {
+    const sends = this.surveySequenceSends();
+    return sends.length > 0 && sends.length === this.surveySequenceStages().length;
+  });
 
   /**
    * Whether the whole series can be written right now.
@@ -2256,6 +2268,9 @@ export class CampaignsComponent {
    */
   protected readonly canGenerateSurveySequence = computed(
     () =>
+      // Not once a send is staged: campaign-service hands back a brief's existing draft on a
+      // second create, so a rewrite would show new copy while HubSpot kept sending the old.
+      this.sequenceStagedBriefIds().length === 0 &&
       this.surveySequenceState() !== 'generating' &&
       this.sequenceStagingState() !== 'staging' &&
       this.sendWorkflowState() !== 'building' &&
@@ -2276,6 +2291,7 @@ export class CampaignsComponent {
       this.sequenceStagingState() !== 'staging' &&
       this.activeFoundationSlug() !== '' &&
       sends.length > 1 &&
+      this.surveySequenceComplete() &&
       sends.every((send) => staged.includes(send.briefId)) &&
       this.sequenceDatesComplete()
     );
@@ -2288,6 +2304,21 @@ export class CampaignsComponent {
   protected readonly surveySequenceBodies = computed<ReadonlyMap<string, string>>(() => {
     const brief = this.emailBriefOutput();
     return new Map(this.surveySequenceSends().map((send) => [send.briefId, this.sequenceSendContent(brief, send).bodyHtml]));
+  });
+
+  /**
+   * Each send's call-to-action button as it will be STAGED ('' when none is), keyed by brief id.
+   * Staged separately from the body, so the review panel shows it separately too -- otherwise the
+   * operator approves a draft whose button they never saw.
+   */
+  protected readonly surveySequenceButtons = computed<ReadonlyMap<string, { text: string; url: string }>>(() => {
+    const brief = this.emailBriefOutput();
+    return new Map(
+      this.surveySequenceSends().map((send) => {
+        const content = this.sequenceSendContent(brief, send);
+        return [send.briefId, { text: content.buttonText, url: content.buttonUrl }];
+      })
+    );
   });
 
   // --- The send workflow: one HubSpot workflow that sends a staged SERIES -------------------
@@ -2359,7 +2390,10 @@ export class CampaignsComponent {
       // That draft reads as plausible and is simply the wrong content, which is the failure mode
       // this panel keeps having to close.
       this.emailCopyState() !== 'generating' &&
-      this.abTestCopyState() !== 'generating'
+      this.abTestCopyState() !== 'generating' &&
+      // A survey series' first send IS this brief: while the series is staging, or holds a send
+      // whose draft may exist, a single-send create could clone a second draft for it.
+      !this.sequenceLocksSingleSend()
   );
 
   /**
@@ -2729,6 +2763,10 @@ export class CampaignsComponent {
         this.removedKeywordsService.setScope(projectSlug);
       });
     this.destroyRef.onDestroy(() => {
+      // Leaving the page abandons a series being written or staged: the loops re-check the
+      // generation after every await, so none of them creates another HubSpot draft for a page
+      // that no longer exists.
+      this.surveySequenceGeneration++;
       this.negativeKeywordsService.releaseScope();
       this.keywordTargetingService.releaseScope();
       this.removedKeywordsService.releaseScope();
@@ -3832,6 +3870,21 @@ export class CampaignsComponent {
     }
   }
 
+  /**
+   * Stage ONE send again, after the workflow build refused it (a draft whose content never
+   * finished staging comes back as a 409 naming that send). The other sends keep their drafts:
+   * only this one is dropped from the staged set before Stage all runs, which skips the rest.
+   */
+  protected async onRestageSequenceSend(briefId: string): Promise<void> {
+    if (this.sequenceStagingState() === 'staging' || !this.sequenceStagedBriefIds().includes(briefId)) {
+      return;
+    }
+    this.sequenceStagedBriefIds.update((ids) => ids.filter((id) => id !== briefId));
+    this.sendWorkflowState.set('idle');
+    this.sendWorkflowError.set('');
+    await this.onStageSequenceSends();
+  }
+
   /** Read the portal's templates again after a failed or empty answer on the survey surface. */
   protected onRetrySurveyTemplates(): void {
     this.searchEmailTemplates('');
@@ -3917,7 +3970,7 @@ export class CampaignsComponent {
         // written on screen rather than discarding work the operator can still use.
         this.surveySequenceSends.set([...written]);
       }
-      const shareProblem = await this.shareAudienceAcrossSequence(written, projectSlug);
+      const shareProblem = await this.shareAudienceAcrossSequence(written, projectSlug, isCurrent);
       if (!isCurrent()) {
         return;
       }
@@ -3972,7 +4025,7 @@ export class CampaignsComponent {
     // Idempotent: sends that already carry the audience are skipped, so running this again after
     // a failed staging attempt costs one read per send and changes nothing else.
     this.sequenceStagingMessage.set('Attaching the audience to every send...');
-    const shareProblem = await this.shareAudienceAcrossSequence(sends, projectSlug);
+    const shareProblem = await this.shareAudienceAcrossSequence(sends, projectSlug, isCurrent);
     if (!isCurrent()) {
       return;
     }
@@ -4060,6 +4113,21 @@ export class CampaignsComponent {
         }
         if (!isCurrent()) {
           return;
+        }
+        const hubspotOutcome = (result.platformResults ?? []).find((platform) => platform.platform === 'hubspot');
+        // A FAILED job can still carry the draft HubSpot created (recording it was what failed).
+        // Keep where it landed and hold the send: staging it again would clone a second one.
+        if ((result.errors.length > 0 || (hubspotOutcome !== undefined && !hubspotOutcome.ok)) && (hubspotOutcome?.campaignId ?? '') !== '') {
+          const draftUrl = this.hubspotDraftUrl(hubspotOutcome?.hubspotUrl);
+          const draftId = hubspotOutcome?.campaignId ?? '';
+          this.surveySequenceSends.update((rows) => rows.map((row) => (row.briefId === send.briefId ? { ...row, draftUrl, draftId } : row)));
+          this.holdUnresolvedSend(send.briefId);
+          throw new Error(`HubSpot created the ${send.label} draft but staging did not finish. Check the draft in HubSpot before staging again.`);
+        }
+        // The HubSpot row's own refusal ("no audience found for this brief") before the job's
+        // generic failure text, which is all `errors[0]` holds when the job itself set no error.
+        if (hubspotOutcome !== undefined && !hubspotOutcome.ok && (hubspotOutcome.error ?? '') !== '') {
+          throw new Error(hubspotOutcome.error);
         }
         if (result.errors.length > 0) {
           throw new Error(result.errors[0]);
@@ -4214,7 +4282,8 @@ export class CampaignsComponent {
       this.emailAudience()?.status !== 'built' ||
       this.emailAudienceWriteInFlight() ||
       this.emailStaging() === 'staging' ||
-      this.emailStagingUnresolved()
+      this.emailStagingUnresolved() ||
+      this.sequenceLocksSingleSend()
     ) {
       return;
     }
@@ -7364,6 +7433,18 @@ export class CampaignsComponent {
    * REPLACES each send's row rather than being refused as a duplicate create.
    */
   private async persistSequenceBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    // The FIRST send is the page's own brief, which `warmEmailBriefId` may be saving right now.
+    // Joined through `ensureEmailBriefId` rather than saved again beside it: two creates of one
+    // identity race, and the loser is refused as a duplicate, aborting the series.
+    const primary = this.emailBriefOutput();
+    if (primary !== null && (primary.emailStage ?? '') === (brief.emailStage ?? '')) {
+      const primaryId = await this.ensureEmailBriefId(primary, projectSlug);
+      if (primaryId === '') {
+        throw new Error(this.emailSaveFailureMessage('so the emails were not written.'));
+      }
+      return primaryId;
+    }
+
     const ownershipKey = this.ownershipKey(projectSlug, brief);
     const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
 
@@ -7382,7 +7463,13 @@ export class CampaignsComponent {
     // Saved but not approved: campaign-service will not stage from it, so writing its copy would
     // only lead to a refusal at staging.
     if (briefId !== '' && !persisted.approved) {
-      throw new Error('The campaign was saved but not approved, so the emails were not written. Try again.');
+      // The row WAS saved; only its approval failed. Its ownership is kept -- with the validator
+      // the write returned, and never an overwrite licence -- so writing again updates and
+      // re-approves this row instead of being refused as an unowned duplicate.
+      if (ownershipKey !== null) {
+        this.rememberBriefId(ownershipKey, { id: briefId, etag: persisted.etag ?? null });
+      }
+      throw new Error('The campaign was saved but not approved, so the emails were not written. Write them again to retry the approval.');
     }
     if (briefId === '' || ownershipKey === null) {
       return briefId;
@@ -7471,7 +7558,11 @@ export class CampaignsComponent {
    * work: plan, write, then compose the audience. Staging runs this again, so composing it
    * afterwards still reaches every send.
    */
-  private async shareAudienceAcrossSequence(sends: readonly CampaignSequenceSend[], projectSlug: string): Promise<string> {
+  private async shareAudienceAcrossSequence(
+    sends: readonly CampaignSequenceSend[],
+    projectSlug: string,
+    isCurrent: () => boolean = () => true
+  ): Promise<string> {
     if (sends.length < 2) {
       return '';
     }
@@ -7480,6 +7571,11 @@ export class CampaignsComponent {
     // what the page has meant this returned before issuing a single request -- silently, every
     // time. `listAudiences` returns what was actually recorded.
     const first = await this.builtAudienceFor(projectSlug, sends[0].briefId);
+    // Checked after every read and before every attach: a series reset meanwhile must not attach
+    // the old lists to a brief the new series reuses.
+    if (!isCurrent()) {
+      return '';
+    }
     if (first.state === 'unknown') {
       return `The ${sends[0].label}'s audience could not be read, so it was not shared with the other sends. Try again in a moment.`;
     }
@@ -7505,6 +7601,9 @@ export class CampaignsComponent {
 
     for (const send of sends.slice(1)) {
       const existing = await this.builtAudienceFor(projectSlug, send.briefId);
+      if (!isCurrent()) {
+        return '';
+      }
       // Already has THIS audience: a re-run must not mint a second row for it. A built audience
       // with DIFFERENT lists -- the first send was re-composed since -- is attached over, since
       // the newest row is the one staging uses and the workflow refuses briefs whose audiences
@@ -7553,10 +7652,13 @@ export class CampaignsComponent {
       if (!result.enabled || result.error) {
         return { state: 'unknown' };
       }
-      const audience = (result.audiences ?? []).find(
-        (row) => row.platform === 'hubspot' && row.status === 'built' && ((row.platformMasterListId ?? '') !== '' || (row.includeListIds ?? []).length > 0)
-      );
-      return audience === undefined ? { state: 'none' } : { state: 'built', audience };
+      // The NEWEST HubSpot row decides, as campaign-service's staging does: a newer row that is
+      // still building or failed is the brief's audience, and falling back past it to an older
+      // built one would share lists staging will not use.
+      const newest = (result.audiences ?? []).find((row) => row.platform === 'hubspot');
+      const usable =
+        newest !== undefined && newest.status === 'built' && ((newest.platformMasterListId ?? '') !== '' || (newest.includeListIds ?? []).length > 0);
+      return usable ? { state: 'built', audience: newest } : { state: 'none' };
     } catch {
       return { state: 'unknown' };
     }

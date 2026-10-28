@@ -9732,7 +9732,10 @@ describe('CampaignController survey surface', () => {
       // Bounded as campaign-service bounds them, so an oversized body is refused at this hop.
       ['a name over 200 characters', { name: 'w'.repeat(201), briefIds: ['a', 'b'] }],
       ['more than 10 briefs', { name: 'Survey - Workflow', briefIds: Array.from({ length: 11 }, (_v, i) => `b${i}`) }],
-      ['more dates than sends', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'] }],
+      [
+        'more than 10 dates',
+        { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: Array.from({ length: 11 }, (_v, i) => `2026-11-${String(i + 10)}`) },
+      ],
     ])('refuses a body with %s', async (_label, body) => {
       await controller.createSendWorkflow(buildWorkflowReq(body), res, next);
 
@@ -9758,6 +9761,19 @@ describe('CampaignController survey surface', () => {
         sendDates: ['2026-11-02', '2026-11-09'],
       });
       expect(res.json).toHaveBeenCalledWith(created);
+    });
+
+    it('forwards more dates than sends: dated wait steps can outnumber send steps upstream', async () => {
+      svcCreateSendWorkflow.mockResolvedValue({ flowId: '9', name: 'w', editUrl: 'https://app.hubspot.com/x' });
+
+      await controller.createSendWorkflow(
+        buildWorkflowReq({ name: 'w', briefIds: ['a', 'b'], sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'] }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(svcCreateSendWorkflow.mock.calls[0][2]).toMatchObject({ sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'] });
     });
 
     it('sends an upstream refusal to the error middleware', async () => {

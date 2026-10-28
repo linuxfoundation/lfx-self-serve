@@ -3576,6 +3576,13 @@ export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Se
  */
 export const CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS = 3000;
 
+/**
+ * A raw-length ceiling checked BEFORE the source is normalised and counted, so an oversized body
+ * is refused without copying it. Generous on purpose: collapsing whitespace can shrink a pasted
+ * document, so the raw text may run well past the counted limit and still be within it.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS * 8;
+
 /** The longest send-workflow name campaign-service accepts. */
 export const CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS = 200;
 
@@ -3586,12 +3593,15 @@ export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
 export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * How many emails a survey can be promoted by. Two sends are an opening and a CLOSING, not a
- * reminder: with only two, the second is the last one the reader gets, so it carries the deadline.
+ * How many emails a survey can be promoted by: one, sent on its own, or the full three-send
+ * series (promo, reminder, closing).
+ *
+ * There is no two-send option. A series is sent by copying ONE configured HubSpot workflow, and
+ * campaign-service requires that workflow's send-step count to equal the number of briefs -- so a
+ * second series length would need a second source workflow, which the deployment does not have.
  */
 export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
   { count: 1, label: 'One email', description: 'A single send, scheduled on its own', stages: ['Survey Promo'] },
-  { count: 2, label: 'Two emails', description: 'An opening and a closing push', stages: ['Survey Promo', 'Survey Closing'] },
   { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing', stages: ['Survey Promo', 'Survey Reminder', 'Survey Closing'] },
 ] as const;
 

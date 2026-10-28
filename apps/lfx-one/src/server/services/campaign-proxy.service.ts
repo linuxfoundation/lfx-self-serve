@@ -19,7 +19,7 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextLength, deriveSurveySlug, parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -1539,22 +1539,22 @@ export class CampaignProxyService {
     // Deterministic, with no model call: the operator supplied the facts, so inventing a second
     // interpretation of them would be the thing the generator's own prompt forbids.
     if (body.deliveryType === 'survey') {
-      const sourceText = typeof body.sourceText === 'string' ? body.sourceText.trim() : '';
+      const rawSourceText = typeof body.sourceText === 'string' ? body.sourceText : '';
+      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
+      // generation, because the copy would otherwise be written from a truncated source. Checked
+      // on the RAW value before it is trimmed, so an oversized body is never copied.
+      if (campaignSurveySourceTextTooLong(rawSourceText)) {
+        yield {
+          type: 'error',
+          data: `The pasted text is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit. Shorten it so no finding, date or incentive is cut from the email.`,
+        };
+        return;
+      }
+      const sourceText = rawSourceText.trim();
       if (sourceText === '') {
         yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
         return;
       }
-      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
-      // generation, because the copy would otherwise be written from a truncated source.
-      const sourceLength = campaignSurveySourceTextLength(sourceText);
-      if (sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
-        yield {
-          type: 'error',
-          data: `The pasted text is ${sourceLength} characters; the limit is ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}. Shorten it so no finding, date or incentive is cut from the email.`,
-        };
-        return;
-      }
-
       yield { type: 'status', data: 'Reading the source document...' };
 
       // The first non-empty line names the asset. The brief needs an identity -- upstream keys it

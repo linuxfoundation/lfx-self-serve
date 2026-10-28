@@ -7,7 +7,7 @@
 // Verified by switching to the barrel and watching the suite fail.
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { campaignSurveySourceTextLength, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdsToUpperCode,
@@ -466,10 +466,11 @@ export class CampaignController {
       body.url = surveyUrl.href;
       // The 3,000-character limit campaign-service enforces at save and at copy generation, checked
       // before anything is streamed so the operator reads it as a field error.
-      const sourceLength = typeof body.sourceText === 'string' ? campaignSurveySourceTextLength(body.sourceText) : 0;
-      if (sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
+      // The raw length is checked first (inside the helper), so an oversized body is refused
+      // without being copied or counted.
+      if (typeof body.sourceText === 'string' && campaignSurveySourceTextTooLong(body.sourceText)) {
         _next(
-          ServiceValidationError.forField('sourceText', `sourceText is ${sourceLength} characters; the limit is ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}`, {
+          ServiceValidationError.forField('sourceText', `sourceText is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit`, {
             operation: 'campaign_generate_brief',
             service: 'campaign_controller',
             path: req.path,
@@ -3208,8 +3209,10 @@ export class CampaignController {
       refuse('briefIds', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} sends`);
       return;
     }
-    if ((body?.sendDates?.length ?? 0) > (body?.briefIds?.length ?? 0)) {
-      refuse('sendDates', 'a send workflow has at most one date per send');
+    // Capped on its own, not against the brief count: campaign-service matches dates to the
+    // workflow's DATED wait steps, which can outnumber its send steps.
+    if ((body?.sendDates?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('sendDates', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} dates`);
       return;
     }
     const briefIds = (body?.briefIds ?? []).map((id) => id.trim());

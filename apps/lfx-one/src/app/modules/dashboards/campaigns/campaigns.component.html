@@ -1266,7 +1266,9 @@
                       <span class="text-sm text-gray-500" data-testid="campaigns-survey-sequence-hint">
                         <!-- A new condition on canGenerateSurveySequence needs a branch HERE, or
                              the button goes dead with nothing said about why. -->
-                        @if (emailBriefOutput() === null) {
+                        @if (sequenceStagedBriefIds().length > 0) {
+                          These emails are staged in HubSpot. Edit the drafts there; writing them again here would not change what HubSpot sends.
+                        } @else if (emailBriefOutput() === null) {
                           {{ briefRequiredHint }}
                         } @else if (activeFoundationSlug() === '') {
                           Select a foundation to save these campaigns under.
@@ -1320,6 +1322,20 @@
                                   >open in HubSpot</a
                                 >
                               }
+                              <!-- After a refused workflow build: a draft whose content did not
+                                   finish staging is named in the 409, and only that send needs
+                                   staging again. -->
+                              @if (sendWorkflowState() === 'error' && sequenceStagedBriefIds().includes(send.briefId)) {
+                                &mdash;
+                                <button
+                                  type="button"
+                                  class="font-medium text-blue-700 underline hover:no-underline disabled:opacity-50"
+                                  [disabled]="sequenceStagingState() === 'staging'"
+                                  (click)="onRestageSequenceSend(send.briefId)"
+                                  [attr.data-testid]="'campaigns-survey-sequence-restage-' + $index">
+                                  Stage this email again
+                                </button>
+                              }
                             </p>
                           }
                           <p class="text-sm font-medium text-gray-900" data-testid="campaigns-survey-sequence-subject">{{ send.copy.subject }}</p>
@@ -1331,6 +1347,13 @@
                             [html]="surveySequenceBodies().get(send.briefId) ?? ''"
                             [heightPx]="240"
                             [testId]="'campaigns-survey-sequence-body-' + $index" />
+                          @if (surveySequenceButtons().get(send.briefId); as button) {
+                            @if (button.text) {
+                              <p class="mt-2 text-xs text-gray-600" [attr.data-testid]="'campaigns-survey-sequence-button-' + $index">
+                                Button: <span class="font-medium text-gray-900">{{ button.text }}</span> &rarr; <span class="break-all">{{ button.url }}</span>
+                              </p>
+                            }
+                          }
                         </div>
                       }
                     </div>
@@ -1364,6 +1387,10 @@
                                  with nothing said about why. -->
                             @if (surveySequenceState() === 'generating') {
                               Wait for every email to be written.
+                            } @else if (!surveySequenceComplete()) {
+                              Write every email first &mdash; the last write did not finish.
+                            } @else if (emailAudienceWriteInFlight()) {
+                              Wait for the audience to finish updating.
                             } @else if (sequenceHasHeldSend()) {
                               A draft did not confirm. Check HubSpot for it, then write the emails again to stage a fresh series.
                             } @else if (emailBriefOutput() === null) {
@@ -1418,7 +1445,9 @@
                           data-testid="campaigns-send-workflow-build-btn" />
                         @if (!canBuildSequenceWorkflow() && sendWorkflowState() !== 'building') {
                           <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note">
-                            @if (!sequenceDatesComplete()) {
+                            @if (!surveySequenceComplete()) {
+                              Write every email first &mdash; the last write did not finish.
+                            } @else if (!sequenceDatesComplete()) {
                               Enter a send date for every email &mdash; each one re-dates a step of the workflow.
                             } @else {
                               Stage every send first &mdash; the workflow sends the drafts.

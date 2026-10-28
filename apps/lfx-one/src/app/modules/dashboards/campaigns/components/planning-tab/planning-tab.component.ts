@@ -1110,7 +1110,7 @@ export class PlanningTabComponent implements OnInit {
     // Guarding the ACTION rather than the offer keeps both properties: the offer survives an
     // emptied field and comes back when the url is retyped, and it can only ever be applied while
     // the field still names its own event.
-    if (this.extractSlug(this.briefForm.controls.url.value) !== this.currentSlug) {
+    if (this.slugForLookup(this.briefForm.controls.url.value) !== this.currentSlug) {
       return;
     }
     const brief = this.savedBrief();
@@ -1486,6 +1486,11 @@ export class PlanningTabComponent implements OnInit {
     // user is looking at their correction on screen.
     if (this.isEditingEmailBrief()) {
       this.saveEmailEdit();
+      // Refused (a survey source over the limit): the editor stays open with its error, and the
+      // handoff stops -- otherwise the PREVIOUS facts go forward while the screen shows the edit.
+      if (this.isEditingEmailBrief()) {
+        return;
+      }
     }
     const url = this.briefForm.controls.url.value.trim();
     const fallbackName = this.extractEventName(url);
@@ -1620,8 +1625,15 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     this.emailEditError.set('');
+    const editedSource = (this.emailEditForm.controls.sourceText.value ?? '').trim();
+    const editedUrl = (this.emailEditForm.controls.registrationUrl.value ?? '').trim();
+    // A survey's slug follows its title when the link names only a page (a Google Form): the
+    // lookup derives it from the source text, so an edited title has to move the stored slug with
+    // it, or the brief is saved under a name its own lookup can never find again.
+    const surveySlug = this.isSurvey() ? deriveSurveySlug(editedUrl || d.registrationUrl, editedSource) : '';
     this.eventDetails.set({
       ...d,
+      ...(surveySlug !== '' ? { slug: surveySlug } : {}),
       sourceText: (this.emailEditForm.controls.sourceText.value ?? '').trim(),
       name: (this.emailEditForm.controls.name.value ?? '').trim(),
       dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
@@ -1951,7 +1963,7 @@ export class PlanningTabComponent implements OnInit {
   private refreshBriefLookup(url: string): void {
     // A survey brief is stored under `deriveSurveySlug` -- its title when the link ends in a
     // generic page such as `viewform` -- so it is looked up under the same, or it is never found.
-    const slug = this.isSurvey() ? deriveSurveySlug(url, this.briefForm.controls.sourceText.value) : this.extractSlug(url);
+    const slug = this.slugForLookup(url);
     if (slug.length > 0) {
       if (slug !== this.currentSlug) {
         this.currentSlug = slug;
@@ -1974,6 +1986,25 @@ export class PlanningTabComponent implements OnInit {
     } catch {
       return '';
     }
+  }
+
+  /**
+   * The slug the saved-brief lookup and the restore guard both key on: the survey derivation (a
+   * Google Form by its title) on the survey surface, the URL's last segment elsewhere. ONE
+   * function, so the guard cannot compare a different derivation than the lookup made.
+   */
+  private slugForLookup(url: string): string {
+    if (!this.isSurvey()) {
+      return this.extractSlug(url);
+    }
+    // '' for an empty or half-typed link, as `extractSlug` gives: the survey derivation falls
+    // back to the title, which would otherwise let the restore guard pass with no link at all.
+    try {
+      new URL(url.trim());
+    } catch {
+      return '';
+    }
+    return deriveSurveySlug(url, this.briefForm.controls.sourceText.value);
   }
 
   private extractSlug(url: string): string {

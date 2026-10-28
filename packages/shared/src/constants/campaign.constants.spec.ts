@@ -553,11 +553,10 @@ describe('CAMPAIGN_SEND_STAGES', () => {
 });
 
 describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
-  it('offers one to three emails, each once', () => {
-    // The page maps each count onto stages (1: promo; 2: promo + closing; 3: + reminder), and
-    // campaign-service's workflow needs at least two briefs -- so a count outside 1..3 has no
-    // stage mapping and a series of one would never reach the workflow build.
-    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.map((o) => o.count)).toEqual([1, 2, 3]);
+  it('offers one email or the full three-send series, nothing in between', () => {
+    // A series copies ONE configured workflow whose send-step count must equal the brief count,
+    // so only the length that matches it can build. A two-send option would always end in a 409.
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.map((o) => o.count)).toEqual([1, 3]);
     for (const option of CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS) {
       expect(option.label.trim(), String(option.count)).not.toBe('');
       expect(option.description.trim(), String(option.count)).not.toBe('');
@@ -568,8 +567,7 @@ describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
         expect((CAMPAIGN_SURVEY_STAGES as readonly string[]).includes(stage), stage).toBe(true);
       }
     }
-    // Two sends end on the CLOSING, the one that carries the deadline, not on a reminder.
-    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((o) => o.count === 2)?.stages).toEqual(['Survey Promo', 'Survey Closing']);
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((o) => o.count === 3)?.stages).toEqual(['Survey Promo', 'Survey Reminder', 'Survey Closing']);
   });
 });
 

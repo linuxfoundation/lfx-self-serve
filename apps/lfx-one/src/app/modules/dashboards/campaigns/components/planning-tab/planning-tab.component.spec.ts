@@ -145,6 +145,35 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(campaignService.loadBrief).toHaveBeenLastCalledWith('2026-cloud-native-survey', 'foundation-a', 'survey', 'Survey Promo');
   });
 
+  it('restores a saved Google Form survey, guarding on the slug the lookup used', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((sub) => sub.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-s', etag: 'W/"v1"', approved: true }))
+    );
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { sourceText: { setValue(v: string): void } } };
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: { briefId: string }) => void): void };
+    };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey');
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    const emitted: { briefId: string }[] = [];
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+
+    component.restoreSavedBrief();
+
+    // The guard compared `viewform` with the title slug, so the offered Restore did nothing.
+    expect(emitted.map((e) => e.briefId)).toEqual(['brief-s']);
+
+    // Still refused once the link is cleared, though the title alone would derive the same slug.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue('');
+    component.restoreSavedBrief();
+    expect(emitted).toHaveLength(1);
+  });
+
   it('re-runs a survey lookup when its title changes, since the title is half of its identity', async () => {
     campaignService.loadBrief.mockReturnValue(EMPTY);
     fixture.componentRef.setInput('deliveryType', 'survey');
@@ -1779,6 +1808,39 @@ describe('PlanningTabComponent email brief editing', () => {
     internals().saveEmailEdit();
 
     expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Closes 7 December.');
+  });
+
+  it("moves a Google Form survey's slug with an edited title, so its lookup still finds it", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({
+      ...scraped,
+      registrationUrl: 'https://docs.google.com/forms/d/e/1FAIpQ/viewform',
+      slug: 'old-title',
+      sourceText: 'Old Title',
+    });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('2027 Developer Survey\nTen questions.');
+
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { slug: string }).slug).toBe('2027-developer-survey');
+  });
+
+  it('does not hand off the old brief when the open edit is refused', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+    const handedOff: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      handedOff.push(v)
+    );
+
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    // The editor stays open with its error; the previous facts do not go forward.
+    expect(handedOff).toEqual([]);
+    expect(internals().isEditingEmailBrief()).toBe(true);
   });
 
   it("refuses to save a survey source edit past campaign-service's limit", async () => {

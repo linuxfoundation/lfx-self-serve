@@ -17,6 +17,7 @@ import {
   campaignActionRuleLever,
   campaignEtagVersion,
   campaignSurveySourceTextLength,
+  campaignSurveySourceTextTooLong,
   deriveSurveySlug,
   describeCampaignDispatchFailure,
   keywordActionKey,
@@ -385,5 +386,18 @@ describe('campaignSurveySourceTextLength', () => {
     expect(campaignSurveySourceTextLength('  a \n\n\t b  ')).toBe(3);
     // One emoji is one rune upstream, though two UTF-16 units here.
     expect(campaignSurveySourceTextLength('😀')).toBe(1);
+  });
+});
+
+describe('campaignSurveySourceTextTooLong', () => {
+  it("applies campaign-service's counted limit", () => {
+    expect(campaignSurveySourceTextTooLong('x'.repeat(3000))).toBe(false);
+    expect(campaignSurveySourceTextTooLong('x'.repeat(3001))).toBe(true);
+  });
+
+  it('refuses on the raw length first, before normalising or counting an oversized body', () => {
+    // Collapses to one character, so only the raw ceiling can refuse it.
+    expect(campaignSurveySourceTextTooLong(' '.repeat(24_001) + 'a')).toBe(true);
+    expect(campaignSurveySourceTextTooLong(' '.repeat(23_999) + 'a')).toBe(false);
   });
 });

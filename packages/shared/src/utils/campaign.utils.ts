@@ -9,6 +9,8 @@ import {
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -214,7 +216,25 @@ export function describeCampaignDispatchFailure(error: string): CampaignDispatch
  * with the server's 400.
  */
 export function campaignSurveySourceTextLength(sourceText: string): number {
-  return [...sourceText.replace(/\s+/g, ' ').trim()].length;
+  // Counted by iterating, not by spreading into an array: one array slot per character is the
+  // cost a long paste should not have to pay just to be measured.
+  let count = 0;
+  for (const _codePoint of sourceText.replace(/\s+/g, ' ').trim()) {
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Whether a survey source is over campaign-service's limit. The raw length is checked FIRST, so a
+ * body far past the limit is refused without being normalised or counted -- a request the server
+ * is about to refuse should cost nothing in proportion to its size.
+ */
+export function campaignSurveySourceTextTooLong(sourceText: string): boolean {
+  if (sourceText.length > CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS) {
+    return true;
+  }
+  return campaignSurveySourceTextLength(sourceText) > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS;
 }
 
 /** A value as a brief slug: lowercase ASCII words joined by hyphens, at most 100 characters. */
