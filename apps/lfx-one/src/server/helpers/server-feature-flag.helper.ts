@@ -232,6 +232,28 @@ export enum ServerFeatureFlag {
   CampaignServiceMicrosoftSchedule = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE',
 
   /**
+   * Offers X (`twitter-ads`) in the create flow: the Plan picker lets it be chosen and the
+   * Implement tab builds a `twitterConfig` (budget, flight dates, an authored promoted-only tweet,
+   * an optional tweet image and, with `CampaignServiceBidding`, a bidding choice).
+   *
+   * A PRODUCT switch more than a capability one: every campaign-service from v1.0.21 dispatches an
+   * X create (`TwitterDispatcher`), so turning it on is a decision to let operators create X
+   * campaigns, not a wait for a release. Two things it does not change, and both are deliberate:
+   * the static `disabled: true` on X in `CAMPAIGN_PLATFORMS`, which stays the default every client
+   * falls back to, and the Monitor tab, which offers X on `monitorable` whatever this says.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator has no
+   * X path at all, so the capability the client sees (`CampaignListResult.twitterCreateEnabled`)
+   * needs both. With it off X stays "Coming soon" in the picker, and the create route refuses a
+   * request carrying `twitterConfig` or selecting `twitter-ads` with a 400 naming the field.
+   *
+   * Turning it back off strands nothing: X campaigns already created stay where they are, paused
+   * or live, and are still listed, monitored and pausable. OFF by default. Same accepted values as
+   * the flags above.
+   */
+  CampaignServiceTwitterCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE',
+
+  /**
    * Offers the Meta Instagram account id and the EU Digital Services Act beneficiary/payor in the
    * create flow, sent as `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
    *

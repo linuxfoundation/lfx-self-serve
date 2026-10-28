@@ -16,6 +16,7 @@ import {
   LinkedinSetup,
   LinkedinQuestionsTurn,
   MktgRunAnswer,
+  MktgGenerationAttribution,
   Project,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -30,6 +31,7 @@ import {
   linkedinRunActivity,
   renderLinkedinAnswers,
 } from '@lfx-one/shared/utils';
+import { mktgOneOffFailureText, mktgOneOffTerminalFacts, mktgOneOffTurnEnded } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
@@ -46,7 +48,14 @@ export class LinkedinPostService {
   private readonly guild = new GuildService();
   private readonly profiles = new LinkedinProfileService();
   private readonly sources = new LinkedinSourceService();
-  private readonly documents = new MktgDocumentStoreService();
+  private readonly documents: MktgDocumentStoreService;
+
+  public constructor(
+    attribution?: MktgGenerationAttribution,
+    private readonly initializeProfile = true
+  ) {
+    this.documents = new MktgDocumentStoreService(attribution);
+  }
 
   public async start(
     req: Request,
@@ -106,14 +115,25 @@ export class LinkedinPostService {
   ): Promise<LinkedinResult> {
     const answers = lfxAnswers === undefined ? undefined : normalizeLinkedinShareAnswers(lfxAnswers);
     if (answers === null) throw ServiceValidationError.forField(LINKEDIN_SHARE_LINK_ANSWER_KEY, 'Invalid link-to-share metadata.');
-    const payloads = publicLinkedinPayloads(await this.guild.getRawEventPayloads(req, sessionId));
+    const rawPayloads = await this.guild.getRawEventPayloads(req, sessionId);
+    const payloads = publicLinkedinPayloads(rawPayloads);
     const best = this.authoritativeEnvelope(payloads);
     const activity = linkedinRunActivity(payloads, !!best);
     if (!best) {
-      const turn = linkedinQuestionsFromPayloads(payloads);
-      return turn
-        ? { status: 'questions', questions: linkedinRunQuestions(turn), questionsId: this.questionsId(turn), questionsProject: turn.project, activity }
-        : { status: 'pending', activity };
+      const terminal = mktgOneOffTerminalFacts(rawPayloads);
+      const turn = linkedinQuestionsFromPayloads(rawPayloads.slice(terminal.currentTurnOffset));
+      // Only open questions from the newest queued turn outrank its root completion.
+      if (turn)
+        return { status: 'questions', questions: linkedinRunQuestions(turn), questionsId: this.questionsId(turn), questionsProject: turn.project, activity };
+      // Error/session-only evidence belongs to Guild's recovery-aware settled reader.
+      if (mktgOneOffTurnEnded(terminal)) {
+        return {
+          status: 'failed',
+          failureText: mktgOneOffFailureText(terminal),
+          activity,
+        };
+      }
+      return { status: 'pending', activity };
     }
     // The live agent personalizes the H1 with the profile name. Project-readable
     // artifacts/revisions must instead use a neutral title and their own hash.
@@ -139,7 +159,7 @@ export class LinkedinPostService {
     }
     // Durable per-run consumption plus create-only storage prevents edit overwrite and post-delete replay.
     let profileSaved = best.profile_source !== 'first_run_setup';
-    if (best.profile_source === 'first_run_setup' && !isImpersonating(req)) {
+    if (best.profile_source === 'first_run_setup' && user && this.initializeProfile && !isImpersonating(req)) {
       profileSaved = await this.profiles.initializeOnce(req, user, sessionId, { profile: best.profile, profile_markdown: best.profile_markdown });
     }
     return {

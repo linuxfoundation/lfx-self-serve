@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  PLATFORM_ID,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { TooltipModule } from 'primeng/tooltip';
@@ -77,6 +90,7 @@ export class BrandKitWebViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   /** Only the selected stored document hosts comments; run previews and the printed book remain read-only. */
   public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
@@ -174,16 +188,6 @@ export class BrandKitWebViewComponent {
   }
 
   /**
-   * A shortcut into a tab from outside the tablist (the Overview's "Open …"
-   * buttons, the header's sources link): the button that was clicked goes
-   * with the panel it sat in, so focus moves to the new panel's start once it
-   * has rendered, as on the framework view.
-   */
-  protected onGoToTab(id: BrandKitWebViewTabId): void {
-    void this.onSelectTab(id);
-  }
-
-  /**
    * Keyboard tabs, as on the framework view: only the selected tab is in the
    * tab order (roving tabindex), so the arrow keys, Home and End move the
    * selection and the focus along the tablist. Other keys pass through.
@@ -234,7 +238,7 @@ export class BrandKitWebViewComponent {
         const selected = tab.id === this.selectedTab();
         return {
           id: tab.id,
-          label: tab.label,
+          label: tab.id === 'sources' && this.gapCount() > 0 ? `${tab.label} (${this.gapCount()})` : tab.label,
           selected,
           tabClass: this.tabClasses[selected ? 'selected' : 'idle'],
           tabId: `brand-kit-web-view-tab-${tab.id}`,

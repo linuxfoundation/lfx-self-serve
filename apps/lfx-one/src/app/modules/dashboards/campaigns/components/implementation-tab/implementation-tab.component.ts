@@ -21,6 +21,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
@@ -36,6 +37,10 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   LINKEDIN_IMAGE_MAX_BYTES,
+  TWITTER_IMAGE_MAX_BYTES,
+  TWITTER_IMAGE_TOO_LARGE_MESSAGE,
+  TWITTER_MAX_BUDGET,
+  TWITTER_MAX_TWEET_WEIGHTED_CHARS,
   LINKEDIN_IMAGE_TOO_LARGE_MESSAGE,
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
@@ -168,6 +173,10 @@ import type {
   CampaignPlatformResult,
   CampaignGoogleImageAssetBlock,
   CampaignLinkedInImageAssetBlock,
+  CampaignTwitterAccountState,
+  CampaignTwitterCreateBlock,
+  CampaignTwitterImageAssetBlock,
+  TwitterCampaignCreateRequest,
   CampaignMetaImageAssetBlock,
   CampaignMicrosoftImageAssetBlock,
   CampaignProximityTarget,
@@ -231,6 +240,9 @@ import {
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
   storedCreativeAssetLabel,
+  twitterComposedTweetLength,
+  twitterStartDateTooSoon,
+  twitterTweetTextError,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -280,6 +292,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     AutocompleteComponent,
     InputTextComponent,
     SelectComponent,
+    TextareaComponent,
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
@@ -522,6 +535,18 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
+
+  /**
+   * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`. `CAMPAIGN_PLATFORMS` keeps X
+   * `disabled: true`; this is what the tab consults instead. `null` (unanswered) and `false` render
+   * no X fields and send no `twitterConfig`: a brief still holding X is blocked by
+   * `twitterCreateBlock`, never created without it.
+   */
+  public readonly twitterCreateEnabled = input<boolean | null>(null);
+
+  /** @see twitterCreateEnabled — an explicit yes, never a `null`. */
+  protected readonly twitterCreateAvailable = computed<boolean>(() => this.twitterCreateEnabled() === true);
 
   /**
    * Whether this deployment collects the Meta Instagram account id and the EU DSA
@@ -803,6 +828,13 @@ export class ImplementationTabComponent implements OnInit {
     linkedInAccountId: [''],
     linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
     linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
+    // The X section's two typed fields, on the FORM so the `lfx-input-text` / `lfx-textarea`
+    // wrappers can bind them and `valueChanges` drives the draft, as for the LinkedIn controls
+    // above. Both RAW strings: a blank budget is "not entered", which 0 cannot say. No validators,
+    // for the LinkedIn reason — `campaignForm.invalid` gates Google, and an empty X field must not
+    // block a Google-only create. `twitterBudgetError` and `twitterTweetError` do the checking.
+    twitterBudget: [''],
+    twitterTweetText: [''],
   });
 
   /**
@@ -1099,6 +1131,26 @@ export class ImplementationTabComponent implements OnInit {
   private linkedInImageUploadSub: Subscription | null = null;
   /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
   protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  /**
+   * The X tweet image: an upload made for this brief, attached to the authored tweet as its image
+   * (`twitterConfig.imageAssetId`). X takes no image URL here, so the upload is the whole control,
+   * and its state mirrors the LinkedIn fields above one for one.
+   */
+  protected readonly twitterImageAssetId = signal('');
+  protected readonly twitterImageAssetName = signal('');
+  protected readonly twitterImageAssetBriefId = signal('');
+  protected readonly twitterImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly twitterImageUploadPendingName = signal('');
+  private readonly twitterImageUploadPendingBriefId = signal('');
+  private readonly twitterImageUploadFailedBriefId = signal('');
+  protected readonly twitterImageUploadError = signal('');
+  protected readonly twitterImageFileDescribedBy = computed(() =>
+    ['twitter-image-file-hint', 'twitter-image-file-status', ...(this.twitterImageUploadStatus() === 'error' ? ['twitter-image-file-error'] : [])].join(' ')
+  );
+  private twitterImageUploadSub: Subscription | null = null;
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly twitterImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  protected readonly twitterMaxTweetChars = TWITTER_MAX_TWEET_WEIGHTED_CHARS;
   /**
    * The Microsoft image extension, sent as `microsoftConfig.imageAssetId` (see `microsoftImageSent`):
    * an upload made for this brief, and nothing else. The upload state mirrors the Meta fields above
@@ -1862,6 +1914,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly showMicrosoftSection = computed(() => this.selectedPlatforms().includes('microsoft-ads'));
 
   /**
+   * Whether the tab holds X at all. The section renders its fields only on `twitterCreateAvailable`;
+   * held without it, the section is the `twitterCreateBlock` and a Remove.
+   */
+  protected readonly showTwitterSection = computed(() => this.selectedPlatforms().includes('twitter-ads'));
+
+  /**
    * The geo list a Microsoft create would ACTUALLY send — one value for the preview and `submit()`,
    * on the same rule as `metaEffectiveGeoTargets`, so the screen cannot claim one target while the
    * request buys another.
@@ -2612,6 +2670,102 @@ export class ImplementationTabComponent implements OnInit {
   );
 
   /**
+   * Why Create is blocked while the tab holds X without an explicit yes from `twitterCreateEnabled`,
+   * or `null`. Held, never dropped: a create that silently left X out would launch the other
+   * platforms while the brief on screen still names X. Offers Remove X (`onTwitterRemove`).
+   */
+  protected readonly twitterCreateBlock: Signal<CampaignTwitterCreateBlock | null> = this.initTwitterCreateBlock();
+  protected readonly twitterCreateBlockMessage = computed(() => this.twitterCreateBlock()?.message ?? '');
+
+  /**
+   * The X daily budget as a number, or `null` when the field is blank or not a plain decimal. Read
+   * through `campaignFormRevision` because the control is not a signal. The shape is checked before
+   * `Number`, which would otherwise read `1e3` as 1000 and `0x10` as 16 — a typo spent as a budget.
+   */
+  protected readonly twitterBudgetAmount = computed<number | null>(() => {
+    void this.campaignFormRevision();
+    const raw = this.campaignForm.controls.twitterBudget.value.trim();
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  });
+
+  /** Why the X budget cannot be sent, or `null`: the house floor of 1 and the client's cap (`TWITTER_MAX_BUDGET`). */
+  protected readonly twitterBudgetError = computed<string | null>(() => {
+    const amount = this.twitterBudgetAmount();
+    if (amount === null) return 'Enter a daily budget for X.';
+    if (amount < 1 || amount > TWITTER_MAX_BUDGET) return `Enter a daily budget from 1 to ${TWITTER_MAX_BUDGET.toLocaleString('en-US')}.`;
+    return null;
+  });
+
+  /** The authored tweet's copy as typed. */
+  protected readonly twitterTweetText = computed<string>(() => {
+    void this.campaignFormRevision();
+    return this.campaignForm.controls.twitterTweetText.value;
+  });
+
+  /** The composed tweet's weighted length — the copy plus the registration link campaign-service appends. */
+  protected readonly twitterTweetLength = computed(() => twitterComposedTweetLength(this.twitterTweetText()));
+
+  /** Why the tweet copy cannot be sent, or `null` — the same rule the BFF applies (`twitterTweetTextError`). */
+  protected readonly twitterTweetError = computed(() => twitterTweetTextError(this.twitterTweetText()));
+
+  /**
+   * Why the flight cannot be sent to X, or `null` — `twitterFlightErrorAt` at the time of the last
+   * form edit. A memo cannot see the clock move, so `submit` asks again at the moment it sends.
+   */
+  protected readonly twitterFlightError = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    return this.twitterFlightErrorAt(Date.now());
+  });
+
+  /** Bumped by the X account Retry; joins the read's key below, so a click re-reads. */
+  private readonly twitterAccountAttempt = signal(0);
+
+  /**
+   * Which X ad account the create will use (LFXV2-3319), read while the X section is offered.
+   * `twitterConfig` names no account — campaign-service creates under the connection's bound one —
+   * so the section shows this rather than a choice. A derived signal over the read, not an effect:
+   * `switchMap` drops an answer for a foundation or attempt the operator has moved past.
+   */
+  protected readonly twitterAccountState: Signal<CampaignTwitterAccountState> = this.initTwitterAccountState();
+
+  /** The bound account's label, when the connection names one the credential also lists. */
+  protected readonly twitterAccountLabel = computed(() => {
+    const result = this.twitterAccountState().result;
+    if (result?.connection.state !== 'connected' || !result.connection.accountId) return '';
+    const listed = result.accounts.find((a) => a.key === result.connection.accountId);
+    return listed ? `${listed.label} (${listed.key})` : (result.connection.label ?? result.connection.accountId);
+  });
+
+  /**
+   * The registration link campaign-service appends to the tweet, as the preview shows it: the SAVED
+   * brief's, not the form's. campaign-service reads the destination from the stored brief, and an
+   * edit to Registration URL here is never saved to it, so the form value could name a link the
+   * tweet will not carry.
+   */
+  protected readonly twitterDestinationUrl = computed(() => (this.briefData()?.eventDetails?.registrationUrl ?? '').trim());
+
+  /** Why Create is blocked for an X image this tab holds but cannot send, or `null` — `linkedInImageAssetBlock`'s sibling. */
+  protected readonly twitterImageAssetBlock: Signal<CampaignTwitterImageAssetBlock | null> = this.initTwitterImageAssetBlock();
+  /** Whether the draft holds an uploaded X image made for the brief now open — the only one sent. */
+  protected readonly twitterImageAssetForThisBrief = computed(
+    () => this.twitterImageAssetId() !== '' && this.twitterImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: X creation is not an explicit yes. */
+  private readonly twitterAssetWithheld = computed(
+    () => (this.twitterImageAssetForThisBrief() || this.twitterImageUploadStatus() === 'uploading') && !this.twitterCreateAvailable()
+  );
+  protected readonly twitterImageAssetBlockMessage = computed(() => this.twitterImageAssetBlock()?.message ?? '');
+  protected readonly twitterImageUploadStatusMessage = computed(() => {
+    if (this.twitterImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.twitterImageAssetForThisBrief() ? `Uploaded: ${this.twitterImageAssetName() || 'image'}` : '';
+  });
+  protected readonly twitterImageUploadLiveMessage = computed(() => (this.twitterCreateAvailable() ? this.twitterImageUploadStatusMessage() : ''));
+  /** What the tweet preview says about its image, read from the same condition the payload is (`twitterImageSent`). */
+  protected readonly twitterPreviewImageLabel = computed(() => (this.twitterImageSent() ? `Image: ${this.twitterImageAssetName() || 'uploaded image'}` : ''));
+
+  /**
    * Why Create is blocked for an uploaded Microsoft image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL Microsoft does not have here.
    */
@@ -2647,7 +2801,8 @@ export class ImplementationTabComponent implements OnInit {
     const redditSelected = platforms.includes('reddit-ads');
     const metaSelected = platforms.includes('meta-ads');
     const microsoftSelected = platforms.includes('microsoft-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected) return false;
+    const twitterSelected = platforms.includes('twitter-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected && !twitterSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -2780,6 +2935,12 @@ export class ImplementationTabComponent implements OnInit {
     // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
     // a stale value in it must not block a create the operator cannot see the reason for.
     if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
+    // X: held without an explicit yes, never dropped (`twitterCreateBlock`); with one, every field
+    // campaign-service would refuse during dispatch — after the job exists — is caught here, each
+    // with its message on screen in the X section.
+    if (this.twitterCreateBlock() !== null) return false;
+    // An X connection with no ad account bound: campaign-service refuses that create outright.
+    if (twitterSelected && (this.twitterBudgetError() !== null || this.twitterTweetError() !== null || this.twitterFlightError() !== null)) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
@@ -2797,6 +2958,7 @@ export class ImplementationTabComponent implements OnInit {
     if (this.metaImageAssetBlock() !== null) return false;
     if (this.googleImageAssetBlock() !== null) return false;
     if (this.linkedInImageAssetBlock() !== null) return false;
+    if (this.twitterImageAssetBlock() !== null) return false;
     if (this.microsoftImageAssetBlock() !== null) return false;
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
     // dropped. Unlike the extensions they change who the campaign is aimed at, so the create waits.
@@ -2847,6 +3009,7 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach()) return false;
     if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading') return false;
+    if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading') return false;
     if (
       this.showMicrosoftSection() &&
       this.microsoftAssetUploadAvailable() &&
@@ -2936,6 +3099,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
+  /**
+   * The held-languages sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, as {@link googleProximityWithheldMessage}
+   * does: the notice is created by the channel switch that gives it its text, so a region mounted with
+   * it would not reliably announce (#3568).
+   */
+  protected readonly googleLanguagesWithheldMessage = computed(() => {
+    const channelLabel = this.googleLanguagesWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleLanguages().length;
+    return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
+  });
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
@@ -3537,6 +3712,61 @@ export class ImplementationTabComponent implements OnInit {
   protected onMicrosoftImageAssetRemove(): void {
     this.clearMicrosoftImageAsset();
     this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen X tweet image for this brief — `onLinkedInImageFileChange`'s sibling, step for
+   * step, against X's own 5 MB limit: campaign-service refuses a larger image at dispatch.
+   */
+  protected onTwitterImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearTwitterImageAsset();
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, as LinkedIn's is.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failTwitterImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    if (file.size > TWITTER_IMAGE_MAX_BYTES) {
+      this.failTwitterImageUpload(TWITTER_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failTwitterImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followTwitterImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'twitter'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Re-read the X account after a failed read. */
+  protected onTwitterAccountRetry(): void {
+    this.twitterAccountAttempt.update((attempt) => attempt + 1);
+  }
+
+  /** Forget the uploaded X image (the stored asset stays upstream, unused). */
+  protected onTwitterImageAssetRemove(): void {
+    this.clearTwitterImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * Take X out of this create — the `twitterCreateBlock`'s way forward when the deployment cannot
+   * create there. The brief is untouched, so a remount re-seeds X from it and blocks again until the
+   * capability answers yes or a new brief leaves X out.
+   */
+  protected onTwitterRemove(): void {
+    this.selectedPlatforms.update((platforms) => platforms.filter((p) => p !== 'twitter-ads'));
   }
 
   /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
@@ -4369,6 +4599,13 @@ export class ImplementationTabComponent implements OnInit {
 
   protected submit(): void {
     if (!this.canSubmit()) return;
+    // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
+    // open across midnight UTC would otherwise send a start campaign-service now refuses.
+    const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;
+    if (twitterFlightError !== null) {
+      this.errors.set([twitterFlightError]);
+      return;
+    }
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
@@ -4557,6 +4794,11 @@ export class ImplementationTabComponent implements OnInit {
               ...(this.microsoftImageSent() ? { imageAssetId: this.microsoftImageAssetId() } : {}),
             },
           }
+        : {}),
+      // X only on an explicit yes. `canSubmit` already refuses a held X without one
+      // (`twitterCreateBlock`); the gate here is what makes the request agree with that on its own.
+      ...(platforms.includes('twitter-ads') && this.twitterCreateAvailable()
+        ? { twitterConfig: this.twitterConfigForCreate(form.startDate, form.endDate) }
         : {}),
       // Gated on the id, NOT on `platforms.includes('hubspot')`. `selectedPlatforms` is typed
       // `CampaignPlatform[]`, whose union has no 'hubspot' member, so a platform test here could
@@ -5085,6 +5327,208 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInImageUploadStatus.set('idle');
     this.linkedInImageUploadError.set('');
     this.linkedInImageUploadFailedBriefId.set('');
+  }
+
+  /**
+   * The `twitterConfig` as sent: exactly the wire `TwitterCampaignCreateRequest` describes, read
+   * from the same computeds the section renders and `canSubmit` gates on. The shared flight dates
+   * travel as they do for Meta.
+   */
+  private twitterConfigForCreate(startDate: string, endDate: string): TwitterCampaignCreateRequest {
+    return {
+      budgetAmount: this.twitterBudgetAmount() ?? 0,
+      startDate,
+      endDate,
+      tweetText: this.twitterTweetText().trim(),
+      ...(this.twitterImageSent() ? { imageAssetId: this.twitterImageAssetId() } : {}),
+      ...this.biddingField('twitter-ads'),
+    };
+  }
+
+  /** Whether the uploaded X image goes out: X creation is an explicit yes and the asset was made for the open brief. */
+  private twitterImageSent(): boolean {
+    return this.twitterCreateAvailable() && this.twitterImageAssetForThisBrief();
+  }
+
+  /** The X account read behind `twitterAccountState`, keyed on the foundation, the offer and the Retry count. */
+  private initTwitterAccountState(): Signal<CampaignTwitterAccountState> {
+    const idle: CampaignTwitterAccountState = { status: 'idle', result: null };
+    const key = computed(() => ({
+      slug: this.activeFoundationSlug(),
+      offered: this.showTwitterSection() && this.twitterCreateAvailable(),
+      attempt: this.twitterAccountAttempt(),
+    }));
+    return toSignal(
+      toObservable(key).pipe(
+        switchMap(({ slug, offered }) => {
+          if (!offered || slug === '') return of(idle);
+          return this.campaignService.getTwitterAdsAccounts(slug).pipe(
+            // A connection campaign-service could not read comes back inside a 200 as
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
+            map(
+              (result): CampaignTwitterAccountState =>
+                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
+            ),
+            catchError((err: unknown) =>
+              of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
+            ),
+            startWith<CampaignTwitterAccountState>({ status: 'loading', result: null })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  /**
+   * Why the flight cannot be sent to X at `nowMs`, or `null`. campaign-service sends the start date
+   * as UTC midnight and refuses one not more than `TWITTER_MIN_START_LEAD_MS` ahead
+   * (`twitterStartDateTooSoon`), so near midnight UTC even tomorrow can be too soon. The end must be
+   * after the start, as for Meta and Reddit.
+   */
+  private twitterFlightErrorAt(nowMs: number): string | null {
+    const { startDate, endDate } = this.campaignForm.controls;
+    if (!startDate.value || !endDate.value) return null;
+    if (twitterStartDateTooSoon(startDate.value, nowMs)) {
+      return 'X needs the start date more than five minutes ahead of now: it starts the campaign at midnight UTC on that date. Pick a later start date.';
+    }
+    if (endDate.value <= startDate.value) return 'X needs an end date after the start date.';
+    return null;
+  }
+
+  /** `initBiddingCapabilityBlock`'s sibling for X as a whole, on the same capability read. */
+  private initTwitterCreateBlock(): Signal<CampaignTwitterCreateBlock | null> {
+    return computed(() => {
+      if (!this.showTwitterSection() || this.twitterCreateAvailable()) return null;
+      if (this.twitterCreateEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'X campaign creation is not available on this deployment, so X cannot be created with this brief. Remove X to create the other platforms.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking X campaign support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "X campaign support can't be checked until this brief is saved. Save the brief, or remove X." };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that X campaign creation is supported, so X cannot be created yet. Retry the check, or remove X.',
+      };
+    });
+  }
+
+  /** `initLinkedInImageAssetBlock`'s sibling, for the tweet image. */
+  private initTwitterImageAssetBlock(): Signal<CampaignTwitterImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showTwitterSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.twitterImageAssetId() !== '' && briefId && this.twitterImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded X image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.twitterImageUploadStatus() === 'error' && briefId && this.twitterImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The X image upload did not complete: ${this.twitterImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.twitterAssetWithheld()) return null;
+      if (this.twitterCreateEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'X campaign creation is not available on this deployment, so the X image cannot be sent. Remove it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking X campaign support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "X campaign support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that X campaign creation is supported, so the X image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followLinkedInImageUpload`'s sibling. */
+  private followTwitterImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.twitterImageUploadStatus.set('uploading');
+    this.twitterImageUploadError.set('');
+    this.twitterImageUploadPendingName.set(fileName);
+    this.twitterImageUploadPendingBriefId.set(briefId);
+    this.twitterImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('twitter', upload$);
+        this.twitterImageUploadPendingName.set('');
+        this.twitterImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failTwitterImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.twitterImageAssetId.set(asset.id);
+        this.twitterImageAssetName.set(fileName);
+        this.twitterImageAssetBriefId.set(briefId);
+        this.twitterImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('twitter', upload$);
+        this.twitterImageUploadPendingName.set('');
+        this.twitterImageUploadPendingBriefId.set('');
+        this.failTwitterImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeLinkedInImageUpload`'s sibling. */
+  private resumeTwitterImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.twitterImageUploadPendingName.set(fileName);
+      this.twitterImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('twitter', briefId) : null;
+    if (!upload$) {
+      this.failTwitterImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followTwitterImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearTwitterImageAsset(): void {
+    this.twitterImageUploadSub?.unsubscribe();
+    this.twitterImageUploadSub = null;
+    if (this.twitterImageUploadStatus() === 'uploading' || this.twitterImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('twitter');
+    }
+    this.twitterImageUploadPendingName.set('');
+    this.twitterImageUploadPendingBriefId.set('');
+    this.twitterImageAssetId.set('');
+    this.twitterImageAssetName.set('');
+    this.twitterImageAssetBriefId.set('');
+    this.twitterImageUploadStatus.set('idle');
+    this.twitterImageUploadError.set('');
+    this.twitterImageUploadFailedBriefId.set('');
+  }
+
+  private failTwitterImageUpload(message: string, briefId = ''): void {
+    this.twitterImageUploadStatus.set('error');
+    this.twitterImageUploadError.set(message);
+    this.twitterImageUploadFailedBriefId.set(briefId);
   }
 
   private failLinkedInImageUpload(message: string, briefId = ''): void {
@@ -5753,6 +6197,21 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.linkedInImageUploadPendingName) {
       this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
     }
+    // The X section, on the same present-only rule: the two typed fields, then the tweet image on
+    // the LinkedIn upload's terms above.
+    if (draft.twitterBudget !== undefined) this.campaignForm.controls.twitterBudget.setValue(draft.twitterBudget);
+    if (draft.twitterTweetText !== undefined) this.campaignForm.controls.twitterTweetText.setValue(draft.twitterTweetText);
+    if (draft.twitterImageAssetId !== undefined) {
+      this.twitterImageAssetId.set(draft.twitterImageAssetId);
+      this.twitterImageAssetName.set(draft.twitterImageAssetName ?? '');
+      this.twitterImageAssetBriefId.set(draft.twitterImageAssetBriefId ?? '');
+    }
+    if (draft.twitterImageUploadFailedMessage && draft.twitterImageUploadFailedBriefId) {
+      this.failTwitterImageUpload(draft.twitterImageUploadFailedMessage, draft.twitterImageUploadFailedBriefId);
+    }
+    if (draft.twitterImageUploadPendingName) {
+      this.resumeTwitterImageUpload(draft.twitterImageUploadPendingName, draft.twitterImageUploadPendingBriefId ?? '');
+    }
     // The Microsoft image, on the Meta upload's terms above.
     if (draft.microsoftImageAssetId !== undefined) {
       this.microsoftImageAssetId.set(draft.microsoftImageAssetId);
@@ -5979,6 +6438,15 @@ export class ImplementationTabComponent implements OnInit {
       linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
       linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
       linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+      twitterBudget: form.twitterBudget,
+      twitterTweetText: form.twitterTweetText,
+      twitterImageAssetId: this.twitterImageAssetId(),
+      twitterImageAssetName: this.twitterImageAssetName(),
+      twitterImageAssetBriefId: this.twitterImageAssetBriefId(),
+      twitterImageUploadPendingName: this.twitterImageUploadPendingName(),
+      twitterImageUploadPendingBriefId: this.twitterImageUploadPendingBriefId(),
+      twitterImageUploadFailedMessage: this.twitterImageUploadFailedBriefId() ? this.twitterImageUploadError() : '',
+      twitterImageUploadFailedBriefId: this.twitterImageUploadFailedBriefId(),
       microsoftImageAssetId: this.microsoftImageAssetId(),
       microsoftImageAssetName: this.microsoftImageAssetName(),
       microsoftImageAssetBriefId: this.microsoftImageAssetBriefId(),
@@ -6021,7 +6489,12 @@ export class ImplementationTabComponent implements OnInit {
       //
       // Empty is the honest answer: `canSubmit()` requires at least one selected platform, so the
       // brief opens blocked rather than dispatching something unchosen.
-      const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
+      //
+      // X is the one disabled platform KEPT. Its `disabled` is a static default the capability
+      // (`twitterCreateEnabled`) overrides, and the capability may answer after this seed runs, so
+      // filtering on it here would drop an X the operator chose. Kept, it is either created (an
+      // explicit yes) or blocked with a Remove (`twitterCreateBlock`) — never sent unconfirmed.
+      const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
       this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
@@ -8116,6 +8589,9 @@ export class ImplementationTabComponent implements OnInit {
         return { objective: this.metaObjective(), dailyBudget: this.metaLifetimeBudget() ? null : this.metaBudgetUsd() };
       case 'reddit-ads':
         return { objective: this.redditObjective() };
+      // X's manual bid may not exceed the daily budget (`twitterBidPlan`).
+      case 'twitter-ads':
+        return { dailyBudget: this.twitterBudgetAmount() };
       default:
         return {};
     }

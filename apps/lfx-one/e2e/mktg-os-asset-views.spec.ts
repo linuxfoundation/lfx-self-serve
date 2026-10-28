@@ -5,7 +5,6 @@ import { expect, test } from '@playwright/test';
 import {
   BRAND_KIT_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
-  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
@@ -19,7 +18,7 @@ import {
 
 test.describe('Native FAQ document approval and header', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
-  test('projects the shared document header and catalog Run again onto the native FAQ without exports', async ({ page }, info) => {
+  test('keeps Create a new version and Approve in the title card for native FAQ without exports', async ({ page }, info) => {
     await openAssetDocument(page, 'faq');
     const view = page.getByTestId('mktg-faq-view');
     await expect(view).toBeVisible();
@@ -32,7 +31,12 @@ test.describe('Native FAQ document approval and header', () => {
     await expect(page.getByTestId('mktg-document-view-json')).toHaveCount(0);
     await expect(page.getByTestId('shared-markdown-renderer-content')).toHaveCount(0);
     await expect(view.getByRole('button', { name: /Download PDF|Export to Google Slides/ })).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-run-again')).toHaveAttribute('href', /\/mktg-os-agents\/faq\?project=/);
+    const actions = page.getByTestId('mktg-document-view-title-actions');
+    await expect(actions.getByTestId('mktg-document-view-run-again')).toHaveText('Create a new version');
+    await expect(actions.getByTestId('mktg-document-view-run-again')).toHaveAttribute('href', /\/mktg-os-agents\/faq\?project=/);
+    await expect(actions.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+    await expect(page.getByTestId('mktg-faq-view-unanswered-chip')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-faq-view-unanswered-open')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('loaded.png'), fullPage: true });
   });
   test('approves directly without confirmation and updates the header', async ({ page }, info) => {
@@ -185,16 +189,18 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await lastRead;
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
     await expect(page.getByTestId(prefix)).toContainText('Loading the approved current');
-    await expect(page.getByTestId(prefix + '-download-pdf').getByRole('button')).toBeDisabled();
-    await expect(page.getByTestId(prefix + '-export-slides').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId(prefix + '-download-pdf')).toHaveCount(0);
+    await expect(page.getByTestId(prefix + '-export-slides')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath(`${key}-history-before-approved.png`), fullPage: true });
   });
   test(`${key} requires approval before PDF or Slides`, async ({ page }, info) => {
     await openUnapprovedAssetDocument(page, key);
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
-    await expect(page.getByTestId(prefix + '-approval-required')).toHaveText(MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE);
-    await expect(page.getByTestId(prefix + '-download-pdf').getByRole('button')).toBeDisabled();
-    await expect(page.getByTestId(prefix + '-export-slides').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-document-view-title-actions').getByTestId(prefix + '-approval-required')).toHaveText(
+      'Export is available once this version is approved'
+    );
+    await expect(page.getByTestId(prefix + '-download-pdf')).toHaveCount(0);
+    await expect(page.getByTestId(prefix + '-export-slides')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath(`${key}-approve-first.png`), fullPage: true });
   });
 }
@@ -208,8 +214,9 @@ for (const receipt of [true, false]) {
     await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
     await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('approved by');
     await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('the kit still shows');
-    await expect(page.getByTestId('mktg-framework-view-download-pdf').getByRole('button')).toBeDisabled();
-    await expect(page.getByTestId('mktg-framework-view-export-slides').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-framework-view-approval-required')).toHaveText('Export is available once this version is approved');
+    await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
     await page.getByRole('button', { name: 'Open in Documents', exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
     await expect(page).toHaveURL(/\/documents\/foundation-message\/living/);

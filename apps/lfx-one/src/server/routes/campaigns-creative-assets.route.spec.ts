@@ -201,6 +201,7 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
         ServerFeatureFlag.CampaignServiceMetaAssets,
         ServerFeatureFlag.CampaignServiceLinkedInAssets,
         ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
       ],
     ],
     [
@@ -210,6 +211,7 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
         ServerFeatureFlag.CampaignServiceMetaAssets,
         ServerFeatureFlag.CampaignServiceLinkedInAssets,
         ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
       ],
     ],
     [
@@ -219,6 +221,7 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
         ServerFeatureFlag.CampaignServiceGoogleAssets,
         ServerFeatureFlag.CampaignServiceLinkedInAssets,
         ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
       ],
     ],
     [
@@ -228,6 +231,7 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
         ServerFeatureFlag.CampaignServiceGoogleAssets,
         ServerFeatureFlag.CampaignServiceMetaAssets,
         ServerFeatureFlag.CampaignServiceMicrosoftAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
       ],
     ],
     [
@@ -237,6 +241,17 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
         ServerFeatureFlag.CampaignServiceGoogleAssets,
         ServerFeatureFlag.CampaignServiceMetaAssets,
         ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceTwitterCreate,
+      ],
+    ],
+    [
+      'only X (the tweet image)',
+      [
+        ServerFeatureFlag.CampaignServiceRedditAssets,
+        ServerFeatureFlag.CampaignServiceGoogleAssets,
+        ServerFeatureFlag.CampaignServiceMetaAssets,
+        ServerFeatureFlag.CampaignServiceLinkedInAssets,
+        ServerFeatureFlag.CampaignServiceMicrosoftAssets,
       ],
     ],
   ])('admits an upload when %s can consume the asset', async (_label, offFlags) => {

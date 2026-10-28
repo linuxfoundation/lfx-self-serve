@@ -246,7 +246,6 @@ export interface HealthMetricsOverviewOrgsHalfView {
   engagementLabel: string;
   /** Empty when the period has no engagement split, so the donut shows its track only. */
   donut: HealthMetricsOverviewDonutSegmentView[];
-  lowPctLabel: string;
   rows: HealthMetricsOverviewEngagementRowView[];
   link: HealthMetricsOverviewExploreLink;
 }
@@ -260,8 +259,22 @@ export interface HealthMetricsOverviewParticipatingOrgsView {
 export interface HealthMetricsOverviewGaugeSegmentView {
   key: string;
   path: string;
+  /** Full color for the segment holding the score, the color mixed toward white for the rest. */
   stroke: string;
-  opacity: number;
+}
+
+/** A round end cap of the gauge, at -100 or +100, in its segment's color. */
+export interface HealthMetricsOverviewGaugeCapView {
+  key: string;
+  x: string;
+  y: string;
+  fill: string;
+}
+
+/** One "Label: value" part of a card's meta line under its title. */
+export interface HealthMetricsOverviewMetaPart {
+  label: string;
+  value: string;
 }
 
 /** One Promoters / Passives / Detractors row. */
@@ -276,10 +289,12 @@ export interface HealthMetricsOverviewNpsRowView {
 
 export interface HealthMetricsOverviewNpsView {
   isEmpty: boolean;
-  subtitle: string;
+  /** "Latest NPS: Q2 2026 · Audience: Board · Responses: 15 of 22 (68%)". */
+  meta: HealthMetricsOverviewMetaPart[];
   scoreLabel: string;
   delta: HealthMetricsOverviewDelta | null;
   segments: HealthMetricsOverviewGaugeSegmentView[];
+  caps: HealthMetricsOverviewGaugeCapView[];
   /** The needle's tip; `null` without a score, so no needle is drawn. */
   needle: { x: string; y: string } | null;
   ariaLabel: string;
@@ -326,12 +341,18 @@ export interface HealthMetricsOverviewBalanceView {
   rows: HealthMetricsOverviewBalanceRowView[];
 }
 
-/** A count over a bar: the figure, the text right of it ("of 1,000", "No goal set") and the bar's width and fill. */
+/**
+ * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
+ * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
+ */
 export interface HealthMetricsOverviewEventBarView {
   countLabel: string;
   sideLabel: string;
+  /** Empty when the side text has no value, as "No goal set" doesn't. */
+  sideValue: string;
   widthPct: number;
   barClass: string;
+  neutral: boolean;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
@@ -448,15 +469,43 @@ export interface HealthMetricsOverviewBoardView {
   rows: HealthMetricsOverviewBoardRowView[];
 }
 
-/** One line on the registration trend chart, as an SVG path on the 600×220 viewBox. */
+/** A trend dialog figure; the predicted one carries its range as a small high and low stack. */
+export interface HealthMetricsOverviewTrendKpiView {
+  key: string;
+  label: string;
+  value: string;
+  range: { high: string; low: string } | null;
+}
+
+/** An axis tick: its label and where it sits, as a percentage of the plot. */
+export interface HealthMetricsOverviewTrendTickView {
+  label: string;
+  pct: string;
+}
+
+/** A y-axis tick, which also draws a gridline at its y on the 600×220 canvas. */
+export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOverviewTrendTickView {
+  y: string;
+}
+
+/** The registration trend dialog: its figures, axis ticks and chart paths on the 600×220 viewBox. */
 export interface HealthMetricsOverviewTrendView {
-  kpis: HealthMetricsOverviewKpiView[];
+  /** Current, Same point last year, and Predicted (or Final for a past event). */
+  kpis: HealthMetricsOverviewTrendKpiView[];
+  goalLabel: string;
+  /** "Days left", or "Event held" for a past event. */
+  daysTitle: string;
+  daysLabel: string;
+  yTicks: HealthMetricsOverviewTrendYTickView[];
+  xTicks: HealthMetricsOverviewTrendTickView[];
   currentPath: string;
   lastYearPath: string;
   predictedPath: string;
   bandPath: string;
   /** `null` once the event is past the chart's window or has no actuals. */
   todayX: string | null;
+  /** Where the "Today" label sits, as a percentage of the plot's width. */
+  todayPct: string | null;
   /** The registration goal's dashed line; `null` without a goal. */
   goalY: string | null;
 }

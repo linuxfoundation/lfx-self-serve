@@ -221,13 +221,18 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Whether the caller is a member of `team:lf-staff`. Its consumers sit outside Org Lens and gate
+   * Whether the caller is a member of `team:lf-staff`. Most consumers sit outside Org Lens and gate
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
    * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
    * `OrgRoleGrantsService` (`ORG_WIDE_READ_TEAM_IDS`), which is a separate list with separate
-   * consumers — widening either does not widen the other. Neither is a read gate; that is the
-   * authorizer-backed `assertOrgLensRead`.
+   * consumers — widening either does not widen the other. Neither of those is a read gate; that is
+   * the authorizer-backed `assertOrgLensRead`.
+   *
+   * ONE consumer uses this as a FIELD-LEVEL DISCLOSURE gate: `OrgLensEventsService` withholds the
+   * event-wide registration goal (#4432) from everyone this returns `false` for, on every org's
+   * Events page. It is the only caller where `true` discloses data rather than admitting access, so
+   * widening `lf-staff#member` here — re-adding `lf-contractor`, say — widens that disclosure too.
    * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {

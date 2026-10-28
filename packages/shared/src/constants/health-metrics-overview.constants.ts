@@ -206,7 +206,7 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   progress: lfxColors.blue[500],
   needle: lfxColors.gray[900],
   gridline: lfxColors.gray[100],
-  baseline: lfxColors.gray[200],
+  axis: lfxColors.gray[300],
   lastYear: lfxColors.gray[400],
   today: lfxColors.gray[300],
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
@@ -256,6 +256,9 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
 
 /** Events shown before "View all". */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
+
+/** How strongly the NPS gauge's inactive segments keep their color, mixed toward white. */
+export const HEALTH_METRICS_OVERVIEW_GAUGE_TINT = 0.22;
 
 /** The registration trend's window: days before the event at the chart's left edge. */
 export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;

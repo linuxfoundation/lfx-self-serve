@@ -3,7 +3,7 @@
 <div class="flex min-w-0 flex-col gap-1 text-sm [overflow-wrap:anywhere]" data-testid="mktg-comment-thread">
   <p class="text-xs text-gray-500">{{ author() }} · {{ comment().createdAt | date: 'd MMM' }} · on {{ field() }}</p>
   <p class="whitespace-pre-wrap break-words text-gray-900">{{ comment().text }}</p>
-  <p class="text-xs font-medium text-blue-700">{{ status() }}</p>
+  <p class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700">{{ status() }}</p>
   @if (comment().resolution) {
     <p class="whitespace-pre-wrap break-words text-gray-700" data-testid="mktg-comment-resolution">{{ comment().resolution }}</p>
   }

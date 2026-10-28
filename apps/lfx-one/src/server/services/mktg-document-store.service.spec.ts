@@ -73,6 +73,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/linkedin-post.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({

@@ -269,10 +269,16 @@ export class GuildService {
   }
 
   /** One best-effort outcome step, after authorization and before result logging/persistence. */
-  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(req: Request, sessionId: string, result: T): Promise<T | MktgFailedRunOutcome> {
+  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(
+    req: Request,
+    sessionId: string,
+    result: T,
+    resultEndpoint?: string
+  ): Promise<T | MktgFailedRunOutcome> {
     if (result.status === 'ready' || result.status === 'refused' || result.status === 'failed') return result;
     if (result.status !== 'pending' && result.status !== 'questions') return result;
-    const endpoint = (req.originalUrl ?? req.path ?? '').split('?')[0];
+    // Internal document reconciliation supplies its catalog endpoint without changing the visiting Request.
+    const endpoint = resultEndpoint ?? (req.originalUrl ?? req.path ?? '').split('?')[0];
     if (!Object.values(MKTG_AGENT_INTAKES).some((intake) => intake.endpoints.result === endpoint || intake.endpoints.result === `/api/mktg-agents${endpoint}`))
       return result;
     try {

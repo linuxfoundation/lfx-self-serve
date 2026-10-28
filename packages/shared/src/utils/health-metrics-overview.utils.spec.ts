@@ -21,6 +21,7 @@ import {
   buildHealthMetricsOverviewOrgsView,
   buildHealthMetricsOverviewTrainingView,
   buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
   sortHealthMetricsOverviewBoardRows,
@@ -111,22 +112,58 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Low', '0', '0%'],
     ]);
     expect(nonMembers.rows[0].pctLabel).toBe('<1%');
-    expect(nonMembers.lowPctLabel).toBe('100%');
   });
 
-  it('draws a ring per level with organizations, offset so the round caps never touch', () => {
-    const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
+  /** Each segment's start on the ring and its drawn length. */
+  function spans(donut: { dashArray: string; dashOffset: string }[]): { start: number; length: number }[] {
+    return donut.map((segment) => ({ start: Math.abs(Number(segment.dashOffset)), length: Number(segment.dashArray.split(' ')[0]) }));
+  }
 
-    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium']);
-    expect(donut[0].dashOffset).toBe('-4.00');
-    expect(Number(donut[1].dashOffset)).toBeLessThan(-4);
+  /** Every segment ends at least 2px before the next one starts, and the last one ends before the ring closes. */
+  function expectNoOverlap(drawn: { start: number; length: number }[]): void {
+    drawn.forEach((span, index) => {
+      const next = drawn[index + 1]?.start ?? 2 * Math.PI * 36;
+      expect(span.start + span.length + 2).toBeLessThanOrEqual(next + 0.01);
+    });
+  }
+
+  it('draws every level on the 36px ring, 2px short of the next, giving a zero share its own visible 1.5px sliver', () => {
+    const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
+    const shared = 2 * Math.PI * 36 - 3.5;
+    const drawn = spans(donut);
+
+    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium', 'low']);
+    expect(drawn[0]).toEqual({ start: 0, length: Number(((64 / 228) * shared - 2).toFixed(2)) });
+    expect(drawn[2].length).toBe(1.5);
+    expectNoOverlap(drawn);
+  });
+
+  it('gives a tiny non-zero share a full sliver and gap, so the next segment never paints over it', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 1, mediumCount: 998, lowCount: 1, highPct: null, mediumPct: null, lowPct: null } };
+    const drawn = spans(buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves[0].donut);
+
+    expect(drawn.map((span) => span.length)).toEqual([1.5, expect.any(Number), 1.5]);
+    expectNoOverlap(drawn);
+  });
+
+  it('leaves an unmeasured level off the ring', () => {
+    const partial = { ...period, memberEngagement: { highCount: 100, mediumCount: null, lowCount: null, highPct: null, mediumPct: null, lowPct: null } };
+    const { donut } = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(partial) }, 'YTD').halves[0];
+
+    expect(donut.map((segment) => segment.key)).toEqual(['high']);
+  });
+
+  it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 7, mediumCount: 993, lowCount: 0, highPct: null, mediumPct: null, lowPct: null } };
+    const [members] = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves;
+
+    expect(members.rows.map((row) => row.pctLabel)).toEqual(['<1%', '99%', '0%']);
   });
 
   it('leaves the split unmeasured for a period the view does not model', () => {
     const half = buildHealthMetricsOverviewOrgsView(orgs, 'COMPLETED_YEAR_2').halves[0];
 
     expect(half.donut).toEqual([]);
-    expect(half.lowPctLabel).toBe('—');
     expect(half.rows.map((row) => row.countLabel)).toEqual(['—', '—', '—']);
   });
 
@@ -157,7 +194,11 @@ describe('buildHealthMetricsOverviewNpsView', () => {
   it('reads the survey, the change against the previous wave and the response split', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.subtitle).toBe('Last survey: Q2 2026 · 15 of 22 responded (68%)');
+    expect(view.meta).toEqual([
+      { label: 'Latest NPS:', value: 'Q2 2026' },
+      { label: 'Audience:', value: 'Board' },
+      { label: 'Responses:', value: '15 of 22 (68%)' },
+    ]);
     expect(view.scoreLabel).toBe('80');
     expect(view.delta).toEqual({ label: '12 pts vs Q4 2025', direction: 'up', good: true });
     expect(view.rows.map((row) => [row.label, row.range, row.countLabel, row.pctLabel])).toEqual([
@@ -169,14 +210,18 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     expect(view.ariaLabel).toBe('Net Promoter Score 80 on a scale from -100 to 100');
   });
 
-  it('lights only the band the score falls in and points the needle at it', () => {
+  it('lights only the band the score falls in, mixing the rest toward white, and points the needle at it', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.segments.map((segment) => [segment.key, segment.opacity])).toEqual([
-      ['very-low', 0.22],
-      ['low', 0.22],
-      ['medium', 0.22],
-      ['high', 1],
+    expect(view.segments.map((segment) => [segment.key, segment.stroke])).toEqual([
+      ['very-low', '#FFDDDE'],
+      ['low', '#FFDDDE'],
+      ['medium', '#FFF0C7'],
+      ['high', '#00BC7D'],
+    ]);
+    expect(view.caps.map((cap) => [cap.key, cap.fill])).toEqual([
+      ['start', '#FFDDDE'],
+      ['end', '#00BC7D'],
     ]);
     expect(view.needle).not.toBeNull();
     expect(Number(view.needle?.x)).toBeGreaterThan(66);
@@ -187,7 +232,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     const view = buildHealthMetricsOverviewNpsView(fell, 'YTD');
 
     expect(view.delta).toEqual({ label: '1 pt', direction: 'down', good: false });
-    expect(view.segments.find((segment) => segment.opacity === 1)?.key).toBe('low');
+    expect(view.segments.find((segment) => segment.stroke === '#FF6467')?.key).toBe('low');
   });
 
   it('is empty for a period with no survey sent', () => {
@@ -195,7 +240,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
 
     expect(view.isEmpty).toBe(true);
     expect(view.needle).toBeNull();
-    expect(view.segments.every((segment) => segment.opacity === 0.22)).toBe(true);
+    expect(view.segments.map((segment) => segment.stroke)).toEqual(['#FFDDDE', '#FFDDDE', '#FFF0C7', '#C7F0E2']);
   });
 });
 
@@ -381,18 +426,28 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     ]);
   });
 
-  it("colors an upcoming event's registrations bar by its pace, and fills it green without a goal", () => {
+  it("colors an upcoming event's registrations bar by its pace, with a neutral outlined bar and no status without a goal", () => {
     const [atRisk, noGoal, onTrack] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD').rows;
 
     expect(atRisk.meta).toBe('Springfield · Dec 8–10, 2026');
     expect(atRisk.registrations).toEqual({
       countLabel: '328',
-      sideLabel: 'of 1,000',
+      sideLabel: 'Goal:',
+      sideValue: '1,000',
       widthPct: expect.closeTo(32.8, 5),
       barClass: 'bg-amber-400',
+      neutral: false,
       statusLabel: 'At risk',
     });
-    expect(noGoal.registrations).toEqual({ countLabel: '328', sideLabel: 'No goal set', widthPct: 100, barClass: 'bg-emerald-500', statusLabel: 'On track' });
+    expect(noGoal.registrations).toEqual({
+      countLabel: '328',
+      sideLabel: 'No goal set',
+      sideValue: '',
+      widthPct: 0,
+      barClass: '',
+      neutral: true,
+      statusLabel: null,
+    });
     expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track' });
   });
 
@@ -405,19 +460,21 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     });
   });
 
-  it('shows accepted speaking proposals against all proposals, or the call for proposals stage without any', () => {
+  it('shows accepted speaking proposals against those received, or the call for proposals stage without any', () => {
     const [withProposals, inReview, none] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD').rows;
 
     expect(withProposals.talks).toEqual({
       hasProposals: true,
       countLabel: '0',
-      sideLabel: 'of 185',
+      sideLabel: 'Received:',
+      sideValue: '185',
       widthPct: 0,
       barClass: 'bg-blue-500',
-      note: 'No call for proposals',
+      neutral: false,
+      note: 'N/A',
     });
-    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP in review' });
-    expect(none.talks.note).toBe('No call for proposals');
+    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review' });
+    expect(none.talks.note).toBe('N/A');
   });
 
   it("lists a past year's events, colored by their share of the goal, with green submitted proposals", () => {
@@ -426,12 +483,12 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     expect(view.listTitle).toBe('Past events');
     expect(view.listInfo).toContain('selected time period');
     expect(view.total).toMatchObject({ value: '20', pastLabel: '20', upcomingLabel: '0', pastPct: 100, upcomingPct: 0 });
-    expect(view.rows.map((row) => [row.eventId, row.isPast, row.registrations.sideLabel, row.registrations.barClass])).toEqual([
-      ['p1', true, 'of 800', 'bg-emerald-500'],
-      ['p2', true, 'of 1,000', 'bg-amber-400'],
-      ['p4', true, 'No goal set', 'bg-emerald-500'],
+    expect(view.rows.map((row) => [row.eventId, row.isPast, row.registrations.sideLabel, row.registrations.sideValue, row.registrations.barClass])).toEqual([
+      ['p1', true, 'Goal:', '800', 'bg-emerald-500'],
+      ['p2', true, 'Goal:', '1,000', 'bg-amber-400'],
+      ['p4', true, 'No goal set', '', ''],
     ]);
-    expect(view.rows[0].talks).toMatchObject({ countLabel: '64', sideLabel: 'of 310 submitted', barClass: 'bg-emerald-500' });
+    expect(view.rows[0].talks).toMatchObject({ countLabel: '64', sideLabel: 'Received:', sideValue: '310', barClass: 'bg-emerald-500' });
   });
 
   it('turns a past event under 80% of its goal red', () => {
@@ -448,9 +505,11 @@ describe('buildHealthMetricsOverviewEventsView', () => {
 
     expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, unmeasured, 'COMPLETED_YEAR').rows[0].registrations).toEqual({
       countLabel: '—',
-      sideLabel: 'of 1,000',
+      sideLabel: 'Goal:',
+      sideValue: '1,000',
       widthPct: 0,
       barClass: 'bg-gray-300',
+      neutral: false,
       statusLabel: null,
     });
   });
@@ -497,6 +556,16 @@ describe('buildHealthMetricsOverviewEventMeta', () => {
     [{ city: 'Napa', startDate: null, endDate: null }, 'Napa'],
   ])('formats %o as %s', (event, expected) => {
     expect(buildHealthMetricsOverviewEventMeta(event)).toBe(expected);
+  });
+});
+
+describe('buildHealthMetricsOverviewTrendMeta', () => {
+  it.each([
+    [{ city: 'Yokohama', startDate: '2026-12-15' }, 'Yokohama · Starts Dec 15, 2026'],
+    [{ city: null, startDate: '2026-11-30' }, 'Starts Nov 30, 2026'],
+    [{ city: 'Napa', startDate: null }, 'Napa'],
+  ])('formats %o as %s', (event, expected) => {
+    expect(buildHealthMetricsOverviewTrendMeta(event)).toBe(expected);
   });
 });
 
@@ -728,15 +797,35 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     points: [point(-200, 10, null, 5), point(-90, 200, null, 180), point(-46, 330, null, 300), point(-20, null, 500, 420), point(0, null, 620, 600)],
   };
 
-  it('reads the headline figures, falling back to the list row without a forecast', () => {
-    expect(buildHealthMetricsOverviewTrendView(row, headline, series).kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
-      ['Current', '330'],
-      ['Same point last year', '300'],
-      ['Predicted', '620'],
-      ['Registration goal', '1,000'],
-      ['Days left', '46'],
+  it('reads the headline figures, with the predicted range beside the prediction, falling back to the list row without a forecast', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value, kpi.range])).toEqual([
+      ['Current', '330', null],
+      ['Same point last year', '300', null],
+      ['Predicted', '620', { high: '680', low: '560' }],
     ]);
-    expect(buildHealthMetricsOverviewTrendView(row, null, null).kpis.map((kpi) => kpi.value)).toEqual(['328', '—', '—', '1,000', '—']);
+    expect([view.goalLabel, view.daysTitle, view.daysLabel]).toEqual(['1,000', 'Days left', '46']);
+    const fallback = buildHealthMetricsOverviewTrendView(row, null, null);
+    expect([...fallback.kpis.map((kpi) => kpi.value), fallback.goalLabel, fallback.daysLabel]).toEqual(['328', '—', '—', '1,000', '—']);
+    expect(fallback.kpis[2].range).toBeNull();
+  });
+
+  it('rounds the scale up to at most 5 even steps, with ticks every 30 days', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+
+    // The goal of 1,000 plus 5% headroom rounds up to 5 steps of 250.
+    expect(view.yTicks.map((tick) => tick.label)).toEqual(['1,250', '1,000', '750', '500', '250', '0']);
+    expect(view.yTicks[1]).toMatchObject({ pct: '20.00', y: '44.0' });
+    expect(view.xTicks.map((tick) => tick.label)).toEqual(['180', '150', '120', '90', '60', '30', '0']);
+    expect(view.xTicks[6].pct).toBe('100.00');
+  });
+
+  it('keeps whole-number steps on a small scale', () => {
+    const small = { format: 'In Person', points: [point(-30, 1, null, 2), point(-10, 3, null, null)] };
+    const view = buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, null, small);
+
+    expect(view.yTicks.map((tick) => tick.label)).toEqual(['4', '3', '2', '1', '0']);
   });
 
   it('plots the last 180 days, joining the prediction to the last actual figure at today', () => {
@@ -745,11 +834,10 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.currentPath.startsWith('M300.0')).toBe(true);
     expect(view.currentPath.split('L')).toHaveLength(2);
     expect(view.predictedPath.startsWith('M446.7')).toBe(true);
-    // The goal is the tallest figure, so it sets the scale with 8% headroom.
-    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1080) * 220).toFixed(1)}`)).toBe(true);
+    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1250) * 220).toFixed(1)}`)).toBe(true);
     expect(view.bandPath.endsWith(' Z')).toBe(true);
-    expect(view.todayX).toBe('446.7');
-    expect(view.goalY).toBe((220 - (1000 / 1080) * 220).toFixed(1));
+    expect([view.todayX, view.todayPct]).toEqual(['446.7', '74.44']);
+    expect(view.goalY).toBe('44.0');
   });
 
   it('draws no goal line without a goal', () => {
@@ -791,13 +879,14 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
   const curve = { eventId: 'p1', formats: [inPerson, virtual] };
 
   it("reads the event's final count against last year's, which adds each format's last day", () => {
-    expect(buildHealthMetricsOverviewPastTrendView(row, curve, inPerson).kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
+    const view = buildHealthMetricsOverviewPastTrendView(row, curve, inPerson);
+
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
       ['Current', '512'],
       ['Same point last year', '430'],
       ['Final', '512'],
-      ['Registration goal', '500'],
-      ['Event held', '0'],
     ]);
+    expect([view.goalLabel, view.daysTitle, view.daysLabel, view.todayPct]).toEqual(['500', 'Event held', '0', null]);
   });
 
   it('draws the history and last year with no forecast or today line', () => {
