@@ -198,13 +198,19 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** The Google Ads monitor is independent of the separately authorized keyword and audience reads. */
   protected readonly googleRestricted = signal(false);
+  private googleAccountsSub: Subscription | null = null;
+  /**
+   * Set once the discovery read is refused as shared-account-restricted. The refusal is about the
+   * caller (root-only, as the Google Ads monitor), not the foundation, so later loads skip a read
+   * that can only answer 403 again.
+   */
+  private googleAccountsRefused = false;
   /**
    * The Google Ads accounts the project's connection can reach (campaign-service account discovery).
    * Read only with the cutover on; listed for reference, since the Google Ads monitor reads the
    * aggregate view rather than one picked account. `null` until a read answers, and for a non-root
    * caller, whose read is refused; an empty array is a connection that reaches no account.
    */
-  private googleAccountsSub: Subscription | null = null;
   protected readonly googleAccountOptions = signal<GoogleAdsAccountOption[] | null>(null);
   protected readonly googleAccountsLoading = signal(false);
   protected readonly googleAccountsError = signal<string | null>(null);
@@ -413,6 +419,13 @@ export class MonitoringTabComponent implements OnInit {
   protected loadGoogleAccounts(): void {
     const slug = this.activeFoundationSlug();
     this.googleAccountsSub?.unsubscribe();
+    // A caller already known to be restricted (by this read, or by the Google Ads monitor) would only
+    // be refused again: no request, and nothing shown, as for the refusal itself.
+    if (this.googleAccountsRefused || this.googleRestricted()) {
+      this.googleAccountsLoading.set(false);
+      this.googleAccountOptions.set(null);
+      return;
+    }
     this.googleAccountsLoading.set(true);
     this.googleAccountsError.set(null);
     this.googleAccountsSub = this.campaignService
@@ -429,7 +442,9 @@ export class MonitoringTabComponent implements OnInit {
           this.googleAccountsLoading.set(false);
           this.googleAccountOptions.set(null);
           // A non-root caller is refused the list as the Google Ads monitor is: nothing to show, not an error.
-          if (!this.isSharedAccountRestricted(err)) {
+          if (this.isSharedAccountRestricted(err)) {
+            this.googleAccountsRefused = true;
+          } else {
             this.googleAccountsError.set(extractErrorMessage(err, 'Failed to load Google Ads accounts'));
           }
         },

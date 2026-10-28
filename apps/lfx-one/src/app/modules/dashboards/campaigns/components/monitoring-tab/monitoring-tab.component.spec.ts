@@ -855,12 +855,6 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
-  /**
-   * Both directions of a mixed rollout (#3637 review). Discovery can succeed on a pod with the flag
-   * OFF while the read lands on one with it ON, which refuses the legacy-picker read with its own
-   * typed 409. That discovery SUCCEEDED, so the panel's Retry must still re-run it — every Retry
-   * re-checks the source — and then read the connection's account.
-   */
   describe('Google Ads account discovery', () => {
     it('reads nothing and lists nothing while the flag is off', async () => {
       await setup({ viaCampaignService: false, platforms: {} });
@@ -922,6 +916,21 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el('monitoring-google-accounts')).toBeNull();
     });
 
+    it('does not ask again once the caller is known to be refused, since the refusal is about the caller', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(calls);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
     it('drops the list when the cutover turns off', async () => {
       await setup(allConnected);
       service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
@@ -937,6 +946,12 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  /**
+   * Both directions of a mixed rollout (#3637 review). Discovery can succeed on a pod with the flag
+   * OFF while the read lands on one with it ON, which refuses the legacy-picker read with its own
+   * typed 409. That discovery SUCCEEDED, so the panel's Retry must still re-run it — every Retry
+   * re-checks the source — and then read the connection's account.
+   */
   describe('mixed rollout, legacy discovery then a flag-ON backend', () => {
     const legacyMismatch = (): HttpErrorResponse =>
       new HttpErrorResponse({
