@@ -104,23 +104,28 @@
     @let boilerplatesNumber = '03';
     @let faqNumber = '04';
     <section
-      class="lfx-family-print-cover flex h-screen flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] font-[family-name:var(--mfp-font)] text-[color:var(--mfp-on-dark)] break-after-page [overflow-wrap:anywhere]"
+      class="lfx-family-print-cover grid gap-[18pt] rounded-[10pt] p-[0.55in] font-[family-name:var(--mfp-font)] break-inside-avoid break-after-page [overflow-wrap:anywhere]"
       [style.--mfp-font]="document.brand.fontStack"
       [style.--mfp-dark]="document.brand.dark"
       [style.--mfp-accent]="document.brand.accent"
-      [style.--mfp-on-dark]="document.brand.onDark"
+      [style.--mfp-ink]="document.brand.ink"
       aria-label="Family cover"
       data-testid="family-export-print-cover">
       <p class="text-[9.5pt] uppercase tracking-[0.18em]">{{ document.projectName }}</p>
-      @if (document.brand.logoOnDark; as logo) {
-        <img class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left" [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" />
+      @if (document.brand.logoOnLight; as logo) {
+        <img
+          class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="family-export-print-logo" />
       }
-      <div class="flex flex-1 flex-col justify-center gap-[14pt]">
+      <div class="flex flex-col gap-[14pt]">
         <span class="h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]"></span>
-        <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]">{{ familyName() }} kit</h1>
+        <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="family-export-print-title">{{ familyName() }} kit</h1>
         <p class="text-[11pt]">Approved current · {{ document.printedAt | date: 'd MMM y' }}</p>
       </div>
-      <div class="h-px bg-[color:var(--mfp-on-dark)] opacity-20" aria-hidden="true"></div>
+      <div class="h-px bg-[color:var(--mfp-ink)] opacity-20" aria-hidden="true"></div>
       <dl class="grid grid-cols-[28pt_1fr] gap-y-[4pt] text-[9.5pt]" data-testid="family-export-print-contents">
         <dt class="opacity-60">{{ frameworkNumber }}</dt>
         <dd>Messaging framework{{ document.framework ? '' : ' — no approved current' }}</dd>

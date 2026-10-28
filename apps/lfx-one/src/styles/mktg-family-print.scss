@@ -6,6 +6,13 @@
   display: none;
 }
 
+.lfx-family-print-cover {
+  /* Readable with Background graphics ON or OFF: ink and logo are for white. */
+  background-color: white;
+  color: var(--mfp-ink);
+  border: 1pt solid var(--mfp-dark);
+}
+
 @layer tailwind-base {
   .lfx-family-print-cover :is(h1, p) {
     font-family: inherit;
@@ -13,10 +20,18 @@
 }
 
 @media print {
+  html:has(body.lfx-print-family) {
+    background: white !important;
+  }
+
   body.lfx-print-family {
     page: mktg-framework;
 
     .lfx-family-print-cover {
+      /* Leave room for the named page margins. Grid without a viewport-height
+         flex-growing child keeps title/contents together on either paper size. */
+      min-height: calc(100vh - 1.1in);
+      align-content: space-between;
       print-color-adjust: exact;
       -webkit-print-color-adjust: exact;
     }
@@ -38,6 +53,9 @@
     *:has(.lfx-family-print-only),
     .lfx-family-print-only {
       display: block !important;
+      /* Screen shell/canvas backgrounds must not paint the unused part of a sheet. */
+      background: white !important;
+      box-shadow: none !important;
       position: static !important;
       width: auto !important;
       min-width: 0 !important;

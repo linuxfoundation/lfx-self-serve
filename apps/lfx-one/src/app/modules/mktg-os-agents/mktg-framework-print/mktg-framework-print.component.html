@@ -88,9 +88,16 @@
         <span [class]="eyebrow">Positioning</span>
         <p class="text-[10pt]">{{ v.mf.positioning }}</p>
       </div>
-      <div class="col-span-2 border-l-[3pt] border-[color:var(--mfp-accent)]" [class]="tinted">
+      <div class="col-span-2" [class]="tinted">
         <span [class]="eyebrow">Tagline</span>
-        <p class="text-[15pt] font-medium leading-[1.25]">{{ v.mf.tagline }}</p>
+        @if (v.mf.tagline) {
+          <!-- Anchor the accent to text, not a grid item's empty continuation fragment. -->
+          <p
+            class="border-l-[3pt] border-[color:var(--mfp-accent)] pl-[6pt] text-[15pt] font-medium leading-[1.25] break-inside-avoid"
+            data-testid="mktg-framework-print-tagline-accent">
+            {{ v.mf.tagline }}
+          </p>
+        }
       </div>
     </div>
 

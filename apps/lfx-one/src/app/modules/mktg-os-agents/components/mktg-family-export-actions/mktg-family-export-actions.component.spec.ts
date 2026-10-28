@@ -297,11 +297,16 @@ describe('Family export slot', () => {
       'lfx-mktg-boilerplates-print',
       'lfx-mktg-faq-print',
     ]);
-    const cover = document?.querySelector('[data-testid="family-export-print-cover"]');
+    const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
     expect(cover?.textContent).toContain('Synthetic project');
     expect(cover?.textContent).toContain('28 Oct 2026');
     expect(cover?.querySelectorAll('dd')).toHaveLength(4);
     expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
+    expect(cover?.classList.contains('grid')).toBe(true);
+    expect(cover?.classList.contains('h-screen')).toBe(false);
+    expect(cover?.querySelector('.flex-1')).toBeNull();
+    expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
+    expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());

@@ -156,7 +156,21 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(printDocument).toBeHidden();
   await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
   await page.emulateMedia({ media: 'print' });
-  await expect(page.getByTestId('family-export-print-cover')).toBeVisible();
+  const cover = page.getByTestId('family-export-print-cover');
+  await expect(cover).toBeVisible();
+  await expect(page.getByTestId('family-export-print-title')).toBeVisible();
+  await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
+  const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
+  expect(coverColors.ground).toBe('rgb(255, 255, 255)');
+  expect(coverColors.ink).not.toBe(coverColors.ground);
+  // The screen shell's canvas must not bleed through below a short print section.
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  const ancestorBackgrounds = await printDocument.evaluate((element) => {
+    const backgrounds: string[] = [];
+    for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) backgrounds.push(getComputedStyle(ancestor).backgroundColor);
+    return backgrounds;
+  });
+  expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
   await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
   await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2', '01.3', '01.4']);
   await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');

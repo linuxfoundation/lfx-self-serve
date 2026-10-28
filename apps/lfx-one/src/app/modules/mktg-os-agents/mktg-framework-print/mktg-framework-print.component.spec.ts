@@ -149,6 +149,16 @@ describe('MktgFrameworkPrintComponent', () => {
     heads.forEach((head) => expect(head.textContent).toContain('TestOrbit Messaging Framework'));
   });
 
+  it('keeps the tagline accent on its text, never on an empty grid continuation', async () => {
+    const view = printView(null);
+    await configure('browser', view);
+    const accent = query('mktg-framework-print-tagline-accent');
+    expect(accent?.textContent?.trim()).toBe(view.mf.tagline);
+    expect(accent?.parentElement?.className).not.toContain('border-l-');
+    await setView({ ...view, mf: { ...view.mf, tagline: '' } });
+    expect(query('mktg-framework-print-tagline-accent')).toBeNull();
+  });
+
   describe('in the browser', () => {
     it('with a kit, appends the typeface’s Google Fonts stylesheet once under the book’s link id', async () => {
       const view = printView(brandKitTestRevision());
