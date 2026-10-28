@@ -176,7 +176,12 @@ export class AudienceLastSentComponent {
     const selected = this.selectedIds();
     const excluded = this.excludedIds();
     const attachedIncludes = new Set(this.attachedIncludeIds());
-    const recordedExclusions = new Set(this.attachedExclusionIds());
+    // Both sides in the same terms: the standing list read as the standard rows it stands for. An
+    // attach that applied only some standard rows records the standing id as is (no
+    // `standardSuppression`), so the recorded side needs the expansion as much as the expected one.
+    const standingIn = this.standingExpansion();
+    const expandStanding = (id: string): readonly string[] => (standingIn !== null && id === standingIn.listId ? standingIn.rowIds : [id]);
+    const recordedExclusions = new Set(this.attachedExclusionIds().flatMap(expandStanding));
     // Generic so the decorated row keeps every field of the original — narrowing the parameter
     // type here silently drops `name`, `missing` and anything else the template reads.
     const decorate = <T extends { listId: string; size?: number }>(list: T) => ({
@@ -206,10 +211,8 @@ export class AudienceLastSentComponent {
       // after the ticks changed, with no way to record the new ones.
       const sameIncludes = usable.length > 0 && usable.length === attachedIncludes.size && usable.every((list) => attachedIncludes.has(list.listId));
       const includeIds = new Set(usable.map((list) => list.listId));
-      const standing = this.standingExpansion();
-      const expand = (id: string): readonly string[] => (standing !== null && id === standing.listId ? standing.rowIds : [id]);
       const expectedExclusions = new Set(
-        [...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].flatMap(expand).filter((id) => !includeIds.has(id))
+        [...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].flatMap(expandStanding).filter((id) => !includeIds.has(id))
       );
       const exclusionsCovered = expectedExclusions.size === recordedExclusions.size && [...expectedExclusions].every((id) => recordedExclusions.has(id));
       return {

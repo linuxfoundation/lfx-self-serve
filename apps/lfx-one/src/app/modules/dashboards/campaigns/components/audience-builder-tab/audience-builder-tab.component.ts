@@ -363,6 +363,14 @@ export class AudienceBuilderTabComponent {
    */
   private suppressionReloadPending = false;
   /**
+   * The rows of the last load that SUCCEEDED. A failed load empties `suppressionLists`, so the next
+   * successful one is reconciled against these: a ticked registrants row it no longer carries must
+   * still be found, or its old id goes up as a plain exclusion.
+   */
+  private lastLoadedSuppressionLists: readonly AudienceSuppressionList[] = [];
+  /** The event page the last Build-tab draft was planned from; '' when none. */
+  private readonly draftedEventUrl = signal('');
+  /**
    * The resolved standard row ids from the last load that SUCCEEDED. A recorded write's standing
    * list is read back as these; a failed post-write reload empties `suppressionLists`, and mapping
    * the standing id through the empty current rows made the recorded audience stop matching.
@@ -786,7 +794,21 @@ export class AudienceBuilderTabComponent {
   /** The suppression count, only while it still describes the ticked exclusions. */
   protected readonly suppressionCount = computed(() => {
     const result = this.suppressionCountResult();
-    return result && result.key === [...this.excludeIds()].sort().join(',') ? result.count : null;
+    return result && result.key === [...this.countedExcludeIds()].sort().join(',') ? result.count : null;
+  });
+
+  /**
+   * The lists the exact count unions: what the send excludes. When every standard row applies and
+   * the standing list exists, that list is counted in their place: it is only ever grown, so it can
+   * hold older standard lists the current rows no longer name.
+   */
+  protected readonly countedExcludeIds = computed<readonly string[]>(() => {
+    const standing = this.standardList();
+    if (standing === null || !this.standardApplied()) {
+      return this.excludeIds();
+    }
+    const standard = new Set(this.standardRowIds());
+    return [standing.listId, ...this.excludeIds().filter((id) => !standard.has(id) && id !== standing.listId)];
   });
 
   /**
@@ -1119,7 +1141,7 @@ export class AudienceBuilderTabComponent {
         return listId;
       }
       const recorded = new Set(composed);
-      const requested = new Set(this.excludeIds().filter((id) => id !== listId));
+      const requested = new Set(this.comparableExcludeIds().filter((id) => id !== listId));
       return recorded.size === requested.size && [...requested].every((id) => recorded.has(id)) ? listId : null;
     }
     // Several lists attached directly: no single master is "the" send list, so none reads as used.
@@ -1127,8 +1149,18 @@ export class AudienceBuilderTabComponent {
       return null;
     }
     const recorded = new Set(this.attachedExclusions());
-    const requested = new Set(this.excludeIds().filter((id) => id !== listId));
+    const requested = new Set(this.comparableExcludeIds().filter((id) => id !== listId));
     return recorded.size === requested.size && [...requested].every((id) => recorded.has(id)) ? listId : null;
+  });
+
+  /**
+   * `excludeIds` as compared with a recorded audience. A ticked registrants row whose list does not
+   * exist yet has no id, so it changed nothing there and a recorded audience without it still read
+   * as current -- leaving no way to record the new exclusion. Its edition stands in for the id.
+   */
+  protected readonly comparableExcludeIds = computed<readonly string[]>(() => {
+    const edition = this.registrantsToCreate();
+    return edition === '' ? this.excludeIds() : [...this.excludeIds(), `registrants:${edition}`];
   });
 
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
@@ -1895,7 +1927,11 @@ export class AudienceBuilderTabComponent {
     // Lists discovered for ANOTHER event page must not be mixed with this one: discovery's event
     // would keep driving QA and the registrants suppression while the draft planned a different
     // event. Drafting it starts over, once confirmed, so one event drives all three.
-    const otherEvent = (this.hasDiscovered() || this.discovering()) && url !== this.discoveredEventUrl();
+    // Build-only work counts too: a list created or reused for event A's draft must not stay in the
+    // send once event B's draft takes over the registrants suppression and QA.
+    const otherDiscovery = (this.hasDiscovered() || this.discovering()) && url !== this.discoveredEventUrl();
+    const otherDraft = this.draftedEventUrl() !== '' && url !== this.draftedEventUrl() && this.hasHandWork();
+    const otherEvent = otherDiscovery || otherDraft;
     if (otherEvent && !confirmed) {
       this.pendingStartOver.set('draft');
       return;
@@ -1907,6 +1943,7 @@ export class AudienceBuilderTabComponent {
       this.resetRunState(false);
     }
     this.mode.set('build');
+    this.draftedEventUrl.set(url);
     this.customPreset.set({
       version: ++this.customPresetVersion,
       eventUrl: url,
@@ -1993,7 +2030,7 @@ export class AudienceBuilderTabComponent {
 
   /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
   protected onCountSuppression(): void {
-    const listIds = this.excludeIds();
+    const listIds = [...this.countedExcludeIds()];
     if (this.degraded() || this.suppressionCounting() || listIds.length === 0) {
       return;
     }
@@ -2537,6 +2574,7 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.dropVanishedRegistrants(lists);
+          this.lastLoadedSuppressionLists = lists;
           this.suppressionLists.set(lists);
           this.standardList.set(standardList ?? null);
           this.recordedStandardIds.set(lists.filter((list) => list.category === 'standard' && list.listId !== '').map((list) => list.listId));
@@ -2637,7 +2675,7 @@ export class AudienceBuilderTabComponent {
    */
   private dropVanishedRegistrants(lists: readonly AudienceSuppressionList[]): void {
     const keys = new Set(lists.map((list) => list.key));
-    const vanished = this.suppressionLists().filter(
+    const vanished = this.lastLoadedSuppressionLists.filter(
       (list) => list.category === 'current_registrants' && !keys.has(list.key) && this.suppression().has(list.key)
     );
     if (vanished.length === 0) {
@@ -3008,6 +3046,8 @@ export class AudienceBuilderTabComponent {
     this.suppressionLists.set([]);
     this.standardList.set(null);
     this.recordedStandardIds.set([]);
+    this.lastLoadedSuppressionLists = [];
+    this.draftedEventUrl.set('');
     this.suppressionReloadPending = false;
     this.suppressionFailed.set(false);
     this.mastersFailed.set(false);
