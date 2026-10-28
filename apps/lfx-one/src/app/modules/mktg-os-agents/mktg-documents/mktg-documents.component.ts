@@ -158,7 +158,7 @@ export class MktgDocumentsComponent {
     Object.fromEntries(
       this.runs().map((run) => {
         const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === run.agentKey);
-        if (type?.catalogAgentId && this.waitingForAnswers(type, run.state))
+        if (type?.catalogAgentId && this.waitingForAnswers(type, run))
           return [
             run.runId,
             {
@@ -469,14 +469,17 @@ export class MktgDocumentsComponent {
   }
 
   /** The row action and type badge use one policy; private questions can precede the next server projection. */
-  private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
-    if (type.kind !== 'living' || !type.catalogAgentId) return false;
-    return state === 'questions' || !!this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions;
+  private waitingForAnswers(type: MktgDocumentType, run?: MktgDocumentRunRow): boolean {
+    if (type.kind !== 'living' || !type.catalogAgentId || !run || run.state === 'failed') return false;
+    return (
+      run.state === 'questions' ||
+      this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions?.attempt.runId === run.runId
+    );
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
-    if (this.waitingForAnswers(type, active?.state)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
+    if (this.waitingForAnswers(type, active)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
     if (active) {
       if (active.state === 'questions') return { badge: 'Paused', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };

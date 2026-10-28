@@ -9,7 +9,7 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
-import { resolveMktgFamilyActions, resolveMktgFamilyNextStep } from '@lfx-one/shared/utils';
+import { resolveMktgFamilyActions, resolveMktgFamilyNextStep, resolveMktgFamilyRun } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
@@ -71,7 +71,11 @@ export class MktgKitComponent {
           canWrite: this.context.canWrite(),
           approvedFramework: !!this.kit.documents()?.approvedFramework,
         });
-        const rows = Object.values(actions.rows).map((entry) => entry.row);
+        const rows = Object.values(actions.rows).map(({ row }) => {
+          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs, [], row.document);
+          const link = run?.link;
+          return { ...row, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
+        });
         return {
           ...family,
           needsRebuild: rows.some((row) => row.state === 'needs-rebuild'),
