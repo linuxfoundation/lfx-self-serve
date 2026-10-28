@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION } from '@lfx-one/shared/constants';
 import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -18,15 +19,7 @@ async function buildMetrics(training: OrgTrainingEnrollmentsResponse): Promise<D
   const analytics = {
     getFoundationCoverage: () => of({ accountId: ACCOUNT_ID, foundationCount: 1, foundations: [] }),
     getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 100, monthlyData: [10], monthlyLabels: ['Jan 2030'] }),
-    getMaintainersMonthly: () =>
-      of({
-        accountId: ACCOUNT_ID,
-        accountName: 'Acme Motors',
-        totalMaintainersYearly: 20,
-        totalProjectsYearly: 30,
-        monthlyData: [20],
-        monthlyLabels: ['Jan 2030'],
-      }),
+    getMaintainersMonthly: () => of({ accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] }),
     getEventAttendanceMonthly: () =>
       of({
         accountId: ACCOUNT_ID,
@@ -85,5 +78,22 @@ describe('OrgOverviewInvolvementComponent training enrollments', () => {
     expect(trainingCard(metrics).chartData?.labels).toEqual(['2030-03-04T00:00:00.000Z']);
     expect(metrics.map((metric) => metric.loading)).toEqual([false, false, false, false, false, false]);
     expect(trainingCard(metrics).value).toBe('7');
+  });
+});
+
+describe('OrgOverviewInvolvementComponent maintainer roles', () => {
+  it('shows the past-365-day LF roles as the headline and the roles held per month as the trend', async () => {
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
+    const card = metrics.find((metric) => metric.title === 'Maintainer roles');
+
+    expect(card).toMatchObject({
+      value: '20',
+      subtitle: 'In LF projects over the past 365 days',
+      tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+      loading: false,
+    });
+    expect(card?.subtitle).not.toMatch(/employee/i);
+    expect(card?.chartData?.labels).toEqual(['Jan 2030', 'Feb 2030']);
+    expect(card?.chartData?.datasets[0]?.data).toEqual([12, 15]);
   });
 });

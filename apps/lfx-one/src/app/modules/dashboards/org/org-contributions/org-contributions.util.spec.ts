@@ -69,7 +69,7 @@ describe('describeContributorsTooltip', () => {
     expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history')).toBe(
       'People with at least one code contribution (commit, pull request, review or comment) credited to Acme in LF projects, across all recorded history. ' +
         'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
-        'Declared project maintainers count as Maintainers; everyone else counts as Contributors. Bots excluded.'
+        'Maintainers with code are counted here too. Bots excluded.'
     );
   });
 

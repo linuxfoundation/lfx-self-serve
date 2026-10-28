@@ -15,6 +15,7 @@ import type {
   VotingStatusBadge,
 } from '@lfx-one/shared/interfaces';
 
+import { orgLfProjectMaintainerRolesJoin } from '../helpers/org-maintainer-roles-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -64,7 +65,8 @@ interface RawRow {
   PROJECT_NAME: string | null;
   PROJECT_IS_LF_PROJECT: boolean | null;
   PROJECT_INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket | null;
-  PROJECT_MAINTAINERS_COUNT: number | null;
+  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482); NULL when there are none. */
+  PROJECT_MAINTAINER_ROLES: number | null;
   PROJECT_CONTRIBUTORS_COUNT: number | null;
   PROJECT_COLLABORATORS_COUNT: number | null;
   PROJECT_COMMITS_COUNT: number | null;
@@ -89,9 +91,10 @@ export class OrgLensFoundationsService {
   }
 
   public async getFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
+    // `foundations:v2`: per-project maintainers are now LF maintainer roles over the past 365 days (lfx-self-serve#4482).
     return withOrgCache(
       accountId,
-      'foundations',
+      'foundations:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchFoundationsAndProjects(accountId),
       OrgLensFoundationsService.isFoundationsResponse
@@ -113,7 +116,9 @@ export class OrgLensFoundationsService {
     // Single LEFT JOIN against the two pre-aggregated rollups. ORDER BY is
     // CASE-guarded so `project_count_lf` only sorts non-member LF rows and
     // NEVER member rows (which sort by tier_rank then foundation_name).
-    // Inner projects array is sorted by commits DESC.
+    // Inner projects array is sorted by commits DESC. Maintainers per project
+    // are the account's LF maintainer roles, joined on the project id.
+    const roles = orgLfProjectMaintainerRolesJoin(accountId, 'p.PROJECT_ID');
     const query = `
       SELECT
         f.ACCOUNT_ID,
@@ -150,7 +155,7 @@ export class OrgLensFoundationsService {
         p.PROJECT_NAME                                 AS PROJECT_NAME,
         p.IS_LF_PROJECT                                AS PROJECT_IS_LF_PROJECT,
         p.INFLUENCE_MAX_BUCKET                         AS PROJECT_INFLUENCE_MAX_BUCKET,
-        p.MAINTAINERS_COUNT                            AS PROJECT_MAINTAINERS_COUNT,
+        roles.MAINTAINER_ROLES                         AS PROJECT_MAINTAINER_ROLES,
         p.CONTRIBUTORS_COUNT                           AS PROJECT_CONTRIBUTORS_COUNT,
         p.COLLABORATORS_COUNT                          AS PROJECT_COLLABORATORS_COUNT,
         p.COMMITS_COUNT                                AS PROJECT_COMMITS_COUNT
@@ -158,6 +163,7 @@ export class OrgLensFoundationsService {
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL p
         ON p.ACCOUNT_ID = f.ACCOUNT_ID
         AND p.FOUNDATION_ID = f.FOUNDATION_ID
+      ${roles.sql}
       WHERE f.ACCOUNT_ID = ?
       ORDER BY
         CASE WHEN f.IS_OUTSIDE_LF THEN 2 WHEN f.IS_MEMBER THEN 0 ELSE 1 END,
@@ -167,7 +173,7 @@ export class OrgLensFoundationsService {
         p.COMMITS_COUNT DESC NULLS LAST
     `;
 
-    const result = await this.snowflakeService.execute<RawRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<RawRow>(query, [...roles.binds, accountId]);
 
     if (result.rows.length === 0) {
       return this.emptyResponse(accountId);
@@ -257,7 +263,7 @@ export class OrgLensFoundationsService {
           projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
           isLfProject: raw.PROJECT_IS_LF_PROJECT === true,
           influence: raw.PROJECT_INFLUENCE_MAX_BUCKET,
-          maintainers: raw.PROJECT_MAINTAINERS_COUNT ?? 0,
+          maintainers: raw.PROJECT_MAINTAINER_ROLES ?? 0,
           contributors: raw.PROJECT_CONTRIBUTORS_COUNT ?? 0,
           collaborators: raw.PROJECT_COLLABORATORS_COUNT ?? 0,
           commits: raw.PROJECT_COMMITS_COUNT ?? 0,

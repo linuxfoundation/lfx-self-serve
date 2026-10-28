@@ -6,6 +6,7 @@ import {
   ORG_PEOPLE_ALL_ROW_COLUMNS,
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
+  ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -30,6 +31,7 @@ import type {
   OrgPersonCompanyEmailRow,
   OrgProjectScope,
   OrgPersonCompanyEmailsResponse,
+  OrgPersonMaintainerRoleProjectRow,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
@@ -37,6 +39,7 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
+import { orgMaintainerRoleOverlap } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
@@ -69,7 +72,6 @@ interface CodeContributionRow {
   TOTAL_COMMITS: number;
   /** Distinct commits the person authored in this project; a mirrored commit counts in every project it appears in. */
   PROJECT_COMMITS: number;
-  IS_MAINTAINER: boolean;
   LAST_ACTIVITY_DATE: Date | string | null;
 }
 
@@ -174,16 +176,28 @@ export class OrgLensPeopleService {
   /**
    * Chevron-expansion detail for one person within an account: four activity queries in parallel, served
    * through the shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come
-   * from a live warehouse view that takes seconds, so callers render activity without waiting for it.
+   * from a live warehouse view that takes seconds, so callers render activity without waiting for it. A code
+   * project carries the Maintainer pill when the person holds a maintainer role on it overlapping
+   * `maintainerRange` (lfx-self-serve#4482) — the page range for the All Employees row, the opener's range or the
+   * past 365 days for the drawer.
    */
-  public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
+  public async getEmployeeDetail(
+    req: Request,
+    accountId: string,
+    personKey: string,
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+  ): Promise<OrgAllEmployeeDetail> {
     // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
     // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
       return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, events: [], training: [] };
     }
 
-    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeActivityRaw(accountId, personKey);
+    const [{ committeeRows, codeRows, eventRows, trainingRows }, maintainerProjectIds] = await Promise.all([
+      this.fetchEmployeeActivityRaw(accountId, personKey),
+      this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
+    ]);
+    const maintainerProjects = new Set(maintainerProjectIds);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -199,7 +213,7 @@ export class OrgLensPeopleService {
       personKey,
       boardSeats,
       committeeSeats,
-      code: codeRows.map((row) => this.mapCodeRow(row)),
+      code: codeRows.map((row) => this.mapCodeRow(row, maintainerProjects)),
       // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
       totalCommits: codeRows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
       events,
@@ -273,13 +287,18 @@ export class OrgLensPeopleService {
    * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
    * carries the username.
    */
-  public async getEmployeeDetailByUsername(req: Request, accountId: string, username: string): Promise<OrgAllEmployeeDetail | null> {
+  public async getEmployeeDetailByUsername(
+    req: Request,
+    accountId: string,
+    username: string,
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+  ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange) : null;
   }
 
   /**
@@ -625,8 +644,8 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v3`: the training rows
-   * keep enrollments from the last 12 months only, so an entry stored with older enrollments must miss.
+   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v4`: the code rows no
+   * longer carry the declared-maintainer flag (lfx-self-serve#4482), so a `v3` entry must miss.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     if (!isFilterSafeIdentifier(personKey)) {
@@ -634,7 +653,7 @@ export class OrgLensPeopleService {
     }
     return withOrgCache(
       accountId,
-      `people-detail:v3:${personKey}`,
+      `people-detail:v4:${personKey}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
@@ -649,6 +668,32 @@ export class OrgLensPeopleService {
       this.fetchTrainingRows(accountId, personKey),
     ]);
     return { committeeRows, codeRows, eventRows, trainingRows };
+  }
+
+  /** Projects in which the person holds a maintainer role overlapping the range; cached per (person, range) like the activity rows. */
+  private fetchMaintainerProjectIds(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
+    if (!isFilterSafeIdentifier(personKey)) {
+      return this.runMaintainerProjectIdsFetch(accountId, personKey, range);
+    }
+    return withOrgCache(
+      accountId,
+      `people-detail-roles:v1:${personKey}:${range}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.runMaintainerProjectIdsFetch(accountId, personKey, range),
+      (value) => Array.isArray(value) && value.every((projectId) => typeof projectId === 'string')
+    );
+  }
+
+  private async runMaintainerProjectIdsFetch(accountId: string, personKey: string, range: OrgLensTimeRange): Promise<string[]> {
+    const overlap = orgMaintainerRoleOverlap(range);
+    const query = `
+      SELECT DISTINCT PROJECT_ID
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
+        AND ${overlap.sql}
+    `;
+    const result = await this.snowflakeService.execute<OrgPersonMaintainerRoleProjectRow>(query, [accountId, personKey, ...overlap.binds]);
+    return result.rows.map((row) => row.PROJECT_ID);
   }
 
   /**
@@ -777,7 +822,6 @@ export class OrgLensPeopleService {
         FOUNDATION_NAME,
         TOTAL_COMMITS,
         PROJECT_COMMITS,
-        IS_MAINTAINER,
         LAST_ACTIVITY_DATE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CODE_CONTRIBUTIONS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
@@ -837,7 +881,7 @@ export class OrgLensPeopleService {
     };
   }
 
-  private mapCodeRow(row: CodeContributionRow): OrgAllEmployeeCodeContribution {
+  private mapCodeRow(row: CodeContributionRow, maintainerProjects: ReadonlySet<string>): OrgAllEmployeeCodeContribution {
     return {
       projectId: row.PROJECT_ID,
       projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
@@ -845,7 +889,7 @@ export class OrgLensPeopleService {
       foundationName: row.FOUNDATION_NAME ?? '',
       commits: row.PROJECT_COMMITS ?? 0,
       lastActivityDate: toDateString(row.LAST_ACTIVITY_DATE),
-      isMaintainer: row.IS_MAINTAINER === true,
+      isMaintainer: maintainerProjects.has(row.PROJECT_ID),
     };
   }
 

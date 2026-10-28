@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_REGEX, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGES, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import {
+  EMAIL_REGEX,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGES,
+  ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+  PERSON_KEY_PATTERN,
+} from '@lfx-one/shared/constants';
 import type { OrgLensTimeRange, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername, isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange, parseOrgProjectScope } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -113,7 +119,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail */
+  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all] — `range` is the window the Maintainer pills follow (default `365d`). */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const personKey = req.params['personKey'];
@@ -125,8 +131,9 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', 'get_org_lens_people_detail') ?? ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE;
 
-      const response = await this.service.getEmployeeDetail(req, orgUid, personKey);
+      const response = await this.service.getEmployeeDetail(req, orgUid, personKey, range);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
@@ -210,9 +217,9 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username.
-   * A username with no single roster person is answered `null` (200), not 404: the miss is routine, and the error
-   * handler would log the username-bearing path at WARN on every such drawer open.
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail[?range=] — activity for openers that carry only an LF
+   * username; `range` as for the person-key detail. A username with no single roster person is answered `null` (200),
+   * not 404: the miss is routine, and the error handler would log the username-bearing path at WARN on every such drawer open.
    */
   public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -222,9 +229,10 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, operation);
       this.assertUsername(username, operation);
+      const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE;
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username, range);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -543,7 +551,7 @@ export class OrgLensPeopleController {
         contributor_count: response.contributors.length,
         project_count: response.projects.length,
         foundation_count: response.foundationOptions.length,
-        maintainers: response.stats.maintainers,
+        maintainer_roles: response.stats.maintainerRoles,
       });
 
       res.setHeader('Cache-Control', 'no-store');

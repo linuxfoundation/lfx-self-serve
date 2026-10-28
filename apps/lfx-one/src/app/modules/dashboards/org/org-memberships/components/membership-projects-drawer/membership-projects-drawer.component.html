@@ -124,9 +124,14 @@
                 <span class="text-xs text-gray-500 truncate">{{ project.influence }}</span>
               </div>
               <div class="flex items-center gap-4 flex-shrink-0 text-xs text-gray-500">
-                <span class="flex flex-col items-end">
-                  <span class="text-sm text-gray-900">{{ project.maintainers | number }}</span>
-                  Maintainers
+                <!-- LF maintainer roles only: a non-LF project shows a dash, not a misleading zero. -->
+                <span
+                  class="flex flex-col items-end"
+                  [pTooltip]="maintainerRolesDefinition"
+                  tooltipPosition="top"
+                  [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles'">
+                  <span class="text-sm text-gray-900">{{ project.isLfProject ? (project.maintainers | number) : '—' }}</span>
+                  {{ maintainerRolesLabel }}
                 </span>
                 <span class="flex flex-col items-end">
                   <span class="text-sm text-gray-900">{{ project.contributors | number }}</span>

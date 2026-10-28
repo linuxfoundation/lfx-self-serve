@@ -492,7 +492,7 @@ describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
     const commits = block!.technical.find((card) => card.key === 'commits');
     expect(commits?.label).toBe('Commits');
     expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v2:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v3:/));
   });
 });
 
@@ -575,6 +575,72 @@ describe('OrgLensProjectDetailService.getCardRoster paging', () => {
     await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10);
 
     expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});
+
+describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('COUNT(DISTINCT MEMBER_ID, SEGMENT_ID)')) return { rows: [{ MAINTAINER_ROLES: 3 }] };
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      if (sql.includes('COUNT(*)')) return { rows: [{ N: 2 }] };
+      if (sql.includes('MAINTAINER_NAME')) {
+        return {
+          rows: [
+            { MAINTAINER_NAME: 'Ada Lovelace', ROLE_START_DATE: '2000-01-01', ROLE_END_DATE: null },
+            { MAINTAINER_NAME: 'Grace Hopper', ROLE_START_DATE: '2024-03-05', ROLE_END_DATE: '2025-06-30' },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+  });
+
+  function callsOn(table: string): [string, unknown[]][] {
+    return (execute.mock.calls as [string, unknown[]][]).filter(([sql]) => sql.includes(table));
+  }
+
+  it.each([
+    ['1y', [ORG, SLUG, 365]],
+    ['2y', [ORG, SLUG, 730]],
+    ['all', [ORG, SLUG]],
+  ] as const)('counts the card for toggle %s from the roles overlapping its range', async (range, binds) => {
+    const block = await service.getInfluenceBlock(ORG, SLUG, range);
+
+    const card = block!.technical.find((entry) => entry.key === 'maintainers');
+    expect(card?.label).toBe('Maintainer roles');
+    expect(card?.caption).toEqual({ prefix: 'Our company holds ', emphasis: '3', suffix: ' maintainer roles on this project.' });
+    const [[sql, bound]] = callsOn('ORG_MAINTAINER_ROLES');
+    expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+    expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE()');
+    expect(sql.includes('ROLE_END_DATE')).toBe(range !== 'all');
+    expect(bound).toEqual(binds);
+    expect(callsOn('ORG_LENS_PROJECT_DETAIL_CARDS')[0]?.[0]).not.toContain('TECH_MAINTAINERS_COUNT');
+  });
+
+  it.each([
+    ['1y', [ORG, SLUG, 365]],
+    ['all', [ORG, SLUG]],
+  ] as const)('lists one roster row per role overlapping toggle %s, the same rows the card counts', async (range, binds) => {
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', range, 0, 10);
+
+    expect(page.total).toBe(2);
+    expect(page.rows.map((row) => row.cells.slice(1).map((cell) => cell.text))).toEqual([
+      ['Unknown', 'Current'],
+      ['Mar 5, 2024', 'Jun 30, 2025'],
+    ]);
+    const rosterCalls = callsOn('ORG_MAINTAINER_ROLES');
+    expect(rosterCalls).toHaveLength(2);
+    for (const [sql, bound] of rosterCalls) {
+      expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+      expect(bound).toEqual(binds);
+    }
+    expect(callsOn('ORG_LENS_PROJECT_DETAIL_MAINTAINERS')).toEqual([]);
   });
 });
 

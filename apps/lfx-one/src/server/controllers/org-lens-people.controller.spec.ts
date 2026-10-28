@@ -158,7 +158,7 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
     getAllEmployees.mockResolvedValue(EMPTY_ROSTER);
     getFormerEmployees.mockResolvedValue(EMPTY_ROSTER);
     getLive.mockResolvedValue(EMPTY_ROSTER);
-    getContributors.mockResolvedValue({ contributors: [], projects: [], foundationOptions: [], stats: { maintainers: 0 } });
+    getContributors.mockResolvedValue({ contributors: [], projects: [], foundationOptions: [], stats: { maintainerRoles: 0 } });
   });
 
   it('passes the projectScope, commitScope and metric params to every People read', async () => {

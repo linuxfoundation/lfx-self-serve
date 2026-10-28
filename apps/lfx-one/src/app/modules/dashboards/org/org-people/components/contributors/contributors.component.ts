@@ -18,6 +18,8 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_MAINTAINER_ROLES_DEFINITION,
+  ORG_MAINTAINER_ROLES_LABEL,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -66,7 +68,7 @@ import { describeContributionsWindow, describeContributorsTooltip } from '../../
 
 import { ContributorsService } from '../../services/contributors.service';
 
-/** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainers / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
+/** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainer roles / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
 @Component({
   selector: 'lfx-org-people-contributors',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
@@ -85,7 +87,9 @@ export class ContributorsComponent {
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
-  protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
+  protected readonly maintainerRolesLabel = ORG_MAINTAINER_ROLES_LABEL;
+  protected readonly maintainerRolesTooltip = ORG_MAINTAINER_ROLES_DEFINITION;
+  protected readonly statSkeletonLabels: readonly string[] = [ORG_MAINTAINER_ROLES_LABEL, 'Contributors', 'Projects', 'Foundations'];
 
   // The commit filters follow `?projectScope=` / `?metric=` (shared with All Employees) and the range follows
   // `?range=` (shared with every People tab and Code Contributions); all are written back on change.

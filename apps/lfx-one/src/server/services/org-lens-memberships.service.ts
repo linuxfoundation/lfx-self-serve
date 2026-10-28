@@ -17,6 +17,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { orgLfProjectMaintainerRolesJoin } from '../helpers/org-maintainer-roles-sql.helper';
 import { logger } from './logger.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { SnowflakeService } from './snowflake.service';
@@ -73,7 +74,8 @@ interface RawFoundationProjectRow {
   PROJECT_NAME: string | null;
   IS_LF_PROJECT: boolean;
   INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket;
-  MAINTAINERS_COUNT: number;
+  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482); NULL when there are none. */
+  MAINTAINER_ROLES: number | null;
   CONTRIBUTORS_COUNT: number;
   COLLABORATORS_COUNT: number;
   COMMITS_COUNT: number;
@@ -207,9 +209,10 @@ export class OrgLensMembershipsService {
    * Unknown org/foundation pairs return an empty envelope, never a 404.
    */
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
+    // `v2`: per-project maintainers are now LF maintainer roles over the past 365 days (lfx-self-serve#4482).
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:${foundationId}`,
+      `memberships-projects:v2:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchFoundationProjectRows(accountId, foundationId),
       OrgLensMembershipsService.isRawProjectRowArray
@@ -221,7 +224,7 @@ export class OrgLensMembershipsService {
       projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
       isLfProject: raw.IS_LF_PROJECT === true,
       influence: raw.INFLUENCE_MAX_BUCKET,
-      maintainers: raw.MAINTAINERS_COUNT ?? 0,
+      maintainers: raw.MAINTAINER_ROLES ?? 0,
       contributors: raw.CONTRIBUTORS_COUNT ?? 0,
       collaborators: raw.COLLABORATORS_COUNT ?? 0,
       commits: raw.COMMITS_COUNT ?? 0,
@@ -380,24 +383,26 @@ export class OrgLensMembershipsService {
   }
 
   private async fetchFoundationProjectRows(accountId: string, foundationId: string): Promise<RawFoundationProjectRow[]> {
+    const roles = orgLfProjectMaintainerRolesJoin(accountId, 'p.PROJECT_ID');
     const query = `
       SELECT
-        PROJECT_ID,
-        PROJECT_SLUG,
-        PROJECT_NAME,
-        IS_LF_PROJECT,
-        INFLUENCE_MAX_BUCKET,
-        MAINTAINERS_COUNT,
-        CONTRIBUTORS_COUNT,
-        COLLABORATORS_COUNT,
-        COMMITS_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL
-      WHERE ACCOUNT_ID = ?
-        AND FOUNDATION_ID = ?
-      ORDER BY COMMITS_COUNT DESC NULLS LAST, PROJECT_NAME ASC
+        p.PROJECT_ID,
+        p.PROJECT_SLUG,
+        p.PROJECT_NAME,
+        p.IS_LF_PROJECT,
+        p.INFLUENCE_MAX_BUCKET,
+        roles.MAINTAINER_ROLES,
+        p.CONTRIBUTORS_COUNT,
+        p.COLLABORATORS_COUNT,
+        p.COMMITS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL p
+      ${roles.sql}
+      WHERE p.ACCOUNT_ID = ?
+        AND p.FOUNDATION_ID = ?
+      ORDER BY p.COMMITS_COUNT DESC NULLS LAST, p.PROJECT_NAME ASC
     `;
 
-    const result = await this.snowflakeService.execute<RawFoundationProjectRow>(query, [accountId, foundationId]);
+    const result = await this.snowflakeService.execute<RawFoundationProjectRow>(query, [...roles.binds, accountId, foundationId]);
     return result.rows;
   }
 

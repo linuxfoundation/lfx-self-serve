@@ -23,12 +23,12 @@ export interface OrgInvolvementContributorsMonthlyResponse {
   monthlyLabels: string[];
 }
 
-/** GET /api/analytics/org-involvement-maintainers-monthly — cross-foundation maintainers (12-month window). */
+/** GET /api/analytics/org-involvement-maintainers-monthly — the account's maintainer roles in LF projects (lfx-self-serve#4482). */
 export interface OrgInvolvementMaintainersMonthlyResponse {
   accountId: string;
-  accountName: string;
-  totalMaintainersYearly: number;
-  totalProjectsYearly: number;
+  /** LF maintainer roles overlapping the past 365 days to today — the same count as People -> Contributors at its defaults with LF projects. */
+  maintainerRoles: number;
+  /** LF maintainer roles held in each month, oldest first. */
   monthlyData: number[];
   monthlyLabels: string[];
 }

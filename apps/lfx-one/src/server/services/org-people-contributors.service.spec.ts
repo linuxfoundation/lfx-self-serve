@@ -44,7 +44,12 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
-import type { CompactOrgContributorRowsCache, ContributorPersonProjectRow, OrgCommitFilters } from '@lfx-one/shared/interfaces';
+import type {
+  CompactOrgContributorRowsCache,
+  ContributorPersonProjectRow,
+  OrgCommitFilters,
+  OrgContributorMaintainerRoleRow,
+} from '@lfx-one/shared/interfaces';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
@@ -57,71 +62,83 @@ const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', met
 let service: OrgPeopleContributorsService;
 
 /** One person across two projects plus a second person on one of them — enough for the project dictionary to matter. */
-function mockWarehouse(): void {
-  execute.mockResolvedValue({
-    rows: [
-      {
-        PERSON_KEY: 'person-one',
-        PROJECT_ID: 'project-one',
-        LFID: 'lfid-one',
-        LF_USERNAME: 'ada',
-        CDP_MEMBER_ID: 'cdp-1',
-        DISPLAY_NAME: 'Ada Lovelace',
-        TITLE: 'Engineer',
-        PROJECT_NAME: 'Kubernetes',
-        PROJECT_SLUG: 'k8s',
-        FOUNDATION_ID: 'foundation-one',
-        FOUNDATION_NAME: 'CNCF',
-        FOUNDATION_SLUG: 'cncf',
-        COMMITS: 40,
-        MERGED_COMMITS: 15,
-        CODE_ACTIVITIES: 120,
-        LAST_ACTIVE_DATE: '2026-04-12',
-        IS_DECLARED_MAINTAINER_FOR_PROJECT: true,
-        IS_DECLARED_MAINTAINER_FOR_ORG: true,
-      },
-      {
-        PERSON_KEY: 'person-one',
-        PROJECT_ID: 'project-two',
-        LFID: 'lfid-one',
-        LF_USERNAME: 'ada',
-        CDP_MEMBER_ID: 'cdp-1',
-        DISPLAY_NAME: 'Ada Lovelace',
-        TITLE: 'Engineer',
-        PROJECT_NAME: null,
-        PROJECT_SLUG: null,
-        FOUNDATION_ID: null,
-        FOUNDATION_NAME: null,
-        FOUNDATION_SLUG: null,
-        COMMITS: null,
-        MERGED_COMMITS: null,
-        CODE_ACTIVITIES: null,
-        LAST_ACTIVE_DATE: null,
-        IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
-        IS_DECLARED_MAINTAINER_FOR_ORG: null,
-      },
-      {
-        PERSON_KEY: 'person-two',
-        PROJECT_ID: 'project-one',
-        LFID: null,
-        LF_USERNAME: null,
-        CDP_MEMBER_ID: 'cdp-2',
-        DISPLAY_NAME: null,
-        TITLE: null,
-        PROJECT_NAME: 'Kubernetes',
-        PROJECT_SLUG: 'k8s',
-        FOUNDATION_ID: 'foundation-one',
-        FOUNDATION_NAME: 'CNCF',
-        FOUNDATION_SLUG: 'cncf',
-        COMMITS: 3,
-        MERGED_COMMITS: 1,
-        CODE_ACTIVITIES: 9,
-        LAST_ACTIVE_DATE: '2026-01-05',
-        IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
-        IS_DECLARED_MAINTAINER_FOR_ORG: false,
-      },
-    ],
-  });
+const CONTRIBUTOR_ROWS = [
+  {
+    PERSON_KEY: 'person-one',
+    PROJECT_ID: 'project-one',
+    LFID: 'lfid-one',
+    LF_USERNAME: 'ada',
+    CDP_MEMBER_ID: 'cdp-1',
+    DISPLAY_NAME: 'Ada Lovelace',
+    TITLE: 'Engineer',
+    PROJECT_NAME: 'Kubernetes',
+    PROJECT_SLUG: 'k8s',
+    FOUNDATION_ID: 'foundation-one',
+    FOUNDATION_NAME: 'CNCF',
+    FOUNDATION_SLUG: 'cncf',
+    COMMITS: 40,
+    MERGED_COMMITS: 15,
+    CODE_ACTIVITIES: 120,
+    LAST_ACTIVE_DATE: '2026-04-12',
+  },
+  {
+    PERSON_KEY: 'person-one',
+    PROJECT_ID: 'project-two',
+    LFID: 'lfid-one',
+    LF_USERNAME: 'ada',
+    CDP_MEMBER_ID: 'cdp-1',
+    DISPLAY_NAME: 'Ada Lovelace',
+    TITLE: 'Engineer',
+    PROJECT_NAME: null,
+    PROJECT_SLUG: null,
+    FOUNDATION_ID: null,
+    FOUNDATION_NAME: null,
+    FOUNDATION_SLUG: null,
+    COMMITS: null,
+    MERGED_COMMITS: null,
+    CODE_ACTIVITIES: null,
+    LAST_ACTIVE_DATE: null,
+  },
+  {
+    PERSON_KEY: 'person-two',
+    PROJECT_ID: 'project-one',
+    LFID: null,
+    LF_USERNAME: null,
+    CDP_MEMBER_ID: 'cdp-2',
+    DISPLAY_NAME: null,
+    TITLE: null,
+    PROJECT_NAME: 'Kubernetes',
+    PROJECT_SLUG: 'k8s',
+    FOUNDATION_ID: 'foundation-one',
+    FOUNDATION_NAME: 'CNCF',
+    FOUNDATION_SLUG: 'cncf',
+    COMMITS: 3,
+    MERGED_COMMITS: 1,
+    CODE_ACTIVITIES: 9,
+    LAST_ACTIVE_DATE: '2026-01-05',
+  },
+];
+
+/**
+ * person-one maintains project-one (one segment) and a project they have no code in; a maintainer with no code at
+ * all holds two roles on one project id (two segments) — roles count per (member, segment), with or without code.
+ */
+const ROLE_ROWS: OrgContributorMaintainerRoleRow[] = [
+  { PERSON_KEY: 'person-one', MEMBER_ID: 'cdp-1', SEGMENT_ID: 'segment-k8s', PROJECT_ID: 'project-one' },
+  { PERSON_KEY: 'person-one', MEMBER_ID: 'cdp-1', SEGMENT_ID: 'segment-docs', PROJECT_ID: 'project-docs' },
+  { PERSON_KEY: 'person-no-code', MEMBER_ID: 'cdp-9', SEGMENT_ID: 'segment-a', PROJECT_ID: 'project-three' },
+  { PERSON_KEY: 'person-no-code', MEMBER_ID: 'cdp-9', SEGMENT_ID: 'segment-b', PROJECT_ID: 'project-three' },
+];
+
+/** Answers the roles read with `roles` and every other read with `rows`. */
+function mockWarehouse(rows: object[] = CONTRIBUTOR_ROWS, roles: OrgContributorMaintainerRoleRow[] = ROLE_ROWS): void {
+  execute.mockImplementation(async (sql?: string) => ({ rows: sql?.includes('ORG_MAINTAINER_ROLES') ? roles : rows }));
+}
+
+const ROWS_KEY = (suffix: string): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v5:${suffix}`)!;
+
+function readsOf(table: string): unknown[][] {
+  return execute.mock.calls.filter((call) => String(call[0]).includes(table));
 }
 
 beforeEach(() => {
@@ -183,7 +200,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(foundationOptions).toEqual([{ foundationId: 'foundation-one', foundationName: 'CNCF' }]);
     // Two of the three aggregate rows share a project, so the stored dictionary has to be shorter
     // than the row table — a `keyOf` regression that stopped collapsing them would not be.
-    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgContributorRowsCache;
+    const stored = JSON.parse(cacheValues.get(ROWS_KEY('all:all'))!) as CompactOrgContributorRowsCache;
     expect(stored.projects.r.length).toBe(2);
     expect(stored.rows.r.length).toBe(3);
   });
@@ -193,7 +210,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // missing data, so the guard has to reject the entry up front rather than serve a tab with
     // holes in it for the rest of the TTL.
     await service.getContributors(ACCOUNT, 'all', FILTERS);
-    const [key] = [...cacheValues.keys()];
+    const key = ROWS_KEY('all:all');
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     stored.rows.r = stored.rows.r.map((row) => row.slice(0, -1));
     cacheValues.set(key, JSON.stringify(stored));
@@ -212,8 +229,14 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, commitScope: 'merged' });
     await service.getContributors(ACCOUNT, '30d', { ...FILTERS, metric: 'code' });
 
-    expect([...cacheValues.keys()]).toEqual(['all:all', '30d:all', '30d:lf'].map((suffix) => buildOrgCacheKey(ACCOUNT, `people-contributors:v4:${suffix}`)));
-    expect(execute).toHaveBeenCalledTimes(3);
+    const keys = [...cacheValues.keys()].sort();
+    const expected = ['all:all', '30d:all', '30d:lf'].flatMap((suffix) => [
+      ROWS_KEY(suffix),
+      buildOrgCacheKey(ACCOUNT, `people-contributors-roles:v1:${suffix}`)!,
+    ]);
+    expect(keys).toEqual(expected.sort());
+    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(3);
+    expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(3);
   });
 
   it.each([
@@ -228,7 +251,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // The decode resolves each reference without a fallback, so an unresolvable one would emit a
     // row with no dictionary fields at all. The guard has to reject the entry instead.
     await service.getContributors(ACCOUNT, 'all', FILTERS);
-    const [key] = [...cacheValues.keys()];
+    const key = ROWS_KEY('all:all');
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     corrupt(stored);
     cacheValues.set(key, JSON.stringify(stored));
@@ -242,15 +265,14 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
   it('round-trips an empty result unchanged', async () => {
     // The empty envelope has to survive its own guard: rejecting it would make an org with no rows
     // refetch on every request forever.
-    execute.mockReset();
-    execute.mockResolvedValue({ rows: [] });
+    mockWarehouse([], []);
     const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     const fromHit = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    expect(cacheValues.size).toBe(1);
+    expect(cacheValues.size).toBe(2);
   });
 
   it.each([
@@ -261,7 +283,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
     // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
     await service.getContributors(ACCOUNT, 'all', FILTERS);
-    const [key] = [...cacheValues.keys()];
+    const key = ROWS_KEY('all:all');
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
     const index = stored.rows.k.indexOf('CDP_MEMBER_ID');
     stored.rows.r = stored.rows.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
@@ -276,9 +298,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
   it('caches a row whose CDP_MEMBER_ID aggregate came back null instead of missing forever', async () => {
     // `MIN(cdp_member_id)` over an all-NULL group returns NULL, and the uncached path passes it
     // straight through. A guard stricter than that would turn this org into a permanent miss.
-    const { rows } = (await execute()) as { rows: Record<string, unknown>[] };
-    execute.mockReset();
-    execute.mockResolvedValue({ rows: rows.map((row, index) => (index === 0 ? { ...row, CDP_MEMBER_ID: null } : row)) });
+    mockWarehouse(CONTRIBUTOR_ROWS.map((row, index) => (index === 0 ? { ...row, CDP_MEMBER_ID: null } : row)));
     const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
@@ -292,31 +312,26 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // Same rule as the event-attendee null EVENT_ID: `buildResponse` passes a null person key and a
     // null project id through, so a guard demanding a string in either would make one such row a
     // permanent miss. Both loosened cells are nulled together so each guard branch is exercised.
-    execute.mockReset();
-    execute.mockResolvedValue({
-      rows: [
-        {
-          PERSON_KEY: null,
-          PROJECT_ID: null,
-          LFID: null,
-          LF_USERNAME: null,
-          CDP_MEMBER_ID: null,
-          DISPLAY_NAME: null,
-          TITLE: null,
-          PROJECT_NAME: null,
-          PROJECT_SLUG: null,
-          FOUNDATION_ID: null,
-          FOUNDATION_NAME: null,
-          FOUNDATION_SLUG: null,
-          COMMITS: null,
-          MERGED_COMMITS: null,
-          CODE_ACTIVITIES: null,
-          LAST_ACTIVE_DATE: null,
-          IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
-          IS_DECLARED_MAINTAINER_FOR_ORG: null,
-        },
-      ],
-    });
+    mockWarehouse([
+      {
+        PERSON_KEY: null,
+        PROJECT_ID: null,
+        LFID: null,
+        LF_USERNAME: null,
+        CDP_MEMBER_ID: null,
+        DISPLAY_NAME: null,
+        TITLE: null,
+        PROJECT_NAME: null,
+        PROJECT_SLUG: null,
+        FOUNDATION_ID: null,
+        FOUNDATION_NAME: null,
+        FOUNDATION_SLUG: null,
+        COMMITS: null,
+        MERGED_COMMITS: null,
+        CODE_ACTIVITIES: null,
+        LAST_ACTIVE_DATE: null,
+      },
+    ]);
     const fromMiss = await service.getContributors(ACCOUNT, 'all', FILTERS);
     const warehouseReads = execute.mock.calls.length;
 
@@ -330,7 +345,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.
     const legacy = [{ PERSON_KEY: 'stale', PROJECT_ID: 'stale-project' }];
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v4:all:all')!, JSON.stringify(legacy));
+    cacheValues.set(ROWS_KEY('all:all'), JSON.stringify(legacy));
 
     const response = await service.getContributors(ACCOUNT, 'all', FILTERS);
 
@@ -340,7 +355,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
 
 describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', () => {
   function lastQuery(): string {
-    return execute.mock.calls.at(-1)![0] as string;
+    return readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY').at(-1)![0] as string;
   }
 
   function projectRow(projectId: string, commits: number, codeActivities: number): ContributorPersonProjectRow {
@@ -361,8 +376,6 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
       MERGED_COMMITS: Math.floor(commits / 2),
       CODE_ACTIVITIES: codeActivities,
       LAST_ACTIVE_DATE: '2026-04-12',
-      IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
-      IS_DECLARED_MAINTAINER_FOR_ORG: false,
     };
   }
 
@@ -375,7 +388,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
 
     if (predicate) expect(lastQuery()).toContain(predicate);
     else expect(lastQuery()).not.toMatch(/is_lf_project/);
-    expect(execute.mock.calls.at(-1)![1]).toEqual([ACCOUNT]);
+    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY').at(-1)![1]).toEqual([ACCOUNT]);
   });
 
   it.each([
@@ -404,7 +417,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     const authored = await service.getContributors(ACCOUNT, '365d', FILTERS);
     const merged = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, commitScope: 'merged' });
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(1);
     expect(authored.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(40);
     expect(merged.contributors.find((row) => row.personKey === 'person-one')?.commits).toBe(15);
     expect(merged.projects.find((row) => row.projectId === 'project-one' && row.personKey === 'person-one')?.commits).toBe(15);
@@ -419,8 +432,7 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
   });
 
   it('sends code activities on every row and picks the most active project by the metric', async () => {
-    execute.mockReset();
-    execute.mockResolvedValue({ rows: [projectRow('commit-heavy', 50, 60), projectRow('review-heavy', 5, 400)] });
+    mockWarehouse([projectRow('commit-heavy', 50, 60), projectRow('review-heavy', 5, 400)]);
 
     const byCommits = await service.getContributors(ACCOUNT, '365d', FILTERS);
     const byCode = await service.getContributors(ACCOUNT, '365d', { ...FILTERS, metric: 'code' });
@@ -428,5 +440,71 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
     expect(byCommits.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'commit-heavy' });
     expect(byCode.contributors[0]).toMatchObject({ commits: 55, codeActivities: 460, mostActiveProjectName: 'review-heavy' });
     expect(byCode.projects.map((project) => project.codeActivities)).toEqual([60, 400]);
+  });
+});
+
+describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', () => {
+  function lastRolesRead(): { sql: string; binds: unknown[] } {
+    const [sql, binds] = readsOf('ORG_MAINTAINER_ROLES').at(-1)!;
+    return { sql: String(sql), binds: binds as unknown[] };
+  }
+
+  it('reads the roles overlapping the range, binding the range length after the account', async () => {
+    await service.getContributors(ACCOUNT, '730d', FILTERS);
+
+    const { sql, binds } = lastRolesRead();
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES');
+    expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE() AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
+    expect(binds).toEqual([ACCOUNT, 730]);
+  });
+
+  it('reads every started role for all time, binding only the account', async () => {
+    await service.getContributors(ACCOUNT, 'all', FILTERS);
+
+    const { sql, binds } = lastRolesRead();
+    expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE()');
+    expect(sql).not.toContain('ROLE_END_DATE');
+    expect(binds).toEqual([ACCOUNT]);
+  });
+
+  it.each([
+    ['all', null],
+    ['lf', 'AND IS_LF_PROJECT = TRUE'],
+    ['non_lf', 'AND IS_LF_PROJECT = FALSE'],
+  ] as const)('reads the roles of project scope %s', async (projectScope, predicate) => {
+    await service.getContributors(ACCOUNT, '365d', { ...FILTERS, projectScope });
+
+    const { sql } = lastRolesRead();
+    if (predicate) expect(sql).toContain(predicate);
+    else expect(sql).not.toContain('IS_LF_PROJECT');
+  });
+
+  it('counts distinct (member, segment) roles with or without code, and everyone with code as a contributor', async () => {
+    const { stats } = await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(stats).toEqual({ maintainerRoles: 4, contributors: 2, projects: 2, foundations: 1 });
+  });
+
+  it('badges a person holding any role and labels each project row by the role on that project', async () => {
+    const { contributors, projects } = await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(contributors.map((row) => [row.personKey, row.role])).toEqual([
+      ['person-one', 'Maintainer'],
+      ['person-two', 'Contributor'],
+    ]);
+    expect(projects.map((row) => [row.personKey, row.projectId, row.role])).toEqual([
+      ['person-one', 'project-one', 'Maintainer'],
+      ['person-one', 'project-two', 'Contributor'],
+      ['person-two', 'project-one', 'Contributor'],
+    ]);
+  });
+
+  it('treats a stored roles entry with a missing key as a miss', async () => {
+    await service.getContributors(ACCOUNT, '365d', FILTERS);
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v1:365d:all')!, JSON.stringify([{ PERSON_KEY: 'person-one' }]));
+
+    await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(2);
   });
 });

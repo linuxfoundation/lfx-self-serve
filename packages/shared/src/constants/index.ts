@@ -81,6 +81,7 @@ export * from './foundation-projects.constants';
 export * from './marketing-impact.constants';
 export * from './org-people.constants';
 export * from './org-lens-time-range.constants';
+export * from './org-maintainer-roles.constants';
 export * from './org-contributions.constants';
 export * from './org-commit-filters.constants';
 export * from './project-participating-orgs.constants';

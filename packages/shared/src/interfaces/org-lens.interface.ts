@@ -47,6 +47,7 @@ export interface OrgLensFoundationProject {
   projectName: string;
   isLfProject: boolean;
   influence: ProjectInfluenceBucket;
+  /** LF maintainer roles of the account on the project overlapping the past 365 days (0 for a non-LF project, which the UI shows as a dash). */
   maintainers: number;
   contributors: number;
   collaborators: number;

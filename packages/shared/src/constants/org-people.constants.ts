@@ -116,7 +116,7 @@ export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
-  maintainers: 0,
+  maintainerRoles: 0,
   contributors: 0,
   projects: 0,
   foundations: 0,

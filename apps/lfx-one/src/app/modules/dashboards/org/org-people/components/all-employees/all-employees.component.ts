@@ -293,6 +293,14 @@ export class AllEmployeesComponent {
       this.resetAllState();
     });
 
+    // The expanded rows' Maintainer pills follow the page range, so a new range drops every loaded detail and collapses the rows.
+    toObservable(this.selectedRange)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.detailCancel$.next();
+        this.resetDetailState();
+      });
+
     // Reset pagination to the initial cap when any filter/sort input changes; skip(1) drops the synchronous initial combineLatest emission.
     combineLatest([
       toObservable(this.searchTerm),
@@ -846,7 +854,7 @@ export class AllEmployeesComponent {
     this.clearDetailError(key);
     this.detailLoading.update((state) => ({ ...state, [key]: true }));
     this.dataService
-      .getEmployeeDetail(orgUid, row.personKey)
+      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange())
       .pipe(
         take(1),
         takeUntil(this.detailCancel$),
@@ -888,8 +896,12 @@ export class AllEmployeesComponent {
     this.sortColumn.set('commits');
     this.sortDirection.set(-1);
     this.limit.set(ORG_ALL_EMPLOYEES_INITIAL_LIMIT);
-    this.expansion.set({});
     this.failedAvatarKeys.set({});
+    this.resetDetailState();
+  }
+
+  private resetDetailState(): void {
+    this.expansion.set({});
     this.detailMap.set({});
     this.detailLoading.set({});
     this.detailErrorMap.set({});

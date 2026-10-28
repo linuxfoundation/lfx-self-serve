@@ -83,7 +83,21 @@
                         <thead>
                           <tr class="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
                             <th class="py-2 font-medium">Project</th>
-                            <th class="py-2 font-medium text-right">Maintainers</th>
+                            <th class="py-2 font-medium text-right">
+                              <span class="inline-flex items-center justify-end gap-1" data-testid="org-overview-foundations-and-projects-maintainers-header">
+                                {{ maintainerRolesLabel }}
+                                <button
+                                  type="button"
+                                  class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  aria-label="How maintainer roles are counted"
+                                  [pTooltip]="maintainerRolesDefinition"
+                                  tooltipPosition="top"
+                                  tooltipEvent="both"
+                                  data-testid="org-overview-foundations-and-projects-maintainers-info">
+                                  <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                                </button>
+                              </span>
+                            </th>
                             <th class="py-2 font-medium text-right">Contributors</th>
                             <th class="py-2 font-medium text-right">Collaborators</th>
                             <th class="py-2 font-medium text-right">
@@ -140,7 +154,8 @@
                                   <span class="text-gray-900">{{ project.projectName }}</span>
                                 </span>
                               </td>
-                              <td class="py-2 text-right text-gray-700">{{ project.maintainers | number }}</td>
+                              <!-- LF maintainer roles only: a non-LF project shows a dash, not a misleading zero. -->
+                              <td class="py-2 text-right text-gray-700">{{ project.isLfProject ? (project.maintainers | number) : '—' }}</td>
                               <td class="py-2 text-right text-gray-700">{{ project.contributors | number }}</td>
                               <td class="py-2 text-right text-gray-700">{{ project.collaborators | number }}</td>
                               <td class="py-2 text-right text-gray-700">{{ project.commits | number }}</td>

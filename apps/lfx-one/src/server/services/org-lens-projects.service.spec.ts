@@ -334,6 +334,11 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     return { PROJECT_SLUG: slug, PARTICIPANT_ID: id, INVOLVEMENT_ROLE: role, PARTICIPANT_NAME: name, PARTICIPANT_AVATAR_URL: avatar };
   }
 
+  /** A maintainer roles row, keyed on the catalog's lowercased Insights slug. */
+  function maintainer(slug: string, id: string, name: string | null, avatar: string | null) {
+    return { INSIGHTS_PROJECT_SLUG: slug, MEMBER_ID: id, MAINTAINER_NAME: name, MAINTAINER_AVATAR_URL: avatar };
+  }
+
   function storedValue(): CompactOrgLensProjectsCache {
     return JSON.parse([...cacheValues.values()][0]) as CompactOrgLensProjectsCache;
   }
@@ -341,13 +346,13 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
   beforeEach(() => {
     execute.mockReset();
     execute.mockImplementation(async (sql: string) => {
+      // First: the roles read joins ORG_LENS_PROJECT_PEOPLE for avatars, so it matches that check too.
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [maintainer('k8s', 'p-1', 'Ada Lovelace', 'https://avatars.example.com/ada.png')] };
+      }
       if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
         return {
-          rows: [
-            person('k8s', 'p-1', 'maintainer', 'Ada Lovelace', 'https://avatars.example.com/ada.png'),
-            person('k8s', 'p-2', 'contributor', null, null),
-            person('etcd', 'p-1', 'participant', 'Ada Lovelace', 'https://avatars.example.com/ada.png'),
-          ],
+          rows: [person('k8s', 'p-2', 'contributor', null, null), person('etcd', 'p-1', 'participant', 'Ada Lovelace', 'https://avatars.example.com/ada.png')],
         };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
@@ -429,10 +434,8 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // so joining the triple with one is ambiguous: these two people join to the same string and a
     // delimiter-keyed dictionary would store one and hand it back for both.
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
-        return {
-          rows: [person('k8s', 'p-1', 'maintainer', 'a\u0000b', 'c'), person('k8s', 'p-1', 'maintainer', 'a', 'b\u0000c')],
-        };
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [maintainer('k8s', 'p-1', 'a\u0000b', 'c'), maintainer('k8s', 'p-1', 'a', 'b\u0000c')] };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
         return { rows: [projectsRow()] };
@@ -546,8 +549,11 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // uncached path and make one such person a permanent miss for the org.
     execute.mockReset();
     execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [] };
+      }
       if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
-        return { rows: [person('k8s', null, 'maintainer', null, null)] };
+        return { rows: [person('k8s', null, 'contributor', null, null)] };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
         return { rows: [projectsRow()] };
@@ -568,11 +574,55 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // change, so the guard has to reject the shape too — decoding one would read `projects.k`/
     // `projects.r` off an array and serve an empty page for the whole TTL.
     const legacy = { orgSlug: 'acme', orgName: ORG_NAME, dataUpdatedAt: '2026-01-01T00:00:00.000Z', projects: [{ slug: 'k8s', name: 'Kubernetes' }] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v7:${encodeURIComponent(ORG_NAME)}|__top__`)!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__`)!, JSON.stringify(legacy));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects.map((project) => project.slug)).toEqual(['k8s', 'etcd']);
     expect(execute).toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)', () => {
+  const service = new OrgLensProjectsService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return {
+          rows: [
+            { INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: 'Ada Lovelace', MAINTAINER_AVATAR_URL: null },
+            { INSIGHTS_PROJECT_SLUG: 'etcd', MEMBER_ID: 'm-2', MAINTAINER_NAME: null, MAINTAINER_AVATAR_URL: 'https://avatars.example.com/m-2.png' },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) {
+        return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' }), projectsRow({ PROJECT_ID: 'proj-2', PROJECT_SLUG: 'etcd', PROJECT_NAME: 'etcd' })] };
+      }
+      return { rows: [] };
+    });
+  });
+
+  it('lists the maintainer roles overlapping the past 2 years per project, matched on the lowercased Insights slug', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects.map((project) => project.maintainers)).toEqual([
+      [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }],
+      [{ id: 'm-2', name: 'm-2', avatarUrl: 'https://avatars.example.com/m-2.png' }],
+    ]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('r.INSIGHTS_PROJECT_SLUG IN (?, ?)');
+    expect(sql).toContain('r.ROLE_START_DATE <= CURRENT_DATE() AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 'etcd', 730]);
+  });
+
+  it('no longer reads maintainers from the project people table', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    const [peopleSql] = execute.mock.calls.find(
+      ([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES')
+    )!;
+    expect(peopleSql).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'");
   });
 });

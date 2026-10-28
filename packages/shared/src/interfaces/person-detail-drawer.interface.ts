@@ -31,7 +31,7 @@ export interface PersonDrawerContext {
   defaultTab?: PersonDrawerTab;
   /** `true` when the opener lists the person as a former employee of the account; the header shows a "Former employee" badge. */
   isFormer?: boolean;
-  /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
+  /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first, and the Code tab's Maintainer pills follow its range (past 365 days without one). */
   directoryView?: OrgPeopleDirectoryView;
 }
 

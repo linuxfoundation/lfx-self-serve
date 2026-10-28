@@ -39,7 +39,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
           PROJECT_NAME: 'Kubernetes',
           IS_LF_PROJECT: true,
           INFLUENCE_MAX_BUCKET: 'Leading',
-          MAINTAINERS_COUNT: 2,
+          MAINTAINER_ROLES: 2,
           CONTRIBUTORS_COUNT: 9,
           COLLABORATORS_COUNT: 4,
           COMMITS_COUNT: 120,
@@ -69,9 +69,10 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
 
     const [query, binds] = execute.mock.calls[0];
     expect(query).toContain('ORG_LENS_FOUNDATION_PROJECTS_DETAIL');
-    expect(query).toContain('WHERE ACCOUNT_ID = ?');
-    expect(query).toContain('AND FOUNDATION_ID = ?');
-    expect(binds).toEqual(['acc-1', 'cncf']);
+    expect(query).toContain('WHERE p.ACCOUNT_ID = ?');
+    expect(query).toContain('AND p.FOUNDATION_ID = ?');
+    // The roles join comes first in the text, so its binds (account, then the 365-day range) lead.
+    expect(binds).toEqual(['acc-1', 365, 'acc-1', 'cncf']);
   });
 
   it('scopes the cache entry per foundation', async () => {
@@ -81,7 +82,21 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     await service.getFoundationProjects('acc-1', 'cncf');
     await service.getFoundationProjects('acc-1', 'lf-edge');
 
-    expect(cacheKeys).toEqual(['memberships-projects:cncf', 'memberships-projects:lf-edge']);
+    expect(cacheKeys).toEqual(['memberships-projects:v2:cncf', 'memberships-projects:v2:lf-edge']);
+  });
+
+  it('counts maintainers per project as LF maintainer roles overlapping the past 365 days, joined on the project id', async () => {
+    execute.mockResolvedValue({ rows: [{ PROJECT_ID: 'p-2', IS_LF_PROJECT: false, INFLUENCE_MAX_BUCKET: 'Silent', MAINTAINER_ROLES: null }] });
+
+    const { projects } = await new OrgLensMembershipsService().getFoundationProjects('acc-1', 'cncf');
+
+    const [query] = execute.mock.calls[0];
+    expect(query).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES');
+    expect(query).toContain('COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES');
+    expect(query).toContain('IS_LF_PROJECT = TRUE');
+    expect(query).toContain('ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE())');
+    expect(query).toContain('ON roles.PROJECT_ID = p.PROJECT_ID');
+    expect(projects[0]?.maintainers).toBe(0);
   });
 
   it('returns an empty envelope rather than failing when the org has no projects for the foundation', async () => {
