@@ -351,6 +351,21 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('1');
     });
 
+    it('notes on the code tile that former employees are left out, only under "Current employees"', async () => {
+      await mount('browser');
+      await answerCurrent();
+      await answerFormer();
+      const info = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-stat-code-info"]');
+
+      expect(info()).not.toBeNull();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('all');
+      await settle();
+
+      expect(info()).toBeNull();
+    });
+
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
       await mount('browser');
       await answerCurrent();

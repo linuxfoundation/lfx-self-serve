@@ -69,6 +69,15 @@ export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL: Readonly<Record<OrgCodeMetric, st
   code: 'Code Contributors',
 };
 
+/** Note on the All Employees code tile while only current employees are shown (lfx-self-serve#4160). */
+export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
+  'Counts current employees only. People who have since left are excluded; choose Employment: All to include them.';
+
+/** Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). */
+export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
+  'People with at least one code contribution (commit, pull request, review or comment) in LF projects over the last 12 months, ' +
+  'credited to the employer they had at the time, so people who have since left are included. Bots excluded.';
+
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =
   'Commits the person authored, on any branch (including pull-request commits not yet merged), counted once each. Bots excluded.';

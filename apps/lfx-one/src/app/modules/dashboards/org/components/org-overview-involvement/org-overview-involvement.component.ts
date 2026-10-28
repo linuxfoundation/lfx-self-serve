@@ -5,7 +5,13 @@ import { Component, computed, inject, Signal, signal, viewChild, WritableSignal 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
-import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, ORG_INVOLVEMENT_METRICS } from '@lfx-one/shared/constants';
+import {
+  BASE_BAR_CHART_OPTIONS,
+  BASE_LINE_CHART_OPTIONS,
+  lfxColors,
+  ORG_INVOLVEMENT_METRICS,
+  ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+} from '@lfx-one/shared/constants';
 import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -224,6 +230,7 @@ export class OrgOverviewInvolvementComponent {
       loading: this.contributorsLoading(),
       value: data.totalActiveContributors.toString(),
       subtitle: 'Employees actively contributing to projects',
+      tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
       chartOptions: this.createBarChartOptions('Active contributors'),
       chartData:
         data.monthlyData.length > 0
