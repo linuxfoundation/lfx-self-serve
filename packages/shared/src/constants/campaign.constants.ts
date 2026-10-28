@@ -3589,6 +3589,14 @@ export const CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS = 200;
 /** The most briefs (and dates) one send workflow can carry upstream. */
 export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
 
+/**
+ * sessionStorage key prefix for how many times a survey series was started over, per project and
+ * survey slug. A restarted series writes NEW briefs (`<slug>-r2`, `-r3`...) so campaign-service
+ * creates new drafts; remembering the count across a reload keeps the page from writing the
+ * ORIGINAL briefs again, whose drafts campaign-service would hand back unchanged.
+ */
+export const CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX = 'lfx-campaigns-survey-series-restart:';
+
 /** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
 export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -174,6 +174,27 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(emitted).toHaveLength(1);
   });
 
+  it('derives the lookup slug again when the surface changes between Email and Survey', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.componentRef.setInput('emailStage', 'Registration Push');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey');
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('viewform', 'foundation-a', 'email', 'Registration Push');
+
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    // The same link is the survey's TITLE to the survey lookup, not `viewform`.
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('2026-cloud-native-survey', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
   it('re-runs a survey lookup when its title changes, since the title is half of its identity', async () => {
     campaignService.loadBrief.mockReturnValue(EMPTY);
     fixture.componentRef.setInput('deliveryType', 'survey');
@@ -1824,6 +1845,20 @@ describe('PlanningTabComponent email brief editing', () => {
     internals().saveEmailEdit();
 
     expect((internals().eventDetails() as unknown as { slug: string }).slug).toBe('2027-developer-survey');
+  });
+
+  it('refuses an emptied survey source in the editor and keeps it open with a field error', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Closes 30 November.' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('   \n  ');
+
+    internals().saveEmailEdit();
+    fixture.detectChanges();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Closes 30 November.');
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-email-edit-error"]')?.textContent).toContain('Paste the survey or report text');
   });
 
   it('does not hand off the old brief when the open edit is refused', async () => {

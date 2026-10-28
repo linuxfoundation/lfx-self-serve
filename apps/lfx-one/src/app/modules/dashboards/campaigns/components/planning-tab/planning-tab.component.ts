@@ -777,6 +777,11 @@ export class PlanningTabComponent implements OnInit {
         this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
       }
     });
+    // And when the SURFACE changes: the same Google Form link is `viewform` to the email lookup
+    // and its title to the survey one, so the slug has to be derived again for the new surface.
+    this.deliveryType$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
+    });
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
 
     // `switchMap`, so an edited URL cancels the lookup for the previous one. The persist path
@@ -1619,6 +1624,12 @@ export class PlanningTabComponent implements OnInit {
     }
     // The same limit campaign-service enforces at save: a longer source would be refused there,
     // after the operator had moved on believing the edit was kept.
+    // A survey's copy is written from its source text alone, so an emptied one is refused here
+    // rather than saved and refused by campaign-service later.
+    if (this.isSurvey() && (this.emailEditForm.controls.sourceText.value ?? '').trim() === '') {
+      this.emailEditError.set('Paste the survey or report text the emails are written from.');
+      return;
+    }
     const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
     if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
       this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);

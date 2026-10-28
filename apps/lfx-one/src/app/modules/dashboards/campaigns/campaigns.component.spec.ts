@@ -8336,6 +8336,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     let generateEmailCopy: MockInstance;
 
     beforeEach(() => {
+      sessionStorage.clear();
       service = TestBed.inject(CampaignService);
       let next = 0;
       persistBrief = vi
@@ -8914,6 +8915,69 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceUnresolvedBriefIds()).toEqual([]);
       expect(seq().surveySequenceSends()).toEqual([]);
       expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it("writes a restarted series under NEW briefs, sharing the page's audience, and remembers it across a reload", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      );
+
+      seq().onStartSeriesOver();
+      persistBrief.mockClear();
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          of({
+            enabled: true,
+            audiences:
+              briefId === 'brief-primary'
+                ? [{ id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] }]
+                : [],
+          }) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+      await seq().onGenerateSurveySequence();
+
+      // Every send, the first included, is a new brief: campaign-service would hand the original
+      // briefs' drafts back unchanged.
+      const slugs = persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).eventDetails.slug);
+      expect(slugs).toEqual(['cloud-native-2026-r2', 'cloud-native-2026-r2', 'cloud-native-2026-r2']);
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      ).not.toContain('brief-primary');
+      // The audience composed for the page's own brief reaches all three new briefs.
+      expect(attach).toHaveBeenCalledTimes(3);
+
+      // A fresh page (a reload) keeps writing the restarted identity, not the original briefs.
+      const reloaded = TestBed.createComponent(CampaignsComponent);
+      const page = reloaded.componentInstance as unknown as { readSeriesRestart(project: string, slug: string): number };
+      const project = (fixture.componentInstance as unknown as { activeFoundationSlug(): string }).activeFoundationSlug();
+      expect(page.readSeriesRestart(project, 'cloud-native-2026')).toBe(1);
+      reloaded.destroy();
+    });
+
+    it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().onStartSeriesOver();
+      persistBrief.mockClear();
+      seq().onSurveyEmailCountChange(3);
+
+      await seq().onGenerateSurveySequence();
+
+      expect(persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).eventDetails.slug)).toEqual([
+        'cloud-native-2026',
+        'cloud-native-2026',
+        'cloud-native-2026',
+      ]);
     });
 
     it('hides the single-email generate and stage controls for a three-email series only', () => {

@@ -15,6 +15,7 @@ import {
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX,
   CAMPAIGN_SURVEY_TYPES,
   DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -732,6 +733,9 @@ export class CampaignsComponent {
    * staging, keep cloning drafts for a series nobody is looking at.
    */
   private surveySequenceGeneration = 0;
+
+  /** Start-over counts for this page's lifetime, used when sessionStorage is unavailable. */
+  private readonly seriesRestartFallback = new Map<string, number>();
 
   /**
    * Guards a late variant-B copy response against a stage the operator has since changed.
@@ -3895,6 +3899,14 @@ export class CampaignsComponent {
     if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building') {
       return;
     }
+    // Drafts exist for this series, so the next one is written under NEW briefs (see
+    // `readSeriesRestart`). A series that never reached HubSpot keeps its briefs.
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (this.surveySeriesStarted() && brief !== null && projectSlug !== '') {
+      const baseSlug = brief.eventDetails?.slug ?? '';
+      this.writeSeriesRestart(projectSlug, baseSlug, this.readSeriesRestart(projectSlug, baseSlug) + 1);
+    }
     this.resetSurveySequence();
   }
 
@@ -3952,6 +3964,10 @@ export class CampaignsComponent {
     this.surveySequenceSends.set([]);
     this.clearSequenceDates();
 
+    const baseSlug = brief.eventDetails?.slug ?? '';
+    const restart = this.readSeriesRestart(projectSlug, baseSlug);
+    const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
+
     const written: CampaignSequenceSend[] = [];
     try {
       for (const stage of stages) {
@@ -3960,7 +3976,15 @@ export class CampaignsComponent {
         // A COPY of the planned brief under this send's own stage. The brief carries its stage as
         // part of its identity, so the same pasted source becomes a separate row per send rather
         // than one row the sends overwrite in turn.
-        const staged: CampaignBriefOutput = { ...brief, deliveryType: 'survey', emailStage: stage };
+        const staged: CampaignBriefOutput = {
+          ...brief,
+          deliveryType: 'survey',
+          emailStage: stage,
+          // After a start-over, a NEW identity: campaign-service hands back a brief's existing
+          // draft on a second create, so writing the original briefs again would show new copy
+          // while HubSpot kept the old drafts.
+          eventDetails: { ...brief.eventDetails, slug: seriesSlug },
+        };
         const briefId = await this.persistSequenceBrief(staged, projectSlug);
         if (!isCurrent()) {
           return;
@@ -7452,7 +7476,7 @@ export class CampaignsComponent {
     // Joined through `ensureEmailBriefId` rather than saved again beside it: two creates of one
     // identity race, and the loser is refused as a duplicate, aborting the series.
     const primary = this.emailBriefOutput();
-    if (primary !== null && (primary.emailStage ?? '') === (brief.emailStage ?? '')) {
+    if (primary !== null && (primary.emailStage ?? '') === (brief.emailStage ?? '') && primary.eventDetails?.slug === brief.eventDetails?.slug) {
       const primaryId = await this.ensureEmailBriefId(primary, projectSlug);
       if (primaryId === '') {
         throw new Error(this.emailSaveFailureMessage('so the emails were not written.'));
@@ -7584,14 +7608,19 @@ export class CampaignsComponent {
     projectSlug: string,
     isCurrent: () => boolean = () => true
   ): Promise<string> {
-    if (sends.length < 2) {
+    // The audience was composed for the page's own brief. In the original series that is send 1;
+    // after a start-over the sends are new briefs, so every one of them takes it from the page's.
+    const pageBriefId = this.emailBriefId();
+    const sourceBriefId = pageBriefId !== '' && !sends.some((send) => send.briefId === pageBriefId) ? pageBriefId : sends[0]?.briefId;
+    const targets = sends.filter((send) => send.briefId !== sourceBriefId);
+    if (sourceBriefId === undefined || targets.length === 0) {
       return '';
     }
     // Read the STORED row rather than the one the page is holding. The object a compose returns
     // (`toRecordedAudience`) carries the master list but not the suppression lists, so gating on
     // what the page has meant this returned before issuing a single request -- silently, every
     // time. `listAudiences` returns what was actually recorded.
-    const first = await this.builtAudienceFor(projectSlug, sends[0].briefId);
+    const first = await this.builtAudienceFor(projectSlug, sourceBriefId);
     // Checked after every read and before every attach: a series reset meanwhile must not attach
     // the old lists to a brief the new series reuses.
     if (!isCurrent()) {
@@ -7620,7 +7649,7 @@ export class CampaignsComponent {
       return 'The audience has no suppression lists recorded, so it cannot be shared with the other sends. Attach it to each send on the Audience tab.';
     }
 
-    for (const send of sends.slice(1)) {
+    for (const send of targets) {
       const existing = await this.builtAudienceFor(projectSlug, send.briefId);
       if (!isCurrent()) {
         return '';
@@ -7714,6 +7743,41 @@ export class CampaignsComponent {
     const suppression = (audience: CampaignAudience): string[] => [...(audience.suppressionListIds ?? [])].sort();
     const same = (x: string[], y: string[]): boolean => x.length === y.length && x.every((value, index) => value === y[index]);
     return same(sendLists(a), sendLists(b)) && same(suppression(a), suppression(b));
+  }
+
+  /**
+   * How many times this survey's series was started over on this browser tab, so a reload does not
+   * write the original briefs (whose drafts already exist) again. 0 when unknown or on the server.
+   */
+  private readSeriesRestart(projectSlug: string, baseSlug: string): number {
+    if (baseSlug === '') {
+      return 0;
+    }
+    if (!isPlatformBrowser(this.platformId)) {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+    try {
+      const stored = Number(sessionStorage.getItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`) ?? '0');
+      const fallback = this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+      return Math.max(Number.isInteger(stored) && stored > 0 ? stored : 0, fallback);
+    } catch {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+  }
+
+  private writeSeriesRestart(projectSlug: string, baseSlug: string, restart: number): void {
+    if (baseSlug === '') {
+      return;
+    }
+    this.seriesRestartFallback.set(`${projectSlug}:${baseSlug}`, restart);
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`, String(restart));
+    } catch {
+      // Storage refused (private mode, quota): the page-level record above still holds it.
+    }
   }
 
   /** Drop every send's date control; each is added back as its send is written. */
