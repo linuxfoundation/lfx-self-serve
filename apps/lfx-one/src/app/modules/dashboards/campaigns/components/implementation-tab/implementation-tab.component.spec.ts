@@ -9938,12 +9938,60 @@ describe('ImplementationTabComponent google stored images', () => {
   it.each([
     ['missing', '99999999-0000-4000-8000-000000000009'],
     ['misfit', SQUARE_LOGO],
-  ])('blocks a held image the library read shows as %s, naming it on the slot', async (kind, id) => {
-    const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id, name: '', briefId: BRIEF_ID }] } });
+  ])('blocks a held image the library read shows as %s, and Remove drops only that one', async (kind, id) => {
+    const { c } = await mount(true, {
+      googleImageAssets: {
+        [SLOT]: [
+          { id: WIDE_LOGO, name: '', briefId: BRIEF_ID },
+          { id, name: '', briefId: BRIEF_ID },
+        ],
+      },
+    });
 
     expect(c['googleImageAssetBlock']()?.kind).toBe(kind);
-    expect(c['googleImageSlots']()[SLOT].held[0].problem).not.toBe('');
+    expect(c['googleImageSlots']()[SLOT].held[1].problem).not.toBe('');
     expect(c['canSubmit']()).toBe(false);
+
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleHeldImages']()[SLOT]).toEqual([{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }]);
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  it('refuses a slot whose pasted URLs and held images together pass its cap', async () => {
+    const { c } = await mount(true);
+    const display = c['campaignForm'].controls.displayCreative.controls;
+    display.headlines.setValue('H1');
+    display.longHeadline.setValue('Long');
+    display.descriptions.setValue('D1');
+    display.businessName.setValue('LF');
+    display.marketingImages.setValue('https://cdn.example.org/m.png');
+    c['onGoogleImagePick'](SLOT, WIDE_LOGO);
+    display.logoImages.setValue(['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n'));
+
+    expect(c['googleCreativeError']()).toContain('has 6 entries in Logo images (4:1) — at most 5.');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  it('does not block on a failed upload into a section the operator un-ticked', async () => {
+    const { f, c } = await mount(true, {
+      googleImageUploadFailedMessage: 'image is not decodable',
+      googleImageUploadFailedBriefId: BRIEF_ID,
+      googleImageUploadFailedSlot: SLOT,
+    });
+    expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
+
+    c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
+    f.detectChanges();
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  /** One slug source for the read and the upload, so an upload lands in the library the slot reads. */
+  it('uploads under the same project slug the library read uses', async () => {
+    const { c } = await mount(true);
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
+
+    expect(uploadCreativeAsset.mock.calls[0][1]).toBe(c['activeFoundationSlug']());
+    expect(listCreativeAssets.mock.calls[0][0]).toBe(c['activeFoundationSlug']());
   });
 
   /** A failed read is not evidence of a deletion: campaign-service still refuses a missing asset by name. */

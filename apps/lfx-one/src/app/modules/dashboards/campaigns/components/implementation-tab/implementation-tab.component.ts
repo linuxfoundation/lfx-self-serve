@@ -2840,7 +2840,9 @@ export class ImplementationTabComponent implements OnInit {
       return;
     }
     const briefId = this.briefPersistence().briefId ?? '';
-    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    // `activeFoundationSlug`, the same source the library read keys on, so an upload lands in the
+    // library the slot then reads.
+    const projectSlug = this.activeFoundationSlug();
     if (!briefId || !projectSlug) {
       this.failGoogleImageUpload('Save the brief before uploading an image for it.', '', slotKey);
       return;
@@ -5254,7 +5256,14 @@ export class ImplementationTabComponent implements OnInit {
             'A Google image held in a slot was uploaded for a different brief, so it cannot be sent with this one. Remove it, then pick or upload an image for this brief.',
         };
       }
-      if (this.googleImageUploadStatus() === 'error' && briefId && this.googleImageUploadFailedBriefId() === briefId) {
+      // A failure blocks only while its slot is one the request would carry, as a held image does:
+      // a failed upload in a section the operator un-ticked must not hold up the rest.
+      if (
+        this.googleImageUploadStatus() === 'error' &&
+        briefId &&
+        this.googleImageUploadFailedBriefId() === briefId &&
+        inReach.has(this.googleImageUploadSlot().split('.')[0])
+      ) {
         return {
           kind: 'uploadFailed',
           message: `The Google image upload did not complete: ${this.googleImageUploadError()} Remove it, or choose the image again.`,
@@ -5894,8 +5903,15 @@ export class ImplementationTabComponent implements OnInit {
         if (field.requiredOnce === true && value === undefined) return `needs a ${field.label.toLowerCase()}.`;
         continue;
       }
-      if (field.min === undefined) continue;
       const count = Array.isArray(value) ? value.length : 0;
+      // The cap on an IMAGE slot is checked here, over pasted URLs AND held images together, because
+      // the per-control validator sees only the textarea: a picked image followed by five pasted
+      // URLs would otherwise reach upstream as six. `max` on a marketing shape is the channel's
+      // combined cap, so a single field over it is over the combined cap too — never tighter.
+      if (field.image && field.max !== undefined && count > field.max) {
+        return `has ${count} entries in ${field.label} — at most ${field.max}.`;
+      }
+      if (field.min === undefined) continue;
       if (count < field.min) {
         const entries = field.min === 1 ? 'entry' : 'entries';
         return `needs at least ${field.min} ${entries} in ${field.label} — ${count} given.`;

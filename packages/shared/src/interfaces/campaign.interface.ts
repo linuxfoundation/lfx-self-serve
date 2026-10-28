@@ -4966,9 +4966,9 @@ export interface CampaignListResult {
    * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
    * `assets:mutate`, so no URL signing is involved and none is asserted
    * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
-   * that the deployed campaign-service resolves Google creative asset ids at all — an older one
-   * ignores them and dispatches a campaign with no images, reporting success. The legacy creator
-   * never reads them either, hence the cutover half.
+   * that the deployed campaign-service resolves Google creative asset ids, which every release from
+   * v1.0.21 does — an older one types the image arrays as strings and cannot decode an asset entry,
+   * so its Google create fails. The legacy creator never reads them at all, hence the cutover half.
    *
    * The Implement tab reads it as `boolean | null`, `null` for unanswered, like the Reddit and Meta
    * siblings: only an explicit `true` offers the library controls in each Google image slot — upload
