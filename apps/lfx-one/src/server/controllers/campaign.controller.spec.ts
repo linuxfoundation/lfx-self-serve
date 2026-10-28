@@ -8876,12 +8876,18 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
     ]);
   });
 
-  /** Not a string is not "use the connection's pixel" either, so it is refused, not dropped. */
+  /**
+   * A non-string is refused on BOTH arms with the same field error: campaign-service decodes the
+   * field into a Go string, so forwarding one could only fail there, opaquely.
+   */
   it.each([
-    ['a number', 123],
-    ['an object', { id: 't2_synthpixel' }],
-  ])('refuses %s as conversionPixelId while the cutover is dark', async (_label, pixel) => {
-    isServerFeatureEnabled.mockImplementation(() => false);
+    ['a number', 'dark', 123],
+    ['an object', 'dark', { id: 't2_synthpixel' }],
+    ['a number', 'on', 123],
+    ['an object', 'on', { id: 't2_synthpixel' }],
+  ])('refuses %s as conversionPixelId with the cutover %s', async (_label, cutover, pixel) => {
+    isServerFeatureEnabled.mockImplementation(() => cutover === 'on');
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
@@ -8890,9 +8896,12 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
       next
     );
 
+    expect(createCampaigns).not.toHaveBeenCalled();
     expect(legacyCreate).not.toHaveBeenCalled();
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
-    expect(error.toResponse()['errors']).toEqual([expect.objectContaining({ field: 'redditConfig.conversionPixelId' })]);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'redditConfig.conversionPixelId', message: 'the Reddit conversion pixel must be text', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
   });
 
   it.each([

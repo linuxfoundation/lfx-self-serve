@@ -931,13 +931,13 @@ export class CampaignController {
       // create — it never reads the field, so the campaign would quietly use (or fail for want of)
       // the connection's pixel instead of the one the operator chose. The form never sends it in
       // that state (`redditConversionPixelEnabled` hides the control) (#3484).
-      if (this.hasUnservedRedditConversionPixel(body)) {
+      const redditPixelRefusal = this.redditConversionPixelRefusal(body);
+      if (redditPixelRefusal !== null) {
         next(
-          ServiceValidationError.forField(
-            'redditConfig.conversionPixelId',
-            "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel",
-            { operation: 'campaign_create', service: 'campaign_controller' }
-          )
+          ServiceValidationError.forField('redditConfig.conversionPixelId', redditPixelRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
         );
         return;
       }
@@ -4863,19 +4863,22 @@ export class CampaignController {
   }
 
   /**
-   * Whether `redditConfig.conversionPixelId` carries a pixel this deployment cannot honour.
+   * Why `redditConfig.conversionPixelId` cannot be sent, or `null` when it can.
    *
-   * Absent, `null` and a blank string all mean "use the connection's pixel" upstream, which is
-   * exactly what the legacy creator does anyway, so only a real value is refused — refusing a blank
-   * would fail a create that loses nothing on either arm.
+   * A value that is not a string is refused on EITHER arm: campaign-service decodes the field into
+   * a Go `string`, so it could only fail there as an opaque decode error, never succeed. Otherwise,
+   * absent, `null` and a blank string all mean "use the connection's pixel" upstream, which is
+   * exactly what the legacy creator does anyway, so only a real pixel is refused, and only while the
+   * legacy creator serves — refusing a blank would fail a create that loses nothing on either arm.
    */
-  private hasUnservedRedditConversionPixel(body: CampaignCreateRequest): boolean {
-    if (canSetRedditConversionPixel()) return false;
+  private redditConversionPixelRefusal(body: CampaignCreateRequest): string | null {
     const config: unknown = body?.redditConfig;
-    if (config === null || typeof config !== 'object' || !('conversionPixelId' in config)) return false;
+    if (config === null || typeof config !== 'object' || !('conversionPixelId' in config)) return null;
     const pixel: unknown = config.conversionPixelId;
-    if (pixel === undefined || pixel === null) return false;
-    return typeof pixel !== 'string' || pixel.trim() !== '';
+    if (pixel === undefined || pixel === null) return null;
+    if (typeof pixel !== 'string') return 'the Reddit conversion pixel must be text';
+    if (canSetRedditConversionPixel() || pixel.trim() === '') return null;
+    return "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel";
   }
 
   /**
