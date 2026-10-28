@@ -342,11 +342,18 @@ export interface HealthMetricsOverviewBalanceView {
 }
 
 /** A count over a bar: the figure, the text right of it ("of 1,000", "No goal set") and the bar's width and fill. */
+/**
+ * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
+ * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
+ */
 export interface HealthMetricsOverviewEventBarView {
   countLabel: string;
   sideLabel: string;
+  /** Empty when the side text has no value, as "No goal set" doesn't. */
+  sideValue: string;
   widthPct: number;
   barClass: string;
+  neutral: boolean;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
@@ -464,14 +471,38 @@ export interface HealthMetricsOverviewBoardView {
 }
 
 /** One line on the registration trend chart, as an SVG path on the 600×220 viewBox. */
+/** A trend dialog figure; the predicted one carries its range as a small high and low stack. */
+export interface HealthMetricsOverviewTrendKpiView {
+  key: string;
+  label: string;
+  value: string;
+  range: { high: string; low: string } | null;
+}
+
+/** An axis tick: its label and where it sits, as a percentage of the plot and, for gridlines, a y on the 600×220 canvas. */
+export interface HealthMetricsOverviewTrendTickView {
+  label: string;
+  pct: string;
+  y: string;
+}
+
 export interface HealthMetricsOverviewTrendView {
-  kpis: HealthMetricsOverviewKpiView[];
+  /** Current, Same point last year, and Predicted (or Final for a past event). */
+  kpis: HealthMetricsOverviewTrendKpiView[];
+  goalLabel: string;
+  /** "Days left", or "Event held" for a past event. */
+  daysTitle: string;
+  daysLabel: string;
+  yTicks: HealthMetricsOverviewTrendTickView[];
+  xTicks: HealthMetricsOverviewTrendTickView[];
   currentPath: string;
   lastYearPath: string;
   predictedPath: string;
   bandPath: string;
   /** `null` once the event is past the chart's window or has no actuals. */
   todayX: string | null;
+  /** Where the "Today" label sits, as a percentage of the plot's width. */
+  todayPct: string | null;
   /** The registration goal's dashed line; `null` without a goal. */
   goalY: string | null;
 }

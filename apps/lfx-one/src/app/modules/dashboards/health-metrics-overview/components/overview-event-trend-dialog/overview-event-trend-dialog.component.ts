@@ -6,8 +6,8 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES, HEALTH_METRICS_OVERVIEW_STROKES, HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   pickHealthMetricsEventsForecastFormat,
 } from '@lfx-one/shared/utils';
@@ -51,7 +51,7 @@ export class OverviewEventTrendDialogComponent {
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly bandFill = HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL;
   protected readonly thisYearClass = HEALTH_METRICS_OVERVIEW_FILL_CLASSES.purple;
-  protected readonly meta = buildHealthMetricsOverviewEventMeta(this.event);
+  protected readonly meta = buildHealthMetricsOverviewTrendMeta(this.event);
   protected readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
   private readonly reads = this.initReads();
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');

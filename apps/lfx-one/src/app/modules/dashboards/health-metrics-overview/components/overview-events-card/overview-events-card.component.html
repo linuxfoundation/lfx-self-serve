@@ -10,10 +10,10 @@
   [emptyCopy]="emptyCopy"
   testId="overview-events">
   @if (view(); as view) {
-    <!-- The card's own width picks the layouts: the KPIs sit side by side from 560px, the table's columns from 700px. -->
-    <div class="@container flex min-w-0 flex-col gap-[24px]">
-      <div class="grid grid-cols-1 border-y border-gray-200 @[560px]:grid-cols-2" data-testid="overview-events-kpis">
-        <div class="flex min-w-0 flex-col gap-[8px] py-[18px] @[560px]:pr-[24px]" data-testid="overview-events-total">
+    <!-- The design's viewport rules: the KPIs stack at 900px or narrower, the footer at 1100px, the trend label at 1200px. -->
+    <div class="flex min-w-0 flex-col gap-[24px]">
+      <div class="grid grid-cols-1 border-y border-gray-200 min-[901px]:grid-cols-2" data-testid="overview-events-kpis">
+        <div class="flex min-w-0 flex-col gap-[8px] py-[18px] min-[901px]:pr-[24px]" data-testid="overview-events-total">
           <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
             >Total events<lfx-overview-info-tip [text]="info.total"
           /></span>
@@ -53,7 +53,7 @@
         </div>
 
         <div
-          class="flex min-w-0 flex-col gap-[8px] border-t border-gray-200 py-[18px] @[560px]:border-l @[560px]:border-t-0 @[560px]:pl-[24px]"
+          class="flex min-w-0 flex-col gap-[8px] border-t border-gray-200 py-[18px] min-[901px]:border-l min-[901px]:border-t-0 min-[901px]:pl-[24px]"
           data-testid="overview-events-sponsorship">
           <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
             >Sponsorship<lfx-overview-info-tip [text]="info.sponsorship"
@@ -78,105 +78,126 @@
       </div>
 
       <div class="flex min-w-0 flex-col gap-[10px]" data-testid="overview-events-list">
-        <div class="flex flex-wrap items-center justify-between gap-x-[16px] gap-y-[8px]">
-          <span class="inline-flex items-center gap-[6px] text-[13px] font-semibold text-gray-900" data-testid="overview-events-list-title"
-            >{{ view.listTitle }}<lfx-overview-info-tip [text]="view.listInfo"
-          /></span>
-          <div class="flex flex-wrap gap-x-[16px] gap-y-[6px]" data-testid="overview-events-legend">
-            @for (item of legend; track item.key) {
-              <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-                ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
-              >
+        <span class="inline-flex items-center gap-[6px] text-[13px] font-semibold text-gray-900" data-testid="overview-events-list-title"
+          >{{ view.listTitle }}<lfx-overview-info-tip [text]="view.listInfo"
+        /></span>
+
+        <!-- Only the table scrolls sideways, inside its own container, so the page never does. -->
+        <div class="min-w-0 overflow-x-auto" data-testid="overview-events-table-scroll">
+          <div class="flex min-w-[820px] flex-col" role="table" [attr.aria-label]="view.listTitle">
+            <div
+              class="grid grid-cols-[minmax(180px,1fr)_minmax(120px,200px)_minmax(120px,200px)_156px] gap-[40px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
+              role="row">
+              <span role="columnheader">Event</span>
+              <span class="inline-flex items-center gap-[6px]" role="columnheader">Registrations<lfx-overview-info-tip [text]="info.registrations" /></span>
+              <span class="inline-flex items-center gap-[6px]" role="columnheader"
+                >Accepted speaking proposals<lfx-overview-info-tip [text]="info.talks"
+              /></span>
+              <span role="columnheader"><span class="sr-only">Registration trend</span></span>
+            </div>
+            @for (row of visibleRows(); track row.eventId) {
+              <div
+                class="grid grid-cols-[minmax(180px,1fr)_minmax(120px,200px)_minmax(120px,200px)_156px] items-center gap-[40px] border-b border-gray-100 py-[12px]"
+                role="row"
+                [attr.data-testid]="'overview-events-row-' + row.eventId">
+                <div class="flex min-w-0 flex-col gap-[2px]" role="cell">
+                  <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
+                  <span class="text-[12px] text-gray-400">{{ row.meta }}</span>
+                </div>
+
+                <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
+                  <div class="flex items-baseline justify-between gap-[8px]">
+                    <span class="text-[13px] font-semibold text-gray-900">{{ row.registrations.countLabel }}</span>
+                    <span class="text-[12px]" [class]="row.registrations.neutral ? 'text-gray-400' : 'text-gray-500'"
+                      >{{ row.registrations.sideLabel }}
+                      @if (row.registrations.sideValue) {
+                        <span class="font-medium text-gray-900">{{ row.registrations.sideValue }}</span>
+                      }
+                    </span>
+                  </div>
+                  <!-- With no goal the bar is the design's neutral track: white, outlined, unfilled. -->
+                  <span
+                    class="h-[8px] overflow-hidden rounded-full"
+                    [class]="row.registrations.neutral ? 'bg-white shadow-[inset_0_0_0_1px] shadow-gray-200' : 'bg-gray-100'"
+                    aria-hidden="true"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-track'"
+                    ><span
+                      class="block h-full rounded-full"
+                      [class]="row.registrations.barClass"
+                      [style.width.%]="row.registrations.widthPct"
+                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-bar'"></span
+                  ></span>
+                  @if (row.registrations.statusLabel; as status) {
+                    <span class="sr-only">Status: {{ status }}</span>
+                  }
+                </div>
+
+                <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
+                  @if (row.talks.hasProposals) {
+                    <div class="flex items-baseline justify-between gap-[8px]">
+                      <span class="text-[13px] font-semibold text-gray-900">{{ row.talks.countLabel }}</span>
+                      <span class="text-[12px] text-gray-500"
+                        >{{ row.talks.sideLabel }} <span class="font-medium text-gray-900">{{ row.talks.sideValue }}</span></span
+                      >
+                    </div>
+                    <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                      ><span
+                        class="block h-full rounded-full"
+                        [class]="row.talks.barClass"
+                        [style.width.%]="row.talks.widthPct"
+                        [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-bar'"></span
+                    ></span>
+                  } @else {
+                    <span class="text-[13px] text-gray-400">{{ row.talks.note }}</span>
+                  }
+                </div>
+
+                <div class="flex justify-end" role="cell">
+                  <button
+                    type="button"
+                    class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                    [attr.aria-label]="'Show the registration trend for ' + row.name"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-trend'"
+                    (click)="openTrend(row)">
+                    <i class="fa-light fa-chart-line text-[12px]" aria-hidden="true"></i><span class="max-[1200px]:hidden">Registration Trend</span
+                    ><span class="hidden max-[1200px]:inline">Trend</span>
+                  </button>
+                </div>
+              </div>
             }
           </div>
         </div>
+      </div>
 
-        <div class="flex flex-col" role="table" [attr.aria-label]="view.listTitle">
-          <div
-            class="hidden border-b border-gray-200 pb-[8px] text-[12px] text-gray-500 @[700px]:grid @[700px]:grid-cols-[minmax(180px,1fr)_minmax(120px,200px)_minmax(120px,200px)_156px] @[700px]:gap-[40px]"
-            role="row">
-            <span role="columnheader">Event</span>
-            <span class="inline-flex items-center gap-[6px]" role="columnheader">Registrations<lfx-overview-info-tip [text]="info.registrations" /></span>
-            <span class="inline-flex items-center gap-[6px]" role="columnheader">Accepted speaking proposals<lfx-overview-info-tip [text]="info.talks" /></span>
-            <span role="columnheader"><span class="sr-only">Registration trend</span></span>
-          </div>
-          @for (row of visibleRows(); track row.eventId) {
-            <div
-              class="grid grid-cols-1 items-center gap-[12px] border-b border-gray-100 py-[12px] @[700px]:grid-cols-[minmax(180px,1fr)_minmax(120px,200px)_minmax(120px,200px)_156px] @[700px]:gap-[40px]"
-              role="row"
-              [attr.data-testid]="'overview-events-row-' + row.eventId">
-              <div class="flex min-w-0 flex-col gap-[2px]" role="cell">
-                <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
-                <span class="text-[12px] text-gray-400">{{ row.meta }}</span>
-              </div>
-
-              <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
-                <span class="text-[11px] text-gray-500 @[700px]:hidden">Registrations</span>
-                <div class="flex items-baseline justify-between gap-[8px]">
-                  <span class="text-[13px] font-semibold text-gray-900">{{ row.registrations.countLabel }}</span>
-                  <span class="text-[12px] text-gray-400">{{ row.registrations.sideLabel }}</span>
-                </div>
-                <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
-                  ><span
-                    class="block h-full rounded-full"
-                    [class]="row.registrations.barClass"
-                    [style.width.%]="row.registrations.widthPct"
-                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-bar'"></span
-                ></span>
-                @if (row.registrations.statusLabel; as status) {
-                  <span class="sr-only">Status: {{ status }}</span>
-                }
-              </div>
-
-              <div class="flex min-w-0 flex-col gap-[6px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
-                <span class="text-[11px] text-gray-500 @[700px]:hidden">Accepted speaking proposals</span>
-                @if (row.talks.hasProposals) {
-                  <div class="flex items-baseline justify-between gap-[8px]">
-                    <span class="text-[13px] font-semibold text-gray-900">{{ row.talks.countLabel }}</span>
-                    <span class="text-[12px] text-gray-400">{{ row.talks.sideLabel }}</span>
-                  </div>
-                  <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
-                    ><span
-                      class="block h-full rounded-full"
-                      [class]="row.talks.barClass"
-                      [style.width.%]="row.talks.widthPct"
-                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-bar'"></span
-                  ></span>
-                } @else {
-                  <span class="text-[13px] text-gray-500">{{ row.talks.note }}</span>
-                }
-              </div>
-
-              <div class="flex @[700px]:justify-end" role="cell">
-                <button
-                  type="button"
-                  class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                  [attr.aria-label]="'Show the registration trend for ' + row.name"
-                  [attr.data-testid]="'overview-events-row-' + row.eventId + '-trend'"
-                  (click)="openTrend(row)">
-                  <i class="fa-light fa-chart-line text-[12px]" aria-hidden="true"></i>Registration Trend
-                </button>
-              </div>
-            </div>
-          }
+      <!--
+        Footer: links left, "View all" centre and the legend right; at 1100px or narrower it stacks, left-aligned, as
+        legend, then "View all", then the links last.
+      -->
+      <div
+        class="flex flex-col items-start gap-[12px] min-[1101px]:grid min-[1101px]:grid-cols-[1fr_auto_1fr] min-[1101px]:items-center min-[1101px]:gap-x-[24px]"
+        data-testid="overview-events-footer">
+        <div class="order-3 flex flex-wrap gap-[8px] pt-[2px] min-[1101px]:order-1 min-[1101px]:pt-0">
+          <lfx-overview-explore-link [link]="pastLink" testId="overview-events-explore-past" />
+          <lfx-overview-explore-link [link]="speakersLink" testId="overview-events-explore-speakers" />
         </div>
-
-        @if (hiddenCount() > 0) {
-          <div class="flex justify-center pt-[12px]">
+        <div class="order-2 flex justify-center">
+          @if (hiddenCount() > 0) {
             <button
               type="button"
-              class="inline-flex h-[30px] items-center gap-[6px] rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
               data-testid="overview-events-view-all"
               (click)="showAll.set(true)">
               View all ({{ view.rows.length }})<i class="fa-light fa-angle-down text-[12px]" aria-hidden="true"></i>
             </button>
-          </div>
-        }
-      </div>
-
-      <div class="flex flex-wrap gap-[8px]">
-        <lfx-overview-explore-link [link]="pastLink" testId="overview-events-explore-past" />
-        <lfx-overview-explore-link [link]="speakersLink" testId="overview-events-explore-speakers" />
+          }
+        </div>
+        <div class="order-1 flex flex-wrap gap-x-[24px] gap-y-[6px] min-[1101px]:order-3 min-[1101px]:justify-end" data-testid="overview-events-legend">
+          @for (item of legend; track item.key) {
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
+            >
+          }
+        </div>
       </div>
     </div>
   }

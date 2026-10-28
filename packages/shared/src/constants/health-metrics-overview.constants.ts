@@ -207,6 +207,7 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   needle: lfxColors.gray[900],
   gridline: lfxColors.gray[100],
   baseline: lfxColors.gray[200],
+  axis: lfxColors.gray[300],
   lastYear: lfxColors.gray[400],
   today: lfxColors.gray[300],
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,

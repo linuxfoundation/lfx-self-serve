@@ -57,6 +57,7 @@ import type {
   HealthMetricsOverviewParticipatingOrgsView,
   HealthMetricsOverviewTrainingMetric,
   HealthMetricsOverviewTrainingView,
+  HealthMetricsOverviewTrendKpiView,
   HealthMetricsOverviewTrendView,
 } from '../interfaces/health-metrics-overview.interface';
 import type { HealthMetricsTrainingEnrollment } from '../interfaces/health-metrics-training.interface';
@@ -412,8 +413,8 @@ export function buildHealthMetricsOverviewAddPastMeetingUrl(pccUrl: string, foun
 }
 
 /**
- * One upcoming event's registration trend: its headline figures and the chart's lines on a 600×220 canvas
- * spanning the last 180 days before the event. Either input may be missing, which leaves its parts out.
+ * One upcoming event's registration trend: its headline figures and the chart on a 600×220 canvas spanning the last
+ * 180 days before the event. Either input may be missing, which leaves its parts out.
  */
 export function buildHealthMetricsOverviewTrendView(
   row: HealthMetricsOverviewEvent,
@@ -421,15 +422,21 @@ export function buildHealthMetricsOverviewTrendView(
   series: HealthMetricsEventsForecastCurveSeries | null
 ): HealthMetricsOverviewTrendView {
   const goal = headline?.goal ?? row.registrationsGoal;
+  const high = headline?.forecastHigh ?? null;
+  const low = headline?.forecastLow ?? null;
 
   return {
     kpis: [
-      kpi('current', 'Current', formatCount(headline?.registrationsNow ?? row.registrations)),
-      kpi('last-year', 'Same point last year', formatCount(headline?.priorYearSamePoint)),
-      kpi('predicted', 'Predicted', formatCount(headline?.forecastAvg ?? null)),
-      kpi('goal', 'Registration goal', formatCount(goal)),
-      kpi('days-left', 'Days left', formatCount(headline?.daysLeft)),
+      trendKpi('current', 'Current', formatCount(headline?.registrationsNow ?? row.registrations)),
+      trendKpi('last-year', 'Same point last year', formatCount(headline?.priorYearSamePoint)),
+      {
+        ...trendKpi('predicted', 'Predicted', formatCount(headline?.forecastAvg ?? null)),
+        range: high !== null && low !== null ? { high: formatCount(high), low: formatCount(low) } : null,
+      },
     ],
+    goalLabel: formatCount(goal),
+    daysTitle: 'Days left',
+    daysLabel: formatCount(headline?.daysLeft),
     ...buildTrendChart(series, goal),
   };
 }
@@ -447,28 +454,45 @@ export function buildHealthMetricsOverviewPastTrendView(
     .map((format) => [...format.points].reverse().find((point) => point.priorYear !== null)?.priorYear ?? null)
     .filter((value): value is number => value !== null);
   const lastYear = lastYearFinals.length ? lastYearFinals.reduce((sum, value) => sum + value, 0) : null;
-  const chart = buildTrendChart(series, row.registrationsGoal);
 
   return {
     kpis: [
-      kpi('current', 'Current', formatCount(row.registrations)),
-      kpi('last-year', 'Same point last year', formatCount(lastYear)),
-      kpi('final', 'Final', formatCount(row.registrations)),
-      kpi('goal', 'Registration goal', formatCount(row.registrationsGoal)),
-      kpi('days-left', 'Event held', '0'),
+      trendKpi('current', 'Current', formatCount(row.registrations)),
+      trendKpi('last-year', 'Same point last year', formatCount(lastYear)),
+      trendKpi('final', 'Final', formatCount(row.registrations)),
     ],
-    ...chart,
+    goalLabel: formatCount(row.registrationsGoal),
+    daysTitle: 'Event held',
+    daysLabel: '0',
+    ...buildTrendChart(series, row.registrationsGoal),
     // The event is over, so nothing marks today.
     todayX: null,
+    todayPct: null,
   };
 }
 
-/** The trend chart's lines and goal; the forecast and its band start at the last measured day, so the lines meet. */
-function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, goal: number | null): Omit<HealthMetricsOverviewTrendView, 'kpis'> {
+/** "Springfield · Starts Dec 8, 2026", the dialog's line under the event name; either half drops out when missing. */
+export function buildHealthMetricsOverviewTrendMeta(event: Pick<HealthMetricsOverviewEvent, 'city' | 'startDate'>): string {
+  return [event.city, event.startDate ? `Starts ${formatIsoDateLabel(event.startDate)}` : ''].filter(Boolean).join(' · ');
+}
+
+function trendKpi(key: string, label: string, value: string): HealthMetricsOverviewTrendKpiView {
+  return { key, label, value, range: null };
+}
+
+/**
+ * The trend chart: its lines, goal and today marker, on a scale rounded up to at most 5 even steps (1, 2, 2.5 or 5
+ * times a power of ten), with ticks every 30 days. The forecast and its band start at the last measured day.
+ */
+function buildTrendChart(
+  series: HealthMetricsEventsForecastCurveSeries | null,
+  goal: number | null
+): Omit<HealthMetricsOverviewTrendView, 'kpis' | 'goalLabel' | 'daysTitle' | 'daysLabel'> {
   const window = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   const points = (series?.points ?? []).filter((point) => point.daysToEvent >= -window && point.daysToEvent <= 0);
   const peak = Math.max(goal ?? 0, ...points.flatMap((point) => [point.actual ?? 0, point.forecastHigh ?? 0, point.forecastAvg ?? 0, point.priorYear ?? 0]));
-  const max = peak > 0 ? peak * 1.08 : 1;
+  const { step, steps } = niceScale(peak * 1.05);
+  const max = step * steps;
   const x = (daysToEvent: number): number => ((window + daysToEvent) / window) * 600;
   const y = (value: number): number => 220 - (value / max) * 220;
   const actual = points.filter((point) => point.actual !== null);
@@ -478,6 +502,7 @@ function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, 
     (point) => point.forecastLow !== null && point.forecastHigh !== null && (lastActual === null || point.daysToEvent >= lastActual.daysToEvent)
   );
   const path = (coords: [number, number][]): string => coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
+  const todayX = lastActual ? x(lastActual.daysToEvent) : null;
 
   return {
     currentPath: path(actual.map((point) => [x(point.daysToEvent), y(point.actual as number)])),
@@ -494,9 +519,30 @@ function buildTrendChart(series: HealthMetricsEventsForecastCurveSeries | null, 
           ...[...band].reverse().map((point): [number, number] => [x(point.daysToEvent), y(point.forecastLow as number)]),
         ])} Z`
       : '',
-    todayX: lastActual ? x(lastActual.daysToEvent).toFixed(1) : null,
+    todayX: todayX === null ? null : todayX.toFixed(1),
+    todayPct: todayX === null ? null : ((todayX / 600) * 100).toFixed(2),
     goalY: goal !== null && goal > 0 ? y(goal).toFixed(1) : null,
+    yTicks: Array.from({ length: steps + 1 }, (_, index) => steps - index).map((tick) => ({
+      label: formatCount(step * tick),
+      pct: (100 - (tick / steps) * 100).toFixed(2),
+      y: (220 - (tick / steps) * 220).toFixed(1),
+    })),
+    xTicks: Array.from({ length: window / 30 + 1 }, (_, index) => window - index * 30).map((days) => ({
+      label: String(days),
+      pct: (((window - days) / window) * 100).toFixed(2),
+      y: '220',
+    })),
   };
+}
+
+/** The smallest whole step from 1, 2, 2.5 or 5 times a power of ten that covers `top` in at most 5 steps. */
+function niceScale(top: number): { step: number; steps: number } {
+  const ceiling = top > 0 ? top : 5;
+  const magnitude = Math.max(1, 10 ** Math.floor(Math.log10(ceiling / 5)));
+  const step =
+    [1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => Number.isInteger(candidate) && Math.ceil(ceiling / candidate) <= 5) ??
+    magnitude * 10;
+  return { step, steps: Math.max(1, Math.ceil(ceiling / step)) };
 }
 
 /** "Springfield · Dec 8–10, 2026"; either half drops out when missing. */
@@ -666,34 +712,30 @@ function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): Heal
     talks: {
       hasProposals: proposals > 0,
       countLabel: formatCount(accepted),
-      sideLabel: `of ${formatCount(proposals)}${isPast ? ' submitted' : ''}`,
+      sideLabel: 'Received:',
+      sideValue: formatCount(proposals),
       widthPct: proposals > 0 ? clampPct((accepted / proposals) * 100) : 0,
       // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
       barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-      note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP in review' : 'No call for proposals',
+      neutral: false,
+      note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
     },
   };
 }
 
 /**
- * Without a goal the bar is full and green; otherwise upcoming events take their pace and past ones their share of
- * the goal. An unmeasured count draws a grey bar with no status, so it never reads as missed.
+ * Without a goal the bar is the design's neutral outline with no status; otherwise upcoming events take their pace and
+ * past ones their share of the goal. An unmeasured count draws a grey bar with no status, so it never reads as missed.
  */
 function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRegistrationsView {
   const goal = event.registrationsGoal;
   const countLabel = formatCount(event.registrations);
-  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', widthPct: 100, ...statusFields(HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack) };
-  if (event.registrations === null) {
-    return { countLabel, sideLabel: `of ${formatCount(goal)}`, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
-  }
+  if (goal === null || goal <= 0) return { countLabel, sideLabel: 'No goal set', sideValue: '', widthPct: 0, barClass: '', neutral: true, statusLabel: null };
+  const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
+  if (event.registrations === null) return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null };
 
   const share = event.registrations / goal;
-  return {
-    countLabel,
-    sideLabel: `of ${formatCount(goal)}`,
-    widthPct: clampPct(share * 100),
-    ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)),
-  };
+  return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
 }
 
 function statusFields(status: { label: string; fillClass: string } | null): Pick<HealthMetricsOverviewEventRegistrationsView, 'barClass' | 'statusLabel'> {
