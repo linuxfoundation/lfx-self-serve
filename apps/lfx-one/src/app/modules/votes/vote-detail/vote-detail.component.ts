@@ -668,6 +668,7 @@ export class VoteDetailComponent {
       const stats = this.participationStats();
       const loaded = !!this.voteResults();
       const held = this.resultsHeld();
+      const disabled = this.voteResultsError();
       const dash = '—';
       // A held payload has no abstention count; leave it out rather than show a false 0 (#3916).
       const abstained = held ? 0 : stats.abstainedVoters;
@@ -679,6 +680,7 @@ export class VoteDetailComponent {
           subLine: loaded ? this.respondedSubLine(stats.participationRate, abstained) : undefined,
           icon: 'fa-light fa-users',
           iconContainerClass: 'bg-blue-100 text-blue-600',
+          disabled,
           ...(this.showVotersTab() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES }),
         },
         {
@@ -687,6 +689,7 @@ export class VoteDetailComponent {
           subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
+          disabled,
           ...(commentsReachable && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.COMMENTS }),
         },
         {
@@ -694,6 +697,7 @@ export class VoteDetailComponent {
           ...this.notVotedCardText(),
           icon: 'fa-light fa-clock',
           iconContainerClass: 'bg-amber-100 text-amber-600',
+          disabled,
           ...(this.isActive() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED }),
         },
       ];

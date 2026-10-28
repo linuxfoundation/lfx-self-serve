@@ -7,6 +7,7 @@ import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   MyVoteBallot,
@@ -100,7 +101,11 @@ describe('VoteDetailComponent', () => {
   let reqContext: ServerRequestContext;
   const impersonating = signal(false);
 
-  async function setup(platform: 'browser' | 'server' = 'browser', includeRealHeader = false): Promise<ComponentFixture<VoteDetailComponent>> {
+  async function setup(
+    platform: 'browser' | 'server' = 'browser',
+    includeRealHeader = false,
+    includeRealSummary = false
+  ): Promise<ComponentFixture<VoteDetailComponent>> {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
@@ -116,10 +121,10 @@ describe('VoteDetailComponent', () => {
         { provide: REQUEST_CONTEXT, useValue: reqContext },
       ],
     })
-      // Keep the real page template; opt into the real header for composed outsider visibility assertions.
+      // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : [])],
+          imports: [NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : []), ...(includeRealSummary ? [StatCardGridComponent] : [])],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -691,6 +696,39 @@ describe('VoteDetailComponent', () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ poll_comment_prompts: [] })));
       const noPrompts = await setup();
       expect(cardActions(noPrompts)[1]).toBeUndefined();
+    });
+
+    it.each(['initial load', 'ballot refresh'] as const)('disables the real summary buttons after a results error on %s', async (phase) => {
+      const failedResults = new Subject<VoteResultsResponse>();
+      if (phase === 'initial load') {
+        voteService.getVoteResults.mockReturnValue(failedResults);
+      } else {
+        voteService.getVoteResults.mockReturnValueOnce(of(makeResults())).mockReturnValueOnce(failedResults);
+      }
+      const fixture = await setup('browser', false, true);
+      const buttons = (): HTMLButtonElement[] =>
+        Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-summary"] button'));
+
+      expect(buttons()).toHaveLength(3);
+      expect(buttons().every((button) => button.disabled)).toBe(phase === 'initial load');
+      if (phase === 'ballot refresh') {
+        call(fixture, 'onVoteSubmitted', 'vote-1');
+        TestBed.tick();
+      }
+
+      failedResults.error(new HttpErrorResponse({ status: 503 }));
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(read(fixture, 'voteResultsError')).toBe(true);
+      expect(read(fixture, 'loadingVoteResults')).toBe(false);
+      expect(buttons()).toHaveLength(3);
+      expect(buttons().every((button) => button.disabled)).toBe(true);
+      router.navigate.mockClear();
+      dialogService.open.mockClear();
+      for (const button of buttons()) button.click();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(dialogService.open).not.toHaveBeenCalled();
     });
 
     it('ignores card clicks while the results load, and unknown actions', async () => {
