@@ -4702,6 +4702,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
     });
   });
 
@@ -4860,6 +4862,38 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   /**
+   * The Microsoft flight-date capability needs the create cutover AND its own flag: the legacy
+   * creator never reads the dates, and a campaign-service without #409 drops them — either would
+   * create the campaign with no flight while the operator set one.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, schedule: true }, true],
+    [{ create: true, briefs: true, jobs: true, schedule: false }, false],
+    [{ create: false, briefs: true, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: false, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: true, jobs: false, schedule: true }, false],
+  ])('reports the microsoft schedule capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftSchedule) return flags.schedule;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftScheduleEnabled).toBe(expected);
+      // Its own key, not the bidding one: the bidding flag is off in every row.
+      expect(result.biddingEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
    * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
    * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
    * refuses it.
@@ -5002,6 +5036,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
     });
   });
 });

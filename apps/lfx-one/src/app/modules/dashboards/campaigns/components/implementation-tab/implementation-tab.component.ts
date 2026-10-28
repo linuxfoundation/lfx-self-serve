@@ -410,6 +410,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
 
   /**
+   * Whether this deployment applies the flight dates to Microsoft Ads —
+   * `CampaignListResult.microsoftScheduleEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE`. `null` (unanswered) and `false` send no
+   * Microsoft dates and keep the "ignores the flight dates" warning, which is the create exactly as
+   * it was before campaign-service could schedule a Microsoft ad group.
+   */
+  public readonly microsoftScheduleEnabled = input<boolean | null>(null);
+
+  /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
+  protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
+
+  /**
    * Where the create-capability read stands — what tells "still checking" from "the check failed"
    * while a capability is `null`.
    *
@@ -3417,8 +3429,10 @@ export class ImplementationTabComponent implements OnInit {
               registrationUrl: form.registrationUrl,
               hsToken: this.briefHsToken() ?? undefined,
               budgetUsd: this.microsoftBudgetUsd(),
-              // No startDate/endDate: `microsoftConfig` declares no scheduling fields, so sending
-              // them put values on the wire that were silently discarded. See the interface note.
+              // The flight dates, exactly as `metaConfig` sends them — but ONLY on an explicit yes.
+              // A campaign-service without linuxfoundation/lfx-v2-campaign-service#409 discards
+              // them silently, and the create route refuses them while the capability is off.
+              ...(this.microsoftScheduleAvailable() ? { startDate: form.startDate, endDate: form.endDate } : {}),
 
               // The SAME computeds the section renders and `canSubmit` gates on, so the screen,
               // the guard and the request cannot disagree — see `microsoftEffectiveGeoTargets`.

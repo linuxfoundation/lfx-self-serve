@@ -1770,17 +1770,20 @@ export interface MicrosoftCampaignCreateRequest {
   hsToken?: string;
   /** Daily budget, whole units of the account currency. Must be finite and > 0. */
   budgetUsd: number;
-  // NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
-  //
-  // `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
-  // neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
-  // both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
-  // put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
-  // the operator never gets.
-  //
-  // The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
-  // automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
-  // the fix; see the note on the implementation tab's Microsoft section.
+  /**
+   * OPTIONAL flight start, `"YYYY-MM-DD"` — the same key and format as `metaConfig.startDate`.
+   * campaign-service sets it on the Microsoft ad group (linuxfoundation/lfx-v2-campaign-service#409),
+   * and either date may be sent alone. Sent ONLY when `CampaignListResult.microsoftScheduleEnabled`
+   * is an explicit yes: an older service discards both keys and creates the campaign with NO flight,
+   * which is why the create route refuses them while the capability is off. A malformed date fails
+   * the platform job rather than the request.
+   *
+   * Without it the campaign is created PAUSED with no automatic stop, which is why the UI states
+   * that rather than hiding it — see the note on the implementation tab's Microsoft section.
+   */
+  startDate?: string;
+  /** OPTIONAL flight end, `"YYYY-MM-DD"`. Same rules as {@link startDate}. */
+  endDate?: string;
   /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
   geoTargets: string[];
   /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */
@@ -4885,6 +4888,17 @@ export interface CampaignListResult {
    * capabilities above (`boolean | null`, `null` for unanswered), which withholds the control.
    */
   biddingEnabled: boolean;
+  /**
+   * Whether a Microsoft create may carry the flight dates, as `microsoftConfig.startDate` / `endDate`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` flag says the deployed campaign-service
+   * understands the two keys (linuxfoundation/lfx-v2-campaign-service#409). An older service
+   * ignores them and creates the campaign with no flight, and the legacy creator never reads them.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which sends no dates and keeps the "ignores the flight dates" warning.
+   */
+  microsoftScheduleEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
