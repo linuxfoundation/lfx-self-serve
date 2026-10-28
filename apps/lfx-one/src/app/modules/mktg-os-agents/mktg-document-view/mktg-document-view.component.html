@@ -64,12 +64,9 @@
             }
           </span>
         }
-        <lfx-button
-          label="Draft another post"
-          [text]="true"
-          styleClass="text-sm font-medium text-blue-700 !p-0"
-          (onClick)="onDraftAnother()"
-          data-testid="mktg-linkedin-draft-another" />
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-linkedin-draft-another">
+          <button type="button" class="text-sm font-medium text-blue-700 hover:underline" (click)="onDraftAnother()">Draft another post</button>
+        </div>
       } @else if (view(); as current) {
         @if (!isLinkedinDocument() && !isAeoDocument() && !hasAssetView() && current.revision.format !== 'json') {
           <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
@@ -98,24 +95,21 @@
         </div>
       }
       @if (memberResult(); as result) {
-        <div class="ml-auto flex flex-wrap items-start gap-4" data-testid="member-360-result-actions">
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="member-360-result-actions">
           <a
             [routerLink]="result.runRoute()"
             [queryParams]="result.projectParams()"
-            class="text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            class="text-sm font-medium text-blue-700 hover:underline"
             data-testid="member-360-new-run"
             >Create another Member 360</a
           >
-          <div class="flex min-w-0 flex-col items-end gap-1">
-            <lfx-button
-              label="Download workbook"
-              icon="fa-light fa-download"
-              [loading]="downloadingWorkbook()"
-              [disabled]="!writer()"
-              (onClick)="onDownloadWorkbook()"
-              data-testid="member-360-download" />
-            <span class="break-all text-xs text-gray-500" data-testid="member-360-workbook-filename">{{ result.workbookFilename() }} · Excel workbook</span>
-          </div>
+          <lfx-button
+            label="Download workbook"
+            icon="fa-light fa-download"
+            [loading]="downloadingWorkbook()"
+            [disabled]="!writer()"
+            (onClick)="onDownloadWorkbook()"
+            data-testid="member-360-download" />
         </div>
       }
     </div>

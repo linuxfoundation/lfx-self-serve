@@ -345,7 +345,6 @@ test('ranking sorts, filters, expands evidence and copies team actions', async (
   await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   const download = page.waitForEvent('download');
   await expect(page.getByTestId('member-360-download').getByRole('button')).toHaveText('Download workbook');
-  await expect(page.getByTestId('member-360-workbook-filename')).toHaveText('Member360_sample-foundation_2026-Q3.xlsx · Excel workbook');
   await page.getByTestId('member-360-download').getByRole('button').click();
   expect((await download).suggestedFilename()).toBe('Member360_sample-foundation_2026-Q3.xlsx');
 

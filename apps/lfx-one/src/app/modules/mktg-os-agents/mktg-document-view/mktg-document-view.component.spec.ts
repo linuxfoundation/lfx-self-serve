@@ -406,7 +406,8 @@ describe('MktgDocumentViewComponent', () => {
     expectNoKitAssetChrome();
     expect(query('mktg-linkedin-draft-another')).not.toBeNull();
     expect(query('mktg-document-view-title-card')?.contains(query('mktg-linkedin-draft-another'))).toBe(true);
-    expect(query('mktg-linkedin-draft-another')?.querySelector('button')?.classList.contains('!p-0')).toBe(true);
+    expect(query('mktg-linkedin-draft-another')?.className).toBe('ml-auto flex flex-wrap items-center gap-4');
+    expect(query('mktg-linkedin-draft-another')?.querySelector('button')?.className).toBe('text-sm font-medium text-blue-700 hover:underline');
     expect(query('mktg-document-view-document')?.contains(query('mktg-linkedin-draft-another'))).toBe(false);
     expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/shared');
     expect(query('mktg-document-view-revisions')).toBeNull();
@@ -1259,7 +1260,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-title-card')?.contains(query('member-360-download'))).toBe(true);
       expect(query('member-360-result')?.querySelector('[data-testid="member-360-download"]')).toBeNull();
       expect(button()?.textContent?.trim()).toBe('Download workbook');
-      expect(query('member-360-workbook-filename')?.textContent).toContain('Member360_sample-foundation_2026-Q3.xlsx · Excel workbook');
+      expect(query('member-360-workbook-filename')).toBeNull();
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
       button()?.click();
       expect(TestBed.inject(Member360Service).download).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
@@ -1353,16 +1354,20 @@ describe('MktgDocumentViewComponent', () => {
     const title = query('mktg-document-view-title-card');
     const actions = query('member-360-result-actions');
     expect(title?.contains(actions)).toBe(true);
+    expect(
+      Array.from(actions?.classList ?? [])
+        .filter((token) => token !== 'ng-star-inserted')
+        .join(' ')
+    ).toBe('ml-auto flex flex-wrap items-center gap-4');
     expect(query('member-360-result')?.contains(actions)).toBe(false);
     const create = query('member-360-new-run');
     const download = query('member-360-download');
     expect(create?.textContent).toBe('Create another Member 360');
-    expect(create?.classList.contains('text-blue-700')).toBe(true);
-    expect(create?.classList.contains('py-3')).toBe(false);
+    expect(create?.className).toBe('text-sm font-medium text-blue-700 hover:underline');
     expect(create && download && create.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(download?.textContent?.trim()).toBe('Download workbook');
     expect(download?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
-    expect(query('member-360-workbook-filename')?.textContent).toContain(`Member360_${member360.project}_${member360.period.label}.xlsx · Excel workbook`);
+    expect(download?.parentElement).toBe(actions);
     const invoke = vi.mocked(TestBed.inject(Member360Service).download);
     download?.querySelector('button')?.click();
     expect(invoke).toHaveBeenCalledOnce();
