@@ -23,7 +23,7 @@ import {
 import { MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
-import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -34,12 +34,19 @@ import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 describe('LinkedIn profile and post surface', () => {
   const profile = linkedinProfileFromSetup({ name: 'Example author', role: 'Maintainer', focus_areas: 'Code', primary_audience: 'Developers' });
   const context = signal<ProjectContext | null>({ uid: 'project-one', slug: 'example-project', name: 'Example project' });
-  const api = { profile: vi.fn(), save: vi.fn(), start: vi.fn(), wait: vi.fn(), pending: vi.fn(), rememberShareLink: vi.fn(), answer: vi.fn() };
+  const api = {
+    profile: vi.fn(),
+    save: vi.fn(),
+    startForDocument: vi.fn(),
+    setupForDocument: vi.fn(),
+  };
   const projects = { getProject: vi.fn() };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   beforeEach(async () => {
     vi.clearAllMocks();
-    clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    localStorage.clear();
+    api.startForDocument.mockReset();
+    api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
     api.pending.mockReset().mockReturnValue(null);
@@ -83,6 +90,250 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     return fixture;
   }
+  it.each(['text', 'url'] as const)('rejects empty pasted text and non-HTTPS URLs without a Generate POST (%s)', async (source) => {
+    const component = (await savedIntake()).componentInstance;
+    component['onSource'](source);
+    if (source === 'url') component['contentForm'].controls.url.setValue('http://source.example/not-https');
+    component['contentForm'].controls.share_link.setValue(''); // Test the source guard, not optional-link validation.
+    await component['onDraft']();
+    expect(component['error']()).toBe('Supply pasted text or one public HTTPS link.');
+    expect(component['busy']()).toBe(false);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.generate);
+  });
+
+
+  it('never navigates on plain load or reload with a pending accepted attempt present', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const pending = intakePending('writing');
+    attempts.save(pending);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const first = await render();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is being written');
+    first.destroy();
+    await render();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
+
+  function intakePending(state: MktgPendingGeneration['state'] = 'questions'): MktgPendingGeneration {
+    const intake = LINKEDIN_POST_INTAKE;
+    const documentId = 'run-' + 'a'.repeat(24);
+    const attempt = {
+      documentId,
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+    };
+    return {
+      request: { agentId: intake.agentId, intake, projectUid: 'project-one', documentId, answers: {} },
+      attempt,
+      state,
+      updatedAt: new Date().toISOString(),
+      ...(state === 'questions' && {
+        pendingQuestions: {
+          attempt,
+          questionsId: 'a'.repeat(64),
+          questions: [
+            {
+              key: 'tendency',
+              label: 'Tendency',
+              question: 'How direct should these posts sound?',
+              why: 'Voice gap.',
+              suggestedAnswer: 'Direct and practical.',
+              basis: ['inferred'],
+            },
+          ],
+        },
+      }),
+    };
+  }
+  async function questionsIntake() {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const pending = intakePending();
+    attempts.save(pending);
+    const token = attempts.prepare(pending.request, true);
+    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => (key === 'questions' ? token : null));
+    return savedIntake();
+  }
+  it('keeps intake submission explicit, textarea Enter editable, source guidance truthful and landmarks unnested', async () => {
+    const fixture = await savedIntake();
+    const element: HTMLElement = fixture.nativeElement;
+    fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic valid source.');
+    const form = element.querySelector('[data-testid="mktg-linkedin-post-form"]');
+    const submit = new Event('submit', { bubbles: true, cancelable: true });
+    form?.dispatchEvent(submit);
+    expect(submit.defaultPrevented).toBe(true);
+    expect(element.querySelector<HTMLButtonElement>('[data-testid="mktg-linkedin-draft"] button')?.type).toBe('button');
+    const shareEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    element.querySelector('#linkedin-share-link')?.dispatchEvent(shareEnter);
+    expect(shareEnter.defaultPrevented).toBe(true);
+    const textareaEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    const textarea = element.querySelector('#linkedin-content-text');
+    expect(textarea).not.toBeNull();
+    textarea?.dispatchEvent(textareaEnter);
+    expect(textareaEnter.defaultPrevented).toBe(false);
+    fixture.componentInstance['onSource']('url');
+    fixture.detectChanges();
+    expect(element.querySelector('[data-testid="mktg-linkedin-source-hint"]')?.textContent).toContain(LINKEDIN_SOURCE_LINK_HINT);
+    expect(element.textContent).not.toContain('cannot browse');
+    expect(element.querySelector('main, aside')).toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it.each(['false', 'throw', 'empty'] as const)(
+    'keeps acceptance after %s navigation/token failure; Open never Generates and edits allow a new run',
+    async (failure) => {
+      api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+      const session = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' };
+      api.startForDocument.mockReturnValue(of(session));
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const accept = vi.spyOn(attempts, 'prepareAccepted');
+      const opening = new Subject<boolean>();
+      if (failure === 'empty') accept.mockReturnValueOnce('');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      if (failure === 'false') navigate.mockResolvedValueOnce(false);
+      if (failure === 'throw') navigate.mockRejectedValueOnce(new Error('Synthetic navigation failure'));
+      TestBed.inject(ActivatedRoute).snapshot.queryParams = {
+        source: 'url',
+        content_text: 'private-marker',
+        content_url: 'https://private.example/raw',
+        setup: 'private-setup',
+      };
+      const fixture = await render();
+      fixture.componentInstance['source'].set('url');
+      fixture.componentInstance['contentForm'].controls.url.setValue('https://source.example/content');
+      fixture.componentInstance['contentForm'].controls.share_link.setValue('https://share.example/post');
+      await fixture.componentInstance['onDraft']();
+      await fixture.whenStable();
+      expect(accept).toHaveBeenCalledOnce();
+      if (failure !== 'empty') expect(navigate.mock.calls[0]?.[1]?.queryParams?.['generation']).toMatch(/^generation-/);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]').textContent).toContain(
+        'Your draft was started — open it to follow progress.'
+      );
+      const accepted = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]') as HTMLElement;
+      for (const token of ['rounded-lg', 'border', 'p-4']) expect(accepted.classList.contains(token)).toBe(true);
+      expect(accepted.getAttribute('role')).toBeNull();
+      expect(accepted.querySelector('p')?.getAttribute('role')).toBe('status');
+      expect(accepted.querySelector('[role="status"] button')).toBeNull();
+      expect(fixture.componentInstance['error']()).toBe('');
+      await fixture.componentInstance['onDraft']();
+      navigate.mockReturnValueOnce(firstValueFrom(opening));
+      fixture.componentInstance['onOpenAccepted']();
+      await fixture.whenStable();
+      expect(api.startForDocument).toHaveBeenCalledExactlyOnceWith(
+        LINKEDIN_POST_INTAKE,
+        'project-one',
+        { content_source: 'url', content_url: 'https://source.example/content', share_link: 'https://share.example/post' },
+        undefined
+      );
+      const query = navigate.mock.calls.at(-1)?.[1]?.queryParams;
+      expect(query).toMatchObject({ source: 'url', profile: null });
+      for (const text of ['private-marker', 'private.example', 'private-setup', 'source.example', 'share.example', session.ownerToken])
+        expect(JSON.stringify(query)).not.toContain(text);
+      expect(navigate).toHaveBeenLastCalledWith(
+        expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, session.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ generation: null }) })
+      );
+      const entries = Object.entries(localStorage).filter(([key]) => key.startsWith(MKTG_PENDING_RUN_STORAGE_KEY_PREFIX));
+      expect(entries).toHaveLength(failure === 'empty' ? 0 : 1);
+      for (const [, value] of entries) expect(JSON.parse(value).request.answers).toEqual({});
+      for (const text of ['source.example', 'private-marker', 'private-setup']) expect(JSON.stringify({ ...localStorage })).not.toContain(text);
+      TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+      expect(Object.keys(localStorage).every((key) => key.startsWith(MKTG_PENDING_RUN_STORAGE_KEY_PREFIX))).toBe(true);
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="mktg-linkedin-results"], [data-testid="mktg-linkedin-generating"], [data-testid="mktg-linkedin-open-document"]'
+        )
+      ).toBeNull();
+      fixture.componentInstance['applySource']('text');
+      fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic changed source.');
+      opening.next(false);
+      await fixture.whenStable();
+      expect(fixture.componentInstance['busy']()).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"]')).toBeNull();
+      await fixture.componentInstance['onDraft']();
+      expect(api.startForDocument).toHaveBeenCalledTimes(2);
+      expect(api.startForDocument.mock.calls.at(-1)?.[2]).toMatchObject({ content_text: 'Synthetic changed source.' });
+    }
+  );
+
+
+  it('consumes shared questions and returns on the same-session answers ACK without polling on the form', async () => {
+    const intake = LINKEDIN_POST_INTAKE;
+    const consume = vi.spyOn(TestBed.inject(MktgRunAttemptService), 'consumeQuestions');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = await questionsIntake();
+    expect(consume).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^generation-/), 'project-one', intake.agentId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    const answers = [{ key: 'tendency', text: 'Synthetic answer.', origin: 'requester' as const }];
+    const http = TestBed.inject(HttpTestingController);
+    fixture.componentInstance['onAnswers'](answers);
+    const send = http.expectOne(intake.endpoints.answers ?? '');
+    expect(send.request.body).toMatchObject({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', questionsId: 'a'.repeat(64), answers });
+    send.flush({ success: true });
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining(['documents', intake.agentId, 'run-' + 'a'.repeat(24)]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ generation: expect.stringMatching(/^generation-/) }) })
+    );
+    http.expectNone(intake.endpoints.result);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'text', 'file', 'url', 'bad-value'])(
+    'opens failed intake with safe source %s and re-entry prompts, never polling a dead session',
+    async (source) => {
+      if (source !== undefined) api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const pending = intakePending('failed');
+      if (source === undefined) pending.attempt = undefined; // A plain server-read failure needs no owner capability to open an intake.
+      attempts.save(pending);
+      const token = attempts.prepare(pending.request, true);
+      vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => {
+        if (key === 'questions') return token;
+        if (key === 'source') return source ?? null;
+        return null;
+      });
+      const fixture = await render();
+      const expected = source === 'file' || source === 'url' ? source : 'text';
+      const prompts = { text: 'paste it again', file: 'choose the file again', url: 'enter the link again' };
+      expect(fixture.componentInstance['source']()).toBe(expected);
+      expect(fixture.componentInstance['error']()).toContain(prompts[expected]);
+      if (source === undefined) {
+        expect(fixture.componentInstance['error']()).toContain("Your setup answers aren't kept in the browser");
+        expect(fixture.componentInstance['profileForm'].controls['name'].value).toBe('');
+      }
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+      expect(api.startForDocument).not.toHaveBeenCalled();
+      TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+    }
+  );
+
+  it('restores memory-only setup only on explicit document profile editing and saves only on explicit submit', async () => {
+    api.setupForDocument.mockReturnValue({ ...profile.about, ...profile.voice });
+    const params: Record<string, string> = { profile: 'edit', profileDocument: 'run-' + 'a'.repeat(24) };
+    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => params[key] ?? null);
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = await render();
+    expect(api.setupForDocument).toHaveBeenCalledWith('project-one', 'run-' + 'a'.repeat(24));
+    expect(fixture.componentInstance['profileForm'].controls['name'].value).toBe(profile.about.name);
+    expect(api.save).not.toHaveBeenCalled();
+    fixture.componentInstance['onProfileSubmit']();
+    expect(api.save).toHaveBeenCalledWith({ setup: expect.objectContaining({ name: profile.about.name }) });
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['explicitProfileSave']()).toBe(true);
+    context.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance['explicitProfileSave']()).toBe(false);
+  });
+
   it('composes one breadcrumb with the main kit family route and catalog name', async () => {
     const fixture = await render();
     const family = MKTG_KIT_FAMILIES.find((family) => family.agentIds.includes(LINKEDIN_POST_INTAKE.agentId));
@@ -205,13 +456,22 @@ describe('LinkedIn profile and post surface', () => {
   });
   it('opens the saved personal profile in edit mode from the document link without running an agent', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
-    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => (key === 'profile' ? 'edit' : null));
+    const pending = intakePending('writing');
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save(pending);
+    const token = attempts.prepare(pending.request, true);
+    const consume = vi.spyOn(attempts, 'consumeQuestions');
+    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => {
+      if (key === 'profile') return 'edit';
+      return key === 'questions' ? token : null;
+    });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const fixture = await render();
     expect(navigate).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).not.toBeNull();
     expect(fixture.componentInstance['profileForm'].controls['name'].value).toBe('Example author');
-    expect(api.start).not.toHaveBeenCalled();
+    expect(consume).not.toHaveBeenCalled();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('pushes profile editing, restores it from the URL, and cancels through browser history', async () => {
@@ -386,6 +646,9 @@ describe('LinkedIn profile and post surface', () => {
   it('keeps a failed questions reply for retry instead of starting a fresh run', async () => {
     const component = (await questionsIntake()).componentInstance;
     component['onAnswers']([{ key: 'tendency', text: 'A clear, technical voice for maintainers.', origin: 'edited' }]);
+    TestBed.inject(HttpTestingController)
+      .expectOne(LINKEDIN_POST_INTAKE.endpoints.answers ?? '')
+      .flush({}, { status: 503, statusText: 'Unavailable' });
     expect(component['questions']()).toHaveLength(1);
     expect(component['previousAnswers']()).toEqual({ tendency: 'A clear, technical voice for maintainers.' });
     expect(component['error']()).toContain('kept');
@@ -394,6 +657,9 @@ describe('LinkedIn profile and post surface', () => {
   it('shows the safe stale-question server message and keeps the edited answers', async () => {
     const component = (await questionsIntake()).componentInstance;
     component['onAnswers']([{ key: 'tendency', text: 'A clear technical voice.', origin: 'edited' }]);
+    TestBed.inject(HttpTestingController)
+      .expectOne(LINKEDIN_POST_INTAKE.endpoints.answers ?? '')
+      .flush({ error: 'These questions are no longer available. Reload the run.' }, { status: 400, statusText: 'Stale' });
     expect(component['error']()).toBe('These questions are no longer available. Reload the run.');
     expect(component['previousAnswers']()).toEqual({ tendency: 'A clear technical voice.' });
     expect(component['questions']()).toHaveLength(1);
@@ -405,7 +671,7 @@ describe('LinkedIn profile and post surface', () => {
     const component = fixture.componentInstance;
     component['editing'].set(false);
     component['contentForm'].controls.text.setValue('Example content');
-    api.start.mockReturnValue(
+    api.startForDocument.mockReturnValue(
       throwError(
         () =>
           new HttpErrorResponse({

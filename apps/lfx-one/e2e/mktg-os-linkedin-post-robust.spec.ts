@@ -26,8 +26,8 @@ test.describe('Marketing OS LinkedIn structure and states', () => {
     const event = LINKEDIN_RECORDED_PROGRESS.find((value) => value.content.type === 'text');
     const text = event && 'data' in event.content && typeof event.content.data === 'string' ? event.content.data.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
     expect(text).not.toBe('');
-    await expect(page.getByTestId('mktg-linkedin-generating')).toContainText(text, { timeout: LINKEDIN_RUN_TIMEOUT });
-    await expect(page.getByTestId('mktg-linkedin-generating')).not.toContainText('PRIVATE_REASONING_MARKER');
+    await expect(page.getByTestId('mktg-document-view-run')).toContainText(text, { timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-run')).not.toContainText('PRIVATE_REASONING_MARKER');
     await page.screenshot({ path: info.outputPath('recorded-public-feed.png'), fullPage: true });
     await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
     await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
@@ -91,10 +91,9 @@ test.describe('Marketing OS LinkedIn structure and states', () => {
       await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release content.');
       await page.getByTestId('mktg-linkedin-draft').click();
       await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
-      const overflow = await page.getByTestId('mktg-linkedin-page').evaluate((element) => element.scrollWidth > element.clientWidth);
+      const overflow = await page.getByTestId('mktg-document-view-page').evaluate((element) => element.scrollWidth > element.clientWidth);
       expect(overflow).toBe(false);
       await page.screenshot({ path: info.outputPath(`options-${width}.png`), fullPage: true });
-      await page.getByTestId('mktg-linkedin-open-document').click();
       await expect(page.getByTestId('mktg-document-view-document').getByTestId('mktg-linkedin-option')).toHaveCount(3);
       await expect(page.getByTestId('mktg-linkedin-share-link').locator('input')).toHaveAttribute('readonly', '');
       expect(await page.getByTestId('mktg-document-view-page').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
