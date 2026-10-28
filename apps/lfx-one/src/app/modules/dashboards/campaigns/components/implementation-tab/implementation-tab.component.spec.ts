@@ -10310,6 +10310,19 @@ describe('ImplementationTabComponent google stored images', () => {
     expect(c['googleImageAssetBlock']()).toBeNull();
   });
 
+  /** A failed re-save clears the brief id; held images then match no brief and must hold Create, not vanish. */
+  it('blocks on held images while the brief id is unresolved, and Remove clears them', async () => {
+    const { f, c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] } });
+    f.componentRef.setInput('briefPersistence', { status: 'error', briefId: null, message: 'save failed', approved: true });
+    f.detectChanges();
+
+    expect(c['googleImageAssetBlock']()?.kind).toBe('unsaved');
+    expect(c['canSubmit']()).toBe(false);
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleHeldImages']()[SLOT]).toEqual([]);
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
   /** One slug source for the read and the upload, so an upload lands in the library the slot reads. */
   it('uploads under the same project slug the library read uses', async () => {
     const { c } = await mount(true);

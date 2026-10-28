@@ -2942,6 +2942,8 @@ export class ImplementationTabComponent implements OnInit {
     const drop = (slotKey: string, image: GoogleCreativeHeldImage): boolean => {
       if (!inReach.has(slotKey.split('.')[0])) return false;
       if (block.kind === 'otherBrief') return image.briefId !== briefId;
+      // With no brief id every held image in reach is the block's subject.
+      if (block.kind === 'unsaved' && !briefId) return true;
       if (block.kind === 'missing' || block.kind === 'misfit') {
         return this.googleHeldImageIssue(image, slotKey, library, briefId) === block.kind;
       }
@@ -5404,6 +5406,14 @@ export class ImplementationTabComponent implements OnInit {
         return {
           kind: 'uploadFailed',
           message: `The Google image upload did not complete: ${this.googleImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      // No brief id — a save in flight, or a re-save that failed and cleared it — means no held image
+      // can be matched to the brief, so none would be sent. Held, never dropped: Create waits.
+      if (!briefId && held.length > 0) {
+        return {
+          kind: 'unsaved',
+          message: "The Google images held in this campaign can't be sent until the brief is saved. Save the brief, or remove the images.",
         };
       }
       const forThisBrief = held.filter(({ image }) => image.briefId === (briefId ?? ''));
