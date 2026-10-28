@@ -2808,15 +2808,19 @@ export class ImplementationTabComponent implements OnInit {
     this.clearLinkedInImageAsset();
     this.emitDraft();
 
+    // A refused pick is recorded against the open brief and saved, like a failed upload: the image
+    // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
+    const briefId = this.briefPersistence().briefId ?? '';
     if (!isCreativeAssetMimeType(file.type)) {
-      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
       return;
     }
     if (file.size > LINKEDIN_IMAGE_MAX_BYTES) {
-      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE);
+      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
       return;
     }
-    const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
     if (!briefId || !projectSlug) {
       this.failLinkedInImageUpload('Save the brief before uploading an image for it.');
@@ -4057,7 +4061,7 @@ export class ImplementationTabComponent implements OnInit {
         this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
         this.linkedInImageUploadPendingName.set('');
         this.linkedInImageUploadPendingBriefId.set('');
-        this.failLinkedInImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
+        this.failLinkedInImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
         this.emitDraft();
       },
     });
@@ -4106,14 +4110,16 @@ export class ImplementationTabComponent implements OnInit {
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
-   * names the problem with the image (not decodable, too many pixels, …).
+   * names the problem with the image (not decodable, too many pixels, …). `offersImageUrl` is false
+   * for a platform with no pasted-URL alternative (LinkedIn), whose fallback says to remove the image.
    */
-  private creativeAssetUploadErrorMessage(err: unknown): string {
+  private creativeAssetUploadErrorMessage(err: unknown, offersImageUrl = true): string {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
+    const alternative = offersImageUrl ? 'paste an image URL instead' : 'remove the image to continue without it';
     if (status === 413) return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
     if (status === 415) return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
-    if (status === 0 || status === 503) return 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.';
-    return serverAuthoredMessage(err, 'The image could not be uploaded. Try again, or paste an image URL instead.');
+    if (status === 0 || status === 503) return `The image service is unavailable right now. Try again in a moment, or ${alternative}.`;
+    return serverAuthoredMessage(err, `The image could not be uploaded. Try again, or ${alternative}.`);
   }
 
   private loadLinkedInAccounts(): void {

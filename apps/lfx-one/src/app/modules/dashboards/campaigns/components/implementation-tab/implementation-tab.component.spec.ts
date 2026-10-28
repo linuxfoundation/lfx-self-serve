@@ -9884,6 +9884,37 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     expect(q(f, 'implementation-linkedin-image-error')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
   });
 
+  it.each([
+    ['an oversized image', () => png(5_000_001)],
+    ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+  ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
+    const first = await mount(true);
+    fillForm(first.fixture);
+    choose(first.fixture, png());
+    choose(first.fixture, file());
+
+    expect(q(first.fixture, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(first.fixture).canSubmit()).toBe(false);
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    expect(draft.linkedInImageUploadFailedBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+
+    const second = (await mount(true, draft)).fixture;
+    fillForm(second);
+    expect(q(second, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(at(second).canSubmit()).toBe(false);
+  });
+
+  it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+
+    expect(at(f).linkedInImageUploadError()).toBe(
+      'The image service is unavailable right now. Try again in a moment, or remove the image to continue without it.'
+    );
+  });
+
   it('uploads an image of exactly 5,000,000 bytes', async () => {
     const f = (await mount(true)).fixture;
     choose(f, png(5_000_000));

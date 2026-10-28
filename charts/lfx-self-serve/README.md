@@ -376,7 +376,7 @@ does, and nothing about URL signing, since Meta's dispatch path uploads the stor
 account's image library. It is **on** in this chart because nothing has to be configured on
 campaign-service first. Off, the Meta section offers only the pasted image URL and a create request
 carrying a Meta `imageAssetId` is refused with a 400. The upload route accepts a request on any of
-the three asset flags' authority.
+any asset flag's authority.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` is a seventh, of the Meta kind: it asserts that the
 deployed campaign-service resolves **LinkedIn** creative asset ids, which every release from
@@ -386,7 +386,7 @@ section offers no image at all (LinkedIn takes no image URL) and a create reques
 LinkedIn `imageAssetId` is refused with a 400. The upload route accepts a request on any asset
 flag's authority.
 
-`LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` is a seventh, of the Bidding kind: does the
+`LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` is an eighth, of the Bidding kind: does the
 deployed campaign-service understand `microsoftConfig.startDate` / `endDate` from
 [campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409)? It
 **must stay off until #409 is released and deployed**: v1.0.21 drops both keys and creates the
