@@ -218,6 +218,8 @@ export interface HealthMetricsOverviewKpiView {
   value: string;
   delta: HealthMetricsOverviewDelta | null;
   note: string;
+  /** The label's help tooltip, where the design gives one. */
+  tip?: string;
 }
 
 /** One ring of the engagement donut, as SVG `stroke-dasharray` / `stroke-dashoffset` values. */

@@ -15,7 +15,7 @@ import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyCopy } 
   selector: 'lfx-overview-card',
   imports: [NgTemplateOutlet, OverviewInfoTipComponent, SkeletonModule],
   templateUrl: './overview-card.component.html',
-  host: { class: 'flex min-w-0 flex-col gap-[18px] rounded-[12px] border border-gray-200 bg-white p-[20px]' },
+  host: { class: 'flex min-w-0 flex-col gap-[18px] rounded-[20px] border border-gray-200 bg-white p-[20px]' },
 })
 export class OverviewCardComponent {
   public readonly heading = input.required<string>();
