@@ -70,6 +70,24 @@ describe('One rule for every family action', () => {
     });
     expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Paused');
   });
+  it.each([
+    ['linkedin-post', 'Waiting for your answers', 'Answer the questions'],
+    ['member-360', 'Paused', 'Open'],
+  ] as const)('keeps %s questions on the selected document and run', (agentKey, caption, label) => {
+    const run = {
+      agentKey,
+      state: 'questions' as const,
+      project: 'synthetic',
+      documentId: 'one-off-document',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    expect(resolveMktgFamilyRun(agentKey, [run], ['../../'])).toEqual({
+      caption,
+      label,
+      link: { commands: ['../../', 'documents', agentKey, 'one-off-document'], queryParams: { run: 'synthetic-run' } },
+    });
+  });
   it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
     const run = {
       agentKey: 'foundation-message' as const,

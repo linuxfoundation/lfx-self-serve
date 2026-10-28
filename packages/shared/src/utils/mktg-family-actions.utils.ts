@@ -49,11 +49,11 @@ export function resolveMktgFamilyRun(
   let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
   if (run.state === 'questions') caption = run.agentKey === 'member-360' ? 'Paused' : 'Waiting for your answers';
   return {
-    label: run.state === 'questions' ? 'Answer the questions' : 'Open',
+    label: run.state === 'questions' && run.agentKey !== 'member-360' ? 'Answer the questions' : 'Open',
     caption,
-    // B2 seam: switch the writing branch here to [type.catalogAgentId] once the run-page ?run= receiver lands.
+    // B2 seam: move only writing to the run-page receiver; one-off questions must keep their document/run selection.
     link:
-      run.state === 'questions'
+      run.state === 'questions' && type.kind === 'living'
         ? { commands: [...prefix, type.catalogAgentId], queryParams: {} }
         : { commands: [...prefix, 'documents', run.agentKey, run.documentId], queryParams: { run: run.runId } },
   };
