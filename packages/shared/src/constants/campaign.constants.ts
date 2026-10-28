@@ -3448,6 +3448,12 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
 /** The longest current-registrants edition name campaign-service accepts (its `MaxLength`). */
 export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
 
+/**
+ * The longest explicit custom list name campaign-service accepts: HubSpot's list-search limit. A
+ * longer one is a 400, never cut, so the builder and the BFF hold to it too.
+ */
+export const AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH = 200;
+
 /** The BFF's refusal for a `currentRegistrantsEvent` that is not a string or is too long. */
 export const AUDIENCE_REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH} characters when provided`;
 

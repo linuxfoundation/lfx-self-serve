@@ -934,7 +934,8 @@ describe('custom audiences', () => {
     ['an unknown speaker scope', { criteria: { ...criteria, speakers: { scope: 'future', eventNames: [] } } }, 'speakers'],
     ['too many cities', { criteria: { ...criteria, cities: Array.from({ length: 26 }, (_u, i) => `c${i}`) } }, 'cities'],
     ['a non-string name', { criteria, name: 5 }, 'name'],
-    ['an over-long name', { criteria, name: 'n'.repeat(251) }, 'name'],
+    // 200 is HubSpot's list-search limit; upstream refuses a longer explicit name rather than cut it.
+    ['an over-long name', { criteria, name: 'n'.repeat(201) }, 'name'],
     [
       'more than 10 filters',
       { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } },

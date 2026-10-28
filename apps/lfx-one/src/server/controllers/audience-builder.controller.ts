@@ -3,6 +3,7 @@
 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH,
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
@@ -69,7 +70,6 @@ const CUSTOM_MAX_VALUES = 25;
 const CUSTOM_MAX_PAGE_VIEW_URLS = 10;
 const CUSTOM_VALUE_MAX_LENGTH = 200;
 const CUSTOM_MAX_FILTERS = 10;
-const CUSTOM_NAME_MAX_LENGTH = 250;
 // Derived from the shared constants the UI offers, so an operator or scope added there is never
 // refused here.
 const CUSTOM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
@@ -920,8 +920,8 @@ export class AudienceBuilderController {
       return null;
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
-    if (body['name'] !== undefined && (typeof body['name'] !== 'string' || body['name'].length > CUSTOM_NAME_MAX_LENGTH)) {
-      next(invalid(req, operation, 'name', `name must be a string of at most ${CUSTOM_NAME_MAX_LENGTH} characters`));
+    if (body['name'] !== undefined && (typeof body['name'] !== 'string' || body['name'].length > AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH)) {
+      next(invalid(req, operation, 'name', `name must be a string of at most ${AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH} characters`));
       return null;
     }
     const parsed = parseCustomCriteria(body['criteria']);

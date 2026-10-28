@@ -4,11 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AudienceCustomService } from '@services/audience-custom.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import {
+  AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH,
   AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES,
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
@@ -90,7 +91,12 @@ export class AudienceCustomBuilderComponent {
 
   // === Forms ===
   protected readonly requestControl = new FormControl('', { nonNullable: true });
-  protected readonly nameControl = new FormControl('', { nonNullable: true });
+  /** At most 200 characters: HubSpot's list-search limit, which upstream refuses past rather than cuts. */
+  protected readonly nameControl = new FormControl('', { nonNullable: true, validators: [Validators.maxLength(AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH)] });
+  protected readonly nameMaxLength = AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH;
+  private readonly nameValue = toSignal(this.nameControl.valueChanges, { initialValue: '' });
+  /** An explicit name over the limit is a 400 upstream, so create waits until it fits. */
+  protected readonly nameTooLong = computed(() => this.nameValue().trim().length > AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH);
   protected readonly form = new FormGroup({
     cities: new FormControl('', { nonNullable: true }),
     countries: new FormControl('', { nonNullable: true }),
@@ -158,7 +164,8 @@ export class AudienceCustomBuilderComponent {
   protected readonly questionsOpen = computed(() => this.questions().length > 0);
   /** Create stays disabled until a preview of the CURRENT criteria exists. */
   protected readonly canCreate = computed(
-    () => !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen()
+    () =>
+      !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen() && !this.nameTooLong()
   );
   /** The similar lists with their recommendation's label, so the template reads values, not methods. */
   protected readonly similarRows = computed(() =>
