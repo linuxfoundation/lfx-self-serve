@@ -470,7 +470,7 @@ export class MktgDocumentsComponent {
 
   /** The row action and type badge use one policy; private questions can precede the next server projection. */
   private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
-    if (type.agentKey === 'member-360' || !type.catalogAgentId) return false;
+    if (type.kind !== 'living' || !type.catalogAgentId) return false;
     return state === 'questions' || !!this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions;
   }
 
@@ -478,7 +478,7 @@ export class MktgDocumentsComponent {
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
     if (this.waitingForAnswers(type, active?.state)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
     if (active) {
-      if (active.state === 'questions') return { badge: type.agentKey === 'member-360' ? 'Paused' : 'Needs answers', badgeClass: 'text-blue-600' };
+      if (active.state === 'questions') return { badge: 'Paused', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };
     }
     if (documentCount === 0 && this.documents()?.progressUnavailable) return { badge: '', badgeClass: '' };

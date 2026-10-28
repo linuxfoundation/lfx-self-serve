@@ -597,6 +597,18 @@ describe('MktgDocumentsComponent', () => {
     expect(nav?.getAttribute('href')).toBe(expected);
   });
 
+  it('keeps a LinkedIn questions row on its document filter and Open action', async () => {
+    const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'linkedin-post', documentId: 'run-' + 'c'.repeat(24) };
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
+    await render('/?type=linkedin-post');
+    const nav = query('mktg-documents-nav-linkedin-post');
+    expect(nav?.getAttribute('href')).toContain('type=linkedin-post');
+    expect(nav?.textContent).not.toContain('Needs answers');
+    const action = query('mktg-documents-open-started-' + run.runId);
+    expect(action?.textContent?.trim()).toBe('Open');
+    expect(action?.getAttribute('href')).toContain('run=' + run.runId);
+  });
+
   it('labels a Member 360 questions run as paused in the started list and navigation', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
