@@ -3343,6 +3343,8 @@ describe('AudienceBuilderTabComponent', () => {
 
         typeEventUrl('https://events.example.org/other-summit/');
         click('campaigns-audience-event-generate');
+        // A draft for another page starts over once confirmed (the first draft's list is hand work).
+        click('campaigns-audience-start-over-confirm');
         completeDiscovery(discovered({ lists: [optIn('402', 'lf_newsletter_opt_in', 10)] }));
         createDraftedList('7778');
 
@@ -3432,6 +3434,87 @@ describe('AudienceBuilderTabComponent', () => {
 
         expect(discoverAudience, 'a second discovery stream was opened for the same page').toHaveBeenCalledTimes(1);
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).not.toBeNull();
+      });
+
+      it('offers late opt-ins by hand when another preset replaced the draft before they settled', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        (fixture.componentInstance as unknown as { onCreateForSignal: (signal: AudienceSignal) => void }).onCreateForSignal('project_opt_in');
+        fixture.detectChanges();
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'stranded as pending').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('holds attach and compose until the active draft opt-in lookup settles', async () => {
+        await render({ briefId: 'brief-1' });
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        createDraftedList();
+
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled, 'attach ran before the opt-ins').toBe(true);
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+        expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
+      });
+
+      it('drops the automatic opt-ins when the operator starts the builder over', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        draftBuilder().startedOver.emit();
+        fixture.detectChanges();
+        createDraftedList('8888');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), "an abandoned draft's opt-ins joined an unrelated list").toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('stops calling a removed opt-in list added, and offers it again', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]'), 'fixture precondition').not.toBeNull();
+
+        click('campaigns-audience-remove-401');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]')).toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('offers the opt-ins by hand when a list is picked from the search instead of the draft', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        (fixture.componentInstance as unknown as { onUseExistingList: (list: { listId: string; name: string }) => void }).onUseExistingList({
+          listId: '9999',
+          name: 'Hand-picked list',
+        });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]')).toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('does not add late opt-ins once the drafted list was removed', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        createDraftedList();
+        click('campaigns-audience-remove-7777');
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-ins joined without the event audience').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
       });
 
       it('says which opt-in signal has no list', async () => {

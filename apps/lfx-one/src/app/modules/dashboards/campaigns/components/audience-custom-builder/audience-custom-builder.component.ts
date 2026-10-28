@@ -84,6 +84,8 @@ export class AudienceCustomBuilderComponent {
   public readonly eventPlanned = output<AudienceDiscoveredEvent>();
   /** True while a create is in flight, so the container can hold back anything that would reset the builder. */
   public readonly creatingChange = output<boolean>();
+  /** The operator pressed Start over (or Build another): whatever preset was loaded is abandoned. */
+  public readonly startedOver = output<void>();
 
   // === Constants ===
   protected readonly operators = AUDIENCE_CUSTOM_OPERATORS;
@@ -371,6 +373,12 @@ export class AudienceCustomBuilderComponent {
         this.createError.set(serverAuthoredMessage(err, 'The list could not be created.'));
       },
     });
+  }
+
+  /** Start over by the operator, as distinct from the resets a preset or a context change runs. */
+  protected onStartOverClicked(): void {
+    this.onStartOver();
+    this.startedOver.emit();
   }
 
   protected onStartOver(): void {

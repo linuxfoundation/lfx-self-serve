@@ -96,7 +96,7 @@
           Newsletter's existing opt-in lists once the drafted list is created. Not limited to the host city or country unless you ask for it.
         </p>
         <!-- Opt-ins come from lists the portal already keeps, never from new filters: see lookUpOptIns. -->
-        @if (optIns(); as lookup) {
+        @if (optInView(); as lookup) {
           @if (lookup.status === 'loading') {
             <p class="flex items-center gap-2 text-xs text-gray-600" role="status" data-testid="campaigns-audience-opt-ins-loading">
               <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
@@ -191,6 +191,7 @@
         [resetKey]="customResetKey()"
         (created)="onCustomCreated($event)"
         (reuse)="onCustomReuse($event)"
+        (startedOver)="onCustomStartedOver()"
         (eventPlanned)="onEventPlanned($event)"
         (creatingChange)="customCreating.set($event)" />
     </div>

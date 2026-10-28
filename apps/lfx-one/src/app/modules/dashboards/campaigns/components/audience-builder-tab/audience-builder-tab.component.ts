@@ -447,12 +447,6 @@ export class AudienceBuilderTabComponent {
   private optInSeq = 0;
   /** The opt-in lookup's discovery stream, cancelled when a newer lookup or a run reset replaces it. */
   private optInSubscription: Subscription | null = null;
-  /**
-   * An event-page draft is in the builder, and whether its list has been created yet. The draft's
-   * opt-in lists join Include only once that list exists (see `applyOptIns`).
-   */
-  private eventDraftActive = false;
-  private eventDraftCreated = false;
   /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
   private suppressionScope = '';
   /**
@@ -556,8 +550,31 @@ export class AudienceBuilderTabComponent {
   private readonly pendingReuseAttach = signal<AudiencePendingReuseAttach | null>(null);
   /** The "combine into a master list" disclosure is open. Direct use is the default action. */
   protected readonly composeOpen = signal(false);
+  /**
+   * An event-page draft is in the builder, and the list it produced (created, or an existing one
+   * reused in its place) once it has one. The draft's opt-in lists join Include only beside that
+   * list, and only while it is still included (see `addPendingOptIns`).
+   */
+  private readonly eventDraftActive = signal(false);
+  private readonly draftListId = signal<string | null>(null);
+  /**
+   * The active draft's opt-in lookup has not settled. Attach and compose wait for it: either would
+   * otherwise record the drafted list alone, and a compose then locked the opt-ins out for good.
+   */
+  protected readonly optInsSettling = computed(() => this.eventDraftActive() && this.optIns().status === 'loading');
   /** The existing opt-in lists an event draft joins to Include. See `lookUpOptIns`. */
   protected readonly optIns = signal<AudienceOptInLookup>(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
+  /**
+   * The opt-in lookup as shown: an auto-added list the operator has since removed or excluded is
+   * no longer "Added to Include", and is offered again instead.
+   */
+  protected readonly optInView = computed(() => {
+    const lookup = this.optIns();
+    const included = this.inclusion();
+    const added = lookup.added.filter((list) => included.has(list.listId));
+    const removed = lookup.added.filter((list) => !included.has(list.listId));
+    return { ...lookup, added, others: [...removed, ...lookup.others] };
+  });
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -1048,7 +1065,8 @@ export class AudienceBuilderTabComponent {
       // A custom create still landing would add its list after the attach recorded the selection.
       !this.customCreating() &&
       // A squatted list name answers every retry with the same 409 until it is fixed in HubSpot.
-      this.listNameConflict() === null
+      this.listNameConflict() === null &&
+      !this.optInsSettling()
   );
 
   /**
@@ -1552,6 +1570,9 @@ export class AudienceBuilderTabComponent {
     if (this.suppressionLoading()) {
       return 'The suppression lists are still loading under Standard suppressions.';
     }
+    if (this.optInsSettling()) {
+      return "The draft's project and LF Newsletter opt-in lists are still being looked up.";
+    }
     if (this.suppressionFailed()) {
       return 'The suppression lists under Standard suppressions could not be loaded. Reload them before attaching.';
     }
@@ -1621,6 +1642,7 @@ export class AudienceBuilderTabComponent {
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
       this.listNameConflict() === null &&
+      !this.optInsSettling() &&
       // A stranded compose in THIS project is unreconciled work: lists may already exist under
       // a name the next compose would reuse. The warning alone did not stop it, so an operator
       // could compose without ever acknowledging it. Scoped to the affected project — composing
@@ -2103,10 +2125,7 @@ export class AudienceBuilderTabComponent {
   protected onCustomCreated(list: AudienceComposedList): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
-    if (this.eventDraftActive) {
-      this.eventDraftCreated = true;
-      this.addPendingOptIns();
-    }
+    this.settleDraftList(list.listId);
   }
 
   /** An existing list the builder suggested and the operator chose to reuse. */
@@ -2115,10 +2134,7 @@ export class AudienceBuilderTabComponent {
     this.ensureSuppressionLoaded();
     // Reusing an existing list in place of the draft's is the draft's list existing, as a create is:
     // without this the held opt-ins waited forever with no way to add them.
-    if (this.eventDraftActive) {
-      this.eventDraftCreated = true;
-      this.addPendingOptIns();
-    }
+    this.settleDraftList(list.listId);
   }
 
   /**
@@ -2150,8 +2166,8 @@ export class AudienceBuilderTabComponent {
     }
     this.mode.set('build');
     this.draftedEventUrl.set(url);
-    this.eventDraftActive = true;
-    this.eventDraftCreated = false;
+    this.eventDraftActive.set(true);
+    this.draftListId.set(null);
     this.lookUpOptIns(url);
     this.customPreset.set({
       version: ++this.customPresetVersion,
@@ -2310,6 +2326,18 @@ export class AudienceBuilderTabComponent {
   protected onUseExistingList(list: AudienceListSearchResult): void {
     this.add(list.listId, list.name);
     this.ensureSuppressionLoaded();
+    // A list picked by hand is not the draft's: a draft still waiting for its list offers its
+    // opt-ins by hand instead of promising an add that may never come.
+    if (this.eventDraftActive() && this.draftListId() === null) {
+      this.releasePendingOptIns();
+    }
+  }
+
+  /** The operator started the custom builder over: the event draft, and its automatic opt-ins, are gone. */
+  protected onCustomStartedOver(): void {
+    if (this.eventDraftActive()) {
+      this.releasePendingOptIns();
+    }
   }
 
   protected onSelectAllDiscovered(lists: AudienceListRef[]): void {
@@ -3146,6 +3174,14 @@ export class AudienceBuilderTabComponent {
     return created;
   }
 
+  /** The draft's list now exists (created or reused): its held opt-ins join Include beside it. */
+  private settleDraftList(listId: string): void {
+    if (this.eventDraftActive() && this.draftListId() === null) {
+      this.draftListId.set(listId);
+      this.addPendingOptIns();
+    }
+  }
+
   /** Runs a reload that was asked for while the previous load was on the wire. */
   private runPendingSuppressionReload(): void {
     if (this.suppressionReloadPending) {
@@ -3446,8 +3482,8 @@ export class AudienceBuilderTabComponent {
     this.optInSubscription?.unsubscribe();
     this.optInSubscription = null;
     this.optIns.set(AUDIENCE_OPT_IN_LOOKUP_EMPTY);
-    this.eventDraftActive = false;
-    this.eventDraftCreated = false;
+    this.eventDraftActive.set(false);
+    this.draftListId.set(null);
     this.composing.set(false);
     this.previewing.set(false);
     // `searching` belongs here with its siblings. Guarding onSearch's ERROR handler on the run
@@ -3644,10 +3680,16 @@ export class AudienceBuilderTabComponent {
       this.optIns.set({ status: 'done', added: [], pending: [], others: [...added, ...others], missing });
       return;
     }
+    // No draft waits for them any more (another preset, a Start over, a list picked by hand): they
+    // are offered to add by hand, never left promising an automatic add that cannot happen.
+    if (!this.eventDraftActive()) {
+      this.optIns.set({ status: 'done', added: [], pending: [], others: [...added, ...others], missing });
+      return;
+    }
     // Held until the drafted list exists. Added now, they let one click attach a send to only the
     // portfolio-wide newsletter list before the draft was reviewed or created.
     this.optIns.set({ status: 'done', added: [], pending: added, others, missing });
-    if (this.eventDraftCreated) {
+    if (this.draftListId() !== null) {
       this.addPendingOptIns();
     }
   }
@@ -3660,6 +3702,13 @@ export class AudienceBuilderTabComponent {
   private addPendingOptIns(): void {
     const lookup = this.optIns();
     if (lookup.pending.length === 0 || this.selectionLocked()) {
+      return;
+    }
+    // Only beside the drafted list: removed before the lookup settled, the opt-ins alone would make
+    // a send to the portfolio-wide newsletter list one click away.
+    const draftList = this.draftListId();
+    if (draftList === null || !this.inclusion().has(draftList)) {
+      this.releasePendingOptIns();
       return;
     }
     const added: AudienceDiscoveredList[] = [];
@@ -3677,7 +3726,7 @@ export class AudienceBuilderTabComponent {
 
   /** The held opt-ins stop waiting on a draft and are offered to add by hand. */
   private releasePendingOptIns(): void {
-    this.eventDraftActive = false;
+    this.eventDraftActive.set(false);
     const lookup = this.optIns();
     if (lookup.pending.length > 0) {
       this.optIns.set({ ...lookup, pending: [], others: [...lookup.pending, ...lookup.others] });
