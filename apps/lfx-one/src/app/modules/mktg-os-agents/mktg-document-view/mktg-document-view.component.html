@@ -81,12 +81,12 @@
         }
       }
       @if (isAeoDocument() && view()?.aeoGeoReport) {
-        <div class="flex flex-wrap items-center gap-4" data-testid="mktg-aeo-report-actions">
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-aeo-report-actions">
           <a
             [routerLink]="['../../..', runAgent()?.id]"
             [queryParams]="runAgainParams()"
             queryParamsHandling="merge"
-            class="text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            class="text-sm font-medium text-blue-700 hover:underline"
             data-testid="mktg-document-view-run-again"
             (click)="onRunAgain()"
             >Audit again</a

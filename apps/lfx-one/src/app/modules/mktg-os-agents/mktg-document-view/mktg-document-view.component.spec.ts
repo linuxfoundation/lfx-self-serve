@@ -779,7 +779,8 @@ describe('MktgDocumentViewComponent', () => {
       const again = query('mktg-document-view-run-again');
       const download = query('mktg-document-view-download');
       expect(again?.textContent?.trim()).toBe('Audit again');
-      expect(again?.classList.contains('text-blue-700')).toBe(true);
+      expect(again?.className).toBe('text-sm font-medium text-blue-700 hover:underline');
+      expect(query('mktg-aeo-report-actions')?.className).toBe('ml-auto flex flex-wrap items-center gap-4');
       expect(header?.contains(again)).toBe(true);
       expect(header?.contains(download)).toBe(true);
       expect(query('mktg-document-view-report-summary')?.contains(download)).toBe(false);
