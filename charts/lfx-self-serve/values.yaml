@@ -613,36 +613,34 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
     value:
 
-  # Will offer a stored-image LIBRARY in the Google section of the create flow: images uploaded to
-  # the brief (the same PNG/JPEG upload REDDIT_ASSETS offers, into the same library) and named by
-  # asset id in the Google creative fields, instead of pasted image URLs.
-  #
-  # NOTHING READS IT YET — setting it changes nothing an operator can see. The Google creative
-  # fields carry image URLs only at this release, with no asset-id key for a stored image to go in,
-  # so the library control this gates does not exist; the flag is wired ahead of it. What it DOES
-  # already do is admit an upload into the brief's library on its own authority (the shared upload
-  # route accepts either asset flag), which is why it is worth setting on a deployment that is
-  # staging images before the control ships.
+  # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
+  # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
+  # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
+  # size. A pick is sent as an `{ "imageAssetId": "<id>" }` entry in the slot's own array (e.g.
+  # `demandGenCreative.logoImages`), beside any pasted image URLs.
   #
   # A CAPABILITY flag like REDDIT_ASSETS, but it asserts something DIFFERENT. It does NOT say URL
   # signing is configured: Google's dispatch path reads the stored bytes and POSTs them to the
   # Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service and the signing
   # settings are irrelevant to it. What it says is that the DEPLOYED campaign-service resolves
-  # Google creative asset ids at all — an older one ignores the unknown keys, dispatches a campaign
-  # with no images and reports success. It also needs the create pipeline (CREATE, BRIEFS, JOBS)
-  # on, because the legacy creator reads no creative key either.
+  # Google creative asset ids, which every release from v1.0.21 does (campaign-service #394). It
+  # also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator reads no
+  # creative key either.
+  #
+  # ON in this chart, like META_ASSETS and for the same reason: production runs a campaign-service
+  # from v1.0.21, and nothing has to be configured on it first. Turn it off only for a deployment
+  # pinned to an older campaign-service, which cannot decode an asset entry and would fail the
+  # Google create. Off, the Google library controls are hidden, Create is blocked while a stored
+  # image is still held in a slot, and a create request carrying a Google `imageAssetId` is refused
+  # with a 400 rather than dropped; the pasted image URLs stay offered either way.
   #
   # It is a SIBLING of REDDIT_ASSETS rather than a widening of it so the two can ship
-  # independently: one flag would mean Reddit asset upload could never be enabled without Google's,
-  # or the reverse.
-  #
-  # Off (the default), the Google library controls stay hidden; the pasted image URL stays offered.
-  # On, at this release, so does the pasted image URL — see the "nothing reads it yet" note above.
-  # It does NOT gate the brief's asset list, get, plan and delete routes — those are addressed by a
-  # campaign-service brief and gate on BRIEFS like every other brief route, so a deployment can
-  # always see and prune the library it already holds. Same accepted values as the flags above.
+  # independently. It does NOT gate the brief's asset list, get, plan and delete routes — those are
+  # addressed by a campaign-service brief and gate on BRIEFS like every other brief route, so a
+  # deployment can always see and prune the library it already holds. Same accepted values as the
+  # flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS:
-    value:
+    value: "true"
 
   # Offers a PNG/JPEG image upload in the Meta section of the create flow, sent as
   # `metaConfig.variants[].imageAssetId` (the same image on every ad) instead of a pasted image URL.
@@ -653,8 +651,8 @@ environment:
   # ids, which every release from v1.0.21 does. It also needs the create pipeline (CREATE, BRIEFS,
   # JOBS) on, because the legacy creator reads no Meta image.
   #
-  # ON in this chart, unlike its siblings, because nothing has to be configured on campaign-service
-  # first. Off, the Meta upload control is hidden and a create request carrying a Meta
+  # ON in this chart, like GOOGLE_ASSETS and unlike REDDIT_ASSETS, because nothing has to be
+  # configured on campaign-service first. Off, the Meta upload control is hidden and a create request carrying a Meta
   # `imageAssetId` is refused with a 400 rather than dropped; the pasted image URL stays offered.
   # Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS:

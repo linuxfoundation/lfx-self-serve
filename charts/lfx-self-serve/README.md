@@ -201,7 +201,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`            | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` | Applies the flight dates to Microsoft Ads, sent as `microsoftConfig.startDate` / `endDate`. Requires [campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409) deployed (v1.0.21 drops the dates silently) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                    | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`      | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`      | WILL offer the brief's stored image library in the Google create section, named by asset id instead of pasted image URLs — NOTHING READS IT YET, the Google creative fields are URL-only at this release. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires the create pipeline on; see `values.yaml`                                                                                                                                                               | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`      | Offers the brief's stored image library in each Google creative image slot — upload, or pick a stored image that fits the slot — sent as `{ imageAssetId }` entries beside pasted image URLs. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                       | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS`        | Offers a PNG/JPEG image upload in the Meta create section, sent as `imageAssetId` on every ad. NOT about URL signing: Meta's dispatch uploads the stored bytes to the ad account's image library. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS`    | Offers a PNG/JPEG image upload in the LinkedIn create section, sent as `imageAssetId` on every variant (the dark post's thumbnail). NOT about URL signing: LinkedIn's dispatch uploads the stored bytes through the Images API. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                                                                         | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`      | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                                                                                                                           | No       | `"true"` |
@@ -356,25 +356,28 @@ with a 400. On, the section also offers a PNG/JPEG upload (up to 10 MB), stored 
 and sent as `imageAssetId` in place of `imageUrl`.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` is a fifth, and asserts something different from its
-Reddit sibling: does the deployed campaign-service resolve **Google** creative asset ids at all? It
-is **not** about URL signing — Google's dispatch path reads the stored bytes and POSTs them to the
-Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service — it is about an older
-service ignoring the unknown keys, dispatching a campaign with no images and reporting success. It
-needs the create pipeline on for the same reason the Reddit flag does. **Nothing reads it yet**:
-the Google creative fields carry image URLs only at this release, with no asset-id key for a stored
-image to go in, so the Google section offers pasted image URLs whether the flag is on or off, and
-the library control the flag will gate does not exist. What setting it already does is admit an
-upload into the brief's library on its own authority. The two are siblings rather than one flag so
-either platform's asset support can ship without the other: the shared upload route accepts a request on **any** asset flag's
-authority, and the brief's asset list, get, plan and delete routes are gated on
-`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` alone, so a deployment can always read and prune the library
-it already holds.
+Reddit sibling: does the deployed campaign-service resolve **Google** creative asset ids? It is
+**not** about URL signing — Google's dispatch path reads the stored bytes and POSTs them to the
+Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service. Every release from
+v1.0.21 resolves them ([campaign-service #394](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/394)),
+so it is **on** in this chart, like the Meta flag; turn it off only for a deployment pinned to an older
+campaign-service, which cannot decode an asset entry and would fail the Google create. It needs the
+create pipeline on for the same reason the Reddit flag does. On, each Google creative image slot
+(Demand Gen, Performance Max and Display) offers the brief's library: upload a PNG/JPEG into it, or
+pick a stored image that fits the slot's aspect ratio and minimum size. A pick is sent as an
+`{ "imageAssetId": "<id>" }` entry in the slot's own array, beside any pasted image URLs. Off, the
+library controls are hidden, Create is blocked while a stored image is still held, and a create
+request carrying a Google `imageAssetId` is refused with a 400. The two are siblings rather than one
+flag so either platform's asset support can ship without the other: the shared upload route accepts
+a request on **any** asset flag's authority, and the brief's asset list, get, plan and delete routes
+are gated on `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` alone, so a deployment can always read and prune
+the library it already holds.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS` is a sixth, of the Google kind: it asserts that the
 deployed campaign-service resolves **Meta** creative asset ids, which every release from v1.0.21
 does, and nothing about URL signing, since Meta's dispatch path uploads the stored bytes to the ad
-account's image library. It is **on** in this chart because nothing has to be configured on
-campaign-service first. Off, the Meta section offers only the pasted image URL and a create request
+account's image library. It is **on** in this chart, like the Google flag, because nothing has to be
+configured on campaign-service first. Off, the Meta section offers only the pasted image URL and a create request
 carrying a Meta `imageAssetId` is refused with a 400. The upload route accepts a request on any of
 any asset flag's authority.
 

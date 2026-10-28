@@ -3883,6 +3883,11 @@ export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/
  *   not a per-array allowance; logos are capped per array and never count toward the marketing
  *   total. Stating the combined cap on each field is the permissive direction — the upstream
  *   preflight still enforces the real sum.
+ * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
+ *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
+ *   the BFF forwards an asset ref only in a field that has one.
  *
  * Ordering is the order a section renders in: the ad's words first, then its images, because the
  * copy is what an operator writes and the images are what they paste links to.
@@ -3904,11 +3909,32 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 20,
       hint: 'One image URL per line. At least one marketing or square marketing image is required. The cap of 20 is shared across all four marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 20 },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'tallPortraitImages', label: 'Tall portrait images (9:16)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required. A Demand Gen ad with no logo is refused.' },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'tallPortraitImages',
+      label: 'Tall portrait images (9:16)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 },
+    },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required. A Demand Gen ad with no logo is refused.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
   ],
   'performance-max': [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 3, max: 15, width: 30 },
@@ -3958,11 +3984,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       min: 1,
       max: 20,
       hint: 'One image URL per line. Required here, unlike on Demand Gen. The cap of 20 is shared across all three marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', min: 1, max: 20, hint: 'Also required.' },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required.' },
-    { control: 'landscapeLogoImages', label: 'Landscape logo images (4:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 20,
+      hint: 'Also required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
+    {
+      control: 'landscapeLogoImages',
+      label: 'Landscape logo images (4:1)',
+      kind: 'list',
+      max: 5,
+      image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 },
+    },
     {
       control: 'youtubeVideoIds',
       label: 'YouTube video IDs',
@@ -3990,12 +4039,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 15,
       hint: 'One image URL per line. Google requires each marketing array when the other is absent. The cap of 15 is shared across both.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 15 },
-    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5 },
-    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 15,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5, image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 } },
+    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
+ * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
+ * documents ±1%). Measured as `ShapeRule.ratioDrift` measures it: `|got - want| / want`.
+ */
+export const GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE = 0.01;
+
+/**
+ * The most bytes one Google creative image may carry — campaign-service's `googleads.MaxImageBytes`
+ * (5 MiB), which every Google slot states and both the fetch and the stored-asset paths enforce
+ * before anything is created. Tighter than {@link CREATIVE_ASSET_MAX_BYTES}, the library's own
+ * upload cap: an image the library accepts for Reddit or Meta can still be too large for Google.
+ */
+export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * The "at least one of" rules a channel's creative carries, which no per-field bound can state.

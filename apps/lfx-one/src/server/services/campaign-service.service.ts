@@ -586,16 +586,19 @@ export function canUseRedditCreativeAssets(): boolean {
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
  * Reddit sibling the flag is NOT about URL signing — Google's dispatch path POSTs the stored bytes
  * to `assets:mutate` and never builds a URL — it is about whether the deployed service resolves the
- * ids at all. Either half missing is silent: the legacy creator reads no Google creative key, and an
- * older campaign-service ignores the ids and dispatches a campaign with no images.
+ * ids at all. The legacy creator reads no Google creative key, so the cutover half missing would
+ * drop the image silently; a campaign-service older than v1.0.21 types the image arrays as strings,
+ * cannot decode an `{ imageAssetId }` entry, and fails the Google create.
  *
- * It gates the upload route alongside `canUseRedditCreativeAssets` — either flag admits an upload,
- * because the stored library is one library and either platform having a use for it is reason enough
- * to let an image into it.
+ * It gates the create field — a `{ imageAssetId }` entry in any Google creative image slot, which
+ * `createCampaign` refuses by name while this is false rather than letting the normalizer forward or
+ * drop it — and is served to the client as `googleAssetUploadEnabled`, which offers the library
+ * controls in those slots. It also admits an upload into the brief's library alongside the Reddit
+ * and Meta flags: the stored library is one library, and any platform having a use for it is reason
+ * enough to let an image in.
  *
- * At this commit the upload route is ALL it gates: the Google creative interfaces carry image URLs
- * only, with no asset-id key, so there is no create field for a true answer to unlock yet. It is
- * served to the client as `googleAssetUploadEnabled` and wired ahead of that field.
+ * Every campaign-service release from v1.0.21 resolves the ids (lfx-v2-campaign-service#394), which
+ * is why the chart turns the flag on.
  */
 export function canUseGoogleCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleAssets);
