@@ -64,7 +64,7 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-level"]')?.textContent).toBe('—');
     expect(root.querySelector('[data-testid="mktg-kit-level-empty"]')?.textContent).toContain('No approved assets yet');
   });
-  it('keeps Coming soon cards plain and uses a quiet selected filter', async () => {
+  it('keeps every card neutral at rest, Coming soon cards plain, and the selected filter quiet', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -76,7 +76,10 @@ describe('Marketing kit home', () => {
         expect(card?.classList.contains(token)).toBe(true);
       }
       expect(card?.classList.contains('hover:shadow-md')).toBe(view.live);
-      expect(card?.classList.contains('border-blue-600')).toBe(view === families()[0]);
+      expect(card?.classList.contains('border-gray-200')).toBe(true);
+      expect(card?.classList.contains('border-blue-600')).toBe(false);
+      expect(card?.classList.contains('hover:border-blue-400')).toBe(view.live);
+      expect(card?.classList.contains('has-[a:focus-visible]:ring-blue-600')).toBe(view.live);
       if (!view.live) {
         expect(card?.classList.contains('border-dashed')).toBe(true);
         expect(card?.className).not.toContain('hover:');
@@ -175,7 +178,8 @@ describe('Marketing kit home', () => {
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="mktg-kit-asset-linkedin-post"]')?.textContent).toContain('Not run yet');
     expect(root.querySelector('[data-testid="mktg-kit-asset-member-360"]')).not.toBeNull();
-    expect(root.querySelector('[data-testid="mktg-kit-asset-aeo-geo"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-aeo-geo"]')?.textContent).toContain('Not run yet');
+    expect(root.querySelector('[data-testid="mktg-kit-asset-one-pager"]')).toBeNull();
     families.update((items) =>
       items.map((item) => ({
         ...item,

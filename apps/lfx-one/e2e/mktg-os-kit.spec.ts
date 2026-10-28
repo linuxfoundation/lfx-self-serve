@@ -10,13 +10,14 @@ test.describe('Marketing kit home content', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
-  test('Not run yet filters include never-run one-offs but not unavailable agents', async ({ page }) => {
+  test('Not run yet filters include never-run one-offs but not coming-soon assets', async ({ page }) => {
     await setupKit(page);
     await openKit(page);
     await page.getByTestId('filter-pill-missing').click();
     await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Not run yet');
     await expect(page.getByTestId('mktg-kit-asset-member-360')).toContainText('Not run yet');
-    await expect(page.getByTestId('mktg-kit-asset-aeo-geo')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-kit-asset-aeo-geo')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-asset-one-pager')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('kit-one-off-missing.png'), fullPage: true });
   });
   test('prior-run one-offs have a last-run label and belong to All only', async ({ page }) => {
@@ -39,6 +40,8 @@ test.describe('Marketing kit home content', () => {
     await setupKit(page, { loaded: true });
     await openKit(page);
     await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
+    await expect(page.getByTestId('mktg-kit-families').locator('article.border-gray-200')).toHaveCount(9);
+    await expect(page.getByTestId('mktg-kit-families').locator('article.border-blue-600')).toHaveCount(0);
     await expect(page.getByTestId('mktg-kit-level')).toHaveText('—');
     await expect(page.getByTestId('mktg-kit-level-empty')).toHaveText('No approved assets yet');
     await expect(page.getByTestId('mktg-kit-core-floor')).toHaveText('0 of 9');
