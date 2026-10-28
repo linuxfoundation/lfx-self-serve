@@ -141,24 +141,23 @@ test('Download PDF prepares held revisions then opens print synchronously on the
     window.print = () => {
       document.body.dataset['familyPrintClass'] = document.body.className;
     };
-    // The bubbling listener observes the end of the very same click dispatch,
-    // before any network/font/render continuation could call print asynchronously.
-    document.addEventListener('click', (event) => {
-      if (event.target instanceof Element && event.target.closest('[data-testid="family-export-pdf"]')) {
-        document.body.dataset['familyPrintSync'] = String(!!document.body.dataset['familyPrintClass']);
-      }
-    });
   });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
   await pdf.click();
   await expect(pdf).toBeDisabled();
-  await expect(page.locator('body')).toHaveAttribute('data-family-print-sync', 'false');
+  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
   controls.releasePrint();
   await expect(pdf).toHaveText('Open print preview');
   await expect(page.getByTestId('family-export-pdf-ready')).toHaveText('Your PDF is ready — click to open the print preview');
   await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
-  await pdf.click();
-  await expect(page.locator('body')).toHaveAttribute('data-family-print-sync', 'true');
+  // Keep a JS stack around the entire click dispatch. Inspect before returning:
+  // even a resolved Promise/await would run too late to satisfy this assertion.
+  const synchronousClass = await pdf.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error('Missing synthetic PDF button');
+    button.click();
+    return document.body.dataset['familyPrintClass'] ?? '';
+  });
+  expect(synchronousClass).toContain(MKTG_FAMILY_PRINT_BODY_CLASS);
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
   await expect(page.getByTestId('family-export-print-document').locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(page.getByTestId('family-export-print-document')).toBeHidden();
