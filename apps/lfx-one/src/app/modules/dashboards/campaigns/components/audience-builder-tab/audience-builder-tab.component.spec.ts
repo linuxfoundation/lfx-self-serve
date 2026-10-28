@@ -4507,6 +4507,27 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'an edited selection read as attached').not.toBeNull();
     });
 
+    it('reads an attach of a copied standing-list exclusion beside the ticked standard row as attached', async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-9',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-9/performance',
+        includedLists: [{ listId: '101', name: 'Registrants', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-last-sent-copy-em-9');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      useSelectionDirectly();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-review"]'), 'the unchanged audience just attached read as a change').toBeNull();
+    });
+
     it('stops reading as attached when a registrants list still to be created is ticked after the attach', async () => {
       getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
       await discover('brief-1');

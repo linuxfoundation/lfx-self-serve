@@ -834,16 +834,21 @@ export class AudienceBuilderTabComponent {
       return set.size === b.size && [...set].every((id) => b.has(id));
     };
     const included = new Set(this.inclusion().keys());
+    // The standing list and the standard rows it stands for are the same exclusion: both sides are
+    // compared in row terms, as `AudienceLastSentComponent.emailRows` does, or a copied past send's
+    // standing-list id beside a ticked standard row reads as a change after attaching it.
+    const expansion = this.standingExpansion();
+    const rows = (ids: Iterable<string>): string[] => [...ids].flatMap((id) => (expansion !== null && id === expansion.listId ? expansion.rowIds : [id]));
     // As `attachedMasterId` compares: a registrants list still to be created is a change too.
-    const excluded = new Set(this.comparableExcludeIds());
+    const excluded = new Set(rows(this.comparableExcludeIds()));
     const attached = this.attachResult();
     if (attached !== null && attached.master.listId === listId) {
-      return same(this.attachedIncludeIds(), included) && same(this.attachedExclusions(), excluded);
+      return same(this.attachedIncludeIds(), included) && same(rows(this.attachedExclusions()), excluded);
     }
     const composed = this.composeResult();
     if (composed !== null && composed.master.listId === listId) {
       const exclusions = this.composedExclusions();
-      return same(composed.sourceListIds, included) && (exclusions === null || same(exclusions, excluded));
+      return same(composed.sourceListIds, included) && (exclusions === null || same(rows(exclusions), excluded));
     }
     return false;
   });
