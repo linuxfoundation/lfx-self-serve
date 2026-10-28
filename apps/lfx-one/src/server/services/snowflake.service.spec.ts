@@ -271,10 +271,9 @@ describe('SnowflakeService circuit breaker', () => {
     expect(SnowflakeService.isMissingObjectError(thrown)).toBe(true);
   });
 
-  // The exemption is what keeps an optional table's absence from opening the POD-WIDE breaker, and
-  // the expected branch calls recordSuccess(), which RESETS the failure count. So the boundary has to
-  // hold in both directions, and only `execute` can show that: the matcher spec proves what the
-  // predicate answers, not what the breaker then does with it.
+  // The exemption is what keeps an optional table's absence from opening the POD-WIDE breaker. The
+  // boundary has to hold in both directions, and only `execute` can show that: the matcher spec
+  // proves what the predicate answers, not what the breaker then does with it.
   describe('named missing-object exemption', () => {
     it('keeps the circuit closed while the NAMED object is the missing one', async () => {
       const { service } = serviceWithPool(vi.fn(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`)));
@@ -314,6 +313,28 @@ describe('SnowflakeService circuit breaker', () => {
 
       expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
       expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', true);
+    });
+
+    /**
+     * The exempt branch must RELEASE the probe, not record a success. Naming the object is not
+     * enough on its own: when the address table and a core table are both gone, Snowflake blames the
+     * exempt one on the scoped statement, so the exemption fires on every uncached request. If that
+     * reset the shared count, the unscoped retry's single genuine failure would be all that ever
+     * accumulated and the breaker could never reach its threshold through a real outage.
+     */
+    it('does not let an alternating expected/genuine sequence hold the breaker closed', async () => {
+      const use = vi.fn();
+      for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        use.mockImplementationOnce(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`)).mockImplementationOnce(queryFailure);
+      }
+      const { service } = serviceWithPool(use);
+
+      for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        await service.execute('SELECT scoped', [], { expectMissingObject: OPTIONAL_TABLE }).catch(() => undefined);
+        await service.execute('SELECT unscoped').catch(() => undefined);
+      }
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
     });
 
     it('does not exempt an unrelated failure just because an object was named', async () => {

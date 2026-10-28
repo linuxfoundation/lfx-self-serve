@@ -19,6 +19,8 @@ import type {
 import { formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
+import { isImpersonating } from '../utils/auth-helper';
+
 import { logger } from './logger.service';
 import { PersonaDetectionService } from './persona-detection.service';
 import { SnowflakeService } from './snowflake.service';
@@ -277,7 +279,9 @@ export class OrgLensEventsService {
     // Names only. Matching `er.EMAIL` made this an existence oracle — a caller could test whether a
     // given address registered for an event without ever being shown it. The shipped drawer filters
     // client-side on name and job title and never sends `searchQuery`, so nothing in the UI regresses.
-    const searchFilter = searchQuery ? 'AND UPPER(COALESCE(p.NAME, er.FULL_NAME)) LIKE UPPER(?)' : '';
+    const searchFilter = searchQuery
+      ? `AND UPPER(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) LIKE UPPER(?)`
+      : '';
 
     /**
      * The drawer in TWO spellings, not three: scoped, and unscoped for the address table being
@@ -289,7 +293,7 @@ export class OrgLensEventsService {
       ${scoped ? `WITH ${COMPANY_EMAIL_COVERAGE_CTE}` : ''}
       SELECT
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
-        MAX(COALESCE(p.NAME, er.FULL_NAME))            AS NAME,
+        MAX(COALESCE(${NON_ADDRESS_NAME('p.NAME')}, ${NON_ADDRESS_NAME('er.FULL_NAME')})) AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
@@ -463,6 +467,17 @@ export class OrgLensEventsService {
    * missing a number they can get elsewhere is not.
    */
   private async callerIsLFStaff(req: Request): Promise<boolean> {
+    // While impersonating, the answer must be about the TARGET, not the staff member driving the
+    // session. `checkLFStaff` alone does not settle that: `authMiddleware` swaps in the target's
+    // bearer, but whether the exchanged token still satisfies `lf-staff#member` is the auth service's
+    // business, not something this disclosure gate should depend on. The whole point of "view as" is
+    // to see the member company's view, and that view has no goal in it — so an impersonated session
+    // is never staff here, whoever the target is. Same direction as the gw-embed gate, which refuses
+    // outright while impersonating because the two identities diverge.
+    if (isImpersonating(req)) {
+      return false;
+    }
+
     return this.personaDetection.checkLFStaff(req);
   }
 
@@ -492,11 +507,11 @@ export class OrgLensEventsService {
    * outage this path exists to prevent. The flag still rejects, so the fallback runs as before.
    *
    * The option carries the object's NAME, not a bare `true`, so the exemption covers exactly
-   * `ORG_PEOPLE_COMPANY_EMAILS`. That distinction matters: the expected branch calls `recordSuccess()`,
-   * which RESETS the shared failure count rather than merely skipping it, so a blanket exemption would
-   * let a genuinely absent core table hold the pod-wide breaker closed for as long as it stayed
-   * broken. Named, a missing core table misses this branch entirely and keeps its normal failure
-   * handling; only the rollout condition this flag exists for is forgiven.
+   * `ORG_PEOPLE_COMPANY_EMAILS`: a missing core table misses this branch entirely and keeps its normal
+   * failure handling, and only the rollout condition this flag exists for is forgiven. Naming it is
+   * not the whole guard, though — when the address table and a core table are gone at once, Snowflake
+   * blames the exempt object and the exemption does fire. `execute` therefore releases the probe
+   * rather than recording a success, so the shared failure count survives; see the note there.
    */
   private async fetchEventListRows(sql: string, binds: string[], scoped = false): Promise<OrgEventRow[]> {
     const result = await this.snowflakeService.execute<OrgEventRow>(sql, binds, scoped ? { expectMissingObject: COMPANY_EMAILS_TABLE } : undefined);
@@ -724,6 +739,18 @@ function registrationCountsCte(scoped: boolean): string {
         GROUP BY er.EVENT_ID
       )`;
 }
+
+/**
+ * A name field holding an address is not a name. `er.FULL_NAME` is free text off a registration form
+ * and `p.NAME` is only as clean as its source, so either can contain the address this query exists to
+ * keep out of the response — and it would then be rendered as the attendee's name and matched by the
+ * name search, putting back both leaks the redaction closed.
+ *
+ * Deliberately a crude `LIKE '%@%'` rather than address validation: the question is not whether the
+ * value parses as an address, it is whether it might be one. A real name containing `@` is a false
+ * positive that costs a neutral label, which is the safe direction to be wrong in.
+ */
+const NON_ADDRESS_NAME = (column: string): string => `CASE WHEN ${column} LIKE '%@%' THEN NULL ELSE ${column} END`;
 
 /**
  * Shown when a registrant resolves to no person and the registration carries no name. It used to fall

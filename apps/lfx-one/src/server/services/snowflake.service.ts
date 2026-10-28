@@ -249,7 +249,16 @@ export class SnowflakeService {
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
               }
-              this.recordSuccess();
+              // `releaseProbe`, NOT `recordSuccess`. This query did not succeed; it hit an error the
+              // caller said to expect. `recordSuccess` resets `consecutiveFailures` to 0 POD-WIDE, so
+              // it would discard failures accumulated by unrelated queries. That is reachable: when
+              // the address table and a core table are both gone, Snowflake blames the exempt object
+              // on the scoped statement, so every uncached drawer request clears the count here and
+              // then books a single failure on the unscoped retry — the threshold is never reached and
+              // the breaker never opens through a real outage. `releaseProbe` leaves the count and the
+              // state alone and only frees the HALF_OPEN probe slot, which is what an error that says
+              // nothing about Snowflake's health should do.
+              this.releaseProbe();
               logger.warning(undefined, 'snowflake_query', 'Query hit an expected schema compatibility error', {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),

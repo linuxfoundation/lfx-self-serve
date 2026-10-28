@@ -448,6 +448,38 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data[0].eventRegistrationsGoal).toBe(10000);
   });
 
+  it('withholds the goal while an LF staff member is impersonating, whoever the target is', async () => {
+    // The reported bug: "view as" an Uber employee still showed `/ Goal`, because the staff check
+    // answers for the session's own identity. The member company's view has no goal in it.
+    checkLFStaff.mockResolvedValue(true);
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const impersonating = {
+      impersonationActive: true,
+    } as unknown as Request;
+
+    const list = await service.getOrgEvents(impersonating, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
+    // The staff check is not merely overridden after the fact — it is never consulted.
+    expect(checkLFStaff).not.toHaveBeenCalled();
+  });
+
+  it('still serves the goal to LF staff once impersonation ends', async () => {
+    checkLFStaff.mockResolvedValue(true);
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const ended = { impersonationActive: false } as unknown as Request;
+
+    const list = await service.getOrgEvents(ended, ACCOUNT, LIST_OPTIONS);
+
+    expect(list.data[0].eventRegistrationsGoal).toBe(10000);
+  });
+
   it('withholds the goal from a global auditor or org admin who is not LF staff', async () => {
     addEvent(EVENT, 99);
     addRegistration('ada@company.example', 'Ada Lovelace');
@@ -874,6 +906,37 @@ describe('OrgLensEventsService attendee address redaction', () => {
 
     expect(drawer.data).toHaveLength(2);
     expect(new Set(drawer.data.map((attendee) => attendee.contactId)).size).toBe(2);
+  });
+
+  it('treats an address typed into the name field as no name at all', async () => {
+    // `FULL_NAME` is free text off a registration form, so it can hold the very address the
+    // projection above is removing. Without the guard it is rendered as the attendee's name.
+    addRegistration('nameless@gmail.example', 'nameless@gmail.example');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data[0].name).toBe('Registered attendee');
+    expectNoAddress(drawer.data);
+  });
+
+  it('treats an address on the roster profile as no name either', async () => {
+    addCompanyEmail('ada@company.example');
+    // The profile wins the coalesce, so guarding only the registration side would miss this.
+    addProfile('ada@company.example', 'ada@company.example', 'Principal Engineer');
+    addRegistration('ada@company.example', null as unknown as string);
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data[0].name).toBe('Registered attendee');
+    expectNoAddress(drawer.data);
+  });
+
+  it('does not let the search term match an address held in a name field', async () => {
+    addRegistration('nameless@gmail.example', 'nameless@gmail.example');
+
+    const hit = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'nameless@gmail.example');
+
+    expect(hit.total).toBe(0);
   });
 
   it('does not let the search term test whether an address registered', async () => {
