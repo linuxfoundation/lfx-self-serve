@@ -831,8 +831,10 @@ export class MeetingService {
       // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
       // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
       occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
-      avatar_url: registrant.avatar_url || null,
-      username: registrant.username || null,
+      // `username` and `avatar_url` are deliberately not sent. Upstream derives both from the user the
+      // guest is linked to and rejects a registrant update that carries a `username` with
+      // "user_id cannot be changed", even when it is the value the guest already has. The Edit Guest
+      // form never carried either, and a listed guest's copy of them comes from that enrichment.
       linkedin_profile: registrant.linkedin_profile || null,
     };
   }

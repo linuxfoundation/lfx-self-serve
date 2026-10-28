@@ -156,6 +156,15 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
     });
+
+    // Upstream rejects an update carrying `username` with "user_id cannot be changed", even when it is
+    // the guest's own value, and derives the avatar the same way.
+    it('never sends the username or avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', username: 'guest-a', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('username');
+      expect(body).not.toHaveProperty('avatar_url');
+    });
   });
 });
 
