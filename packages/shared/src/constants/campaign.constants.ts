@@ -72,8 +72,24 @@ export const CAMPAIGN_PLATFORMS: readonly CampaignPlatformOption[] = [
   { id: 'linkedin-ads', label: 'LinkedIn Ads', icon: 'fa-brands fa-linkedin' },
   { id: 'meta-ads', label: 'Meta Ads', icon: 'fa-brands fa-meta' },
   { id: 'reddit-ads', label: 'Reddit Ads', icon: 'fa-brands fa-reddit' },
-  { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true },
+  { id: 'twitter-ads', label: 'X / Twitter Ads', icon: 'fa-brands fa-x-twitter', disabled: true, monitorable: true },
 ] as const;
+
+/**
+ * Whether the Monitoring tab offers this platform's monitor.
+ *
+ * Deliberately separate from `disabled`, which gates the CREATE flow only. X is the case that splits
+ * them: its create stays off, but its adopted campaigns are live and spending, and campaign-service
+ * serves their metrics (`TWITTER_METRICS_ENABLED`) through the monitor cutover
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`). Tying the monitor to create would keep that spend out of
+ * sight whatever ops enable. So an explicit `monitorable` wins, and only an omitted one falls back
+ * to "offered unless create is disabled". Whether the read is then served is the server's answer: the
+ * panel shows its "metrics not enabled" or "restricted" notice when it is not.
+ */
+export function campaignPlatformMonitorable(platform: CampaignPlatform): boolean {
+  const option = CAMPAIGN_PLATFORMS.find((p) => p.id === platform);
+  return option !== undefined && (option.monitorable ?? !option.disabled);
+}
 
 /**
  * Delivery types — the second campaign selector (after the program type). Both are selectable.

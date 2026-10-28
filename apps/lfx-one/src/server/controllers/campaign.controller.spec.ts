@@ -7893,3 +7893,105 @@ describe('CampaignController.createCampaign Reddit uploaded image', () => {
     ]);
   });
 });
+
+/**
+ * `metaConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused — not
+ * dropped — unless the create cutover AND the Meta-assets flag are on, on the Reddit field's terms.
+ * A pasted `imageUrl` is not gated here: the form withholds it while `metaCreativeEnabled` is off.
+ */
+describe('CampaignController.createCampaign Meta uploaded image', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const metaConfig = (variants: Record<string, unknown>[]): Record<string, unknown> => ({ budgetUsd: 50, variants });
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMetaAssets ? assets : cutover));
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards imageAssetId on every variant untouched when the cutover owns the create and the flag is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['meta-ads'],
+          metaConfig: metaConfig([
+            { primaryText: 'p', headline: 'h', imageAssetId: ASSET },
+            { primaryText: 'p2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['metaConfig'].variants.map((v) => v['imageAssetId'])).toEqual([ASSET, ASSET]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a pasted imageUrl whatever the Meta-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['meta-ads'], metaConfig: metaConfig([{ primaryText: 'p', headline: 'h', imageUrl: 'https://cdn.example.org/a.png' }]) },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['metaConfig'].variants[0]['imageUrl']).toBe('https://cdn.example.org/a.png');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the Meta-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying a variant imageAssetId when %s, naming the variant and creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['meta-ads'],
+          metaConfig: metaConfig([
+            { primaryText: 'p', headline: 'h' },
+            { primaryText: 'p2', headline: 'h2', imageAssetId: ASSET },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'metaConfig.variants[1].imageAssetId',
+        message: 'uploaded Meta images are not enabled on this deployment; supply an image URL instead',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+});

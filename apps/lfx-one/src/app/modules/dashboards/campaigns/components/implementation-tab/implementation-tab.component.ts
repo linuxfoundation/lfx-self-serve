@@ -135,6 +135,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignMetaImageAssetBlock,
   CampaignProximityTarget,
   CampaignProximityTargetDraft,
   CampaignRedditImageAssetBlock,
@@ -367,6 +368,25 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see redditAssetUploadEnabled — both capabilities an explicit yes. */
   protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
+
+  /**
+   * Whether the Meta section may offer an ad image (`CampaignListResult.metaCreativeEnabled`).
+   * `null` (unknown) withholds it, as for Reddit: the legacy creator reads no Meta image.
+   */
+  public readonly metaCreativeEnabled = input<boolean | null>(null);
+
+  /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
+  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+
+  /**
+   * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
+   * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
+   * sibling; the pasted image URL stays offered whatever this answers.
+   */
+  public readonly metaAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -835,6 +855,24 @@ export class ImplementationTabComponent implements OnInit {
    * switch must not abort the upload); `clearRedditImageAsset` cancels the request itself.
    */
   private redditImageUploadSub: Subscription | null = null;
+  /**
+   * The Meta ad image, set on EVERY variant at create (see `metaVariantsForCreate`): a pasted URL,
+   * or an upload made for this brief. The upload state mirrors the Reddit fields above one for one,
+   * and for the same reasons; only the platform differs.
+   */
+  protected readonly metaImageUrl = signal('');
+  protected readonly metaImageAssetId = signal('');
+  protected readonly metaImageAssetName = signal('');
+  protected readonly metaImageAssetBriefId = signal('');
+  protected readonly metaImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly metaImageUploadPendingName = signal('');
+  private readonly metaImageUploadPendingBriefId = signal('');
+  private readonly metaImageUploadFailedBriefId = signal('');
+  protected readonly metaImageUploadError = signal('');
+  protected readonly metaImageFileDescribedBy = computed(() =>
+    ['meta-image-file-hint', 'meta-image-file-status', ...(this.metaImageUploadStatus() === 'error' ? ['meta-image-file-error'] : [])].join(' ')
+  );
+  private metaImageUploadSub: Subscription | null = null;
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -1932,6 +1970,39 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
 
+  /**
+   * Why Create is blocked for an uploaded Meta image this tab still holds but cannot send, or
+   * `null` — `redditImageAssetBlock`'s sibling, for the same reasons: a restored upload must never
+   * be silently left out of the request.
+   */
+  protected readonly metaImageAssetBlock: Signal<CampaignMetaImageAssetBlock | null> = this.initMetaImageAssetBlock();
+  /** Whether the draft holds an uploaded Meta image made for the brief now open — the only one sent. */
+  protected readonly metaImageAssetForThisBrief = computed(
+    () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly metaAssetWithheld = computed(
+    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  );
+  /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
+  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
+  protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
+  protected readonly metaImageUploadStatusMessage = computed(() => {
+    if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.metaImageAssetForThisBrief() ? `Uploaded: ${this.metaImageAssetName() || 'image'}` : '';
+  });
+  protected readonly metaImageUploadLiveMessage = computed(() => (this.metaAssetUploadAvailable() ? this.metaImageUploadStatusMessage() : ''));
+  /**
+   * What the variant preview says about the image each ad will carry, read from the same field the
+   * payload is (`metaImageField`), so the preview never promises an image the request leaves out.
+   */
+  protected readonly metaPreviewImageLabel = computed(() => {
+    const image = this.metaImageField();
+    if ('imageAssetId' in image) return `Image: ${this.metaImageAssetName() || 'uploaded image'}`;
+    if ('imageUrl' in image) return `Image: ${image.imageUrl}`;
+    return '';
+  });
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -2082,6 +2153,7 @@ export class ImplementationTabComponent implements OnInit {
     // that is the worse failure, so the create goes ahead and the block says what was left out.
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
+    if (this.metaImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -2122,6 +2194,8 @@ export class ImplementationTabComponent implements OnInit {
     // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
     // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
+    // Meta's sibling of the hold above, on the same terms.
+    if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2593,7 +2667,7 @@ export class ImplementationTabComponent implements OnInit {
       return;
     }
 
-    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId), briefId, file.name);
+    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'reddit'), briefId, file.name);
     // Told to the parent at once: a tab switch now destroys this component but not the request,
     // and the remount resumes it from the draft (`resumeRedditImageUpload`).
     this.emitDraft();
@@ -2602,6 +2676,59 @@ export class ImplementationTabComponent implements OnInit {
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
   protected onRedditImageAssetRemove(): void {
     this.clearRedditImageAsset();
+    this.emitDraft();
+  }
+
+  protected onMetaImageUrlInput(event: Event): void {
+    this.metaImageUrl.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
+  /** Upload the chosen Meta image for this brief — `onRedditImageFileChange`'s sibling, step for step. */
+  protected onMetaImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearMetaImageAsset();
+    this.emitDraft();
+
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failMetaImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
+      this.failMetaImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
+      return;
+    }
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failMetaImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followMetaImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'meta'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Forget the uploaded Meta image (the stored asset stays upstream, unused) and fall back to the image URL. */
+  protected onMetaImageAssetRemove(): void {
+    this.clearMetaImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * The block's Remove: drops only what the block is about. An upload it names (failed, made for
+   * another brief, or withheld) is cleared; a pasted URL only when the URL itself is withheld, so
+   * removing a refused upload never also discards a URL the request can still carry.
+   */
+  protected onMetaImageBlockRemove(): void {
+    if (this.metaImageUrlWithheld()) this.metaImageUrl.set('');
+    if (this.metaImageAssetId() !== '' || this.metaImageUploadStatus() !== 'idle' || this.metaImageUploadPendingName() !== '') {
+      this.clearMetaImageAsset();
+    }
     this.emitDraft();
   }
 
@@ -3292,7 +3419,7 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
               geoTargets: this.metaEffectiveGeoTargets(),
-              variants: this.metaVariants(),
+              variants: this.metaVariantsForCreate(),
               objective: this.metaObjective(),
               placements: this.metaPlacementOverrides(),
               // Sent only under `conversions`. Under every other objective the promoted object is
@@ -3517,7 +3644,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditImageUploadPendingBriefId.set(briefId);
     this.redditImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
-        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.campaignService.forgetCreativeAssetUpload('reddit', upload$);
         this.redditImageUploadPendingName.set('');
         this.redditImageUploadPendingBriefId.set('');
         // The brief changed while the upload was in flight: the asset belongs to the old one.
@@ -3535,10 +3662,10 @@ export class ImplementationTabComponent implements OnInit {
         this.emitDraft();
       },
       error: (err: unknown) => {
-        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.campaignService.forgetCreativeAssetUpload('reddit', upload$);
         this.redditImageUploadPendingName.set('');
         this.redditImageUploadPendingBriefId.set('');
-        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err), briefId);
+        this.failRedditImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
         this.emitDraft();
       },
     });
@@ -3561,7 +3688,7 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageUploadPendingBriefId.set(briefId);
       return;
     }
-    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('reddit', briefId) : null;
     if (!upload$) {
       this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
       return;
@@ -3577,7 +3704,7 @@ export class ImplementationTabComponent implements OnInit {
     // parked upload (another brief's, kept across a foundation switch) is replaced the same way: a
     // new pick replaces the previous upload outright, so it is cancelled, not left running unowned.
     if (this.redditImageUploadStatus() === 'uploading' || this.redditImageUploadPendingName() !== '') {
-      this.campaignService.cancelCreativeAssetUpload();
+      this.campaignService.cancelCreativeAssetUpload('reddit');
     }
     this.redditImageUploadPendingName.set('');
     this.redditImageUploadPendingBriefId.set('');
@@ -3596,12 +3723,152 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The Meta variants as sent: the brief's copy, each carrying the one Meta image when there is one.
+   * The uploaded asset wins over a pasted URL, and is sent only while the upload capability is an
+   * explicit yes and the asset was made for the open brief; the URL only while
+   * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
+   */
+  private metaVariantsForCreate(): MetaAdVariant[] {
+    const image = this.metaImageField();
+    return Object.keys(image).length > 0 ? this.metaVariants().map((variant) => ({ ...variant, ...image })) : this.metaVariants();
+  }
+
+  private metaImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
+    if (this.metaAssetUploadAvailable() && this.metaImageAssetForThisBrief()) return { imageAssetId: this.metaImageAssetId() };
+    if (this.metaCreativeAvailable() && this.metaImageUrl()) return { imageUrl: this.metaImageUrl() };
+    return {};
+  }
+
+  /**
+   * `initRedditImageAssetBlock`'s sibling, widened to the pasted URL and to a failed upload.
+   *
+   * Two departures from the Reddit block, both so a Meta image the operator chose is never left
+   * out of the request without a word. A failed upload for the open brief blocks whatever the
+   * capability says: with the upload control shown, its alert names the failure, but Create would
+   * otherwise launch the campaign with the pasted URL or no image instead of the chosen file. And a
+   * pasted URL held while `metaCreativeAvailable()` is not an explicit yes (a tab round-trip or a
+   * failed capability read clears it, and hides the URL input) blocks the same way a retained
+   * upload does, since `metaImageField` would withhold it.
+   */
+  private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showMetaSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.metaImageAssetId() !== '' && briefId && this.metaImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
+        };
+      }
+      if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
+      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
+        return {
+          kind: 'unsupported',
+          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Meta ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followRedditImageUpload`'s sibling. */
+  private followMetaImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.metaImageUploadStatus.set('uploading');
+    this.metaImageUploadError.set('');
+    this.metaImageUploadPendingName.set(fileName);
+    this.metaImageUploadPendingBriefId.set(briefId);
+    this.metaImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('meta', upload$);
+        this.metaImageUploadPendingName.set('');
+        this.metaImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failMetaImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.metaImageAssetId.set(asset.id);
+        this.metaImageAssetName.set(fileName);
+        this.metaImageAssetBriefId.set(briefId);
+        this.metaImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('meta', upload$);
+        this.metaImageUploadPendingName.set('');
+        this.metaImageUploadPendingBriefId.set('');
+        this.failMetaImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeRedditImageUpload`'s sibling. */
+  private resumeMetaImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.metaImageUploadPendingName.set(fileName);
+      this.metaImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('meta', briefId) : null;
+    if (!upload$) {
+      this.failMetaImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followMetaImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearMetaImageAsset(): void {
+    this.metaImageUploadSub?.unsubscribe();
+    this.metaImageUploadSub = null;
+    if (this.metaImageUploadStatus() === 'uploading' || this.metaImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('meta');
+    }
+    this.metaImageUploadPendingName.set('');
+    this.metaImageUploadPendingBriefId.set('');
+    this.metaImageAssetId.set('');
+    this.metaImageAssetName.set('');
+    this.metaImageAssetBriefId.set('');
+    this.metaImageUploadStatus.set('idle');
+    this.metaImageUploadError.set('');
+    this.metaImageUploadFailedBriefId.set('');
+  }
+
+  private failMetaImageUpload(message: string, briefId = ''): void {
+    this.metaImageUploadStatus.set('error');
+    this.metaImageUploadError.set(message);
+    this.metaImageUploadFailedBriefId.set(briefId);
+  }
+
+  /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
    * names the problem with the image (not decodable, too many pixels, …).
    */
-  private redditImageUploadErrorMessage(err: unknown): string {
+  private creativeAssetUploadErrorMessage(err: unknown): string {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 413) return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
     if (status === 415) return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
@@ -3867,6 +4134,21 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditVideoGoal !== undefined) {
       this.redditVideoGoal.set(draft.redditVideoGoal);
     }
+    // The Meta image, on the Reddit image's terms above.
+    if (draft.metaImageUrl !== undefined) {
+      this.metaImageUrl.set(draft.metaImageUrl);
+    }
+    if (draft.metaImageAssetId !== undefined) {
+      this.metaImageAssetId.set(draft.metaImageAssetId);
+      this.metaImageAssetName.set(draft.metaImageAssetName ?? '');
+      this.metaImageAssetBriefId.set(draft.metaImageAssetBriefId ?? '');
+    }
+    if (draft.metaImageUploadFailedMessage && draft.metaImageUploadFailedBriefId) {
+      this.failMetaImageUpload(draft.metaImageUploadFailedMessage, draft.metaImageUploadFailedBriefId);
+    }
+    if (draft.metaImageUploadPendingName) {
+      this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -4046,6 +4328,14 @@ export class ImplementationTabComponent implements OnInit {
       redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
       redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
+      metaImageUrl: this.metaImageUrl(),
+      metaImageAssetId: this.metaImageAssetId(),
+      metaImageAssetName: this.metaImageAssetName(),
+      metaImageAssetBriefId: this.metaImageAssetBriefId(),
+      metaImageUploadPendingName: this.metaImageUploadPendingName(),
+      metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
+      metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
+      metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
     });
   }
 
