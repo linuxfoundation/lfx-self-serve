@@ -214,11 +214,13 @@ describe('OrgLensEventsService company-email scoping', () => {
   it('lists only the registrant who used a company address', async () => {
     addCompanyEmail('ada@company.example');
     addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('ada.personal@gmail.example', 'Ada Lovelace');
+    // Distinct name: `contactId` is now a positional index, so only the name can say which
+    // registration survived the filter.
+    addRegistration('ada.personal@gmail.example', 'Ada Personal');
 
     const response = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    expect(response.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example']);
+    expect(response.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
     expect(response.total).toBe(1);
   });
 
@@ -226,11 +228,11 @@ describe('OrgLensEventsService company-email scoping', () => {
     addCompanyEmail('  Ada@Company.Example ');
     addRegistration('ada@company.example', 'Ada Lovelace');
     // Present so the assertion cannot pass by the filter simply not running.
-    addRegistration('ada.personal@gmail.example', 'Ada Lovelace');
+    addRegistration('ada.personal@gmail.example', 'Ada Personal');
 
     const response = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    expect(response.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example']);
+    expect(response.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
   });
 
   it('does not treat an address held for another account as this org company address', async () => {
@@ -335,9 +337,10 @@ describe('OrgLensEventsService company-email scoping', () => {
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
     expect(list.data[0].orgAttendeeCount).toBe(1);
-    // A null group would both disagree with the count and hand the drawer a null contactId.
+    // A null group would both disagree with the count and be rejected by `isContactRowArray`.
     expect(drawer.total).toBe(1);
-    expect(drawer.data.every((attendee) => !!attendee.contactId)).toBe(true);
+    // The addressed registrant is the one that survives; both the null and the blank are dropped.
+    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Someone Else']);
   });
 
   it('counts one person once across case and whitespace variants of their address', async () => {
@@ -352,7 +355,7 @@ describe('OrgLensEventsService company-email scoping', () => {
 
     expect(list.data[0].orgAttendeeCount).toBe(1);
     expect(drawer.total).toBe(1);
-    expect(drawer.data[0].contactId).toBe('ada@company.example');
+    expect(drawer.data[0].name).toBe('Ada Lovelace');
   });
 
   it('matches an address padded with tabs, newlines or non-breaking spaces', async () => {
@@ -370,7 +373,7 @@ describe('OrgLensEventsService company-email scoping', () => {
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
     expect(list.data[0].orgAttendeeCount).toBe(2);
-    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.example', 'grace@company.example']);
+    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
   });
 
   it('does not strip characters that merely appear in an escape sequence', async () => {
@@ -382,7 +385,7 @@ describe('OrgLensEventsService company-email scoping', () => {
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
-    expect(drawer.data.map((attendee) => attendee.contactId)).toEqual(['ada@company.test']);
+    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
   });
 
   it('enriches every address variant in a group from the same profile', async () => {
@@ -416,6 +419,8 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(list.data[0].orgAttendeeCount).toBe(1);
     expect(drawer.total).toBe(1);
     expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
+    // The surviving row has a name of its own; the dropped one is the nameless, addressless pair.
+    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Someone Else']);
   });
 
   it('never serves the event registration goal to an external admin', async () => {
@@ -786,5 +791,100 @@ describe('OrgLensEventsService company-email scoping', () => {
 
     expect(list.data).toHaveLength(1);
     expect(list.data[0].orgAttendeeCount).toBe(1);
+  });
+});
+
+/**
+ * The drawer must never hand the client a registration address — not as `contactId`, which used to
+ * BE the normalized address, and not as `name`, which used to fall back to it for a registrant with
+ * no resolved profile and no `FULL_NAME`. The second one was rendered, so it was a visible leak.
+ *
+ * Asserted on all three tiers, because the two degraded ones are where it mattered most: scoped
+ * rows are company addresses by construction, while the zero-coverage and unscoped tiers return
+ * every registration attributed to the account, personal addresses included.
+ */
+describe('OrgLensEventsService attendee address redaction', () => {
+  /** A registrant the old `COALESCE(..., er.EMAIL)` would have displayed by their personal address. */
+  const addNamelessPersonalRegistrant = (): void => addRegistration('nameless@gmail.example', null as unknown as string);
+
+  const expectNoAddress = (attendees: readonly { contactId: string; name: string }[]): void => {
+    expect(attendees.length).toBeGreaterThan(0);
+    for (const attendee of attendees) {
+      expect(attendee.contactId).not.toContain('@');
+      expect(attendee.name).not.toContain('@');
+    }
+  };
+
+  it('returns no address on the scoped tier', async () => {
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.total).toBe(1);
+    expectNoAddress(drawer.data);
+  });
+
+  it('returns no address on the zero-coverage tier', async () => {
+    // No ORG_PEOPLE_COMPANY_EMAILS rows for the account: every registrant falls through unfiltered.
+    addNamelessPersonalRegistrant();
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.total).toBe(1);
+    expectNoAddress(drawer.data);
+  });
+
+  it('returns no address on the unscoped tier', async () => {
+    addNamelessPersonalRegistrant();
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.total).toBe(1);
+    expectNoAddress(drawer.data);
+  });
+
+  it('labels a registrant who resolves to no name, rather than falling back to their address', async () => {
+    addNamelessPersonalRegistrant();
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data[0].name).toBe('Registered attendee');
+  });
+
+  it('still prefers a real name when there is one', async () => {
+    addCompanyEmail('ada@company.example');
+    addProfile('ada@company.example', 'Ada Lovelace', 'Principal Engineer');
+    addRegistration('ada@company.example', 'Ada L');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data[0].name).toBe('Ada Lovelace');
+  });
+
+  it('gives each attendee in a response a distinct contactId', async () => {
+    addCompanyEmail('ada@company.example');
+    addCompanyEmail('grace@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+    addRegistration('grace@company.example', 'Grace Hopper');
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    expect(drawer.data).toHaveLength(2);
+    expect(new Set(drawer.data.map((attendee) => attendee.contactId)).size).toBe(2);
+  });
+
+  it('does not let the search term test whether an address registered', async () => {
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    // The address is in the row, and was matchable before this change. Searching it must now miss.
+    const byAddress = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada@company.example');
+    // The name still matches, so the miss above is the narrowed clause and not a broken query.
+    const byName = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'Lovelace');
+
+    expect(byAddress.total).toBe(0);
+    expect(byName.total).toBe(1);
   });
 });

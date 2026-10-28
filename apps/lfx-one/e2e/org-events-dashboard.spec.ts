@@ -181,7 +181,8 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventId: 'event-1',
         eventName: 'Open Source Summit',
         total: 1,
-        data: [{ contactId: 'person@example.org', name: 'Jane Doe', jobTitle: 'Engineer' }],
+        // Opaque positional id, as the server now sends it — the address never reaches the client.
+        data: [{ contactId: '0', name: 'Jane Doe', jobTitle: 'Engineer' }],
       }),
     })
   );

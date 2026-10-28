@@ -269,7 +269,10 @@ export class OrgLensEventsService {
   public async getEventAttendees(req: Request, accountId: string, eventId: string, searchQuery?: string): Promise<OrgEventAttendeesDrawerResponse> {
     logger.debug(req, 'get_event_attendees', 'Fetching event attendees', { account_id: accountId, event_id: eventId });
 
-    const searchFilter = searchQuery ? 'AND (UPPER(COALESCE(er.FULL_NAME, er.EMAIL)) LIKE UPPER(?) OR UPPER(er.EMAIL) LIKE UPPER(?))' : '';
+    // Names only. Matching `er.EMAIL` made this an existence oracle — a caller could test whether a
+    // given address registered for an event without ever being shown it. The shipped drawer filters
+    // client-side on name and job title and never sends `searchQuery`, so nothing in the UI regresses.
+    const searchFilter = searchQuery ? 'AND UPPER(COALESCE(p.NAME, er.FULL_NAME)) LIKE UPPER(?)' : '';
 
     /**
      * The drawer in TWO spellings, not three: scoped, and unscoped for the address table being
@@ -281,7 +284,7 @@ export class OrgLensEventsService {
       ${scoped ? `WITH ${COMPANY_EMAIL_COVERAGE_CTE}` : ''}
       SELECT
         ${REGISTRANT_EMAIL_KEY}                        AS CONTACT_ID,
-        MAX(COALESCE(p.NAME, er.FULL_NAME, er.EMAIL))  AS NAME,
+        MAX(COALESCE(p.NAME, er.FULL_NAME))            AS NAME,
         MAX(COALESCE(p.TITLE, er.JOB_TITLE))           AS JOB_TITLE,
         MAX(er.EVENT_NAME)                             AS EVENT_NAME
       FROM ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS er
@@ -294,13 +297,13 @@ export class OrgLensEventsService {
         ${scoped ? `AND ${COMPANY_EMAIL_QUALIFIES}` : ''}
         ${searchFilter}
       GROUP BY ${REGISTRANT_EMAIL_KEY}
-      ORDER BY NAME ASC NULLS LAST
+      ORDER BY NAME ASC NULLS LAST, CONTACT_ID ASC
     `;
 
       // Positional binds, in statement order: coverage CTE when scoped, the ORG_PEOPLE_ALL join, the WHERE.
       const binds: string[] = scoped ? [accountId, accountId, eventId, accountId] : [accountId, eventId, accountId];
       if (searchQuery) {
-        binds.push(`%${searchQuery}%`, `%${searchQuery}%`);
+        binds.push(`%${searchQuery}%`);
       }
       return { sql, binds };
     };
@@ -311,8 +314,10 @@ export class OrgLensEventsService {
     try {
       rows = await withOrgCache(
         accountId,
-        // `:v2` — the row set is now company-email-scoped; see the `events:v2` note above.
-        `event-attendees:v2:${paramSignature([eventId, searchQuery ?? null])}`,
+        // `:v3` — `:v2` was the company-email scoping; `:v3` is the narrowed row shape (no address in
+        // `NAME`) and the narrowed search. Entries written before this ships would otherwise be served
+        // with addresses still in `NAME`, for a full TTL, on exactly the degraded tiers that need it least.
+        `event-attendees:v3:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchEventAttendeeRows(scopedQuery.sql, scopedQuery.binds, true),
         isContactRowArray
@@ -354,9 +359,19 @@ export class OrgLensEventsService {
     }
 
     const eventName = rows[0]?.EVENT_NAME ?? '';
-    const data: OrgEventAttendee[] = rows.map((row) => ({
-      contactId: row.CONTACT_ID,
-      name: row.NAME ?? row.CONTACT_ID,
+    /**
+     * `CONTACT_ID` is the normalized registration address: the right grouping key, and the wrong thing
+     * to hand the client. Downstream it is only a list-tracking key and an avatar colour seed, neither
+     * of which needs to mean anything, so the response carries the row's position instead. The address
+     * stays server-side in the cached row, the same way the staff-only goal does.
+     *
+     * Positional, so it is stable only within one response — which is all `track` and the avatar seed
+     * need. `ORDER BY` is fully deterministic (name, then the key) so the same rows get the same ids
+     * across reads, cached or not; a different search term is a different query and may renumber.
+     */
+    const data: OrgEventAttendee[] = rows.map((row, index) => ({
+      contactId: String(index),
+      name: row.NAME ?? ANONYMOUS_ATTENDEE_NAME,
       jobTitle: row.JOB_TITLE ?? null,
     }));
 
@@ -631,10 +646,11 @@ const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)
 /**
  * A registrant needs a usable address whichever spelling is running. This half of the rule is NOT
  * about company scoping, so it applies to the unscoped fallback too: without it that path returns a
- * row whose `CONTACT_ID` is null — against the non-nullable `OrgEventAttendee.contactId`, rejected by
- * `isContactRowArray`, and with a null `name` when the registration carries none either, which the
- * drawer then calls `computePersonInitials` on. The scoped predicate used to carry this clause, so
- * splitting the fallback out of it originally dropped the guard on exactly the degraded path.
+ * row whose `CONTACT_ID` is null — rejected by `isContactRowArray`, so the whole cache entry is
+ * refused, and unusable as the grouping key besides. The scoped predicate used to carry this clause,
+ * so splitting the fallback out of it originally dropped the guard on exactly the degraded path.
+ * (A null `NAME` is now ordinary, not a symptom: it is what a registrant with no resolved person and
+ * no `FULL_NAME` looks like once the address is out of the coalesce, and it maps to a neutral label.)
  *
  * KNOWN, DELIBERATE GAP, and this is the guard that drops the row. Applying it on the fallback path
  * too means a registration with no address at all is dropped there, where before this rule it would
@@ -654,8 +670,8 @@ const REGISTRANT_HAS_ADDRESS = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') 
  * person who registered as `ada@company.example` and ` Ada@Company.Example ` into two attendees.
  * Both readers use this one expression so the row count and the drawer cannot drift apart.
  *
- * It is also the drawer's `CONTACT_ID`, which is sound because nothing resolves a person from it —
- * downstream it is a list-tracking key and an avatar colour seed.
+ * It is the drawer's `CONTACT_ID` column, but only as far as the cached row: the response maps it to
+ * an opaque positional id, so the address never reaches the client. See `getEventAttendees`.
  */
 const REGISTRANT_EMAIL_KEY = normalizedEmail('er.EMAIL');
 
@@ -702,6 +718,12 @@ function registrationCountsCte(scoped: boolean): string {
       )`;
 }
 
+/**
+ * Shown when a registrant resolves to no person and the registration carries no name. It used to fall
+ * back to the raw address, which rendered a personal email in the drawer on the degraded tiers.
+ */
+const ANONYMOUS_ATTENDEE_NAME = 'Registered attendee';
+
 /** The one object either surface may legitimately find absent; every other table here is core. */
 const COMPANY_EMAILS_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
 
@@ -718,7 +740,7 @@ function isEventRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['EVENT_ID'] === 'string');
 }
 
-/** Attendee/speaker rows map `contactId: row.CONTACT_ID` with no fallback — validate the contract key to the same depth as the people/access guards. */
+/** Speaker rows map `contactId: row.CONTACT_ID` with no fallback, and attendee rows order by it — validate the contract key to the same depth as the people/access guards. */
 function isContactRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['CONTACT_ID'] === 'string');
 }
