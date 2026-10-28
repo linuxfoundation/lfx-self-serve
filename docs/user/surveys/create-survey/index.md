@@ -65,13 +65,13 @@ Keep `{{SurveyButton}}` in the body. It becomes the **Take Survey** button that 
 
 The last step summarizes the survey before it is sent:
 
-- **Survey Details**: **Survey Type**, **Target Groups**, and **Total Participants**
+- **Survey Details**: **Survey Type**, **Target Groups**, and **Total Participants**. Check **Target Groups** to confirm who the survey is going to. The **Total Participants** figure currently counts the groups you selected, not the number of people in them.
 - **Distribution & Reminders**: **Distribution**, **Cutoff Date**, and **Reminders**
 - **Email Preview**: the subject and body as recipients will see them
 
 Each section has an **Edit** control that jumps back to that step.
 
-When everything looks right, select **Send Survey**. If you chose a scheduled date, the button reads **Schedule Survey** instead. A confirmation dialog summarizes who will receive the survey, when, and how reminders work:
+When everything looks right, select **Send Survey**. If you chose a scheduled date, the button reads **Schedule Survey** instead. A confirmation dialog summarizes when the survey will be sent and how reminders work:
 
 - **Send Survey**: "Are you sure…" with **Yes, send survey** and **Cancel**. Once sent, emails are delivered to all recipients.
 - **Schedule Survey**: the same, with **Yes, schedule survey**. Emails are delivered on the scheduled date.

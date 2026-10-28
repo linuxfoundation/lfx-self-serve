@@ -22,7 +22,7 @@ Net Promoter Score (NPS) measures how likely respondents are to recommend your p
 
 ## Who receives the survey?
 
-The members of the groups you select. For Board groups, only voting representatives receive it. The **Review & Confirm** step shows the groups and the total number of participants before you send.
+The members of the groups you select. For Board groups, only voting representatives receive it. The **Review & Confirm** step lists the target groups before you send. The number of people isn't shown there, so check the groups carefully.
 
 ## Can I send a survey later?
 
