@@ -165,7 +165,10 @@ describe('Member 360 entitlement and generation', () => {
   });
   it('sends byte-exact answers with the catalog mention on its own line', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
-    await new Member360Service().sendAnswers(req, answersBody());
+    const claim = vi.fn(async () => undefined);
+    await new Member360Service().sendAnswers(req, answersBody(), claim);
+    expect(claim).toHaveBeenCalledOnce();
+    expect(claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendFollowUp.mock.invocationCallOrder[0]);
     expect(mocks.sendFollowUp).toHaveBeenCalledWith(req, 'session-1', {
       handle: 'member-360',
       message:
@@ -173,18 +176,30 @@ describe('Member 360 entitlement and generation', () => {
     });
     expect(logger.info).toHaveBeenCalledWith(req, 'member_360_answers', expect.any(String), { session_id: 'session-1', questions_id: questionsId, count: 1 });
   });
+  it('never sends a second Guild turn when the atomic claim loses', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const conflict = Object.assign(new Error('Already answered'), { code: 'MKTG_RUN_ANSWERED', statusCode: 409 });
+    await expect(
+      new Member360Service().sendAnswers(req, answersBody(), async () => {
+        throw conflict;
+      })
+    ).rejects.toBe(conflict);
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
   it('rejects stale hashes and mismatched question ids before sending', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
-    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) }, async () => undefined)).rejects.toMatchObject({
+      statusCode: 409,
+    });
     await expect(
-      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] })
+      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] }, async () => undefined)
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.sendFollowUp).not.toHaveBeenCalled();
   });
   it('rejects repeats once the next turn is queued, without replaying questions or old root completion', async () => {
     const done = JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } });
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done, JSON.stringify({ type: 'mktg_session_turn_started' })]);
-    await expect(new Member360Service().sendAnswers(req, answersBody())).rejects.toMatchObject({ statusCode: 409 });
+    await expect(new Member360Service().sendAnswers(req, answersBody(), async () => undefined)).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.sendFollowUp).not.toHaveBeenCalled();
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
   });

@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => ({
   record: vi.fn(),
   active: vi.fn(),
   sendAnswers: vi.fn(),
-  resume: vi.fn(),
+  claim: vi.fn(),
+  commitClaim: vi.fn(),
   user: 'synthetic-subject' as string | undefined,
 }));
 vi.mock('../services/mktg-document-run.service', () => ({
@@ -25,7 +26,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public assertSingleActiveOneOffRun = mocks.active;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
-    public resumeAfterQuestions = mocks.resume;
+    public prepareMember360QuestionsClaim = mocks.claim;
   },
 }));
 vi.mock('../services/member-360.service', async (original) => {
@@ -48,6 +49,10 @@ describe('Member 360 HTTP boundary', () => {
     mocks.user = 'synthetic-subject';
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.claim.mockResolvedValue(mocks.commitClaim);
+    mocks.sendAnswers.mockImplementation(async (_req, _body, claim: () => Promise<void>) => {
+      await claim();
+    });
   });
   const answersBody = () => ({
     project: 'sample-project',
@@ -56,15 +61,16 @@ describe('Member 360 HTTP boundary', () => {
     questionsId: 'a'.repeat(64),
     answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' }],
   });
-  it('sends validated creator answers and resumes the same tracked session', async () => {
+  it('claims the validated creator questions before sending on the same tracked session', async () => {
     const req = { body: answersBody() } as Request;
     mocks.preflight.mockResolvedValueOnce('resolved-project');
     const res = { set: vi.fn().mockReturnThis(), json: vi.fn() };
     const next = vi.fn();
     await new Member360Controller().answers(req, res as unknown as Response, next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.sendAnswers).toHaveBeenCalledWith(req, req.body);
-    expect(mocks.resume).toHaveBeenCalledWith(req, 'resolved-project', 'session-1', 'a'.repeat(64));
+    expect(mocks.sendAnswers).toHaveBeenCalledWith(req, req.body, expect.any(Function));
+    expect(mocks.claim).toHaveBeenCalledWith(req, 'resolved-project', 'session-1', 'a'.repeat(64));
+    expect(mocks.commitClaim).toHaveBeenCalledOnce();
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
   it.each(['other-user', 'other-project', 'chat-token'])('rejects %s ownership without a project-writer bypass', async (kind) => {
@@ -94,7 +100,29 @@ describe('Member 360 HTTP boundary', () => {
     mocks.sendAnswers.mockRejectedValueOnce(conflict);
     await controller.answers({ body: answersBody() } as Request, {} as Response, next);
     expect(next).toHaveBeenLastCalledWith(conflict);
-    expect(mocks.resume).not.toHaveBeenCalled();
+    expect(mocks.commitClaim).not.toHaveBeenCalled();
+  });
+  it('returns the lost-claim conflict without acknowledging a send', async () => {
+    const conflict = Object.assign(new Error('Already answered'), {
+      statusCode: 409,
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00Z' },
+    });
+    mocks.claim.mockRejectedValueOnce(conflict);
+    const next = vi.fn();
+    const res = { set: vi.fn().mockReturnThis(), json: vi.fn() };
+    await new Member360Controller().answers({ body: answersBody() } as Request, res as unknown as Response, next);
+    expect(next).toHaveBeenCalledWith(conflict);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+  it('propagates a CAS loss between validation and transport without success', async () => {
+    const conflict = Object.assign(new Error('Claim lost'), { code: 'MKTG_RUN_ANSWERED', statusCode: 409 });
+    mocks.commitClaim.mockRejectedValueOnce(conflict);
+    const next = vi.fn();
+    const json = vi.fn();
+    await new Member360Controller().answers({ body: answersBody() } as Request, { json } as unknown as Response, next);
+    expect(next).toHaveBeenCalledWith(conflict);
+    expect(json).not.toHaveBeenCalled();
   });
   it('refuses before creating a Guild session and passes explicit discard separately from the agent intake', async () => {
     const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });

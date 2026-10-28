@@ -4,7 +4,7 @@
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
-import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 
 /** Safe conflict facts; never a Guild session id or owner capability. */
 export interface MktgActiveRunConflict {
@@ -15,6 +15,13 @@ export interface MktgActiveRunConflict {
   state: MktgDocumentRunState;
   agentKey: MktgDocumentAgentKey;
   documentId: string;
+}
+
+/** Deliberately narrow server acknowledgement; no subject, session or answer text. */
+export interface MktgRunAnsweredConflict {
+  code: typeof MKTG_RUN_ANSWERED;
+  answeredBy: string;
+  answeredAt: string;
 }
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
@@ -135,6 +142,11 @@ export interface MktgStartedRunRecord {
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
+  /** Server-only claim attribution; never spread into public progress. */
+  answeredBySubject?: string;
+  answeredAt?: string;
+  /** Changes the object body on metadata CAS writes so S3 ETags cannot stay equal. */
+  storageWriteId?: string;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
   failureReason?: MktgRunFailureReason;
@@ -156,6 +168,9 @@ export interface MktgGenerationAttribution {
 export interface MktgStoredStartedRun {
   key: string;
   body: string;
+  /** Private metadata and version observed in the same object-store read. */
+  metadata: Record<string, string>;
+  etag?: string;
   record: MktgStartedRunRecord;
 }
 

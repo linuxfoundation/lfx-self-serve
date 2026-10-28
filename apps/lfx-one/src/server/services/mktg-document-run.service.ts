@@ -48,7 +48,8 @@ import {
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { createMember360Redactor } from '@lfx-one/shared/server';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
@@ -63,8 +64,8 @@ import {
   isMktgRunFailureReason,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { createHash } from 'node:crypto';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { createHash, randomUUID } from 'node:crypto';
+import { AuthorizationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
@@ -83,7 +84,7 @@ import { MktgDocumentRedraftContextService } from './mktg-document-redraft-conte
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
-/** Private session-keyed starts. Existing metadata operations only; the terminal cache is disposable. */
+/** Private session-keyed starts; Member answer/state transitions use conditional object versions. */
 export class MktgDocumentRunService {
   private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
@@ -573,6 +574,37 @@ export class MktgDocumentRunService {
     }
   }
 
+  /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
+  public async prepareMember360QuestionsClaim(req: Request, project: string, sessionId: string, questionsId: string): Promise<() => Promise<void>> {
+    if (!/^[a-f0-9]{64}$/.test(questionsId)) throw ServiceValidationError.forField('questionsId', 'Select the current questions.');
+    const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
+    if (!stored) throw new ResourceNotFoundError('Marketing OS run', this.hash(sessionId));
+    const subject = getEffectiveSub(req);
+    if (!subject || stored.record.agentKey !== 'member-360' || stored.record.creatorSubject !== subject) {
+      throw new AuthorizationError('Only the creator can answer this Member 360 run.');
+    }
+    if (stored.record.state !== 'questions' || stored.record.answeredQuestionsId === questionsId) {
+      throw await this.memberAnswersConflict(req, stored.record, questionsId);
+    }
+    // Prepare before the Guild read, but mutate only after that read validates the current turn.
+    return async () => {
+      const answeredAt = new Date().toISOString();
+      const metadata = {
+        ...stored.metadata,
+        state: 'writing',
+        'retry-at': mktgRunRenewAt(stored.record, Date.now()),
+        'answered-questions-id': questionsId,
+        'answered-by': subject,
+        'answered-at': answeredAt,
+        'persist-retries': '0',
+      };
+      if (await this.putMemberState(req, stored, metadata)) return;
+      const winner = await this.read(req, project, stored.key);
+      if (!winner) throw new ResourceNotFoundError('Marketing OS run', stored.record.runId);
+      throw await this.memberAnswersConflict(req, winner.record, questionsId);
+    };
+  }
+
   /** Caller validates before sending answers; invalid internal input is DEBUG, never a storage WARN. */
   public async resumeAfterQuestions(req: Request, project: string, sessionId: string, questionsId?: string): Promise<void> {
     if (questionsId !== undefined && !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId)) {
@@ -761,7 +793,7 @@ export class MktgDocumentRunService {
     }
   }
 
-  /** HEAD/check/PUT is not atomic across writers; see the accepted conditional-metadata follow-up beside start. */
+  /** Member state changes share the answers CAS fence; legacy agents retain their existing HEAD/check/PUT policy. */
   private async mark(
     req: Request,
     stored: MktgStoredStartedRun,
@@ -788,6 +820,8 @@ export class MktgDocumentRunService {
         ...(revisionId && { 'revision-id': revisionId }),
         ...(run.priorRevisionId && { 'prior-revision-id': run.priorRevisionId }),
         ...(questionsId && { 'answered-questions-id': questionsId }),
+        ...(run.answeredBySubject && { 'answered-by': run.answeredBySubject }),
+        ...(run.answeredAt && { 'answered-at': run.answeredAt }),
         ...(persistRetries !== undefined && { 'persist-retries': String(persistRetries) }),
         ...(failureText !== undefined && { 'failure-text': this.snapshot(failureText) }),
         ...(isMktgRunFailureReason(failureReason) && { 'failure-reason': failureReason }),
@@ -804,7 +838,8 @@ export class MktgDocumentRunService {
           MKTG_STARTED_RUN_STATE_ORDER[state] > (MKTG_STARTED_RUN_STATE_ORDER[current] ?? -1) ||
           (state === 'storing' && current === state && (persistRetries ?? 0) > Number(metadata['persist-retries'] ?? 0))
         );
-      }
+      },
+      stored
     );
     if (written && isMktgRunTerminal(state)) {
       logger.info(req, 'mktg_run_mark', 'Recorded terminal run state', { project: run.project, run: run.runId, state });
@@ -821,13 +856,46 @@ export class MktgDocumentRunService {
     key: string,
     body: string,
     metadata: Record<string, string>,
-    refreshMetadataWhen: (value: Record<string, string>) => boolean
+    refreshMetadataWhen: (value: Record<string, string>) => boolean,
+    stored?: MktgStoredStartedRun
   ): Promise<boolean> {
     MktgDocumentRunService.terminalCache.delete(key);
+    if (stored?.record.agentKey === 'member-360') {
+      if (!refreshMetadataWhen(stored.metadata)) return Promise.resolve(false);
+      return this.putMemberState(req, stored, metadata);
+    }
     return this.store.putContentAddressedObject(req, 'marketing-os-artifacts', key, Buffer.from(body), 'application/json; charset=utf-8', 'private', metadata, {
       refreshMetadataWhen,
     });
   }
+  /** Mutating the body makes even metadata-only transitions advance S3's content ETag. */
+  private putMemberState(req: Request, stored: MktgStoredStartedRun, metadata: Record<string, string>): Promise<boolean> {
+    if (!stored.etag) throw new PreconditionFailedError('The run has no version token. Refresh before answering.');
+    MktgDocumentRunService.terminalCache.delete(stored.key);
+    const record = JSON.parse(stored.body) as MktgStartedRunRecord;
+    const body = Buffer.from(JSON.stringify({ ...record, storageWriteId: randomUUID() }));
+    return this.store.putConditionalObject(
+      req,
+      'marketing-os-artifacts',
+      stored.key,
+      { body, contentType: 'application/json; charset=utf-8', cacheControl: 'private', metadata, ifMatch: stored.etag },
+      true
+    );
+  }
+
+  private async memberAnswersConflict(req: Request, run: MktgStartedRunRecord, questionsId: string): Promise<ConflictError> {
+    if (run.answeredQuestionsId !== questionsId || !run.answeredAt)
+      return new ConflictError('The questions are no longer waiting. Refresh the run.', 'MEMBER_360_QUESTIONS_CHANGED');
+    const author = await this.authors.resolveAuthor(req, run.answeredBySubject, 'mktg_run_answers_claim');
+    const name = author?.name?.trim();
+    const answeredBy = name && createMember360Redactor([])(name) === name ? name : 'Another writer';
+    return new ConflictError('These questions have already been answered.', MKTG_RUN_ANSWERED, {
+      operation: 'mktg_run_answers_claim',
+      service: 'object_store',
+      details: { answeredBy, answeredAt: run.answeredAt },
+    });
+  }
+
   private acceptedAttempts(metadata: Record<string, string>, attemptId: string): string[] {
     const history = metadata['attempt-history'] ?? attemptId;
     const ids = history.split(',');
@@ -951,7 +1019,8 @@ export class MktgDocumentRunService {
         priorVersion < 0 ||
         !Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, state) ||
         !isMktgRunAttemptId(attemptId) ||
-        (m['retry-at'] !== undefined && !Number.isFinite(Date.parse(m['retry-at'])))
+        (m['retry-at'] !== undefined && !Number.isFinite(Date.parse(m['retry-at']))) ||
+        (m['answered-at'] !== undefined && !Number.isFinite(Date.parse(m['answered-at'])))
       ) {
         throw ServiceValidationError.forField('run', 'Invalid stored run.');
       }
@@ -962,6 +1031,8 @@ export class MktgDocumentRunService {
       return {
         key,
         body: object.body,
+        metadata: m,
+        etag: object.etag,
         record: {
           ...record,
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
@@ -972,6 +1043,8 @@ export class MktgDocumentRunService {
           acceptedAttemptIds: this.acceptedAttempts(m, attemptId),
           retryAt: m['retry-at'],
           answeredQuestionsId: m['answered-questions-id'],
+          answeredBySubject: m['answered-by'],
+          answeredAt: m['answered-at'],
           priorRevisionId: m['prior-revision-id'],
           persistRetries: Number(m['persist-retries'] ?? 0),
           failureText: m['failure-text'] === undefined ? undefined : Buffer.from(m['failure-text'], 'base64').toString('utf8'),

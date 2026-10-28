@@ -380,7 +380,7 @@ describe('Member360RunComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
     sessionStorage.clear();
   });
-  it.each(['answer', 'send-error', 'empty', 'failed', 'poll-error'] as const)('handles the %s run state on this page', async (state) => {
+  it.each(['answer', 'send-error', 'already-answered', 'empty', 'failed', 'poll-error'] as const)('handles the %s run state on this page', async (state) => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     const questions: Member360Result = {
@@ -401,13 +401,19 @@ describe('Member360RunComponent', () => {
     run.questions.mockReturnValue(of(state === 'failed' ? { status: 'failed', message: 'The agent ended without a report.' } : questions));
     if (state === 'poll-error') run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     if (state === 'send-error') run.answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    if (state === 'already-answered')
+      run.answer.mockReturnValue(
+        throwError(
+          () => new HttpErrorResponse({ status: 409, error: { code: 'MKTG_RUN_ANSWERED', answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00Z' } })
+        )
+      );
     await render();
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     await fixture.whenStable();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     fixture.detectChanges();
-    if (state === 'answer' || state === 'send-error') {
+    if (state === 'answer' || state === 'send-error' || state === 'already-answered') {
       expect(fixture.nativeElement.querySelector('[data-testid="member-360-questions"]').textContent).toContain('Member 360 needs your answers to finish.');
       fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
       await fixture.whenStable();
@@ -416,6 +422,10 @@ describe('Member360RunComponent', () => {
         { key: 'window', text: 'Use the current analysis window.', origin: 'accepted' },
       ]);
       expect(!!fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBe(state === 'send-error');
+      if (state === 'already-answered') {
+        expect(fixture.nativeElement.textContent).toContain('Synthetic writer already answered these — the agent is writing');
+        expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"]')).not.toBeNull();
+      }
     } else {
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
       if (state === 'failed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', capability().request.documentId], expect.anything());

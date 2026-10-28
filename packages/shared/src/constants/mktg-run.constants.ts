@@ -941,5 +941,8 @@ export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-
 /** Stable questions-block hash: catalog's short digest or LinkedIn's full SHA-256. */
 export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
 
+/** Safe conflict code after a server-side questions claim has already won. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
+
 /** Plain validation message shared by every answers transport. */
 export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';

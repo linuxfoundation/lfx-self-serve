@@ -28,7 +28,7 @@ import {
   MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { readMktgActiveRunConflict, mktgActiveRunConflictHeading, mktgKitRootPath } from '@lfx-one/shared/utils';
+import { readMktgActiveRunConflict, readMktgRunAnsweredConflict, mktgActiveRunConflictHeading, mktgKitRootPath } from '@lfx-one/shared/utils';
 import { ConfirmationService, ConfirmEventType } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import {
@@ -97,6 +97,7 @@ export class Member360RunComponent {
   protected readonly historyLoading = signal(true);
   protected readonly historyError = signal('');
   protected readonly error = signal('');
+  protected readonly answersNotice = signal('');
   protected readonly uploading = signal(false);
   protected readonly submitting = signal(false);
   private readonly historyRetry = signal(0);
@@ -157,6 +158,7 @@ export class Member360RunComponent {
               this.form.controls.trackers.setValue([]);
               this.chooser()?.clear();
               this.error.set('');
+              this.answersNotice.set('');
               this.submitting.set(false);
               this.uploadSequence++;
               this.uploading.set(false);
@@ -362,6 +364,15 @@ export class Member360RunComponent {
         },
         error: (error: HttpErrorResponse) => {
           if (pending !== this.pending()) return;
+          const answered = error.status === 409 ? readMktgRunAnsweredConflict(error.error) : null;
+          if (answered) {
+            this.error.set('');
+            this.answersNotice.set(`${answered.answeredBy} already answered these — the agent is writing`);
+            const writing: MktgPendingGeneration = { ...pending, state: 'writing', answeredQuestionsId: questionsId };
+            this.attempts.save(writing, subject);
+            this.accepted.set([subject, writing]);
+            return;
+          }
           if (error.status === 409) this.pollRetry.update((value) => value + 1);
           this.error.set(error.status === 409 ? 'The questions changed — refreshed.' : 'Your answers could not be sent. They are kept — try again.');
         },

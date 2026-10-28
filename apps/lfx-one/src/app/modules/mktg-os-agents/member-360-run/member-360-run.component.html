@@ -22,6 +22,9 @@
     } @else if (!context.canWrite()) {
       <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
     } @else if (pending(); as pending) {
+      @if (answersNotice()) {
+        <lfx-message severity="info" [text]="answersNotice()" data-testid="member-360-answered-notice" />
+      }
       @if (questions().length) {
         <section class="flex flex-col gap-3" data-testid="member-360-questions">
           <h2 class="text-lg font-semibold">Member 360 needs your answers to finish.</h2>

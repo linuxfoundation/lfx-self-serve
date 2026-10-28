@@ -351,7 +351,7 @@ test('an unsupported tracker type is explained inline before upload', async ({ p
   await page.screenshot({ path: info.outputPath('unsupported-tracker.png'), fullPage: true });
 });
 
-for (const state of ['resume', 'send-error', 'load-error', 'empty'] as const) {
+for (const state of ['resume', 'send-error', 'already-answered', 'load-error', 'empty'] as const) {
   test(`Member questions: ${state}`, async ({ page }, info) => {
     await setupMember360(page); // Includes suppressCookieBanner(page), writer/flag/auth stubs.
     let answered = false;
@@ -385,6 +385,8 @@ for (const state of ['resume', 'send-error', 'load-error', 'empty'] as const) {
       submitted = route.request().postDataJSON();
       if (state === 'send-error') return route.fulfill({ status: 503, body: '{}' });
       answered = true;
+      if (state === 'already-answered')
+        return route.fulfill({ status: 409, json: { code: 'MKTG_RUN_ANSWERED', answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00Z' } });
       return json(route, { success: true });
     });
     await openMember360(page);
@@ -414,6 +416,8 @@ for (const state of ['resume', 'send-error', 'load-error', 'empty'] as const) {
       } else {
         await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
         await expect(page.getByTestId('member-360-generating')).toContainText('Working on Member 360');
+        if (state === 'already-answered')
+          await expect(page.getByTestId('member-360-answered-notice')).toContainText('Synthetic writer already answered these — the agent is writing');
       }
     }
     await expect(page).toHaveURL(/\/mktg-os-agents\/member-360\?/);

@@ -44,6 +44,8 @@ const flows = vi.hoisted(() => ({
   get: vi.fn(),
   head: vi.fn(),
   beforePut: vi.fn(),
+  beforeConditionalPut: vi.fn(),
+  omitEtag: false,
   active: 0,
   max: 0,
 }));
@@ -130,7 +132,17 @@ vi.mock('./object-store.service', () => ({
       flows.max = Math.max(flows.max, flows.active);
       await Promise.resolve();
       flows.active--;
-      return objects.get(key) ?? null;
+      const object = objects.get(key);
+      return object
+        ? { ...object, metadata: { ...object.metadata }, etag: flows.omitEtag ? undefined : createHash('sha256').update(object.body).digest('hex') }
+        : null;
+    }
+    public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: import('@lfx-one/shared/interfaces').ObjectStorePutInput) {
+      await flows.beforeConditionalPut(input.metadata);
+      const current = objects.get(key);
+      if (!current || input.ifMatch !== createHash('sha256').update(current.body).digest('hex')) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date() });
+      return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
       return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -198,6 +210,8 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
+    flows.beforeConditionalPut.mockReset();
+    flows.omitEtag = false;
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.events.mockReset().mockResolvedValue([]);
     flows.interrupt.mockReset().mockResolvedValue(undefined);
@@ -212,6 +226,83 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  const memberOwner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-member-owner' } } });
+  const questionId = 'c'.repeat(64);
+  async function waitingMember() {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    stored().metadata['state'] = 'questions';
+  }
+  it('lets exactly one concurrent Member answer claim win a body-version CAS', async () => {
+    await waitingMember();
+    flows.author.mockResolvedValue({ name: 'Synthetic writer' });
+    const before = stored().body;
+    const claims = await Promise.all([
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+    ]);
+    const outcomes = await Promise.allSettled(claims.map((claim) => claim()));
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    const losses = outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : []));
+    expect(losses[0]).toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00.000Z' },
+    });
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain(session);
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().body).not.toBe(before); // metadata-only writes cannot fence S3 ETags.
+    const projection = await service.readProgress(memberOwner, project, 'member-360');
+    expect(JSON.stringify(projection)).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(projection)).not.toContain('answeredBySubject');
+    expect(JSON.stringify(projection)).not.toContain('storageWriteId');
+  });
+  it.each([null, { name: 'owner@example.test' }])('uses a neutral acknowledgement for unavailable/unsafe author %j', async (author) => {
+    await waitingMember();
+    flows.author.mockResolvedValue(author);
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    await expect(service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)).rejects.toMatchObject({
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Another writer' },
+    });
+  });
+  it('does not let a stale Member failure write erase the winning answer', async () => {
+    await waitingMember();
+    let release: () => void = () => undefined;
+    let observed: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      observed();
+      await blocked;
+    });
+    flows.member.mockResolvedValue({ status: 'failed', message: 'A stale failure.' });
+    const stale = service.recordResult(memberOwner, session, { status: 'failed' }, project);
+    await entered;
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    release();
+    await stale;
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().metadata['failure-text']).toBeUndefined();
+  });
+  it('never claims on behalf of another writer or without an object version token', async () => {
+    await waitingMember();
+    const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other-owner' } } });
+    await expect(service.prepareMember360QuestionsClaim(other, project, session, questionId)).rejects.toMatchObject({ statusCode: 403 });
+    flows.omitEtag = true;
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await expect(claim()).rejects.toMatchObject({ statusCode: 412 });
+    expect(stored().metadata['state']).toBe('questions');
   });
 
   it.each(['writing', 'questions', 'storing'] as const)('refuses another start while %s with safe conflict facts', async (state) => {

@@ -104,7 +104,7 @@ export class Member360Service {
   }
 
   /** Only a validated, creator-authorized controller call reaches this transport. */
-  public async sendAnswers(req: Request, body: Member360AnswersBody): Promise<void> {
+  public async sendAnswers(req: Request, body: Member360AnswersBody, beforeSend: () => Promise<void>): Promise<void> {
     const payloads = await this.guild.getRawEventPayloads(req, body.sessionId);
     const text = findMember360Questions(payloads);
     const turn = text ? parseMember360Questions(text) : null;
@@ -116,6 +116,7 @@ export class Member360Service {
     }
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
     if (agent?.status !== 'active' || !agent.guildAgentHandle) throw ServiceValidationError.forField('agentId', 'Member 360 is unavailable.');
+    await beforeSend(); // Only the server-side CAS winner may create the next user turn.
     await this.guild.sendFollowUp(req, body.sessionId, {
       message: renderMember360Answers(body.answers.map(({ id, ...answer }) => ({ ...answer, key: id }))),
       handle: agent.guildAgentHandle, // sendFollowUp routes on its own line by default.

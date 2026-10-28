@@ -8,7 +8,7 @@ import { Member360Session } from '@lfx-one/shared/interfaces';
 import { member360GenerateSchema, member360AnswersSchema } from '@lfx-one/shared/server';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ConflictError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { Member360Service } from '../services/member-360.service';
 import { MktgDocumentRunService } from '../services/mktg-document-run.service';
@@ -90,8 +90,15 @@ export class Member360Controller {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
       }
       const projectUid = await this.runs.resolveProject(req, project);
-      await this.service.sendAnswers(req, parsed.data);
-      await this.runs.resumeAfterQuestions(req, projectUid, sessionId, questionsId);
+      const prepareClaim = () => this.runs.prepareMember360QuestionsClaim(req, projectUid, sessionId, questionsId);
+      const claim = await prepareClaim();
+      try {
+        await this.service.sendAnswers(req, parsed.data, claim);
+      } catch (error) {
+        // A winning answer may have moved Guild on while our questions read was in flight.
+        if (error instanceof ConflictError && error.code === 'MEMBER_360_QUESTIONS_CHANGED') await prepareClaim();
+        throw error;
+      }
       logger.success(req, operation, start, { count: parsed.data.answers.length });
       res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {
