@@ -18,6 +18,8 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
@@ -224,7 +226,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -677,6 +679,25 @@ export class ImplementationTabComponent implements OnInit {
     linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
   });
 
+  /**
+   * The call, promotion and price sub-forms, on the LFX form-control API the `lfx-input-text` and
+   * `lfx-select` wrappers bind to. TRANSIENT, as the sitelink and snippet boxes are: what is typed
+   * here reaches the saved draft only when an entry is ADDED, so none of these is listed in
+   * `emitDraft`. Raw text throughout, numbers included, so a refused entry stays on screen as typed.
+   *
+   * The price table's rows are a `FormArray` held at Google's three to eight, one `FormGroup` per row,
+   * so each row's boxes bind to their own group.
+   */
+  protected readonly googleCallExtensionForm = this.fb.nonNullable.group<CampaignCallExtensionDraft>({ countryCode: '', phoneNumber: '' });
+  protected readonly googlePromotionForm = this.fb.nonNullable.group<CampaignPromotionDraft>(this.emptyGooglePromotionDraft());
+  protected readonly googlePriceForm = this.fb.nonNullable.group({
+    type: this.fb.nonNullable.control<string>(GOOGLE_ADS_PRICE_TYPES[0]),
+    priceQualifier: '',
+    languageCode: '',
+    currencyCode: '',
+    offerings: this.fb.nonNullable.array(Array.from({ length: GOOGLE_ADS_MIN_PRICE_OFFERINGS }, () => this.googlePriceRowGroup())),
+  });
+
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
   protected readonly creationProgress = signal<string[]>([]);
@@ -1072,17 +1093,39 @@ export class ImplementationTabComponent implements OnInit {
    * language select is one — the operator picks rather than spells — while the BFF checks only their
    * shape, so a value Google adds later is not refused there.
    */
-  protected readonly googlePriceTypes = GOOGLE_ADS_PRICE_TYPES;
-  protected readonly googlePriceQualifiers = GOOGLE_ADS_PRICE_QUALIFIERS;
-  protected readonly googlePriceUnits = GOOGLE_ADS_PRICE_UNITS;
+  protected readonly googlePriceTypeOptions = GOOGLE_ADS_PRICE_TYPES.map((value) => ({ label: value, value }));
+  protected readonly googlePriceQualifierOptions = [
+    { label: 'No qualifier', value: '' },
+    ...GOOGLE_ADS_PRICE_QUALIFIERS.map((value) => ({ label: value, value })),
+  ];
+  protected readonly googlePriceUnitOptions = [{ label: 'No unit', value: '' }, ...GOOGLE_ADS_PRICE_UNITS.map((value) => ({ label: value, value }))];
+  /** The promotion's two oneofs, one select each, so the form cannot express both arms of either. */
+  protected readonly googlePromotionDiscountOptions = [
+    { label: 'Percent off', value: 'percent' },
+    { label: 'Amount off', value: 'amount' },
+  ];
+  protected readonly googlePromotionConditionOptions = [
+    { label: 'No condition', value: 'none' },
+    { label: 'Promotion code', value: 'code' },
+    { label: 'Orders over', value: 'ordersOver' },
+  ];
   /**
-   * The three sub-forms' live values, on the rule {@link googleSitelinkDraft} follows: transient,
-   * reaching the saved draft only when an entry is added. Raw text throughout, numbers included, so
-   * a refused entry stays on screen exactly as typed.
+   * The three sub-forms' live values as signals, so the refusal computeds below re-run as the
+   * operator types — the forms are the source of truth, these are their read side.
    */
-  protected readonly googleCallExtensionDraft = signal<CampaignCallExtensionDraft>({ countryCode: '', phoneNumber: '' });
-  protected readonly googlePromotionDraft = signal<CampaignPromotionDraft>(this.emptyGooglePromotionDraft());
-  protected readonly googlePriceDraft = signal<CampaignPriceExtensionDraft>(this.emptyGooglePriceDraft());
+  protected readonly googleCallExtensionDraft: Signal<CampaignCallExtensionDraft> = this.initFormDraft(this.googleCallExtensionForm);
+  protected readonly googlePromotionDraft: Signal<CampaignPromotionDraft> = this.initFormDraft(this.googlePromotionForm);
+  protected readonly googlePriceDraft: Signal<CampaignPriceExtensionDraft> = this.initFormDraft(this.googlePriceForm);
+  /**
+   * The price table's row groups, for the template's `@for`. A `FormArray`'s `controls` is not a
+   * signal, so the template cannot read it directly under zoneless change detection; reading
+   * {@link googlePriceDraft} here re-runs this on every row pushed or removed. Tracked by the group
+   * itself, which is a stable identity a typed row does not otherwise have.
+   */
+  protected readonly googlePriceRowForms = computed(() => {
+    this.googlePriceDraft();
+    return [...this.googlePriceForm.controls.offerings.controls];
+  });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -3083,16 +3126,10 @@ export class ImplementationTabComponent implements OnInit {
     return true;
   }
 
-  protected onGoogleCallExtensionDraftInput(field: keyof CampaignCallExtensionDraft, event: Event): void {
-    // Draft only — no `emitDraft()`, matching the other extension boxes. It reaches the draft on ADD.
-    const value = (event.target as HTMLInputElement).value;
-    this.googleCallExtensionDraft.update((draft) => ({ ...draft, [field]: value }));
-  }
-
   protected onGoogleCallExtensionAdd(): void {
     // Cleared ONLY on success, so a refused number keeps both boxes and its warning.
     if (this.addGoogleCallExtension(this.googleCallExtensionDraft())) {
-      this.googleCallExtensionDraft.set({ countryCode: '', phoneNumber: '' });
+      this.googleCallExtensionForm.reset();
     }
   }
 
@@ -3117,15 +3154,10 @@ export class ImplementationTabComponent implements OnInit {
     return true;
   }
 
-  protected onGooglePromotionDraftInput(field: keyof CampaignPromotionDraft, event: Event): void {
-    // Draft only, as above. Two of these boxes are `<select>`s, which is why this widens.
-    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
-    this.googlePromotionDraft.update((draft) => ({ ...draft, [field]: value }));
-  }
-
   protected onGooglePromotionAdd(): void {
+    // Cleared ONLY on success, as the call box is.
     if (this.addGooglePromotion(this.googlePromotionDraft())) {
-      this.googlePromotionDraft.set(this.emptyGooglePromotionDraft());
+      this.googlePromotionForm.reset();
     }
   }
 
@@ -3148,36 +3180,24 @@ export class ImplementationTabComponent implements OnInit {
     return true;
   }
 
-  protected onGooglePriceDraftInput(field: Exclude<keyof CampaignPriceExtensionDraft, 'offerings'>, event: Event): void {
-    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
-    this.googlePriceDraft.update((draft) => ({ ...draft, [field]: value }));
-  }
-
-  protected onGooglePriceRowInput(index: number, field: keyof CampaignPriceOfferingDraft, event: Event): void {
-    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
-    this.googlePriceDraft.update((draft) => ({
-      ...draft,
-      offerings: draft.offerings.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
-    }));
-  }
-
   /** One more row, up to Google's eight. The button is hidden at the ceiling; this holds it anyway. */
   protected addGooglePriceRow(): void {
-    this.googlePriceDraft.update((draft) =>
-      draft.offerings.length >= GOOGLE_ADS_MAX_PRICE_OFFERINGS ? draft : { ...draft, offerings: [...draft.offerings, this.emptyGooglePriceRow()] }
-    );
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length < GOOGLE_ADS_MAX_PRICE_OFFERINGS) rows.push(this.googlePriceRowGroup());
   }
 
   /** One row fewer, down to Google's three — a table below that is refused, so it cannot be built. */
   protected removeGooglePriceRow(index: number): void {
-    this.googlePriceDraft.update((draft) =>
-      draft.offerings.length <= GOOGLE_ADS_MIN_PRICE_OFFERINGS ? draft : { ...draft, offerings: draft.offerings.filter((_, i) => i !== index) }
-    );
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(index);
   }
 
   protected onGooglePriceAdd(): void {
+    // Cleared ONLY on success, and back to Google's three empty rows.
     if (this.addGooglePrice(this.googlePriceDraft())) {
-      this.googlePriceDraft.set(this.emptyGooglePriceDraft());
+      const rows = this.googlePriceForm.controls.offerings;
+      while (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(rows.length - 1);
+      this.googlePriceForm.reset();
     }
   }
 
@@ -5710,19 +5730,17 @@ export class ImplementationTabComponent implements OnInit {
     };
   }
 
-  /** An empty price table opens with Google's minimum of three rows, so it is buildable as it stands. */
-  private emptyGooglePriceDraft(): CampaignPriceExtensionDraft {
-    return {
-      type: GOOGLE_ADS_PRICE_TYPES[0],
-      priceQualifier: '',
-      languageCode: '',
-      currencyCode: '',
-      offerings: Array.from({ length: GOOGLE_ADS_MIN_PRICE_OFFERINGS }, () => this.emptyGooglePriceRow()),
-    };
+  /** One empty price row's controls. */
+  private googlePriceRowGroup(): FormGroup<{ [K in keyof CampaignPriceOfferingDraft]: FormControl<string> }> {
+    return this.fb.nonNullable.group<CampaignPriceOfferingDraft>({ header: '', description: '', amount: '', unit: '', finalUrl: '' });
   }
 
-  private emptyGooglePriceRow(): CampaignPriceOfferingDraft {
-    return { header: '', description: '', amount: '', unit: '', finalUrl: '' };
+  /**
+   * A sub-form's raw value as a signal, re-read on every change — including a row pushed onto or
+   * removed from the price table's `FormArray`, which `valueChanges` also reports.
+   */
+  private initFormDraft<T>(form: { valueChanges: Observable<unknown>; getRawValue(): T }): Signal<T> {
+    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

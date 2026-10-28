@@ -7131,10 +7131,12 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   const URL = 'https://events.example.org/register';
   const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  /** The focusable `<input>` an `lfx-input-text` wrapper renders, found through the wrapper's test id. */
+  const field = (testId: string): HTMLInputElement | null => find(testId)?.querySelector('input') ?? null;
   const type = (testId: string, value: string): void => {
-    const el = find(testId) as HTMLInputElement | HTMLSelectElement;
+    const el = field(testId) as HTMLInputElement;
     el.value = value;
-    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input'));
+    el.dispatchEvent(new Event('input'));
     fixture.detectChanges();
   };
 
@@ -7142,11 +7144,11 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     return { ...c['emptyGooglePromotionDraft'](), promotionTarget: 'Conference passes', discount: '25', finalUrl: URL, ...overrides };
   }
 
-  function priceDraft(c: Record<string, any>, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  function priceDraft(_c: Record<string, any>, overrides: Record<string, unknown> = {}): Record<string, unknown> {
     const row = (header: string) => ({ header, description: 'Two days', amount: '499', unit: '', finalUrl: URL });
     return {
-      ...c['emptyGooglePriceDraft'](),
       type: 'EVENTS',
+      priceQualifier: '',
       languageCode: 'en',
       currencyCode: 'usd',
       offerings: [row('Standard'), row('Student'), row('Virtual')],
@@ -7204,7 +7206,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     fixture.detectChanges();
 
     expect(find('implementation-google-call-extensions-section')?.textContent).toContain('+1 415 555 0100 (US)');
-    expect((find('implementation-google-call-number') as HTMLInputElement).value).toBe('');
+    expect(field('implementation-google-call-number')?.value).toBe('');
   });
 
   it('stores only the discount and condition arms the promotion form selected, with no empty optional fields', () => {
@@ -7245,7 +7247,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     ['a serving window ending before it starts', { startDate: '2026-11-10', endDate: '2026-11-01' }, 'serving end date'],
   ])('refuses %s, and names it under the sub-form', (_label, overrides, expected) => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePromotionDraft'].set(promotionDraft(c, overrides));
+    c['googlePromotionForm'].setValue(promotionDraft(c, overrides));
     fixture.detectChanges();
 
     expect(c['addGooglePromotion'](c['googlePromotionDraft']())).toBe(false);
@@ -7264,7 +7266,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     ['a minimum order of zero', { eligibilityKind: 'ordersOver', ordersOverAmount: '0', currencyCode: 'USD' }, 'greater than 0'],
   ])('refuses %s rather than dropping the condition', (_label, overrides, expected) => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePromotionDraft'].set(promotionDraft(c, overrides));
+    c['googlePromotionForm'].setValue(promotionDraft(c, overrides));
     fixture.detectChanges();
 
     expect(c['googlePromotionAddDisabled']()).toBe(true);
@@ -7275,15 +7277,15 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   it('points the condition and currency boxes at the error line, and labels each date picker visibly', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePromotionDraft'].set(promotionDraft(c, { discountKind: 'amount', discount: '50', eligibilityKind: 'code', promotionCode: 'C'.repeat(21) }));
+    c['googlePromotionForm'].setValue(promotionDraft(c, { discountKind: 'amount', discount: '50', eligibilityKind: 'code', promotionCode: 'C'.repeat(21) }));
     fixture.detectChanges();
 
     for (const testId of ['implementation-google-promotion-code', 'implementation-google-promotion-currency']) {
-      expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
-      expect(find(testId)?.getAttribute('aria-invalid')).toBe('true');
+      expect(field(testId)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
+      expect(field(testId)?.getAttribute('aria-invalid')).toBe('true');
     }
-    for (const field of ['occasion', 'language', 'start', 'end', 'redemption-start', 'redemption-end']) {
-      expect(find(`implementation-google-promotion-${field}`)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
+    for (const name of ['occasion', 'language', 'start', 'end', 'redemption-start', 'redemption-end']) {
+      expect(field(`implementation-google-promotion-${name}`)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
     }
     expect(find('implementation-google-promotion-start')?.closest('label')?.textContent).toContain('Shows from');
     expect(find('implementation-google-promotion-redemption-end')?.closest('label')?.textContent).toContain('Redeemable until');
@@ -7291,7 +7293,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   it('says nothing about a promotion until what is on sale, the discount and the destination are filled', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePromotionDraft'].set(promotionDraft(c, { finalUrl: '', discount: '150' }));
+    c['googlePromotionForm'].setValue(promotionDraft(c, { finalUrl: '', discount: '150' }));
     fixture.detectChanges();
 
     expect(c['googlePromotionDraftError']()).toBeNull();
@@ -7317,7 +7319,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     const c = seedChannel(fixture, { includeSearch: true });
     const draft = priceDraft(c);
     (draft['offerings'] as { header: string }[])[2].header = 'standard';
-    c['googlePriceDraft'].set(draft);
+    c['googlePriceForm'].setValue(draft);
     fixture.detectChanges();
 
     expect(c['addGooglePrice'](draft)).toBe(false);
@@ -7326,19 +7328,20 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   it('points every price box at the error line while the table is refused', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePriceDraft'].set(priceDraft(c, { currencyCode: 'DOLLARS' }));
+    c['googlePriceForm'].setValue(priceDraft(c, { currencyCode: 'DOLLARS' }));
     fixture.detectChanges();
 
     expect(c['googlePriceDraftError']()).toContain('three-letter ISO');
+    // The type, qualifier and unit are `lfx-select`s offering only Google's own enum names, so no
+    // refusal can name them; every typed box points at the error line.
     for (const testId of [
-      'implementation-google-price-type',
-      'implementation-google-price-qualifier',
       'implementation-google-price-language',
       'implementation-google-price-currency',
-      'implementation-google-price-row-unit-0',
+      'implementation-google-price-row-header-0',
+      'implementation-google-price-row-amount-0',
     ]) {
-      expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-price-error');
-      expect(find(testId)?.getAttribute('aria-invalid')).toBe('true');
+      expect(field(testId)?.getAttribute('aria-describedby')).toBe('google-price-error');
+      expect(field(testId)?.getAttribute('aria-invalid')).toBe('true');
     }
   });
 
@@ -7359,7 +7362,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
 
   it('builds a price table through the sub-form, row by row', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    type('implementation-google-price-type', 'SERVICES');
+    c['googlePriceForm'].controls.type.setValue('SERVICES');
     type('implementation-google-price-language', 'en');
     type('implementation-google-price-currency', 'USD');
     ['Standard', 'Student', 'Virtual'].forEach((header, r) => {
@@ -7368,7 +7371,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
       type(`implementation-google-price-row-amount-${r}`, '99');
       type(`implementation-google-price-row-url-${r}`, URL);
     });
-    type('implementation-google-price-row-unit-1', 'PER_DAY');
+    c['googlePriceForm'].controls.offerings.at(1).controls.unit.setValue('PER_DAY');
 
     (find('implementation-google-price-add') as HTMLButtonElement).click();
     fixture.detectChanges();

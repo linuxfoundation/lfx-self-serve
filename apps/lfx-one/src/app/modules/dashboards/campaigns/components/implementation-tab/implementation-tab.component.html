@@ -903,25 +903,27 @@
           }
           @if (!googleCallExtensionsFull()) {
             <div class="flex flex-col gap-2">
-              <input
-                id="google-call-country"
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="countryCode"
+                inputId="google-call-country"
                 type="text"
+                size="small"
                 placeholder="Country code (e.g. US)"
-                [value]="googleCallExtensionDraft().countryCode"
-                (input)="onGoogleCallExtensionDraftInput('countryCode', $event)"
-                [attr.aria-invalid]="googleCallExtensionDraftError() ? 'true' : null"
-                [attr.aria-describedby]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
-                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
                 data-testid="implementation-google-call-country" />
-              <input
+              <lfx-input-text
+                [form]="googleCallExtensionForm"
+                control="phoneNumber"
                 type="tel"
+                size="small"
                 placeholder="Phone number"
-                aria-label="Call extension phone number"
-                [value]="googleCallExtensionDraft().phoneNumber"
-                (input)="onGoogleCallExtensionDraftInput('phoneNumber', $event)"
-                [attr.aria-invalid]="googleCallExtensionDraftError() ? 'true' : null"
-                [attr.aria-describedby]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
-                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                ariaLabel="Call extension phone number"
+                [invalid]="!!googleCallExtensionDraftError()"
+                [describedBy]="googleCallExtensionDraftError() ? 'google-call-extension-error' : null"
+                class="block"
                 data-testid="implementation-google-call-number" />
               <button
                 type="button"
@@ -985,118 +987,117 @@
           }
           @if (!googlePromotionsFull()) {
             <div class="flex flex-col gap-2">
-              <input
-                id="google-promotion-target"
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="promotionTarget"
+                inputId="google-promotion-target"
                 type="text"
+                size="small"
                 placeholder="What is on sale (e.g. Conference passes)"
-                [value]="googlePromotionDraft().promotionTarget"
-                (input)="onGooglePromotionDraftInput('promotionTarget', $event)"
-                [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
                 data-testid="implementation-google-promotion-target" />
               <div class="flex gap-2">
-                <select
-                  aria-label="Promotion discount kind"
-                  (change)="onGooglePromotionDraftInput('discountKind', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-discount-kind">
-                  <option value="percent" [selected]="googlePromotionDraft().discountKind === 'percent'">Percent off</option>
-                  <option value="amount" [selected]="googlePromotionDraft().discountKind === 'amount'">Amount off</option>
-                </select>
-                <input
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="discountKind"
+                  [options]="googlePromotionDiscountOptions"
+                  size="small"
+                  ariaLabel="Promotion discount kind"
+                  data-testid="implementation-google-promotion-discount-kind" />
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="discount"
                   type="text"
-                  inputmode="decimal"
+                  size="small"
                   placeholder="Discount"
-                  aria-label="Promotion discount"
-                  [value]="googlePromotionDraft().discount"
-                  (input)="onGooglePromotionDraftInput('discount', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Promotion discount"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
                   data-testid="implementation-google-promotion-discount" />
               </div>
               <div class="flex gap-2">
-                <select
-                  aria-label="Promotion condition"
-                  (change)="onGooglePromotionDraftInput('eligibilityKind', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-eligibility-kind">
-                  <option value="none" [selected]="googlePromotionDraft().eligibilityKind === 'none'">No condition</option>
-                  <option value="code" [selected]="googlePromotionDraft().eligibilityKind === 'code'">Promotion code</option>
-                  <option value="ordersOver" [selected]="googlePromotionDraft().eligibilityKind === 'ordersOver'">Orders over</option>
-                </select>
+                <lfx-select
+                  [form]="googlePromotionForm"
+                  control="eligibilityKind"
+                  [options]="googlePromotionConditionOptions"
+                  size="small"
+                  ariaLabel="Promotion condition"
+                  data-testid="implementation-google-promotion-eligibility-kind" />
                 @if (googlePromotionDraft().eligibilityKind === 'code') {
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="promotionCode"
                     type="text"
+                    size="small"
                     placeholder="Promotion code"
-                    aria-label="Promotion code"
-                    [value]="googlePromotionDraft().promotionCode"
-                    (input)="onGooglePromotionDraftInput('promotionCode', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    ariaLabel="Promotion code"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
                     data-testid="implementation-google-promotion-code" />
                 } @else if (googlePromotionDraft().eligibilityKind === 'ordersOver') {
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="ordersOverAmount"
                     type="text"
-                    inputmode="decimal"
+                    size="small"
                     placeholder="Minimum order amount"
-                    aria-label="Promotion minimum order amount"
-                    [value]="googlePromotionDraft().ordersOverAmount"
-                    (input)="onGooglePromotionDraftInput('ordersOverAmount', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    ariaLabel="Promotion minimum order amount"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block min-w-0 flex-1"
                     data-testid="implementation-google-promotion-orders-over" />
                 }
               </div>
               @if (googlePromotionNeedsCurrency()) {
-                <input
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="currencyCode"
                   type="text"
+                  size="small"
                   placeholder="Currency (e.g. USD)"
-                  aria-label="Promotion currency code"
-                  [value]="googlePromotionDraft().currencyCode"
-                  (input)="onGooglePromotionDraftInput('currencyCode', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Promotion currency code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block"
                   data-testid="implementation-google-promotion-currency" />
               }
-              <input
+              <lfx-input-text
+                [form]="googlePromotionForm"
+                control="finalUrl"
                 type="url"
+                size="small"
                 placeholder="Destination URL"
-                aria-label="Promotion destination URL"
-                [value]="googlePromotionDraft().finalUrl"
-                (input)="onGooglePromotionDraftInput('finalUrl', $event)"
-                [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                ariaLabel="Promotion destination URL"
+                [invalid]="!!googlePromotionDraftError()"
+                [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                class="block"
                 data-testid="implementation-google-promotion-url" />
               <div class="flex gap-2">
-                <input
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="occasion"
                   type="text"
+                  size="small"
                   placeholder="Occasion (optional, e.g. BLACK_FRIDAY)"
-                  aria-label="Promotion occasion"
-                  [value]="googlePromotionDraft().occasion"
-                  (input)="onGooglePromotionDraftInput('occasion', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Promotion occasion"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
                   data-testid="implementation-google-promotion-occasion" />
-                <input
+                <lfx-input-text
+                  [form]="googlePromotionForm"
+                  control="languageCode"
                   type="text"
+                  size="small"
                   placeholder="Language (optional, e.g. en)"
-                  aria-label="Promotion language code"
-                  [value]="googlePromotionDraft().languageCode"
-                  (input)="onGooglePromotionDraftInput('languageCode', $event)"
-                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                  class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Promotion language code"
+                  [invalid]="!!googlePromotionDraftError()"
+                  [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                  class="block min-w-0 flex-1"
                   data-testid="implementation-google-promotion-language" />
               </div>
               <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed.
@@ -1104,46 +1105,50 @@
               <div class="grid grid-cols-2 gap-2">
                 <label class="flex flex-col gap-1 text-[10px] text-gray-600">
                   Shows from
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="startDate"
                     type="date"
-                    [value]="googlePromotionDraft().startDate"
-                    (input)="onGooglePromotionDraftInput('startDate', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
                     data-testid="implementation-google-promotion-start" />
                 </label>
                 <label class="flex flex-col gap-1 text-[10px] text-gray-600">
                   Shows until
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="endDate"
                     type="date"
-                    [value]="googlePromotionDraft().endDate"
-                    (input)="onGooglePromotionDraftInput('endDate', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
                     data-testid="implementation-google-promotion-end" />
                 </label>
                 <label class="flex flex-col gap-1 text-[10px] text-gray-600">
                   Redeemable from
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionStartDate"
                     type="date"
-                    [value]="googlePromotionDraft().redemptionStartDate"
-                    (input)="onGooglePromotionDraftInput('redemptionStartDate', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
                     data-testid="implementation-google-promotion-redemption-start" />
                 </label>
                 <label class="flex flex-col gap-1 text-[10px] text-gray-600">
                   Redeemable until
-                  <input
+                  <lfx-input-text
+                    [form]="googlePromotionForm"
+                    control="redemptionEndDate"
                     type="date"
-                    [value]="googlePromotionDraft().redemptionEndDate"
-                    (input)="onGooglePromotionDraftInput('redemptionEndDate', $event)"
-                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
-                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    size="small"
+                    [invalid]="!!googlePromotionDraftError()"
+                    [describedBy]="googlePromotionDraftError() ? 'google-promotion-error' : null"
+                    class="block"
                     data-testid="implementation-google-promotion-redemption-end" />
                 </label>
               </div>
@@ -1209,91 +1214,75 @@
           @if (!googlePricesFull()) {
             <div class="flex flex-col gap-2">
               <div class="flex flex-wrap gap-2">
-                <select
-                  id="google-price-type"
-                  (change)="onGooglePriceDraftInput('type', $event)"
-                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                  data-testid="implementation-google-price-type">
-                  @for (type of googlePriceTypes; track type) {
-                    <option [value]="type" [selected]="googlePriceDraft().type === type">{{ type }}</option>
-                  }
-                </select>
-                <select
-                  aria-label="Price qualifier"
-                  (change)="onGooglePriceDraftInput('priceQualifier', $event)"
-                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                  class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                  data-testid="implementation-google-price-qualifier">
-                  <option value="" [selected]="googlePriceDraft().priceQualifier === ''">No qualifier</option>
-                  @for (qualifier of googlePriceQualifiers; track qualifier) {
-                    <option [value]="qualifier" [selected]="googlePriceDraft().priceQualifier === qualifier">{{ qualifier }}</option>
-                  }
-                </select>
-                <input
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="type"
+                  inputId="google-price-type"
+                  [options]="googlePriceTypeOptions"
+                  size="small"
+                  data-testid="implementation-google-price-type" />
+                <lfx-select
+                  [form]="googlePriceForm"
+                  control="priceQualifier"
+                  [options]="googlePriceQualifierOptions"
+                  size="small"
+                  ariaLabel="Price qualifier"
+                  data-testid="implementation-google-price-qualifier" />
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="languageCode"
                   type="text"
+                  size="small"
                   placeholder="Language (e.g. en)"
-                  aria-label="Price extension language code"
-                  [value]="googlePriceDraft().languageCode"
-                  (input)="onGooglePriceDraftInput('languageCode', $event)"
-                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                  class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Price extension language code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
                   data-testid="implementation-google-price-language" />
-                <input
+                <lfx-input-text
+                  [form]="googlePriceForm"
+                  control="currencyCode"
                   type="text"
+                  size="small"
                   placeholder="Currency (e.g. USD)"
-                  aria-label="Price extension currency code"
-                  [value]="googlePriceDraft().currencyCode"
-                  (input)="onGooglePriceDraftInput('currencyCode', $event)"
-                  [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                  class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                  ariaLabel="Price extension currency code"
+                  [invalid]="!!googlePriceDraftError()"
+                  [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                  class="block w-28"
                   data-testid="implementation-google-price-currency" />
               </div>
-              <!--
-                Tracked by position: a row being typed has no identity yet — its header may be blank
-                or repeated, which is exactly what the guard is about to say — and every box binds
-                `[value]` from the draft, so a removal re-renders the right text into each row.
-              -->
-              @for (row of googlePriceDraft().offerings; track $index; let r = $index) {
+              @for (row of googlePriceRowForms(); track row; let r = $index) {
                 <div class="flex flex-col gap-2 rounded-md border border-gray-100 p-2" [attr.data-testid]="'implementation-google-price-row-' + r">
                   <div class="flex gap-2">
-                    <input
+                    <lfx-input-text
+                      [form]="row"
+                      control="header"
                       type="text"
+                      size="small"
                       placeholder="Header"
-                      [attr.aria-label]="'Price row ' + (r + 1) + ' header'"
-                      [value]="row.header"
-                      (input)="onGooglePriceRowInput(r, 'header', $event)"
-                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                      class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' header'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block min-w-0 flex-1"
                       [attr.data-testid]="'implementation-google-price-row-header-' + r" />
-                    <input
+                    <lfx-input-text
+                      [form]="row"
+                      control="amount"
                       type="text"
-                      inputmode="decimal"
+                      size="small"
                       placeholder="Price"
-                      [attr.aria-label]="'Price row ' + (r + 1) + ' price'"
-                      [value]="row.amount"
-                      (input)="onGooglePriceRowInput(r, 'amount', $event)"
-                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                      class="w-24 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' price'"
+                      [invalid]="!!googlePriceDraftError()"
+                      [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                      class="block w-24"
                       [attr.data-testid]="'implementation-google-price-row-amount-' + r" />
-                    <select
-                      [attr.aria-label]="'Price row ' + (r + 1) + ' unit'"
-                      (change)="onGooglePriceRowInput(r, 'unit', $event)"
-                      [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                      class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                      [attr.data-testid]="'implementation-google-price-row-unit-' + r">
-                      <option value="" [selected]="row.unit === ''">No unit</option>
-                      @for (unit of googlePriceUnits; track unit) {
-                        <option [value]="unit" [selected]="row.unit === unit">{{ unit }}</option>
-                      }
-                    </select>
+                    <lfx-select
+                      [form]="row"
+                      control="unit"
+                      [options]="googlePriceUnitOptions"
+                      size="small"
+                      [ariaLabel]="'Price row ' + (r + 1) + ' unit'"
+                      [attr.data-testid]="'implementation-google-price-row-unit-' + r" />
                     @if (googlePriceDraft().offerings.length > googleMinPriceRows) {
                       <button
                         type="button"
@@ -1305,25 +1294,27 @@
                       </button>
                     }
                   </div>
-                  <input
+                  <lfx-input-text
+                    [form]="row"
+                    control="description"
                     type="text"
+                    size="small"
                     placeholder="Description"
-                    [attr.aria-label]="'Price row ' + (r + 1) + ' description'"
-                    [value]="row.description"
-                    (input)="onGooglePriceRowInput(r, 'description', $event)"
-                    [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                    [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' description'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
                     [attr.data-testid]="'implementation-google-price-row-description-' + r" />
-                  <input
+                  <lfx-input-text
+                    [form]="row"
+                    control="finalUrl"
                     type="url"
+                    size="small"
                     placeholder="Destination URL"
-                    [attr.aria-label]="'Price row ' + (r + 1) + ' destination URL'"
-                    [value]="row.finalUrl"
-                    (input)="onGooglePriceRowInput(r, 'finalUrl', $event)"
-                    [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
-                    [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    [ariaLabel]="'Price row ' + (r + 1) + ' destination URL'"
+                    [invalid]="!!googlePriceDraftError()"
+                    [describedBy]="googlePriceDraftError() ? 'google-price-error' : null"
+                    class="block"
                     [attr.data-testid]="'implementation-google-price-row-url-' + r" />
                 </div>
               }
