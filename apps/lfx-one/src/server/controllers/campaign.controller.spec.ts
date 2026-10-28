@@ -9298,6 +9298,16 @@ describe('CampaignController.createCampaign X', () => {
     expect(refusal().field).toBe('twitterConfig');
   });
 
+  it('never forwards a twitterConfig riding beside a request that does not select X', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await create({ platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100 }, twitterConfig: twitterConfig({ budgetAmount: 'lots' }) });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns.mock.calls[0][4] as Record<string, unknown>).not.toHaveProperty('twitterConfig');
+  });
+
   it('lets a request with no X in it through whatever the X flag says', async () => {
     flagsWith(false, true);
     createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });

@@ -174,6 +174,7 @@ import type {
   CampaignGoogleImageAssetBlock,
   CampaignLinkedInImageAssetBlock,
   CampaignTwitterAccountState,
+  CampaignTwitterDraft,
   CampaignTwitterCreateBlock,
   CampaignTwitterImageAssetBlock,
   TwitterCampaignCreateRequest,
@@ -544,6 +545,12 @@ export class ImplementationTabComponent implements OnInit {
    * `twitterCreateBlock`, never created without it.
    */
   public readonly twitterCreateEnabled = input<boolean | null>(null);
+
+  /**
+   * The X fields the parent carried across a same-event proceed (`CampaignsComponent.carriedTwitterDraft`),
+   * restored when there is no full `draft`. Read once per mount, like `draft`.
+   */
+  public readonly twitterDraft = input<CampaignTwitterDraft | null>(null);
 
   /** @see twitterCreateEnabled — an explicit yes, never a `null`. */
   protected readonly twitterCreateAvailable = computed<boolean>(() => this.twitterCreateEnabled() === true);
@@ -2939,7 +2946,6 @@ export class ImplementationTabComponent implements OnInit {
     // campaign-service would refuse during dispatch — after the job exists — is caught here, each
     // with its message on screen in the X section.
     if (this.twitterCreateBlock() !== null) return false;
-    // An X connection with no ad account bound: campaign-service refuses that create outright.
     if (twitterSelected && (this.twitterBudgetError() !== null || this.twitterTweetError() !== null || this.twitterFlightError() !== null)) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
@@ -5447,6 +5453,26 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * Restore the X section from a draft, present-only: the two typed fields, then the tweet image on
+   * the LinkedIn upload's terms. Shared by the full-draft restore and the same-event carry.
+   */
+  private applyTwitterDraft(draft: CampaignTwitterDraft): void {
+    if (draft.twitterBudget !== undefined) this.campaignForm.controls.twitterBudget.setValue(draft.twitterBudget);
+    if (draft.twitterTweetText !== undefined) this.campaignForm.controls.twitterTweetText.setValue(draft.twitterTweetText);
+    if (draft.twitterImageAssetId !== undefined) {
+      this.twitterImageAssetId.set(draft.twitterImageAssetId);
+      this.twitterImageAssetName.set(draft.twitterImageAssetName ?? '');
+      this.twitterImageAssetBriefId.set(draft.twitterImageAssetBriefId ?? '');
+    }
+    if (draft.twitterImageUploadFailedMessage && draft.twitterImageUploadFailedBriefId) {
+      this.failTwitterImageUpload(draft.twitterImageUploadFailedMessage, draft.twitterImageUploadFailedBriefId);
+    }
+    if (draft.twitterImageUploadPendingName) {
+      this.resumeTwitterImageUpload(draft.twitterImageUploadPendingName, draft.twitterImageUploadPendingBriefId ?? '');
+    }
+  }
+
   /** `followLinkedInImageUpload`'s sibling. */
   private followTwitterImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
     this.twitterImageUploadStatus.set('uploading');
@@ -5938,9 +5964,14 @@ export class ImplementationTabComponent implements OnInit {
 
   private applyDraft(): void {
     const draft = this.draft();
-    if (!draft) return;
-
     const currentSlug = this.campaignForm.controls.eventSlug.value ?? '';
+    if (!draft) {
+      // No full draft — a fresh proceed — but possibly the X fields of a same-event refine.
+      const carried = this.twitterDraft();
+      if (carried && carried.eventSlug === currentSlug) this.applyTwitterDraft(carried);
+      return;
+    }
+
     if (draft.eventSlug !== currentSlug) return;
 
     // EMITS, unlike the first version of this method, and the difference is visible to the user.
@@ -6185,21 +6216,8 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.linkedInImageUploadPendingName) {
       this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
     }
-    // The X section, on the same present-only rule: the two typed fields, then the tweet image on
-    // the LinkedIn upload's terms above.
-    if (draft.twitterBudget !== undefined) this.campaignForm.controls.twitterBudget.setValue(draft.twitterBudget);
-    if (draft.twitterTweetText !== undefined) this.campaignForm.controls.twitterTweetText.setValue(draft.twitterTweetText);
-    if (draft.twitterImageAssetId !== undefined) {
-      this.twitterImageAssetId.set(draft.twitterImageAssetId);
-      this.twitterImageAssetName.set(draft.twitterImageAssetName ?? '');
-      this.twitterImageAssetBriefId.set(draft.twitterImageAssetBriefId ?? '');
-    }
-    if (draft.twitterImageUploadFailedMessage && draft.twitterImageUploadFailedBriefId) {
-      this.failTwitterImageUpload(draft.twitterImageUploadFailedMessage, draft.twitterImageUploadFailedBriefId);
-    }
-    if (draft.twitterImageUploadPendingName) {
-      this.resumeTwitterImageUpload(draft.twitterImageUploadPendingName, draft.twitterImageUploadPendingBriefId ?? '');
-    }
+    // The X section, on the same present-only rule.
+    this.applyTwitterDraft(draft);
     // The Microsoft image, on the Meta upload's terms above.
     if (draft.microsoftImageAssetId !== undefined) {
       this.microsoftImageAssetId.set(draft.microsoftImageAssetId);
@@ -6460,6 +6478,10 @@ export class ImplementationTabComponent implements OnInit {
       budgetUsd: brief.totalBudget ?? 500,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
+      // The X fields are typed, never generated, so a new brief starts them blank. A same-event
+      // refine gets them back from `twitterDraft` in `applyDraft`, which runs after this seed.
+      twitterBudget: '',
+      twitterTweetText: '',
     });
 
     if (brief.selectedPlatforms?.length) {

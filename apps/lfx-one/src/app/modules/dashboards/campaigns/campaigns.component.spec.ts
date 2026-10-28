@@ -11584,6 +11584,32 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
   });
 
+  /**
+   * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
+   * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
+   * generator produces replaces them. A different event's X fields must not follow.
+   */
+  it('keeps the typed X fields across a same-event proceed, and drops them for another event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    const withTwitter = { ...brief, selectedPlatforms: ['google-ads', 'twitter-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withTwitter);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('42');
+
+    const otherEvent = { ...withTwitter, eventDetails: { ...withTwitter.eventDetails, slug: 'other-event-2026', name: 'Other Event' } } as CampaignBriefOutput;
+    page().onProceedToImplementation(otherEvent);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+  });
+
   /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
   it.each([[true], [false]])('hands a google audience segments capability of %s to the Implementation tab', async (enabled) => {
     listBriefCampaigns.mockReturnValue(capability(false, false, enabled));

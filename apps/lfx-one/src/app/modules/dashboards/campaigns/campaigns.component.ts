@@ -39,6 +39,7 @@ import type {
   CampaignAudience,
   CampaignBriefApproveResult,
   CampaignBriefOutput,
+  CampaignTwitterDraft,
   CampaignCapabilityReadState,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -285,6 +286,13 @@ export class CampaignsComponent {
    * would be machinery guarding against a hazard that is already closed one level down.
    */
   protected readonly implementationDraft = signal<CampaignImplementationDraft | null>(null);
+
+  /**
+   * The X fields of the draft, carried across a proceed for the SAME event — a refine — while the
+   * rest of the draft is cleared (see `onProceedToImplementation`). The generator writes nothing
+   * for X, so there is nothing a refine could regenerate there. Cleared with the draft otherwise.
+   */
+  protected readonly carriedTwitterDraft = signal<CampaignTwitterDraft | null>(null);
 
   /**
    * The extension lists of the brief last handed to Implementation, exactly as the GENERATOR
@@ -2823,6 +2831,8 @@ export class CampaignsComponent {
       googleCallouts: brief.googleCallouts ? [...brief.googleCallouts] : undefined,
       googleSitelinks: brief.googleSitelinks?.map((sitelink) => ({ ...sitelink })),
     };
+    // The X fields survive a same-event proceed (see `carriedTwitterDraft`); read BEFORE the clear.
+    this.carriedTwitterDraft.set(this.twitterDraftToCarry(brief));
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
     this.selectedTab.set('implementation');
@@ -6524,6 +6534,7 @@ export class CampaignsComponent {
     // generated next. The child's `eventSlug` guard would catch a DIFFERENT event, but not the
     // same event re-generated, which is exactly what Start Over does.
     this.implementationDraft.set(null);
+    this.carriedTwitterDraft.set(null);
     // Cleared WITH the draft, never separately: the baseline only means anything as the answer to
     // "what was that draft typed over", so a baseline outliving its draft is a claim about edits
     // that no longer exist. Clearing the draft alone would already stop the carry; clearing both
@@ -6634,5 +6645,28 @@ export class CampaignsComponent {
     // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
+  }
+
+  /**
+   * The X fields of the current draft when it was typed against the same event as `brief`, else
+   * `null`. The event slug is the brief's identity across a refine: a different event's tweet must
+   * never follow onto this one.
+   */
+  private twitterDraftToCarry(brief: CampaignBriefOutput): CampaignTwitterDraft | null {
+    const previous = this.implementationDraft() ?? this.carriedTwitterDraft();
+    const slug = brief.eventDetails?.slug ?? '';
+    if (!previous || slug === '' || previous.eventSlug !== slug) return null;
+    return {
+      eventSlug: previous.eventSlug,
+      twitterBudget: previous.twitterBudget,
+      twitterTweetText: previous.twitterTweetText,
+      twitterImageAssetId: previous.twitterImageAssetId,
+      twitterImageAssetName: previous.twitterImageAssetName,
+      twitterImageAssetBriefId: previous.twitterImageAssetBriefId,
+      twitterImageUploadPendingName: previous.twitterImageUploadPendingName,
+      twitterImageUploadPendingBriefId: previous.twitterImageUploadPendingBriefId,
+      twitterImageUploadFailedMessage: previous.twitterImageUploadFailedMessage,
+      twitterImageUploadFailedBriefId: previous.twitterImageUploadFailedBriefId,
+    };
   }
 }

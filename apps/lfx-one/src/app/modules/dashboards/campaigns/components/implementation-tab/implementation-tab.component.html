@@ -3611,7 +3611,7 @@
             <!--
               Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
               carries no account id, and campaign-service creates under the account bound on the
-              project's X connection. An unbound connection is a certain refusal, so it blocks Create.
+              project's X connection (or, on a deployment forcing it, the LF system one).
             -->
             <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
               <span class="font-medium text-gray-700">Ad account</span>

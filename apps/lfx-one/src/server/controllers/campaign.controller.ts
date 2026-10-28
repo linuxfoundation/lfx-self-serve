@@ -7340,6 +7340,9 @@ export class CampaignController {
    * deployment cannot honour it, and campaign-service judges it otherwise.
    */
   private buildTwitterConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    // Only for a request that selects X. `twitterConfigRefusal` judges the config only then, so a
+    // config riding beside other platforms would otherwise be forwarded unjudged.
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('twitter-ads')) return null;
     const config: unknown = body?.twitterConfig;
     if (config === null || typeof config !== 'object' || Array.isArray(config)) return null;
     const { budgetAmount, startDate, endDate, tweetText, imageAssetId } = config as Partial<TwitterCampaignCreateRequest>;
