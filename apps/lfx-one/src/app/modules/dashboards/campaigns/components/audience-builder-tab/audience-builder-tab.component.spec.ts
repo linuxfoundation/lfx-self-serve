@@ -4398,6 +4398,22 @@ describe('AudienceBuilderTabComponent', () => {
       expect(label()).toBe('Reach estimate before exclusions');
     });
 
+    it('labels the review summary the same way as the summary bar, never an estimate as exact', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+      const summaryLabel = (): string => host().querySelector('[data-testid="campaigns-audience-summary-reach-label"]')?.textContent?.trim() ?? '';
+      const barLabel = (): string => host().querySelector('[data-testid="campaigns-audience-summary-bar-reach-label"]')?.textContent?.trim() ?? '';
+
+      previewAudienceCount.mockReturnValue(of({ exact: false, estimate: 1200, count: 0, reason: 'degraded' }));
+      click('campaigns-audience-preview-count');
+      expect(summaryLabel()).toBe('Reach estimate before exclusions');
+      expect(summaryLabel()).toBe(barLabel());
+
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 1200, count: 1200, reason: '' }));
+      click('campaigns-audience-preview-count');
+      expect(summaryLabel()).toBe('Reach before exclusions');
+    });
+
     it('calls a sum over only some lists partial, not a reach', async () => {
       await discover();
       click('audience-card-grid-toggle-101');
