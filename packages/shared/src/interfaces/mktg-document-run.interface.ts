@@ -11,6 +11,8 @@ export interface MktgActiveRunConflict {
   code: typeof MKTG_RUN_ACTIVE;
   message: string;
   startedBy: string;
+  /** Whether the active run's creator is the effective viewer. */
+  startedByViewer: boolean;
   /** When the active run started (ISO); the run page shows waiting since. */
   startedAt: string;
   activeRunId: string;

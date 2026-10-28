@@ -1007,10 +1007,11 @@ export class MktgDocumentRunService {
   }
 
   private async activeRunConflict(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType): Promise<ConflictError> {
-    const author = await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
+    const startedByViewer = record.creatorSubject === getEffectiveSub(req);
+    const author = startedByViewer ? null : await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
     const startedBy = author?.name ?? 'Another writer';
     const itemLabel = type.itemLabel.replace(/\s+run$/i, '');
-    const clientMessage = type.kind === 'run' ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
+    const clientMessage = type.kind === 'run' || startedByViewer ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
     return new ConflictError(`A ${itemLabel} run is already in progress.`, MKTG_RUN_ACTIVE, {
       operation: 'mktg_run_start',
       service: 'object_store',
@@ -1021,6 +1022,7 @@ export class MktgDocumentRunService {
         agentKey: record.agentKey,
         documentId: record.documentId,
         startedBy,
+        startedByViewer,
         startedAt: record.startedAt,
       },
     });

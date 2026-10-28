@@ -42,6 +42,7 @@ for (const choice of ['Open it', 'Discard and start over'])
             agentKey: 'member-360',
             documentId: MEMBER_360_DOCUMENT_ID,
             startedBy: 'Synthetic writer',
+            startedByViewer: true,
             startedAt: '2026-10-19T12:00:00.000Z',
           },
         });
