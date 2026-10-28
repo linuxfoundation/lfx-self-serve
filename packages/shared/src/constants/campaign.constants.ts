@@ -1288,6 +1288,12 @@ export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data s
  * writer or a ROOT `global_marketing_ops` holder) can monitor it here. lfx-self-serve-ops#54.
  */
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RESTRICTED';
+
+/** The BFF's own Google Ads account read is missing a credential or account setting (#4526). */
+export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
+
+/** Leads a failed read of the BFF's own Google Ads account, before the Google Ads error code when there is one (#4526). */
+export const GOOGLE_ADS_READ_FAILED_MESSAGE = 'Google Ads did not return the account data.';
 /** The user-facing message of that refusal: the account is shared by every foundation, so only LF administrators can monitor it. */
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';

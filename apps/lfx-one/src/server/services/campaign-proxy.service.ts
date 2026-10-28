@@ -118,9 +118,16 @@ function getGadsClient(): GoogleAdsApi {
 
 export function getCustomer(): Customer {
   if (!gadsCustomer) {
+    const customerId = getEnv('GADS_CUSTOMER_ID');
+    const refreshToken = getEnv('GADS_REFRESH_TOKEN');
+    // Checked here, not left to the SDK: an empty customer id or refresh token fails as a Google Ads
+    // call, which would read as a Google failure rather than a server setting to fix (#4526).
+    if (!customerId || !refreshToken) {
+      throw new GoogleAdsNotConfiguredError('Google Ads customer not configured (GADS_CUSTOMER_ID, GADS_REFRESH_TOKEN)');
+    }
     gadsCustomer = getGadsClient().Customer({
-      customer_id: getEnv('GADS_CUSTOMER_ID'),
-      refresh_token: getEnv('GADS_REFRESH_TOKEN'),
+      customer_id: customerId,
+      refresh_token: refreshToken,
       login_customer_id: getEnv('GADS_LOGIN_CUSTOMER_ID') || undefined,
     });
   }

@@ -1,17 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ERROR_CODES } from '@lfx-one/shared/constants';
+import { ERROR_CODES, GOOGLE_ADS_NOT_CONFIGURED_MESSAGE, GOOGLE_ADS_READ_FAILED_MESSAGE } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors';
-import {
-  GOOGLE_ADS_NOT_CONFIGURED_MESSAGE,
-  GOOGLE_ADS_READ_FAILED_MESSAGE,
-  GoogleAdsNotConfiguredError,
-  googleAdsFailureCode,
-  toGoogleAdsReadError,
-} from './google-ads-read-error';
+import { GoogleAdsNotConfiguredError, googleAdsFailureCode, toGoogleAdsReadError } from './google-ads-read-error';
 
 /** A synthetic `GoogleAdsFailure`-shaped rejection: not an `Error`, with `errors[0].error_code`. */
 const failure = (errorCode: Record<string, unknown>, message = 'synthetic upstream detail for acme-foundation'): unknown => ({

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ERROR_CODES } from '@lfx-one/shared/constants';
+import { ERROR_CODES, GOOGLE_ADS_NOT_CONFIGURED_MESSAGE, GOOGLE_ADS_READ_FAILED_MESSAGE } from '@lfx-one/shared/constants';
 
 import { BaseApiError, MicroserviceError } from '../errors';
 
@@ -12,9 +12,6 @@ export class GoogleAdsNotConfiguredError extends Error {
     this.name = 'GoogleAdsNotConfiguredError';
   }
 }
-
-export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
-export const GOOGLE_ADS_READ_FAILED_MESSAGE = 'Google Ads did not return the account data.';
 
 /**
  * The first Google Ads API error code on a `google-ads-api` failure (`errors[0].error_code`), kept only

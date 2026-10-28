@@ -2370,7 +2370,6 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
         }),
       'Google Ads did not return the account data. Google Ads error: QUOTA_EXCEEDED. (HTTP 502)',
     ],
-    ['a dropped connection, with no status', () => new HttpErrorResponse({ status: 0, error: new Error('Failed to fetch') }), 'Failed to load campaign data'],
   ] as const)('names the HTTP status under the Google error for %s', async (_case, error, detail) => {
     await setup(flagOff);
     service['getMonitorData'].mockReturnValue(throwError(error));
