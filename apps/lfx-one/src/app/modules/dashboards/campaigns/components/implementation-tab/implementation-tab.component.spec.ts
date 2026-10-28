@@ -5888,14 +5888,19 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
   });
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  /** The focusable `<input>` an `lfx-input-text` renders, which is where its ARIA lands. */
+  const inputOf = (testId: string): HTMLInputElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"] input`);
 
+  /** Typed through the wrapper's own control — the form, not a signal, is the source of truth. */
   const typePostal = (c: Record<string, any>, text: string): void => {
-    c['googlePostalGeoDraft'].set(text);
+    c['googleGeoTargetForm'].controls.postalId.setValue(text);
     fixture.detectChanges();
   };
 
+  /** Same, for the radius group. An empty unit is the unpicked `null` the select holds. */
   const typeProximity = (c: Record<string, any>, patch: Record<string, string>): void => {
-    c['googleProximityDraft'].update((draft: Record<string, string>) => ({ ...draft, ...patch }));
+    const { radiusUnit, ...rest } = patch;
+    c['googleGeoTargetForm'].controls.proximity.patchValue({ ...rest, ...(radiusUnit === undefined ? {} : { radiusUnit: radiusUnit || null }) });
     fixture.detectChanges();
   };
 
@@ -5926,7 +5931,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       expect(c['addGooglePostalGeoTarget'](text)).toBe(false);
       expect(c['googlePostalGeoTargets']()).toEqual([]);
       expect(query(testId)).not.toBeNull();
-      const input = query('implementation-google-postal-add');
+      const input = inputOf('implementation-google-postal-add');
       expect(input?.getAttribute('aria-invalid')).toBe('true');
       expect(input?.getAttribute('aria-describedby')).toBe(errorId);
     });
@@ -5935,7 +5940,7 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       const c = seedChannel(fixture, { includeSearch: true });
       c['addGooglePostalGeoTarget']('9031945');
       typePostal(c, '');
-      expect(query('implementation-google-postal-add')?.getAttribute('aria-describedby')).toBe('google-postal-hint');
+      expect(inputOf('implementation-google-postal-add')?.getAttribute('aria-describedby')).toBe('google-postal-hint');
 
       typePostal(c, '9031945');
 
@@ -5944,16 +5949,30 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
 
     it('keeps refused text in the box and clears it on a successful add', () => {
       const c = seedChannel(fixture, { includeSearch: true });
-      const input = { value: '02840' } as HTMLInputElement;
-      c['googlePostalGeoDraft'].set('02840');
+      typePostal(c, '02840');
 
-      c['onGooglePostalGeoAdd']({ target: input } as unknown as Event);
-      expect(input.value).toBe('02840');
+      c['onGooglePostalGeoAdd']();
+      fixture.detectChanges();
+      expect(inputOf('implementation-google-postal-add')?.value).toBe('02840');
 
-      input.value = '9031945';
-      c['onGooglePostalGeoAdd']({ target: input } as unknown as Event);
-      expect(input.value).toBe('');
+      typePostal(c, '9031945');
+      c['onGooglePostalGeoAdd']();
+      fixture.detectChanges();
+      expect(inputOf('implementation-google-postal-add')?.value).toBe('');
       expect(c['googlePostalGeoDraft']()).toBe('');
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+
+    /** Enter in the wrapper's input bubbles to the host listener, as it did on the raw box. */
+    it('adds on Enter in the wrapped input', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      fixture.detectChanges();
+      const input = inputOf('implementation-google-postal-add') as HTMLInputElement;
+      input.value = '9031945';
+      input.dispatchEvent(new Event('input'));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+
       expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
     });
 
@@ -6137,7 +6156,8 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
       typeProximity(c, { ...SYDNEY_DRAFT, ...patch });
 
       expect(query(alertId)).not.toBeNull();
-      expect(query(inputId)?.getAttribute('aria-invalid')).toBe('true');
+      expect(inputOf(inputId)?.getAttribute('aria-invalid')).toBe('true');
+      expect(inputOf(inputId)?.getAttribute('aria-describedby')).toBe(alertId.replace('implementation-', ''));
       expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(true);
     });
 
@@ -6481,7 +6501,7 @@ describe('ImplementationTabComponent google location targets held by the capabil
   /** `Number()` reads these as 26, 3 and 100; the form takes decimal degrees only. */
   it.each([['0x1A'], ['0b11'], ['1e2'], ['Infinity']])('refuses the non-decimal spelling %s and names it', (text) => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googleProximityDraft'].set({ ...SYDNEY_DRAFT, latitude: text });
+    c['googleGeoTargetForm'].controls.proximity.setValue({ ...SYDNEY_DRAFT, latitude: text });
     fixture.detectChanges();
 
     expect(c['googleProximityLatitudeInvalid']()).toBe(true);
@@ -6498,18 +6518,19 @@ describe('ImplementationTabComponent google location targets held by the capabil
   /** A soft warning: upstream accepts the entry, so the add stays allowed. */
   it('warns that a short numeric entry looks like a postal code, without refusing it', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePostalGeoDraft'].set('94103');
+    c['googleGeoTargetForm'].controls.postalId.setValue('94103');
     fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-postal-add"] input') as HTMLInputElement;
 
     expect(find('implementation-google-postal-looks-like-code')).not.toBeNull();
-    expect(find('implementation-google-postal-add')?.getAttribute('aria-describedby')).toBe('google-postal-looks-like-code');
-    expect(find('implementation-google-postal-add')?.getAttribute('aria-invalid')).toBeNull();
+    expect(input.getAttribute('aria-describedby')).toBe('google-postal-looks-like-code');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
     expect(c['addGooglePostalGeoTarget']('94103')).toBe(true);
   });
 
   it('does not warn about a seven-digit postal-code id', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    c['googlePostalGeoDraft'].set('9031945');
+    c['googleGeoTargetForm'].controls.postalId.setValue('9031945');
     fixture.detectChanges();
 
     expect(find('implementation-google-postal-looks-like-code')).toBeNull();
@@ -6519,7 +6540,32 @@ describe('ImplementationTabComponent google location targets held by the capabil
     seedChannel(fixture, { includeSearch: true });
     fixture.detectChanges();
 
-    expect(find('implementation-google-proximity-latitude')?.getAttribute('aria-label')).toBe('Radius target latitude');
+    const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-proximity-latitude"] input') as HTMLInputElement;
+    expect(input.getAttribute('aria-label')).toBe('Radius target latitude');
+    // `inputId` lands on the focusable input, so the section's `<label for>` still names it.
+    expect(input.id).toBe('google-proximity-latitude');
+  });
+
+  /** frontend-checklist 14.1: the geo controls are the LFX wrappers, bound to the transient form. */
+  it('renders the postal and radius controls as lfx wrappers', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-add')?.tagName.toLowerCase()).toBe('lfx-input-text');
+    for (const testId of ['latitude', 'longitude', 'radius']) {
+      expect(find(`implementation-google-proximity-${testId}`)?.tagName.toLowerCase()).toBe('lfx-input-text');
+    }
+    expect(find('implementation-google-proximity-unit')?.tagName.toLowerCase()).toBe('lfx-select');
+  });
+
+  /** Picking the unit through the select's control reaches the draft the add reads. */
+  it('reads the unit from the select control, and an unpicked unit as empty', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleProximityDraft']().radiusUnit).toBe('');
+
+    c['googleGeoTargetForm'].controls.proximity.patchValue({ radiusUnit: 'MILES' });
+
+    expect(c['googleProximityDraft']().radiusUnit).toBe('MILES');
   });
 });
 

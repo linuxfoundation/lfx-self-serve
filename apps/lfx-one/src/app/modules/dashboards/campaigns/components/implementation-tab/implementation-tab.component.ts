@@ -18,6 +18,8 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
@@ -217,7 +219,16 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    LowerCasePipe,
+    SlicePipe,
+    CampaignBiddingControlComponent,
+    CreativeSlotGridComponent,
+  ],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -570,6 +581,27 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly defaultEndDate = new Date(Date.now() + 30 * 86_400_000).toISOString().split('T')[0];
 
   // === Forms ===
+  /**
+   * The postal-code box and the radius sub-form, as a reactive form of their own.
+   *
+   * A form rather than signals because the `lfx-input-text` / `lfx-select` wrappers
+   * `frontend-checklist.md` 14.1 requires are form-driven — the arrangement `abTestForm` on the
+   * campaigns page uses. Its own group rather than controls on `campaignForm`, because these are
+   * TRANSIENT input: they reach the draft only when a target is added, never through
+   * `campaignFormRevision` or `emitDraft`, and an add clears them without touching the campaign.
+   *
+   * `radiusUnit` starts `null`, not a unit: upstream supplies no default and neither does the form.
+   */
+  protected readonly googleGeoTargetForm = new FormGroup({
+    postalId: new FormControl<string>('', { nonNullable: true }),
+    proximity: new FormGroup({
+      latitude: new FormControl<string>('', { nonNullable: true }),
+      longitude: new FormControl<string>('', { nonNullable: true }),
+      radius: new FormControl<string>('', { nonNullable: true }),
+      radiusUnit: new FormControl<GoogleAdsRadiusUnit | null>(null),
+    }),
+  });
+
   protected readonly campaignForm = this.fb.nonNullable.group({
     eventName: ['', [Validators.required]],
     eventSlug: [''],
@@ -965,9 +997,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googlePostalGeoTargets = signal<string[]>([]);
   /**
    * The postal-code box's live text, on the same rule as {@link googleCalloutDraft}: transient,
-   * reaching the saved draft only when an id is added.
+   * reaching the saved draft only when an id is added. Derived from {@link googleGeoTargetForm},
+   * which the wrapper binds to, so readers keep a signal while the form stays the source of truth.
    */
-  protected readonly googlePostalGeoDraft = signal('');
+  protected readonly googlePostalGeoDraft = toSignal(this.googleGeoTargetForm.controls.postalId.valueChanges, {
+    initialValue: this.googleGeoTargetForm.controls.postalId.value,
+  });
   protected readonly googlePostalGeoIdMinDigits = GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
   /**
    * Google's radius targets — "everyone within N miles of the venue" — the one location shape that
@@ -980,13 +1015,18 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleProximityTargets = signal<CampaignProximityTarget[]>([]);
   protected readonly googleMaxProximityTargets = GOOGLE_ADS_MAX_PROXIMITY_TARGETS;
-  protected readonly googleRadiusUnits = GOOGLE_ADS_RADIUS_UNITS;
+  /** The unit select's options, labelled in lower case as the chips read ("25 kilometers around …"). */
+  protected readonly googleRadiusUnitOptions = GOOGLE_ADS_RADIUS_UNITS.map((unit) => ({ label: unit.toLowerCase(), value: unit }));
   /**
    * The radius sub-form's live values, on the same rule as {@link googleSitelinkDraft}: transient,
-   * reaching the saved draft only when a radius target is added. The unit starts EMPTY because
-   * upstream supplies no default and the form must not invent one.
+   * reaching the saved draft only when a radius target is added. Derived from the `proximity` group
+   * of {@link googleGeoTargetForm}; an unpicked unit (`null` on the control) reads as `''` here, so
+   * every guard below keeps testing one spelling of "not chosen".
    */
-  protected readonly googleProximityDraft = signal<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
+  protected readonly googleProximityDraft: Signal<CampaignProximityTargetDraft> = toSignal(
+    this.googleGeoTargetForm.controls.proximity.valueChanges.pipe(map(() => this.googleProximityDraftValue())),
+    { initialValue: this.googleProximityDraftValue() }
+  );
   /**
    * The languages the Google campaign serves in, as ISO 639-1 codes.
    *
@@ -2991,17 +3031,12 @@ export class ImplementationTabComponent implements OnInit {
     return true;
   }
 
-  protected onGooglePostalGeoDraftInput(event: Event): void {
-    // Draft text only — no `emitDraft()`, matching the callout box. It reaches the draft on ADD.
-    this.googlePostalGeoDraft.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onGooglePostalGeoAdd(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    // Cleared ONLY on success, so a refused id stays in the box with its warning beside it.
-    if (this.addGooglePostalGeoTarget(input.value)) {
-      input.value = '';
-      this.googlePostalGeoDraft.set('');
+  protected onGooglePostalGeoAdd(): void {
+    const control = this.googleGeoTargetForm.controls.postalId;
+    // Cleared ONLY on success, so a refused id stays in the box with its warning beside it. No
+    // `emitDraft()` for the text itself, matching the callout box: it reaches the draft on ADD.
+    if (this.addGooglePostalGeoTarget(control.value)) {
+      control.setValue('');
     }
   }
 
@@ -3040,17 +3075,11 @@ export class ImplementationTabComponent implements OnInit {
     return true;
   }
 
-  protected onGoogleProximityDraftInput(field: keyof CampaignProximityTargetDraft, event: Event): void {
-    // Draft only — no `emitDraft()`, matching the sitelink sub-form. It reaches the draft on ADD.
-    // The unit is a `<select>`, which is why this widens past `HTMLInputElement`.
-    const value = (event.target as HTMLInputElement | HTMLSelectElement).value;
-    this.googleProximityDraft.update((draft) => ({ ...draft, [field]: value }));
-  }
-
   protected onGoogleProximityAdd(): void {
-    // Cleared ONLY on success, so a refused target keeps all four fields and its warning.
+    // Cleared ONLY on success, so a refused target keeps all four fields and its warning. The unit
+    // resets to `null` too — the next target picks its own, as the first one did.
     if (this.addGoogleProximityTarget(this.googleProximityDraft())) {
-      this.googleProximityDraft.set({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
+      this.googleGeoTargetForm.controls.proximity.reset({ latitude: '', longitude: '', radius: '', radiusUnit: null });
     }
   }
 
@@ -5696,6 +5725,12 @@ export class ImplementationTabComponent implements OnInit {
    * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
    * `0b11` and `1e2` and put a value on the chip the operator never typed.
    */
+  /** The `proximity` group as a {@link CampaignProximityTargetDraft}: an unpicked unit reads as `''`. */
+  private googleProximityDraftValue(): CampaignProximityTargetDraft {
+    const raw = this.googleGeoTargetForm.controls.proximity.getRawValue();
+    return { latitude: raw.latitude, longitude: raw.longitude, radius: raw.radius, radiusUnit: raw.radiusUnit ?? '' };
+  }
+
   private parseGoogleProximityNumber(text: string): number | null {
     const trimmed = googleAdsTrimSpace(text);
     if (trimmed === '') return null;

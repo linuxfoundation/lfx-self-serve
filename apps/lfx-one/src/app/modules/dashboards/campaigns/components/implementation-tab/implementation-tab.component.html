@@ -426,18 +426,25 @@
                   </span>
                 }
                 @if (!googleGeoTargetsFull()) {
-                  <input
-                    id="google-postal-add"
+                  <!--
+                    `lfx-input-text` over `googleGeoTargetForm`, as frontend-checklist 14.1 requires.
+                    `change` and `keydown.enter` are listened for on the HOST: both bubble from the
+                    wrapper's own input, so the callout box's enter-to-add and blur-to-add survive.
+                  -->
+                  <lfx-input-text
+                    [form]="googleGeoTargetForm"
+                    control="postalId"
+                    inputId="google-postal-add"
                     type="text"
-                    inputmode="numeric"
+                    size="small"
                     placeholder="+ Add geo target id"
-                    [value]="googlePostalGeoDraft()"
-                    (input)="onGooglePostalGeoDraftInput($event)"
-                    (change)="onGooglePostalGeoAdd($event)"
-                    (keydown.enter)="onGooglePostalGeoAdd($event); $event.preventDefault()"
-                    [attr.aria-invalid]="googlePostalGeoDraftErrorId() ? 'true' : null"
-                    [attr.aria-describedby]="googlePostalGeoDraftDescribedBy()"
-                    class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                    styleClass="!text-xs"
+                    [invalid]="googlePostalGeoDraftErrorId() !== null"
+                    [describedBy]="googlePostalGeoDraftDescribedBy()"
+                    dataTest="implementation-google-postal-add-input"
+                    (change)="onGooglePostalGeoAdd()"
+                    (keydown.enter)="onGooglePostalGeoAdd(); $event.preventDefault()"
+                    class="block w-44"
                     data-testid="implementation-google-postal-add" />
                 } @else {
                   <span class="text-xs text-gray-500" data-testid="implementation-google-postal-full">
@@ -505,57 +512,64 @@
               }
               @if (!googleProximityFull()) {
                 <!--
-                  Text inputs rather than `type="number"`, so a half-typed `-33.` is shown back as
-                  typed and judged by the warnings below instead of being blanked by the browser.
-                  The section's `<label for>` names the latitude box; the other three carry an
-                  `aria-label`, as the sitelink sub-form's do.
+                  `lfx-input-text` / `lfx-select` over the `proximity` group of
+                  `googleGeoTargetForm`, as frontend-checklist 14.1 requires. Text inputs rather than
+                  `type="number"`, so a half-typed `-33.` is shown back as typed and judged by the
+                  warnings below instead of being blanked by the browser. The section's `<label for>`
+                  names the latitude box (`inputId`); every box also carries its own `ariaLabel`.
                 -->
                 <div class="flex flex-wrap items-center gap-2">
-                  <input
-                    id="google-proximity-latitude"
+                  <lfx-input-text
+                    [form]="googleGeoTargetForm.controls.proximity"
+                    control="latitude"
+                    inputId="google-proximity-latitude"
                     type="text"
-                    inputmode="decimal"
+                    size="small"
                     placeholder="Latitude"
-                    aria-label="Radius target latitude"
-                    [value]="googleProximityDraft().latitude"
-                    (input)="onGoogleProximityDraftInput('latitude', $event)"
-                    [attr.aria-invalid]="googleProximityLatitudeInvalid() ? 'true' : null"
-                    [attr.aria-describedby]="googleProximityLatitudeInvalid() ? 'google-proximity-latitude-invalid' : null"
-                    class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    ariaLabel="Radius target latitude"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityLatitudeInvalid()"
+                    [describedBy]="googleProximityLatitudeInvalid() ? 'google-proximity-latitude-invalid' : null"
+                    dataTest="implementation-google-proximity-latitude-input"
+                    class="block w-28"
                     data-testid="implementation-google-proximity-latitude" />
-                  <input
+                  <lfx-input-text
+                    [form]="googleGeoTargetForm.controls.proximity"
+                    control="longitude"
                     type="text"
-                    inputmode="decimal"
+                    size="small"
                     placeholder="Longitude"
-                    aria-label="Radius target longitude"
-                    [value]="googleProximityDraft().longitude"
-                    (input)="onGoogleProximityDraftInput('longitude', $event)"
-                    [attr.aria-invalid]="googleProximityLongitudeInvalid() ? 'true' : null"
-                    [attr.aria-describedby]="googleProximityLongitudeInvalid() ? 'google-proximity-longitude-invalid' : null"
-                    class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    ariaLabel="Radius target longitude"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityLongitudeInvalid()"
+                    [describedBy]="googleProximityLongitudeInvalid() ? 'google-proximity-longitude-invalid' : null"
+                    dataTest="implementation-google-proximity-longitude-input"
+                    class="block w-28"
                     data-testid="implementation-google-proximity-longitude" />
-                  <input
+                  <lfx-input-text
+                    [form]="googleGeoTargetForm.controls.proximity"
+                    control="radius"
                     type="text"
-                    inputmode="decimal"
+                    size="small"
                     placeholder="Radius"
-                    aria-label="Radius target distance"
-                    [value]="googleProximityDraft().radius"
-                    (input)="onGoogleProximityDraftInput('radius', $event)"
-                    [attr.aria-invalid]="googleProximityRadiusErrorId() ? 'true' : null"
-                    [attr.aria-describedby]="googleProximityRadiusErrorId()"
-                    class="w-20 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    ariaLabel="Radius target distance"
+                    styleClass="!text-xs"
+                    [invalid]="googleProximityRadiusErrorId() !== null"
+                    [describedBy]="googleProximityRadiusErrorId()"
+                    dataTest="implementation-google-proximity-radius-input"
+                    class="block w-20"
                     data-testid="implementation-google-proximity-radius" />
-                  <select
-                    aria-label="Radius target unit"
-                    [value]="googleProximityDraft().radiusUnit"
-                    (change)="onGoogleProximityDraftInput('radiusUnit', $event)"
-                    class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
-                    data-testid="implementation-google-proximity-unit">
-                    <option value="">Unit</option>
-                    @for (unit of googleRadiusUnits; track unit) {
-                      <option [value]="unit">{{ unit | lowercase }}</option>
-                    }
-                  </select>
+                  <lfx-select
+                    [form]="googleGeoTargetForm.controls.proximity"
+                    control="radiusUnit"
+                    [options]="googleRadiusUnitOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Unit"
+                    ariaLabel="Radius target unit"
+                    styleClass="!text-xs"
+                    dataTest="implementation-google-proximity-unit-select"
+                    data-testid="implementation-google-proximity-unit" />
                   <button
                     type="button"
                     (click)="onGoogleProximityAdd()"
