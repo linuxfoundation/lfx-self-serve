@@ -5720,17 +5720,17 @@ export class ImplementationTabComponent implements OnInit {
     return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
   }
 
-  /**
-   * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
-   * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
-   * `0b11` and `1e2` and put a value on the chip the operator never typed.
-   */
   /** The `proximity` group as a {@link CampaignProximityTargetDraft}: an unpicked unit reads as `''`. */
   private googleProximityDraftValue(): CampaignProximityTargetDraft {
     const raw = this.googleGeoTargetForm.controls.proximity.getRawValue();
     return { latitude: raw.latitude, longitude: raw.longitude, radius: raw.radius, radiusUnit: raw.radiusUnit ?? '' };
   }
 
+  /**
+   * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
+   * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
+   * `0b11` and `1e2` and put a value on the chip the operator never typed.
+   */
   private parseGoogleProximityNumber(text: string): number | null {
     const trimmed = googleAdsTrimSpace(text);
     if (trimmed === '') return null;
