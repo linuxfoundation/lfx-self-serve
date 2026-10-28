@@ -8233,3 +8233,170 @@ describe('CampaignController.createCampaign Meta uploaded image', () => {
     ]);
   });
 });
+
+/**
+ * A stored image in a Google creative image slot rides as `{ imageAssetId }` in the slot's own array
+ * (campaign-service's `googleAdsImageRef`), and is honoured only by campaign-service with the
+ * Google-assets flag on — so it is refused, not dropped, otherwise, on the Meta field's terms.
+ */
+describe('CampaignController.createCampaign Google stored images', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  const flagsWith = (assets: boolean, cutover: boolean): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceGoogleAssets ? assets : cutover));
+  };
+
+  const body = (channel: string, key: string, creative: Record<string, unknown>): Record<string, unknown> => ({
+    platforms: ['google-ads'],
+    campaignTypes: [channel],
+    budgetUsd: 1000,
+    startDate: '2026-04-01',
+    endDate: '2026-04-30',
+    [key]: creative,
+  });
+
+  const sentCreative = (key: string): Record<string, unknown> =>
+    ((createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>)['googleAdsConfig'][key] ?? {}) as Record<string, unknown>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it.each([
+    ['demand-gen', 'demandGenCreative', 'logoImages'],
+    ['performance-max', 'performanceMaxCreative', 'marketingImages'],
+    ['display', 'displayCreative', 'squareLogoImages'],
+  ])('forwards a %s asset ref as { imageAssetId } beside the pasted URLs, in order', async (channel, key, field) => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body(channel, key, { headlines: ['H1'], [field]: [' https://cdn.example.org/a.png ', { imageAssetId: ` ${ASSET} ` }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative(key)[field]).toEqual(['https://cdn.example.org/a.png', { imageAssetId: ASSET }]);
+  });
+
+  /**
+   * Shape-only, like the string entries: a blank id or an object naming none is dropped, and a
+   * `url` key is never forwarded — upstream refuses an entry carrying both a URL and an id, and this
+   * application sends URLs as bare strings.
+   */
+  it('drops a ref with a blank or missing id and never forwards a url key on an object', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        body('demand-gen', 'demandGenCreative', {
+          headlines: ['H1'],
+          logoImages: [{ imageAssetId: '  ' }, { url: 'https://cdn.example.org/x.png' }, { imageAssetId: ASSET, url: 'https://cdn.example.org/y.png' }, 7],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(sentCreative('demandGenCreative')['logoImages']).toEqual([{ imageAssetId: ASSET }]);
+  });
+
+  /** `youtubeVideoIds` is a list but not an image slot, so an object there is dropped as before. */
+  it('does not forward an asset ref in a list that is not an image slot', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('performance-max', 'performanceMaxCreative', { headlines: ['H1'], youtubeVideoIds: ['abc', { imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(sentCreative('performanceMaxCreative')['youtubeVideoIds']).toEqual(['abc']);
+  });
+
+  it('forwards pasted URLs whatever the Google-assets flag says', async () => {
+    flagsWith(false, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('display', 'displayCreative', { headlines: ['H1'], logoImages: ['https://cdn.example.org/logo.png'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentCreative('displayCreative')['logoImages']).toEqual(['https://cdn.example.org/logo.png']);
+  });
+
+  it.each([
+    ['the Google-assets flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a request carrying a Google imageAssetId when %s, naming the entry and creating nothing', async (_label, assets, cutover) => {
+    flagsWith(assets, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        body('performance-max', 'performanceMaxCreative', {
+          headlines: ['H1'],
+          marketingImages: ['https://cdn.example.org/a.png'],
+          logoImages: ['https://cdn.example.org/logo.png', { imageAssetId: ASSET }],
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'performanceMaxCreative.logoImages[1].imageAssetId',
+        message: 'uploaded Google images are not enabled on this deployment; supply an image URL instead',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  /** An over-long id is the same unbounded string an over-long URL is, and is bounded the same way. */
+  it('bounds the length of an asset ref id like any other creative entry', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(body('demand-gen', 'demandGenCreative', { headlines: ['H1'], logoImages: [{ imageAssetId: 'a'.repeat(100_000) }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors'][0]['field']).toBe('demandGenCreative.logoImages');
+  });
+});

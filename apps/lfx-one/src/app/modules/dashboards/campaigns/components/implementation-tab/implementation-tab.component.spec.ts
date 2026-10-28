@@ -9703,3 +9703,275 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
     });
   });
 });
+
+/**
+ * The Google image slots' stored-image library (`googleAssetUploadEnabled`): picks and uploads ride
+ * as `{ imageAssetId }` after the slot's pasted URLs, only images that fit are offered, and a held
+ * image the request cannot carry blocks Create rather than vanishing.
+ */
+describe('ImplementationTabComponent google stored images', () => {
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const OTHER_BRIEF = '00000000-0000-4000-8000-000000000001';
+  const SQUARE_LOGO = '11111111-0000-4000-8000-000000000001';
+  const WIDE_LOGO = '22222222-0000-4000-8000-000000000002';
+  const SMALL_WIDE = '33333333-0000-4000-8000-000000000003';
+  const UPLOADED = '44444444-0000-4000-8000-000000000004';
+  const SLOT = 'displayCreative.logoImages';
+
+  const asset = (id: string, width?: number, height?: number) => ({
+    id,
+    projectId: 'p',
+    briefId: BRIEF_ID,
+    mimeType: 'image/png' as const,
+    byteSize: 10,
+    checksum: 'c',
+    width,
+    height,
+  });
+  const LIBRARY = [asset(SQUARE_LOGO, 400, 400), asset(WIDE_LOGO, 1200, 300), asset(SMALL_WIDE, 400, 100), asset('55555555-0000-4000-8000-000000000005')];
+
+  let uploadCreativeAsset: ReturnType<typeof vi.fn>;
+  let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let listCreativeAssets: ReturnType<typeof vi.fn>;
+
+  async function mount(
+    upload: boolean | null,
+    draft: Partial<CampaignImplementationDraft> = {}
+  ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; c: Record<string, any>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    f.componentRef.setInput('draft', { ...GOOGLE_BASE_DRAFT, includeDisplay: true, ...draft } as unknown as CampaignImplementationDraft);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
+    f.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    f.detectChanges();
+    const c = f.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: false, includePerformanceMax: false, includeVideo: false, includeDisplay: true });
+    f.componentRef.setInput('demandGenEnabled', true);
+    f.componentRef.setInput('googleChannelsEnabled', true);
+    f.componentRef.setInput('googleCreativeEnabled', true);
+    f.componentRef.setInput('googleAssetUploadEnabled', upload);
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+    return { f, c, latest: () => captured };
+  }
+
+  const q = (f: ComponentFixture<ImplementationTabComponent>, id: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const logos = (c: Record<string, any>): unknown => c['googleCreativePayload']()['displayCreative']?.['logoImages'];
+
+  beforeEach(async () => {
+    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: UPLOADED, mimeType: 'image/png', byteSize: 16, checksum: 'ab', created: true }));
+    cancelCreativeAssetUpload = vi.fn();
+    listCreativeAssets = vi.fn().mockReturnValue(of({ assets: LIBRARY, count: LIBRARY.length, countLimit: 50, bytesUsed: 40, bytesLimit: 1e9 }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign: vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } })),
+            uploadCreativeAsset,
+            resumeCreativeAssetUpload: vi.fn().mockReturnValue(null),
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload,
+            listCreativeAssets,
+            getLinkedInAccounts: () => of([]),
+            getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it.each([
+    ['unanswered', null],
+    ['off', false],
+  ])('renders no library controls and reads no library while the capability is %s', async (_label, upload) => {
+    const { f, c } = await mount(upload);
+
+    expect(c['googleImageSlots']()).toEqual({});
+    expect(q(f, `google-image-library-${SLOT}`)).toBeNull();
+    expect(listCreativeAssets).not.toHaveBeenCalled();
+  });
+
+  it('renders a library control on every image slot of the section, and none on a text field', async () => {
+    const { f, c } = await mount(true);
+
+    expect(Object.keys(c['googleImageSlots']())).toEqual([
+      'displayCreative.marketingImages',
+      'displayCreative.squareMarketingImages',
+      'displayCreative.logoImages',
+      'displayCreative.squareLogoImages',
+    ]);
+    expect(q(f, `google-image-library-${SLOT}`)).not.toBeNull();
+    expect(listCreativeAssets).toHaveBeenCalledWith('tlf', BRIEF_ID);
+  });
+
+  /** Display's logo is 4:1 at 512x128: the square image, the undersized one and the unmeasured one are not offered. */
+  it("offers only the stored images that fit the slot's ratio and minimum size", async () => {
+    const { c } = await mount(true);
+
+    const slot = c['googleImageSlots']()[SLOT];
+    expect(slot.options.map((o: { value: string }) => o.value)).toEqual([WIDE_LOGO]);
+    expect(slot.requirement).toBe('4:1 (within 1%), at least 512x128 px');
+    expect(c['googleImageSlots']()['displayCreative.squareLogoImages'].options.map((o: { value: string }) => o.value)).toEqual([SQUARE_LOGO]);
+  });
+
+  it('sends a picked image as { imageAssetId } after the pasted URLs, and persists it in the draft', async () => {
+    const { c, latest } = await mount(true);
+    c['campaignForm'].controls.displayCreative.controls.logoImages.setValue('https://cdn.example.org/logo.png');
+    c['onGoogleImagePick'](SLOT, WIDE_LOGO);
+
+    expect(logos(c)).toEqual(['https://cdn.example.org/logo.png', { imageAssetId: WIDE_LOGO }]);
+    expect(latest()?.googleImageAssets?.[SLOT]).toEqual([{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }]);
+    expect(c['googleImageAssetBlock']()).toBeNull();
+    // Picked, so no longer offered.
+    expect(c['googleImageSlots']()[SLOT].options).toEqual([]);
+  });
+
+  it('counts a held image toward the slot minimum, as campaign-service does', async () => {
+    const { c } = await mount(true, { includeDisplay: false, includePerformanceMax: true } as Partial<CampaignImplementationDraft>);
+    c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
+    const pmax = c['campaignForm'].controls.performanceMaxCreative.controls;
+    pmax.headlines.setValue('A\nB\nC');
+    pmax.longHeadlines.setValue('Long');
+    pmax.descriptions.setValue('Short one\nAnother');
+    pmax.businessName.setValue('LF');
+    pmax.marketingImages.setValue('https://cdn.example.org/m.png');
+    pmax.squareMarketingImages.setValue('https://cdn.example.org/s.png');
+
+    expect(c['googleCreativeError']()).toContain('Logo images');
+    c['onGoogleImagePick']('performanceMaxCreative.logoImages', SQUARE_LOGO);
+    expect(c['googleCreativeError']()).toBeNull();
+  });
+
+  it('uploads into the library for the saved brief and holds the upload in the slot it was chosen for', async () => {
+    const { c } = await mount(true);
+    const revision = c['creativeLibraryRevision']();
+    const file = new File([new Uint8Array(16)], 'wide-logo.png', { type: 'image/png' });
+    c['onGoogleImageUpload'](SLOT, file);
+
+    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'google');
+    expect(c['googleHeldImages']()[SLOT]).toEqual([{ id: UPLOADED, name: 'wide-logo.png', briefId: BRIEF_ID }]);
+    expect(c['creativeLibraryRevision']()).toBe(revision + 1);
+    expect(logos(c)).toEqual([{ imageAssetId: UPLOADED }]);
+  });
+
+  it('refuses a file that is not a PNG or JPEG before any upload, naming it on the slot', async () => {
+    const { c } = await mount(true);
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(4)], 'logo.gif', { type: 'image/gif' }));
+
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    expect(c['googleImageSlots']()[SLOT].error).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+  });
+
+  it('holds Create while an upload runs, and Cancel aborts the Google upload', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const { c } = await mount(true);
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
+
+    expect(c['googleImageSlots']()[SLOT].uploading).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
+    c['onGoogleImageUploadCancel']();
+    expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('google');
+    expect(c['googleImageUploadStatus']()).toBe('idle');
+  });
+
+  it('blocks Create on a failed upload for the brief, until Remove', async () => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'image is not decodable' } })));
+    const { f, c } = await mount(true);
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
+    f.detectChanges();
+
+    expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
+    expect(q(f, 'implementation-google-image-asset-block-uploadFailed')).not.toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  it.each([
+    ['unanswered', null, 'failed'],
+    ['off', false, 'unsupported'],
+  ])('blocks Create, never drops, a held image while the capability is %s', async (_label, upload, kind) => {
+    const { f, c } = await mount(upload, { googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] } });
+    f.detectChanges();
+
+    expect(logos(c)).toBeUndefined();
+    expect(c['googleImageAssetBlock']()?.kind).toBe(kind);
+    expect(q(f, `implementation-google-image-asset-block-${kind}`)).not.toBeNull();
+    expect(c['canSubmit']()).toBe(false);
+
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleHeldImages']()[SLOT]).toEqual([]);
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  it('blocks a held image stored for another brief, and Remove drops only that one', async () => {
+    const { c } = await mount(true, {
+      googleImageAssets: {
+        [SLOT]: [
+          { id: WIDE_LOGO, name: '', briefId: BRIEF_ID },
+          { id: UPLOADED, name: 'old.png', briefId: OTHER_BRIEF },
+        ],
+      },
+    });
+
+    expect(c['googleImageAssetBlock']()?.kind).toBe('otherBrief');
+    expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
+    c['onGoogleImageBlockRemove']();
+    expect(c['googleHeldImages']()[SLOT]).toEqual([{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }]);
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  it.each([
+    ['missing', '99999999-0000-4000-8000-000000000009'],
+    ['misfit', SQUARE_LOGO],
+  ])('blocks a held image the library read shows as %s, naming it on the slot', async (kind, id) => {
+    const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id, name: '', briefId: BRIEF_ID }] } });
+
+    expect(c['googleImageAssetBlock']()?.kind).toBe(kind);
+    expect(c['googleImageSlots']()[SLOT].held[0].problem).not.toBe('');
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** A failed read is not evidence of a deletion: campaign-service still refuses a missing asset by name. */
+  it('does not call a held image missing when the library read failed', async () => {
+    listCreativeAssets.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }] } });
+
+    expect(c['googleCreativeLibrary']().status).toBe('error');
+    expect(c['googleImageAssetBlock']()).toBeNull();
+    expect(c['googleImageSlots']()[SLOT].optionsNote).toContain("Couldn't load");
+  });
+
+  it('keeps an image held in an un-ticked section without sending or blocking on it', async () => {
+    const { c } = await mount(true, { googleImageAssets: { 'demandGenCreative.logoImages': [{ id: SQUARE_LOGO, name: '', briefId: OTHER_BRIEF }] } });
+
+    expect(c['googleImageAssetBlock']()).toBeNull();
+    expect(c['googleCreativePayload']()['demandGenCreative']).toBeUndefined();
+    expect(c['googleHeldImages']()['demandGenCreative.logoImages']).toHaveLength(1);
+  });
+
+  it('restores a failed upload from the draft, so a tab switch does not lift its block', async () => {
+    const { c } = await mount(true, {
+      googleImageUploadFailedMessage: 'image is not decodable',
+      googleImageUploadFailedBriefId: BRIEF_ID,
+      googleImageUploadFailedSlot: SLOT,
+    });
+
+    expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
+    expect(c['googleImageSlots']()[SLOT].error).toBe('image is not decodable');
+  });
+});
