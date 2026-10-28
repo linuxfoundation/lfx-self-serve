@@ -94,8 +94,8 @@ export class SnowflakeService {
     }
   }
 
-  public static isMissingObjectError(error: unknown): boolean {
-    return isMissingObjectError(error);
+  public static isMissingObjectError(error: unknown, expectedObject?: string): boolean {
+    return isMissingObjectError(error, expectedObject);
   }
 
   private constructor() {
@@ -228,7 +228,13 @@ export class SnowflakeService {
           } catch (error) {
             // Expected schema-rollout errors still reject so callers can use their fallback,
             // but they must not emit error telemetry or count toward the global circuit breaker.
-            const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
+            // A caller that named an object exempts only that one: a missing CORE table in the same
+            // statement is a genuine fault and must keep its error telemetry and breaker failure.
+            const expectedObject = options?.expectMissingObject;
+            const expectedMissing =
+              expectedObject !== undefined &&
+              expectedObject !== false &&
+              SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
             const expectedIdentifier = options?.expectInvalidIdentifier;
             const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
             const poolQueueFull = isPoolQueueFullError(error);
@@ -238,12 +244,21 @@ export class SnowflakeService {
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : true);
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
               }
-              this.recordSuccess();
+              // `releaseProbe`, NOT `recordSuccess`. This query did not succeed; it hit an error the
+              // caller said to expect. `recordSuccess` resets `consecutiveFailures` to 0 POD-WIDE, so
+              // it would discard failures accumulated by unrelated queries. That is reachable: when
+              // the address table and a core table are both gone, Snowflake blames the exempt object
+              // on the scoped statement, so every uncached drawer request clears the count here and
+              // then books a single failure on the unscoped retry — the threshold is never reached and
+              // the breaker never opens through a real outage. `releaseProbe` leaves the count and the
+              // state alone and only frees the HALF_OPEN probe slot, which is what an error that says
+              // nothing about Snowflake's health should do.
+              this.releaseProbe();
               logger.warning(undefined, 'snowflake_query', 'Query hit an expected schema compatibility error', {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
@@ -599,9 +614,14 @@ export class SnowflakeService {
   }
 
   /**
-   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it,
-   * or it carried an out-of-range row count/unrecognized value. Leaves failure count and state untouched,
-   * but frees the HALF_OPEN probe slot so the next caller can probe.
+   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, it
+   * carried an out-of-range row count/unrecognized value, or it hit a schema-rollout error the caller
+   * named through `expectMissingObject`/`expectInvalidIdentifier`. Leaves failure count and state
+   * untouched, but frees the HALF_OPEN probe slot so the next caller can probe.
+   *
+   * Deliberately not `recordSuccess` for the expected-error cases: none of them is a successful query, and
+   * resetting the shared count would discard failures booked by unrelated queries. A HALF_OPEN probe that
+   * ends here therefore stays HALF_OPEN, waiting for a real success to close the circuit.
    * @private
    */
   private releaseProbe(): void {

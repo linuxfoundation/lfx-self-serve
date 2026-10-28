@@ -7189,6 +7189,67 @@ describe('ImplementationTabComponent google languages', () => {
     expect(c['googleLanguagesPayload']()).toEqual({ languages: ['DE'] });
   });
 
+  /**
+   * The announcement half of the notice above (#3568). The live region is mounted BEFORE the notice
+   * text exists, so a screen reader sees its content change rather than a region inserted with its
+   * text, which is not reliably announced. The visible `<p>` carries no role, so the sentence is not
+   * read twice.
+   */
+  it('announces the held list through a region mounted before the notice appears', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    fixture.detectChanges();
+    const live = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld-live"]');
+    const region = live();
+    expect(region?.getAttribute('role')).toBe('status');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent?.trim()).toBe('');
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(live()).toBe(region);
+    expect(region?.textContent).toContain('serve in every language');
+    const notice = fixture.nativeElement.querySelector('[data-testid="implementation-google-languages-withheld"]');
+    expect(notice?.hasAttribute('role')).toBe(false);
+    expect(notice?.textContent?.trim()).toBe(c['googleLanguagesWithheldMessage']());
+  });
+
+  /**
+   * The submit path (#3568). The cases above call `googleLanguagesPayload()` directly, so deleting
+   * its spread from the request in `submit()` would leave them green. These drive `submit()` and read
+   * the request `CampaignService.createCampaign` was handed.
+   */
+  it('submits a picked language on a channel that accepts languages', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['languages']).toEqual(['DE']);
+  });
+
+  it('submits no languages on demand-gen, holding the picked list', async () => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleLanguage']('DE');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect(createCampaign.mock.calls[0][0]).not.toHaveProperty('languages');
+    expect(c['googleLanguages']()).toEqual(['DE']);
+  });
+
   it('shows no withheld notice on demand-gen when no language was picked', () => {
     const c = seedChannel(fixture, { includeDemandGen: true });
 

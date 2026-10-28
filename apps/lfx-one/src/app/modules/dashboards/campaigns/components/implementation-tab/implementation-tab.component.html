@@ -130,6 +130,14 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-proximity-withheld-live">
   {{ googleProximityWithheldMessage() }}
 </div>
+<!--
+  Campaign languages held by a channel that takes none (Demand Gen), announced. Top-level for the
+  reason the radius region above is: the visible notice is created by the switch that gives it its
+  text. Polite, because the campaign is still created; the visible `<p>` carries no role (#3568).
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-languages-withheld-live">
+  {{ googleLanguagesWithheldMessage() }}
+</div>
 <!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
   {{ googleLocationsCapabilityMessage() }}
@@ -844,10 +852,9 @@
         none. The list is held, not sent, so the campaign serves in every language — said out loud
         here rather than left for the operator to infer from the section disappearing.
       -->
-      @if (googleLanguagesWithheldOn(); as channelLabel) {
+      @if (googleLanguagesWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-languages-withheld">
-          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take campaign languages, so the
-          {{ googleLanguages().length }} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
 
