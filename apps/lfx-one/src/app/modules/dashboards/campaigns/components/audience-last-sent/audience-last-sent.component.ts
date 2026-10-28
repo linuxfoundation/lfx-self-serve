@@ -5,7 +5,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { AUDIENCE_ATTACH_MAX_LIST_IDS, AUDIENCE_LAST_SENT_MATCH_REASONS } from '@lfx-one/shared/constants';
 
-import type { AudienceLastSentEmail, AudienceListBrief, AudienceListRef, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
+import type { AudienceLastSentEmail, AudienceListBrief, AudienceListRef, AudienceMasterListBrief, AudienceStandingExpansion } from '@lfx-one/shared/interfaces';
 
 /**
  * What one prior send's included lists REPORT, or '' when nothing can be said.
@@ -124,6 +124,12 @@ export class AudienceLastSentComponent {
    * equal these plus the send's own, so a newly ticked suppression can still be recorded.
    */
   public readonly pendingExclusionIds = input<readonly string[]>([]);
+  /**
+   * The standing standard list and the rows it stands for. The recorded exclusions arrive expanded
+   * into those rows, so a past send that excluded the standing list itself is expanded the same way
+   * before the two are compared -- otherwise a reuse of it never read as "Same lists".
+   */
+  public readonly standingExpansion = input<AudienceStandingExpansion | null>(null);
 
   // === Outputs ===
   /** Add one of a past send's lists to the inclusion set. */
@@ -170,7 +176,12 @@ export class AudienceLastSentComponent {
     const selected = this.selectedIds();
     const excluded = this.excludedIds();
     const attachedIncludes = new Set(this.attachedIncludeIds());
-    const recordedExclusions = new Set(this.attachedExclusionIds());
+    // Both sides in the same terms: the standing list read as the standard rows it stands for. An
+    // attach that applied only some standard rows records the standing id as is (no
+    // `standardSuppression`), so the recorded side needs the expansion as much as the expected one.
+    const standingIn = this.standingExpansion();
+    const expandStanding = (id: string): readonly string[] => (standingIn !== null && id === standingIn.listId ? standingIn.rowIds : [id]);
+    const recordedExclusions = new Set(this.attachedExclusionIds().flatMap(expandStanding));
     // Generic so the decorated row keeps every field of the original — narrowing the parameter
     // type here silently drops `name`, `missing` and anything else the template reads.
     const decorate = <T extends { listId: string; size?: number }>(list: T) => ({
@@ -201,7 +212,7 @@ export class AudienceLastSentComponent {
       const sameIncludes = usable.length > 0 && usable.length === attachedIncludes.size && usable.every((list) => attachedIncludes.has(list.listId));
       const includeIds = new Set(usable.map((list) => list.listId));
       const expectedExclusions = new Set(
-        [...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].filter((id) => !includeIds.has(id))
+        [...email.suppressionLists.map((list) => list.listId), ...this.pendingExclusionIds()].flatMap(expandStanding).filter((id) => !includeIds.has(id))
       );
       const exclusionsCovered = expectedExclusions.size === recordedExclusions.size && [...expectedExclusions].every((id) => recordedExclusions.has(id));
       return {

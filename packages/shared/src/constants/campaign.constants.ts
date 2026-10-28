@@ -3479,11 +3479,10 @@ export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
   'lf_newsletter_opt_in',
 ] as const;
 
-/** The Audience tab's three modes, in the legacy builder's order. */
+/** The Audience tab's two modes: build a new list, or use lists that already exist. */
 export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
-  { mode: 'event', label: 'Event Audience' },
-  { mode: 'custom', label: 'Custom Audience' },
-  { mode: 'reuse', label: 'Reuse or Discover Existing Audience' },
+  { mode: 'build', label: 'Build a new audience' },
+  { mode: 'reuse', label: 'Use existing lists' },
 ] as const;
 
 /** Operators the custom-audience builder offers for an extra property filter, in display order. */
@@ -3618,8 +3617,42 @@ export const HUBSPOT_APP_HOST_PATTERN = /^app(?:-[a-z0-9]+)?\.hubspot\.com$/;
  */
 export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
+/** The most list ids campaign-service's preview-count unions in one request (a 400 past it). */
+export const AUDIENCE_PREVIEW_MAX_LIST_IDS = 50;
+
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
+
+/** The longest current-registrants edition name campaign-service accepts (its `MaxLength`). */
+export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
+
+/**
+ * An edition's year: a 19xx/20xx run of exactly four digits bounded by NON-digits, campaign-service's
+ * `RegistrantsEditionOK` rule. A word boundary missed "Summit2026", hiding its registrants row and
+ * appending a second year to the name. No `g` flag, so `test`/`exec` carry no state between calls.
+ */
+export const AUDIENCE_EDITION_YEAR_PATTERN = /(?<!\d)(?:19|20)\d{2}(?!\d)/;
+
+/**
+ * The longest explicit custom list name campaign-service accepts: HubSpot's list-search limit. A
+ * longer one is a 400, never cut, so the builder and the BFF hold to it too.
+ */
+export const AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH = 200;
+
+/** The BFF's refusal for a `currentRegistrantsEvent` that is not a string or is too long. */
+export const AUDIENCE_REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH} characters when provided`;
+
+/**
+ * The name prefix of the project's standing standard suppression list, which every email in the
+ * project reuses: the UI must never call it an orphan to delete.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX = 'LFX Standard Suppressions - ';
+
+/**
+ * The review step's key for the standard suppression rows shown as one chip. The grid treats them
+ * as one entry, so removing one from the review removes the group, never a single standard row.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY = 'group:standard';
 
 /**
  * Resource bounds on the Google creative and bidding strings the create route normalises.

@@ -6055,14 +6055,14 @@ export interface AudienceCardBucket {
 }
 
 /**
- * How a suppression list was found, which is also its priority order in the UI.
+ * How a suppression list was found, which is also its order in the UI.
  *
- * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
- * over from a prior edition already bundles that event's current-registrant and unsubscribe
- * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
- * never assumed.
+ * `current_registrants` comes first (the edition's own registrants are the exclusion a
+ * registration push most needs), then `event_specific` (carried over from a prior edition),
+ * `brand`, and `standard`: the portfolio-wide hygiene lists, shown as one entry because they are
+ * applied through the project's one shared standard suppression list.
  */
-export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
 export interface AudienceSuppressionList {
   /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
@@ -6073,6 +6073,21 @@ export interface AudienceSuppressionList {
   size?: number;
   category: AudienceSuppressionCategory;
   hubspotUrl: string;
+  /**
+   * The list does not exist yet: attach or compose creates it by name when the row is applied.
+   * Only the `current_registrants` row sets it, and such a row has an empty `listId`.
+   */
+  willCreate?: boolean;
+}
+
+/**
+ * The suppression rows for a scope, and the project's standing standard suppression list when it
+ * already exists. `standardList` is absent until the first attach or compose that applies every
+ * resolved standard row creates it, so its absence is how the tab knows that write will CREATE it.
+ */
+export interface AudienceSuppressionListsResult {
+  lists: AudienceSuppressionList[];
+  standardList?: AudienceComposedList;
 }
 
 /**
@@ -6171,6 +6186,8 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /** Edition (event name with year) whose current registrants the master also excludes. */
+  currentRegistrantsEvent?: string;
   /**
    * Attach the composed master to this brief, as its built send audience.
    *
@@ -6215,20 +6232,26 @@ export interface AudienceComposeUnattachedEvent {
 /**
  * Result of composing a master list.
  *
- * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
- * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
- * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ * `suppression` is the project's standing standard suppression list, which the master excludes
+ * directly beside every other selected suppression. It is reused across composes, never created
+ * per compose, and absent unless every resolved standard list was selected.
  *
- * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
- * failure (suppression created, master failed) is reported as an error that still carries
- * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
- * offer a bare retry on failure.
+ * This operation is NOT idempotent: the master is a real HubSpot create. An unconfirmed master
+ * create is reported as a partial error carrying the master's name. (Older deployments could
+ * also report a combined suppression list created before a failed master.) Do not offer a bare
+ * retry on failure.
  */
 export interface AudienceComposeMasterResult {
   master: AudienceComposedList;
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * The suppression list ids the master actually excludes: the standing list first (in place of
+   * the standard rows), then the other exclusions, then the edition's current-registrants list.
+   * Not the ids sent. Absent from an upstream that predates it, so every reader needs a fallback.
+   */
+  suppressionListIds?: string[];
   /**
    * Whether the master was recorded as the brief's built send audience.
    *
@@ -6318,6 +6341,11 @@ export interface AudienceAttachExistingRequestBase {
   briefId: string;
   /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
   suppressionListIds: string[];
+  /**
+   * Edition (event name with year) whose current registrants the send also suppresses, through a
+   * `<edition> - Current Registrants` list campaign-service finds or creates by name.
+   */
+  currentRegistrantsEvent?: string;
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -6326,6 +6354,11 @@ export interface AudienceAttachExistingRequestBase {
 export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
+  /**
+   * The project's standing standard suppression list, reused across audiences and recorded in
+   * place of the standard lists. Absent unless every resolved standard list was sent.
+   */
+  standardSuppression?: AudienceComposedList;
   audience: CampaignAudience;
 }
 
@@ -6554,8 +6587,46 @@ export interface AudienceCustomRequest {
   name?: string;
 }
 
-/** How the Audience tab builds the send audience — the legacy builder's three modes. */
-export type AudienceBuildMode = 'event' | 'custom' | 'reuse';
+/**
+ * What an attach or compose expected to create, captured at dispatch so its result can say what
+ * actually happened: whether the standing standard list existed, and the name of the
+ * current-registrants list it was asked to create ('' when none).
+ */
+export interface AudienceWriteDispatchContext {
+  standingExisted: boolean;
+  registrantsName: string;
+}
+
+/**
+ * A 409 from compose or attach: a HubSpot list already holds the name of the standing standard
+ * suppression list or of the edition's current-registrants list. `message` is upstream's, naming
+ * the list and its id; `fromCompose` says whether the compose latch waits on the operator's fix.
+ */
+export interface AudienceListNameConflict {
+  message: string;
+  fromCompose: boolean;
+}
+
+/**
+ * The project's standing standard list and the standard rows it stands for, so a past send that
+ * excluded the standing list is compared with a recorded audience in the same terms.
+ */
+export interface AudienceStandingExpansion {
+  listId: string;
+  rowIds: readonly string[];
+}
+
+/** An action that starts the Audience tab over and so waits for the operator to confirm it. */
+export type AudienceStartOverAction = 'discover' | 'draft';
+
+/** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
+export interface AudienceStandardSuppressionToggle {
+  keys: readonly string[];
+  selected: boolean;
+}
+
+/** How the Audience tab sets the send audience: build a new list, or use existing lists. */
+export type AudienceBuildMode = 'build' | 'reuse';
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {

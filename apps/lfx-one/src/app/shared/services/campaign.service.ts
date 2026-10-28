@@ -26,7 +26,7 @@ import {
   AudiencePreviewCountRequest,
   AudienceQaResult,
   AudienceQaRunRequest,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
@@ -826,10 +826,12 @@ export class CampaignService {
    * and event-specific. Nothing here is pre-applied — the operator chooses, because a wrongly
    * auto-applied exclusion silently shrinks a send.
    *
-   * Both `brandShort` and `eventName` are optional: the portfolio-wide lists are found by fixed
-   * name, so the answer is already useful before discovery has identified the event.
+   * Every filter is optional: the portfolio-wide lists are found by fixed name, so the answer is
+   * already useful before discovery has identified the event. `registrantsEvent` (the edition, with
+   * its year) adds the current-registrants row. `standardList` is the project's standing standard
+   * suppression list, present only once it exists.
    */
-  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = ''): Observable<AudienceSuppressionList[]> {
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionListsResult> {
     let params = new HttpParams().set('project', projectSlug);
     if (brandShort !== '') {
       params = params.set('brandShort', brandShort);
@@ -837,7 +839,10 @@ export class CampaignService {
     if (eventName !== '') {
       params = params.set('eventName', eventName);
     }
-    return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
+    if (registrantsEvent !== '') {
+      params = params.set('registrantsEvent', registrantsEvent);
+    }
+    return this.http.get<AudienceSuppressionListsResult>('/api/campaigns/audience-builder/suppression-lists', { params });
   }
 
   /**
