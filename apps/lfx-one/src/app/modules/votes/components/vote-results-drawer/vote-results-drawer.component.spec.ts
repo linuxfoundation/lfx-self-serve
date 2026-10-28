@@ -935,3 +935,32 @@ describe('VoteResultsDrawerComponent — presenter entry points (#4140)', () => 
     expect(document.querySelector('[data-testid="vote-results-drawer-present"]')).toBeNull();
   });
 });
+
+describe('VoteResultsDrawerComponent — Send ballots now (#4363)', () => {
+  const sendBallots = () => document.querySelector('[data-testid="vote-results-drawer-send-ballots"]');
+
+  it('offers Send ballots now to a decorated writer while the vote is active', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'creator');
+
+    expect(sendBallots()).toBeTruthy();
+    expect(document.querySelector('[data-testid="vote-send-ballots-button"]')).toBeTruthy();
+  });
+
+  it.each([PollStatus.ENDED, PollStatus.DISABLED])('hides it once the vote is %s', async (status) => {
+    await setupDrawer(makeVote(status, 'vote-1', true), of(null), 'creator');
+
+    expect(sendBallots()).toBeNull();
+  });
+
+  it.each([undefined, false])('hides it from a creator-audience viewer who is not a writer (writer: %s)', async (writer) => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', writer), of(null), 'creator');
+
+    expect(sendBallots()).toBeNull();
+  });
+
+  it('hides it from a voter', async () => {
+    await setupDrawer(makeVote(PollStatus.ACTIVE, 'vote-1', true), of(null), 'voter');
+
+    expect(sendBallots()).toBeNull();
+  });
+});
