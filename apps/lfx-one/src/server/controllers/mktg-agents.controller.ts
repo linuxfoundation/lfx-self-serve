@@ -210,6 +210,7 @@ export class MktgAgentsController {
     try {
       const project = await this.documentRuns.resolveCatalogProject(req, agent.id, rawProject);
       if (!validSessionId) {
+        if (project) await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
         if (project) {
@@ -387,6 +388,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
@@ -695,6 +697,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
@@ -986,6 +989,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
@@ -1260,6 +1264,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, rawProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId, priorVersion ?? 0);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
@@ -1500,6 +1505,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'faq_generate', startTime, { session_created: true });

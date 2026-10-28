@@ -176,7 +176,7 @@ export function mktgRunProgress(
   activity?: MktgRunActivity[],
   readerSubject?: string
 ): MktgDocumentRunProgress | null {
-  if (run.state === 'completed' || run.state === 'superseded') {
+  if (run.state === 'completed' || run.state === 'superseded' || run.state === 'discarded') {
     return null;
   }
   // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
@@ -206,7 +206,7 @@ export function mktgRunRenewAt(run: MktgStartedRunRecord, now: number): string {
 }
 
 export function isMktgRunClosed(state: MktgStoredDocumentRunState): boolean {
-  return state === 'completed' || state === 'superseded';
+  return state === 'completed' || state === 'superseded' || state === 'discarded';
 }
 
 export function isMktgRunTerminal(state: MktgStoredDocumentRunState): boolean {

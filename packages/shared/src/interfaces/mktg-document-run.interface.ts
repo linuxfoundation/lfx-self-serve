@@ -4,6 +4,18 @@
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
+import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+
+/** Safe conflict facts; never a Guild session id or owner capability. */
+export interface MktgActiveRunConflict {
+  code: typeof MKTG_RUN_ACTIVE;
+  message: string;
+  startedBy: string;
+  activeRunId: string;
+  state: MktgDocumentRunState;
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+}
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
 export type MktgRunFailureReason = Member360FailureReason;
@@ -20,6 +32,12 @@ export interface MktgOneOffRunContext {
 export interface MktgDocumentRunStartOptions {
   oneOff?: MktgOneOffRunContext;
   basedOnId?: string;
+}
+
+/** Untrusted discard input is validated before any tracking mutation. */
+export interface MktgActiveRunStartOptions {
+  documentId?: string;
+  discard?: unknown;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
@@ -49,8 +67,8 @@ export interface MktgSessionOutcome {
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'questions' | 'storing' | 'failed';
 
-/** Server-only terminal markers for completion and superseded unfinished or failed runs. */
-export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded';
+/** Server-only terminal markers; closed runs are not reconciled or listed. */
+export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
  * Writer-entitled progress returned with Documents list/detail reads.
