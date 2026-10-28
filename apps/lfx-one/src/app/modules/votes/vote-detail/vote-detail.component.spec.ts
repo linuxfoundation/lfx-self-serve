@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass, NgTemplateOutlet } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
   MyVoteBallot,
@@ -100,7 +101,11 @@ describe('VoteDetailComponent', () => {
   let reqContext: ServerRequestContext;
   const impersonating = signal(false);
 
-  async function setup(platform: 'browser' | 'server' = 'browser', includeRealHeader = false): Promise<ComponentFixture<VoteDetailComponent>> {
+  async function setup(
+    platform: 'browser' | 'server' = 'browser',
+    includeRealHeader = false,
+    includeRealSummary = false
+  ): Promise<ComponentFixture<VoteDetailComponent>> {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
@@ -116,10 +121,10 @@ describe('VoteDetailComponent', () => {
         { provide: REQUEST_CONTEXT, useValue: reqContext },
       ],
     })
-      // Keep the real page template; opt into the real header for composed outsider visibility assertions.
+      // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgClass, NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : [])],
+          imports: [NgTemplateOutlet, ...(includeRealHeader ? [VoteDetailHeaderComponent] : []), ...(includeRealSummary ? [StatCardGridComponent] : [])],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -387,22 +392,23 @@ describe('VoteDetailComponent', () => {
 
       expect(testId(fixture, 'vote-detail-results-error')?.textContent?.trim()).toBe("Couldn't load results. Try reloading this page.");
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
-      // No results means no count — never "0 invited voters have not responded yet".
-      expect(testId(fixture, 'vote-detail-overview-callout')).not.toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+      // No results means no count — the Not voted card reads as a dash, never 0.
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe('—');
     });
 
-    it('shows the not-responded count only once the results have loaded', async () => {
+    it('shows no not-responded callout on an open vote, before or after the results load (#4447)', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       const results = new Subject<VoteResultsResponse>();
       voteService.getVoteResults.mockReturnValue(results);
       const fixture = await setup();
 
-      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe('—');
 
       results.next(makeResults());
       TestBed.tick();
-      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent?.trim()).toBe('1 invited voter has not responded yet');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ value: 1, label: 'Not voted yet' });
     });
   });
 
@@ -547,7 +553,7 @@ describe('VoteDetailComponent', () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.DISABLED })));
       const fixture = await setup();
 
-      const notVotedCard = read<StatCardItem[]>(fixture, 'summaryCards')[3];
+      const notVotedCard = read<StatCardItem[]>(fixture, 'summaryCards')[2];
       expect(notVotedCard).toMatchObject({ label: 'Not voted yet', subLine: 'Voting not open yet' });
       const callout = testId(fixture, 'vote-detail-overview-callout')?.textContent ?? '';
       expect(callout).toContain('This vote is a draft');
@@ -568,7 +574,7 @@ describe('VoteDetailComponent', () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
       const fixture = await setup();
 
-      expect(read<StatCardItem[]>(fixture, 'summaryCards')[3]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
       expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('This vote is closed');
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
     });
@@ -627,6 +633,123 @@ describe('VoteDetailComponent', () => {
     });
   });
 
+  describe('summary card actions (#4447)', () => {
+    const clickCard = (fixture: ComponentFixture<VoteDetailComponent>, action: string): void =>
+      fixture.debugElement.query(By.css('[data-testid="vote-detail-summary"]')).triggerEventHandler('actionClick', action);
+    const cardActions = (fixture: ComponentFixture<VoteDetailComponent>): (string | undefined)[] =>
+      read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.action);
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+    });
+
+    it('merges responses and participation into one Responded card, noting abstentions', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_abstained: 1 }));
+      const fixture = await setup();
+
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.label)).toEqual(['Responded', 'Comments', 'Not voted yet']);
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[0]).toMatchObject({ value: '3 / 4', subLine: '75% participation · 1 abstention' });
+      expect(testId(fixture, 'vote-detail-summary')).toHaveProperty('columns', 3);
+    });
+
+    it('makes every card clickable on an open vote', async () => {
+      const fixture = await setup();
+
+      expect(cardActions(fixture)).toEqual(['responses', 'comments', 'not-voted']);
+    });
+
+    it('opens the reminder dialog from the Not voted card', async () => {
+      const fixture = await setup();
+
+      clickCard(fixture, 'not-voted');
+
+      expect(dialogService.open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: makeVote() } }));
+    });
+
+    it.each([
+      ['comments', 'comments'],
+      ['responses', 'voters'],
+    ])('opens the matching tab from the %s card', async (action, tab) => {
+      const fixture = await setup();
+
+      clickCard(fixture, action);
+
+      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab, voters_choice: null, voters_ballot: null } }));
+      expect(dialogService.open).not.toHaveBeenCalled();
+    });
+
+    it('keeps Not voted display-only once the vote has ended', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      const fixture = await setup();
+
+      expect(cardActions(fixture)).toEqual(['responses', 'comments', undefined]);
+    });
+
+    it('keeps Comments display-only while totals are held or when the vote has no prompts', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), results_held: true }));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
+      const held = await setup();
+      expect(cardActions(held)[1]).toBeUndefined();
+
+      TestBed.resetTestingModule();
+      voteService.getVoteResults.mockReturnValue(of(makeResults()));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_comment_prompts: [] })));
+      const noPrompts = await setup();
+      expect(cardActions(noPrompts)[1]).toBeUndefined();
+    });
+
+    it.each(['initial load', 'ballot refresh'] as const)('disables the real summary buttons after a results error on %s', async (phase) => {
+      const failedResults = new Subject<VoteResultsResponse>();
+      if (phase === 'initial load') {
+        voteService.getVoteResults.mockReturnValue(failedResults);
+      } else {
+        voteService.getVoteResults.mockReturnValueOnce(of(makeResults())).mockReturnValueOnce(failedResults);
+      }
+      const fixture = await setup('browser', false, true);
+      const buttons = (): HTMLButtonElement[] =>
+        Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-summary"] button'));
+
+      expect(buttons()).toHaveLength(3);
+      expect(buttons().every((button) => button.disabled)).toBe(phase === 'initial load');
+      if (phase === 'ballot refresh') {
+        call(fixture, 'onVoteSubmitted', 'vote-1');
+        TestBed.tick();
+      }
+
+      failedResults.error(new HttpErrorResponse({ status: 503 }));
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(read(fixture, 'voteResultsError')).toBe(true);
+      expect(read(fixture, 'loadingVoteResults')).toBe(false);
+      expect(buttons()).toHaveLength(3);
+      expect(buttons().every((button) => button.disabled)).toBe(true);
+      router.navigate.mockClear();
+      dialogService.open.mockClear();
+      for (const button of buttons()) button.click();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(dialogService.open).not.toHaveBeenCalled();
+    });
+
+    it('ignores card clicks while the results load, and unknown actions', async () => {
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      const fixture = await setup();
+      router.navigate.mockClear();
+
+      clickCard(fixture, 'not-voted');
+      clickCard(fixture, 'responses');
+      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+
+      results.next(makeResults());
+      TestBed.tick();
+      clickCard(fixture, 'closing-soon');
+      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ballot refresh', () => {
     it.each([
       { tab: 'overview', region: 'vote-detail-overview-comment' },
@@ -657,7 +780,7 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'voteResults')).toEqual(previousResults);
       expect(read(fixture, 'loadingVoteResults')).toBe(false);
       expect(read(fixture, 'hasLoadedResults')).toBe(true);
-      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual([3, '75%', 1, 1]);
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual(['3 / 4', 1, 1]);
       expect(testId(fixture, 'vote-detail-summary')).toHaveProperty('loading', false);
       expect(testId(fixture, 'vote-detail-results-loading')).toBeNull();
       expect(testId(fixture, 'vote-detail-comments-loading')).toBeNull();
@@ -669,7 +792,7 @@ describe('VoteDetailComponent', () => {
       TestBed.tick();
 
       expect(read(fixture, 'voteResults')).toEqual(updatedResults);
-      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual([4, '100%', 1, 0]);
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.value)).toEqual(['4 / 4', 1, 0]);
       expect(testId(fixture, region)).not.toBeNull();
     });
 
@@ -689,7 +812,6 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'voteResults')).toBeNull();
       expect(read(fixture, 'loadingVoteResults')).toBe(false);
       expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards').every((card) => card.value === '—')).toBe(true);
     });
 
@@ -1063,7 +1185,7 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockImplementation((id: string) => (id === 'vote-1' ? of(previousResults) : nextResults));
       const fixture = await setup();
       expect(testId(fixture, 'vote-detail-overview-comment')?.textContent).toContain('Synthetic comment for the previous vote');
-      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('1 invited voter');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe(1);
 
       paramMap.next(convertToParamMap({ id: 'vote-2' }));
       TestBed.tick();
@@ -1071,7 +1193,6 @@ describe('VoteDetailComponent', () => {
       expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-2');
       expect(read(fixture, 'loadingVoteResults')).toBe(true);
       expect(read(fixture, 'voteResults')).toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
       expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards').every((card) => card.value === '—')).toBe(true);
 
@@ -1079,7 +1200,7 @@ describe('VoteDetailComponent', () => {
       nextResults.complete();
       TestBed.tick();
 
-      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('6 invited voters');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe(6);
       expect(testId(fixture, 'vote-detail-overview-comment')).toBeNull();
     });
   });
@@ -1526,7 +1647,7 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(of(heldResults()));
     });
 
-    it('shows the held panel on Overview, with the pseudo-anonymous callout and no live-results promise', async () => {
+    it('shows the held panel on Overview, with no manager callout while the vote is open', async () => {
       const fixture = await setup();
 
       expect(read(fixture, 'resultsHeld')).toBe(true);
@@ -1534,19 +1655,19 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('until voting closes on');
       expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout-pseudo-anonymous')).not.toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('follow live results');
-      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent).toContain('1 invited voter has not responded yet');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
     it('keeps participation numbers but shows "—" for comments and drops the abstention count from the summary', async () => {
       const fixture = await setup();
 
       const cards = read<StatCardItem[]>(fixture, 'summaryCards');
-      expect(cards[0]).toMatchObject({ value: 3, label: 'Responses', subLine: 'of 4 invited' });
-      expect(cards[1]).toMatchObject({ value: '75%', label: 'Participation' });
-      expect(cards[2]).toMatchObject({ value: '—', label: 'Comments' });
-      expect(cards[3]).toMatchObject({ value: 1 });
+      expect(cards).toHaveLength(3);
+      expect(cards[0]).toMatchObject({ value: '3 / 4', label: 'Responded', subLine: '75% participation', action: 'responses' });
+      expect(cards[1]).toMatchObject({ value: '—', label: 'Comments' });
+      // Held comments have nowhere to go, but the participation-only Voters tab stays reachable.
+      expect(cards[1].action).toBeUndefined();
+      expect(cards[2]).toMatchObject({ value: 1 });
     });
 
     it('shows the held panel on Results, with the abstention stat held', async () => {

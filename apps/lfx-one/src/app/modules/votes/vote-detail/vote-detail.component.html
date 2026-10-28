@@ -41,7 +41,12 @@
         </div>
       } @else {
         @if (audience() === 'creator') {
-          <lfx-stat-card-grid [cards]="summaryCards()" [loading]="loadingVoteResults()" [columns]="4" data-testid="vote-detail-summary" />
+          <lfx-stat-card-grid
+            [cards]="summaryCards()"
+            [loading]="loadingVoteResults()"
+            [columns]="3"
+            (actionClick)="onSummaryCardClick($event)"
+            data-testid="vote-detail-summary" />
         }
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -106,30 +111,10 @@
                 } @else {
                   <ng-container [ngTemplateOutlet]="voterStatePanel" />
                 }
-                @if (audience() === 'creator') {
-                  <div
-                    class="rounded-lg border p-4 flex flex-col gap-1"
-                    [ngClass]="isActive() ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-800'"
-                    data-testid="vote-detail-overview-callout">
-                    @if (isActive()) {
-                      <!-- The count waits for results: before they load (or if they fail) it would read as zero. -->
-                      @if (voteResults()) {
-                        <p class="text-sm font-semibold" data-testid="vote-detail-overview-callout-count">
-                          {{ notVotedCount() }} invited {{ notVotedCount() === 1 ? 'voter has' : 'voters have' }} not responded yet
-                        </p>
-                      }
-                      @if (isPseudoAnonymous()) {
-                        <p class="text-sm" data-testid="vote-detail-overview-callout-pseudo-anonymous">
-                          As a manager, you can follow who has responded and send a reminder to voters who haven't voted. This is a pseudo-anonymous vote, so
-                          totals and comments appear when voting closes, for you and every invited voter.
-                        </p>
-                      } @else {
-                        <p class="text-sm">
-                          As a manager, you can follow live results and send a reminder to voters who haven't voted. Final results are shared with voters after
-                          the vote closes.
-                        </p>
-                      }
-                    } @else if (isEnded()) {
+                <!-- An open vote has no callout: the Not voted card and the header's Send reminder carry that message (#4447). -->
+                @if (audience() === 'creator' && !isActive()) {
+                  <div class="rounded-lg border border-gray-200 bg-gray-50 text-gray-800 p-4 flex flex-col gap-1" data-testid="vote-detail-overview-callout">
+                    @if (isEnded()) {
                       <p class="text-sm font-semibold">This vote is closed</p>
                       @if (resultsHeld()) {
                         <p class="text-sm">Totals and comments will appear once they are finalized.</p>
