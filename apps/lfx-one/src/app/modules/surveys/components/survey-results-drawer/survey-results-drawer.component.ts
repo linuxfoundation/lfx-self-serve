@@ -116,8 +116,9 @@ export class SurveyResultsDrawerComponent {
   // === Private Initializers ===
   private initSurvey(): Signal<Survey | null> {
     return toSignal(
-      toObservable(this.surveyId).pipe(
-        switchMap((id) => {
+      // Same project scope as the response rows, so totals/NPS and rates/comments always match.
+      combineLatest([toObservable(this.surveyId), toObservable(this.projectUid)]).pipe(
+        switchMap(([id, projectUid]) => {
           if (!id) {
             this.loading.set(false);
             return of(null);
@@ -125,10 +126,8 @@ export class SurveyResultsDrawerComponent {
 
           this.loading.set(true);
           const listData = this.listSurvey();
-          const project = this.projectContextService.activeContext();
-          const projectId = project?.uid ?? undefined;
 
-          return this.surveyService.getSurvey(id, projectId).pipe(
+          return this.surveyService.getSurvey(id, projectUid ?? undefined).pipe(
             catchError(() => of(listData)),
             finalize(() => this.loading.set(false)),
             startWith(listData)
