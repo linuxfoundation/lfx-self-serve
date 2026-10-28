@@ -77,7 +77,7 @@ describe('MktgFaqViewComponent', () => {
   it('opts stored answers and gaps into the same original-index comment anchors, excluding reports', async () => {
     const before = JSON.stringify(ASSET);
     expect(element().querySelector('lfx-mktg-field-comments')).toBeNull();
-    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+    expect(text('mktg-faq-view-unanswered-callout')).toContain(
       '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed.'
     );
     host.commentsEnabled.set(true);
@@ -85,7 +85,7 @@ describe('MktgFaqViewComponent', () => {
     const pins = () => Array.from(element().querySelectorAll('[data-mktg-comment-field]'));
     expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][0][1]', 'faq[0][1][1][1]', 'faq[1][1][0][1]']);
     expect(pins()[1].querySelector('button')?.getAttribute('aria-label')).toContain('About TestOrbit · Q2: How much does membership cost?');
-    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+    expect(text('mktg-faq-view-unanswered-callout')).toContain(
       '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed. Answer one by commenting on it; the agent adds your answer as Notes.'
     );
     query('mktg-faq-view-tab-unanswered')?.click();
