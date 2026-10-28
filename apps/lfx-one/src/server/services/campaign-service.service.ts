@@ -534,6 +534,18 @@ export function canCreateWithBidding(): boolean {
 }
 
 /**
+ * Whether a Google create may carry postal-code ids in `geoTargets` or any `proximityTargets`.
+ *
+ * Needs only the campaign-service create path — upstream has read both since LFXV2-3283, so there
+ * is no second flag. The LEGACY creator is the hazard: it resolves `geoTargets` through the
+ * 30-country map and drops every other entry, and never reads `proximityTargets` at all, so a
+ * postal-only or radius-only create would serve with no location limit while reporting success.
+ */
+export function canCreateWithFinerGoogleGeo(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.

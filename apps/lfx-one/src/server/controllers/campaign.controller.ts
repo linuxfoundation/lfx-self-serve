@@ -193,6 +193,7 @@ import {
   CampaignServiceClient,
   canCreateMicrosoftSchedule,
   canCreateWithBidding,
+  canCreateWithFinerGoogleGeo,
   canUseGoogleCreativeAssets,
   canUseMetaCreativeAssets,
   canUseRedditCreativeAssets,
@@ -690,6 +691,27 @@ export class CampaignController {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
+        );
+        return;
+      }
+
+      // Postal-code ids and radius targets are refused, not dropped, on the same terms as `bidding`
+      // above — and dropping them is worse than dropping a bid. The legacy creator resolves
+      // `geoTargets` through the 30-country map and skips every other entry, and never reads
+      // `proximityTargets`, so a postal-only or radius-only campaign would be created with NO
+      // location limit. The form never sends them in that state (`googleCreativeEnabled` hides both
+      // controls and the create is blocked while any are held); this protects the endpoint.
+      const unservedGoogleGeoField = this.unservedGoogleGeoField(body);
+      if (unservedGoogleGeoField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedGoogleGeoField,
+            'Google postal-code and radius targeting is not enabled on this deployment; target countries instead',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
         );
         return;
       }
@@ -4464,6 +4486,27 @@ export class CampaignController {
       // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
       // campaign-service would refuse it rather than read it as automatic.
       if (config !== null && typeof config === 'object' && 'bidding' in config) return `${key}.bidding`;
+    }
+    return null;
+  }
+
+  /**
+   * `geoTargets` or `proximityTargets` when a Google create carries a postal-code id or a radius target
+   * this deployment cannot honour (see `createCampaign`), else `null`.
+   *
+   * A numeric `geoTargets` entry is judged after Go's trim, as the builder judges it, so a padded id
+   * cannot slip past. An EMPTY `proximityTargets` list carries nothing to drop and is let through.
+   */
+  private unservedGoogleGeoField(body: CampaignCreateRequest): string | null {
+    if (canCreateWithFinerGoogleGeo()) return null;
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('google-ads')) return null;
+    const geoTargets: unknown = body?.geoTargets;
+    if (Array.isArray(geoTargets) && geoTargets.some((g) => typeof g === 'string' && GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(googleAdsTrimSpace(g)))) {
+      return 'geoTargets';
+    }
+    const proximityTargets: unknown = body?.proximityTargets;
+    if (proximityTargets !== undefined && proximityTargets !== null && !(Array.isArray(proximityTargets) && proximityTargets.length === 0)) {
+      return 'proximityTargets';
     }
     return null;
   }

@@ -3376,6 +3376,59 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['proximityTargets']).toEqual([SYDNEY]);
   });
 
+  /**
+   * The LEGACY road drops both shapes — `geoTargets` through the 30-country map, `proximityTargets`
+   * unread — so a postal-only or radius-only create would serve with no location limit. Refused by
+   * field, before either creator runs, exactly as an unservable `bidding` is.
+   */
+  it.each([
+    ['a postal-code id in geoTargets', { geoTargets: ['US', ' 9031945 '] }, 'geoTargets'],
+    ['a postal-only geoTargets', { geoTargets: ['9031945'] }, 'geoTargets'],
+    ['radius targets', { proximityTargets: [SYDNEY] }, 'proximityTargets'],
+    ['a malformed proximityTargets', { proximityTargets: {} }, 'proximityTargets'],
+  ])('refuses %s while the cutover is dark, creating nothing', async (_label, overrides, field) => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe(field);
+    expect(error.message).toContain('not enabled on this deployment');
+  });
+
+  /** The contrast: countries alone, and an empty radius list, are what the legacy creator serves. */
+  it('still serves a country-only create with an empty radius list on the legacy road', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', 'CA'], proximityTargets: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
+  /** A Google-shaped body sent for another platform only is not this guard's business. */
+  it('does not refuse postal ids on a create that does not include google-ads', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['meta-ads'], metaConfig: { budgetUsd: 250 }, geoTargets: ['9031945'] }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const fields = vi.mocked(next).mock.calls.map((call) => (call[0] as unknown as ServiceValidationError)?.validationErrors?.[0]?.field);
+    expect(fields).not.toContain('geoTargets');
+  });
+
   it('dispatches radius targets at both unit ceilings, which is exactly what upstream accepts', async () => {
     // The contrast for every radius refusal below, and the boundary itself: `validateProximityTargets`
     // compares `radius > maxRadius` STRICTLY, so exactly 500 miles and exactly 800 kilometres are

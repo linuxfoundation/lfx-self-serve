@@ -105,6 +105,14 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-extensions-capability-live">
   {{ googleExtensionsCapabilityMessage() }}
 </div>
+<!--
+  Radius targets held by a channel that refuses them (Demand Gen), announced. Top-level for the reason
+  the callout regions above are: the visible notice is created by the switch that gives it its text.
+  Polite, because the campaign is still created; the visible `<p>` carries no role.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-proximity-withheld-live">
+  {{ googleProximityWithheldMessage() }}
+</div>
 <!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
   {{ googleLocationsCapabilityMessage() }}
@@ -654,10 +662,10 @@
         Radius targets picked under one channel and then withheld because the dispatched channel
         refuses them. Held, not sent — said here rather than left to the section disappearing.
       -->
-      @if (googleProximityWithheldOn(); as channelLabel) {
+      <!-- Announced by the region at the top of the template. -->
+      @if (googleProximityWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-proximity-withheld">
-          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take radius targets, so the
-          {{ googleProximityTargets().length }} you added will not be sent. Switch the channel back to keep them.
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
 

@@ -6433,6 +6433,26 @@ describe('ImplementationTabComponent google location targets held by the capabil
     expect(find('implementation-google-proximity-withheld')).not.toBeNull();
   });
 
+  /** The region is mounted before the switch, so the switch itself is what it announces. */
+  it('announces held demand-gen radius targets through an always-mounted polite region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+    fixture.detectChanges();
+    const region = find('implementation-google-proximity-withheld-live');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.getAttribute('role')).toBe('status');
+    expect(region?.textContent?.trim()).toBe('');
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // The SAME element, now carrying the sentence the visible notice shows.
+    expect(find('implementation-google-proximity-withheld-live')).toBe(region);
+    expect(region?.textContent?.trim()).toBe(c['googleProximityWithheldMessage']());
+    expect(region?.textContent).toContain('Demand Gen campaigns do not take radius targets');
+    expect(find('implementation-google-proximity-withheld')?.getAttribute('role')).toBeNull();
+  });
+
   it('says nothing when no postal code or radius is held', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     fixture.componentRef.setInput('googleCreativeEnabled', null);

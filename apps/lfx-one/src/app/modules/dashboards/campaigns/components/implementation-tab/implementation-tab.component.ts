@@ -2314,6 +2314,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
+  /**
+   * The held-radius sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, the callout warnings' arrangement: the
+   * notice appears with the channel switch that gives it its text, so a region mounted with it would
+   * never announce.
+   */
+  protected readonly googleProximityWithheldMessage = computed(() => {
+    const channelLabel = this.googleProximityWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleProximityTargets().length;
+    return `${channelLabel} campaigns do not take radius targets, so the ${count} you added will not be sent. Switch the channel back to keep them.`;
+  });
   protected readonly googleLocationsCapabilityBlock: Signal<CampaignGoogleLocationsCapabilityBlock | null> = this.initGoogleLocationsCapabilityBlock();
   /** The always-mounted live region's text for `googleLocationsCapabilityBlock`; `''` when nothing is withheld. */
   protected readonly googleLocationsCapabilityMessage = computed(() => this.googleLocationsCapabilityBlock()?.message ?? '');
