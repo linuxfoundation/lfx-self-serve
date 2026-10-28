@@ -115,7 +115,7 @@ describe('Marketing family page', () => {
     ['foundation-message', 'positioning-brand', 'writing', 'Writing…', 'Open'],
     ['foundation-message', 'positioning-brand', 'storing', 'Writing…', 'Open'],
     ['foundation-message', 'positioning-brand', 'questions', 'Waiting for your answers', 'Answer the questions'],
-    ['member-360', 'member-sponsor', 'questions', 'Paused', 'Open'],
+    ['member-360', 'member-sponsor', 'questions', 'Waiting for your answers', 'Answer the questions'],
     ['linkedin-post', 'social-community', 'questions', 'Waiting for your answers', 'Answer the questions'],
   ] as const)('shows %s %s in the existing header and row', async (agentKey, familyId, state, status, label) => {
     MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
@@ -149,12 +149,13 @@ describe('Marketing family page', () => {
       'linkedin-post': 'Create LinkedIn post',
     }[agentKey];
     expect(primary?.textContent).toContain(primaryLabel);
-    const livingQuestions = state === 'questions' && agentKey === 'foundation-message';
+    const questions = state === 'questions';
     const documentId = agentKey === 'foundation-message' ? 'living' : 'run-synthetic';
-    const target = livingQuestions ? 'foundation-setup' : `documents/${agentKey}/${documentId}`;
+    const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
+    const target = questions ? runTarget : `documents/${agentKey}/${documentId}`;
     for (const link of [row?.querySelector('[data-testid="mktg-family-run-status-link"]'), root?.querySelector('[data-testid="mktg-family-run-status"] a')]) {
       expect(link?.textContent?.trim()).toBe(label);
-      expect(link?.getAttribute('href')).toBe('/project/mktg-os-agents/' + target + '?project=synthetic' + (livingQuestions ? '' : '&run=synthetic-run'));
+      expect(link?.getAttribute('href')).toBe('/project/mktg-os-agents/' + target + '?project=synthetic' + (questions ? '' : '&run=synthetic-run'));
     }
     documents.update((value) => ({ ...value, runs: value.runs?.map((run) => ({ ...run, state: 'failed' })) }));
     await harness.fixture.whenStable();

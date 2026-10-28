@@ -68,12 +68,13 @@ describe('One rule for every family action', () => {
       label: 'Answer the questions',
       link: { commands: ['foundation-setup'], queryParams: {} },
     });
-    expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Paused');
+    expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Waiting for your answers');
   });
   it.each([
-    ['linkedin-post', 'Waiting for your answers', 'Answer the questions'],
-    ['member-360', 'Paused', 'Open'],
-  ] as const)('keeps %s questions on the selected document and run', (agentKey, caption, label) => {
+    ['foundation-message', 'foundation-setup'],
+    ['linkedin-post', 'linkedin-post'],
+    ['member-360', 'member-360'],
+  ] as const)('answers %s questions on its catalog run page', (agentKey, catalogAgentId) => {
     const run = {
       agentKey,
       state: 'questions' as const,
@@ -83,9 +84,9 @@ describe('One rule for every family action', () => {
       startedAt: '2026-10-28T12:00:00Z',
     };
     expect(resolveMktgFamilyRun(agentKey, [run], ['../../'])).toEqual({
-      caption,
-      label,
-      link: { commands: ['../../', 'documents', agentKey, 'one-off-document'], queryParams: { run: 'synthetic-run' } },
+      caption: 'Waiting for your answers',
+      label: 'Answer the questions',
+      link: { commands: ['../../', catalogAgentId], queryParams: {} },
     });
   });
   it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
