@@ -24,6 +24,7 @@ describe('MeetingsEntryComponent', () => {
   let providerReady: ReturnType<typeof signal<boolean>>;
   let flagValue: ReturnType<typeof signal<boolean>>;
   let waitForReady: ReturnType<typeof vi.fn>;
+  let getBooleanFlag: ReturnType<typeof vi.fn>;
   let activeLens: ReturnType<typeof signal<string>>;
   let urlPath: string;
   let resolveReady: (ready: boolean) => void;
@@ -47,6 +48,7 @@ describe('MeetingsEntryComponent', () => {
     providerReady = signal(true);
     flagValue = signal(false);
     activeLens = signal('me');
+    getBooleanFlag = vi.fn().mockReturnValue(flagValue);
     urlPath = 'meetings';
     // Stands in for the service's own timeout: the test settles the wait by hand.
     waitForReady = vi.fn().mockImplementation(() => new Promise<boolean>((resolve) => (resolveReady = resolve)));
@@ -59,7 +61,7 @@ describe('MeetingsEntryComponent', () => {
       providers: [
         {
           provide: FeatureFlagService,
-          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag: vi.fn().mockReturnValue(flagValue), waitForReady },
+          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady },
         },
         { provide: LensService, useValue: { activeLens } },
         {
@@ -116,8 +118,21 @@ describe('MeetingsEntryComponent', () => {
 
       expect(has(fixture, 'stub-v1')).toBe(true);
       expect(has(fixture, 'stub-redesign')).toBe(false);
+      expect(getFlagOverride).not.toHaveBeenCalled();
+      expect(waitForReady).not.toHaveBeenCalled();
+      expect(getBooleanFlag).not.toHaveBeenCalled();
     });
   }
+
+  it('resolves a prefixed URL straight to the existing dashboard even while the provider is not ready', async () => {
+    providerReady.set(false);
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
+
+    const fixture = await create();
+
+    expect(has(fixture, 'stub-v1')).toBe(true);
+    expect(has(fixture, 'meetings-entry-loading')).toBe(false);
+  });
 
   it('reads the flag once the provider becomes ready', async () => {
     providerReady.set(false);

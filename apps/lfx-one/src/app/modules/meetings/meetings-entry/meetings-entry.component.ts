@@ -48,6 +48,12 @@ export class MeetingsEntryComponent {
   }
 
   private async resolveFlag(): Promise<void> {
+    // /foundation/meetings and /project/meetings never show the redesign: skip every LaunchDarkly wait.
+    if (!this.isFlatMeetingsUrl) {
+      this.showRedesign.set(false);
+      return;
+    }
+
     const override = this.featureFlagService.getFlagOverride(MEETINGS_REDESIGN_FLAG);
     if (override !== undefined) {
       this.resolve(override);
@@ -70,7 +76,7 @@ export class MeetingsEntryComponent {
 
   private resolve(flagOn: boolean): void {
     // Read the lens once, untracked: a later lens change must not swap the page.
-    this.showRedesign.set(flagOn && this.isFlatMeetingsUrl && untracked(() => this.lensService.activeLens()) === 'me');
+    this.showRedesign.set(flagOn && untracked(() => this.lensService.activeLens()) === 'me');
   }
 
   private initView(): Signal<'loading' | 'v1' | 'redesign'> {
