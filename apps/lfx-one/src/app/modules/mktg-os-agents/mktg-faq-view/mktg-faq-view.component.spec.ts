@@ -7,6 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgFaqAsset } from '@lfx-one/shared/interfaces';
+import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFaqViewComponent } from './mktg-faq-view.component';
@@ -14,14 +15,13 @@ import { MktgFaqViewComponent } from './mktg-faq-view.component';
 @Component({
   selector: 'lfx-test-faq-host',
   imports: [MktgFaqViewComponent],
-  template: `<lfx-mktg-faq-view projectName="TestOrbit" [asset]="asset()" [version]="version()" [showMetadata]="showMetadata()" note="latest"
-    ><span asset-actions data-testid="faq-test-actions">Approve</span></lfx-mktg-faq-view
-  >`,
+  templateUrl: './mktg-faq-view.test-host.html',
 })
 class HostComponent {
   public readonly asset = signal<MktgFaqAsset>(ASSET);
   public readonly version = signal<number | null>(3);
   public readonly showMetadata = signal(true);
+  public readonly commentsEnabled = signal(false);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -61,12 +61,40 @@ describe('MktgFaqViewComponent', () => {
       imports: [HostComponent],
       providers: [
         provideRouter([{ path: '**', children: [] }]),
+        provideMktgCommentsStub({
+          loaded: signal(true),
+          selectedScope: signal({ ...mktgCommentScopeFixture(), agentKey: 'faq' }),
+          labelContent: signal(ASSET.content),
+        }),
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  it('opts stored answers and gaps into the same original-index comment anchors, excluding reports', async () => {
+    const before = JSON.stringify(ASSET);
+    expect(element().querySelector('lfx-mktg-field-comments')).toBeNull();
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed.'
+    );
+    host.commentsEnabled.set(true);
+    await fixture.whenStable();
+    const pins = () => Array.from(element().querySelectorAll('[data-mktg-comment-field]'));
+    expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][0][1]', 'faq[0][1][1][1]', 'faq[1][1][0][1]']);
+    expect(pins()[1].querySelector('button')?.getAttribute('aria-label')).toContain('About TestOrbit · Q2: How much does membership cost?');
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '1 question needs an answer from your team: the sources did not answer them, so they are left open rather than guessed. Answer one by commenting on it; the agent adds your answer as Notes.'
+    );
+    query('mktg-faq-view-tab-unanswered')?.click();
+    await fixture.whenStable();
+    expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][1][1]']);
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(pins()).toHaveLength(0);
+    expect(JSON.stringify(ASSET)).toBe(before);
   });
 
   it('loads its URL tab and pushes one history entry per user switch', async () => {
