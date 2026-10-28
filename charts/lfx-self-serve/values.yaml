@@ -593,6 +593,22 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE:
     value:
 
+  # Offers the Meta Instagram account id and the EU Digital Services Act beneficiary/payor in the
+  # create flow, sent as `metaConfig.instagramUserId` / `dsaBeneficiary` / `dsaPayor`. With it on,
+  # the form requires the Instagram id when an Instagram placement is enabled and both disclosures
+  # when an EU or EEA country is targeted, and blocks Create until they are filled in.
+  #
+  # A CAPABILITY flag, like MICROSOFT_SCHEDULE. REQUIRES linuxfoundation/lfx-v2-campaign-service#414
+  # DEPLOYED: that release refuses (400) an EU-targeted Meta create without both disclosures, which
+  # these inputs exist to satisfy. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on.
+  #
+  # Off (the default), the form shows none of the three inputs and sends none of the keys, and the
+  # create route refuses a request carrying any of them with a 400. Turning it back off strands
+  # nothing. Order: deploy campaign-service #414, confirm it, THEN set this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA:
+    value:
+
   # Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
   # table: the operator types a postal code or place name, picks a result, and its numeric id is sent
   # in `googleAdsConfig.geoTargets` exactly as a typed id would be.
