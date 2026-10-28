@@ -100,7 +100,7 @@ When editing files in `docs/`:
 - **Remove true duplicates** — if the same code block or configuration appears twice in a file, keep the more detailed version
 - **Replace stale status trackers** — "Implemented / Not Implemented" checklists go stale; replace with a concise summary of what's implemented
 - **Remove aspirational schedules** — "Weekly/Monthly/Quarterly" maintenance schedules that aren't enforced by code don't belong in architecture docs
-- **Remove stale version footers** — "Last Updated" dates go stale silently
+- **Remove stale version footers** — "Last Updated" dates go stale silently. This applies to footers in architecture docs; the `last_updated` front-matter field in `docs/user/` articles is maintained (see User Documentation Maintenance below)
 - **Keep related documentation and external resource links** — cross-references help readers navigate the docs
 - **Keep examples** — real-world examples are explanations, even if they demonstrate similar patterns; they show different use cases
 - **Keep ops debugging commands only if architecture-relevant** — kubectl/snowsql commands belong in runbooks, not architecture docs
@@ -122,7 +122,7 @@ How to do it:
 
 1. **Find the affected articles** using the table below. A change in a shared component (`shared/components/`, layouts, navigation) can affect several sections, so also `grep -rn "<UI label or route>" docs/user/` and re-check every hit.
 2. **Re-read each article against the new UI** and fix every step, label, route, persona or lens claim that no longer matches. Describe only what the code on your branch does; never document a flagged or dark-launched feature as generally available.
-3. **Keep front-matter current** — bump `last_updated` on every article you touch, and keep `title`, `description`, `tags` and `product_area` accurate. A new article goes in an existing topic directory (see [docs-portal.md](../../docs/architecture/frontend/docs-portal.md)).
+3. **Keep front-matter current** — bump `last_updated` on every article you touch, and keep every other front-matter field (`title`, `description`, `audience`, `product_area`, `tags`, `intercom_collection`) accurate. A new article goes in an existing topic directory (see [docs-portal.md](../../docs/architecture/frontend/docs-portal.md)).
 4. **State it in the PR** — list the `docs/user/` files you updated, or write "No user docs impact" with a one-line reason.
 
 Use a separate `docs(<section>)` commit for the docs change so it can be reviewed on its own.
@@ -142,7 +142,7 @@ Use a separate `docs(<section>)` commit for the docs change so it can be reviewe
 | `mentorship`                                                                        | `mentorship/`                                                                                                                                                                                               |
 | `dashboards` (Me, Foundation, Project lens pages, Health Metrics, ROI)              | `dashboards/`                                                                                                                                                                                               |
 | `dashboards/social-listening`                                                       | `social-listening/`                                                                                                                                                                                         |
-| `dashboards/org`, `dashboards/participating-orgs`, Org lens pages (e.g. EasyCLA)    | `organization/`                                                                                                                                                                                             |
+| `dashboards/org`, `dashboards/participating-orgs`, Org lens pages (e.g. EasyCLA)    | `organization/` (EasyCLA), and `dashboards/` for the Org Overview page                                                                                                                                      |
 | `profile`, `public-profile`                                                         | `profile/`, and `account/` for CLAs, identities, work history and individual enrollment                                                                                                                     |
 | `settings`, `transactions`                                                          | `account/`                                                                                                                                                                                                  |
 | `meetups`, `newsletters`, `formations`, `gw`, `akrites`, `invite`, `mktg-os-agents` | No section yet. If the change is user-visible, add an article under the closest existing topic, or propose a new topic in the PR. Topics are curated (see `docs-portal.md`), so do not create one silently. |

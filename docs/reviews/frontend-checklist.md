@@ -305,7 +305,7 @@ export class MyService {
 
 ## 14. High-recurrence reviewer patterns
 
-These 15 audits cover the patterns most commonly flagged by reviewers across 20+ LFX PRs. They are judgment-based — not auto-fixable. Scope to changed files only. Severity is the reviewer's reaction (CRITICAL = always flagged; DISCUSS = judgment call worth surfacing). Use these in addition to sections 1-13 above; some overlap is intentional (e.g., 14.1 echoes #2 with specific raw-element coverage).
+These audits cover the patterns most commonly flagged by reviewers across 20+ LFX PRs. They are judgment-based — not auto-fixable. Scope to changed files only. Severity is the reviewer's reaction (CRITICAL = always flagged; SHOULD FIX = expected to be addressed; DISCUSS = judgment call worth surfacing). Use these in addition to sections 1-13 above; some overlap is intentional (e.g., 14.1 echoes #2 with specific raw-element coverage).
 
 ### 14.1 Raw HTML form elements (CRITICAL)
 
