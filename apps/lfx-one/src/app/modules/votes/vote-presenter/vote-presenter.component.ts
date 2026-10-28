@@ -41,6 +41,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap, timer } from 'rxjs';
 
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
+import { VoteSendBallotsComponent } from '../components/vote-send-ballots/vote-send-ballots.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 
 /** Tally bar colour: the winner is emerald, a tie amber, everything else the neutral blue. Never inferred from option text. */
@@ -59,7 +60,16 @@ function tallyBarClass(option: VoteResultsOption): string {
  */
 @Component({
   selector: 'lfx-vote-presenter',
-  imports: [ButtonComponent, CardComponent, DatePipe, NgTemplateOutlet, TooltipModule, VoteQrComponent, VoteRankedQuestionResultsComponent],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    DatePipe,
+    NgTemplateOutlet,
+    TooltipModule,
+    VoteQrComponent,
+    VoteRankedQuestionResultsComponent,
+    VoteSendBallotsComponent,
+  ],
   templateUrl: './vote-presenter.component.html',
   host: { '(document:keydown.escape)': 'exit()' },
 })
