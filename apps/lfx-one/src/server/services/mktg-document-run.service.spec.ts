@@ -338,18 +338,77 @@ describe('MktgDocumentRunService core', () => {
     expect(flows.member).toHaveBeenCalledTimes(4);
   });
 
-  it('bounds an unsupported Member questions pause by the original writing deadline and stops Guild reads after failure', async () => {
+  it.each([MKTG_RUN_POLL.timeoutMs + 1, 2 * 60 * 60 * 1000 + 1])(
+    'keeps Member needs-input paused after %i ms without a failure or clock-driven write',
+    async (elapsed) => {
+      await service.startForOneOff(req, 'member-360', project, session);
+      flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
+      expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+      flows.beforePut.mockClear();
+      vi.advanceTimersByTime(elapsed);
+      const paused = await new MktgDocumentRunService().readProgress(req, project);
+      expect(paused.runs[0]).toMatchObject({ state: 'questions' });
+      expect(paused.runs[0]?.failureText).toBeUndefined();
+      expect(stored().metadata['state']).toBe('questions');
+      expect(stored().metadata['failure-text']).toBeUndefined();
+      expect(JSON.stringify(paused)).not.toContain('private question text');
+      expect(flows.beforePut).not.toHaveBeenCalled();
+      expect(flows.member).toHaveBeenCalledTimes(2);
+      expect(flows.events).toHaveBeenCalledTimes(2); // Reads only; no session send/start is available in this flow.
+    }
+  );
+
+  it.each([MKTG_RUN_POLL.timeoutMs + 1, 2 * 60 * 60 * 1000 + 1])('keeps Member writing after %i ms without a clock-driven failure', async (elapsed) => {
     await service.startForOneOff(req, 'member-360', project, session);
-    flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
-    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+    flows.beforePut.mockClear();
+    vi.advanceTimersByTime(elapsed);
+    const progress = await new MktgDocumentRunService().readProgress(req, project);
+    expect(progress.runs[0]).toMatchObject({ state: 'writing' });
+    expect(progress.runs[0]?.failureText).toBeUndefined();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(flows.beforePut).not.toHaveBeenCalled();
+    expect(flows.member).toHaveBeenCalledOnce();
+  });
+
+  it('leaves Member writing readable on a plain open after the automatic poll window stops', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.beforePut.mockClear();
+    vi.advanceTimersByTime(2 * 60 * 60 * 1000 + 1);
+    const stopped = await service.readProgress(req, project, 'member-360', undefined, true);
+    expect(stopped.runs[0]?.state).toBe('writing');
+    expect(stopped.progressUnavailable).toBe(true);
+    expect(flows.member).not.toHaveBeenCalled();
+    expect(flows.beforePut).not.toHaveBeenCalled();
+    expect((await new MktgDocumentRunService().readProgress(req, project, 'member-360')).runs[0]?.state).toBe('writing');
+    expect(flows.member).toHaveBeenCalledOnce();
+  });
+
+  it.each(['writing', 'questions'])('fails Member %s only when its adapter reports a session end, even after two hours', async (state) => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    if (state === 'questions') {
+      flows.member.mockResolvedValue({ status: 'needs_input', activity: [] });
+      await service.readProgress(req, project);
+    }
+    vi.advanceTimersByTime(2 * 60 * 60 * 1000 + 1);
+    flows.member.mockResolvedValue({ status: 'failed', reason: 'agent_stopped', message: 'The agent stopped before producing a result.' });
+    const progress = await service.readProgress(req, project);
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureReason: 'agent_stopped', failureText: 'The agent stopped before producing a result.' });
+    expect(stored().metadata['state']).toBe('failed');
+  });
+
+  it('preserves the LinkedIn writing deadline', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
     vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
     const expired = await service.readProgress(req, project);
-    expect(expired.runs[0]).toMatchObject({ state: 'failed', failureText: 'Member 360 needs more input than this version can give it; run it again.' });
-    expect(JSON.stringify(expired)).not.toContain('private question text');
-    const reads = flows.member.mock.calls.length;
-    await new MktgDocumentRunService().readProgress(req, project);
-    await new MktgDocumentRunService().readProgress(req, project);
-    expect(flows.member).toHaveBeenCalledTimes(reads);
+    expect(expired.runs[0]).toMatchObject({ state: 'failed', failureText: 'The run did not finish before its writing deadline.' });
+  });
+
+  it('preserves supported LinkedIn questions beyond the writing deadline', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
+    flows.linkedin.mockResolvedValue({ status: 'questions', questionsId: 'a'.repeat(64) });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
+    const paused = await service.readProgress(req, project);
+    expect(paused.runs[0]).toMatchObject({ state: 'questions' });
   });
 
   it('retains Member failure classification with the redacted details across process-local cache loss', async () => {

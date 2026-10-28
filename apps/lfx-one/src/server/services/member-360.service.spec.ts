@@ -525,9 +525,9 @@ describe('Member 360 entitlement and generation', () => {
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
 
-  it('maps unsupported questions to a bounded shared pause with only a fixed server-authored expiry message', () => {
+  it('maps needs-input to questions without a failure or private question text', () => {
     const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
-    expect(mapped).toMatchObject({ status: 'questions', failureText: 'Member 360 needs more input than this version can give it; run it again.' });
+    expect(mapped).toEqual({ status: 'questions', activity: [], persistence: undefined, failureText: undefined, failureReason: undefined });
     expect(JSON.stringify(mapped)).not.toContain('Private question text');
   });
 

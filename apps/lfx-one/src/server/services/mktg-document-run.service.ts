@@ -612,8 +612,10 @@ export class MktgDocumentRunService {
         result.failureReason
       );
     }
+    // Member 360 pauses and writing stay open until Guild reports a session end, not a local clock.
+    const member360Run = findMktgRunIntake(run.agentKey, true)?.endpoints.result === `${MEMBER_360_API}/result`;
     const unsupportedPause = !findMktgRunIntake(run.agentKey, true)?.endpoints.answers && (run.state === 'questions' || result.status === 'questions');
-    if (unsupportedPause && Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs) {
+    if (!member360Run && unsupportedPause && Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs) {
       return this.mark(
         req,
         stored,
@@ -634,7 +636,7 @@ export class MktgDocumentRunService {
     const deadlineReason = staleReceipt
       ? 'The run produced no new revision before its writing deadline.'
       : 'The run did not finish before its writing deadline.';
-    if (Date.now() - Date.parse(run.retryAt ?? run.startedAt) <= MKTG_RUN_POLL.timeoutMs) return run;
+    if (member360Run || Date.now() - Date.parse(run.retryAt ?? run.startedAt) <= MKTG_RUN_POLL.timeoutMs) return run;
     await this.settleRedraft(req, run, { status: 'failed', failureText: deadlineReason }, context);
     return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, 0, deadlineReason);
   }
