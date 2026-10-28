@@ -15,6 +15,11 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/url.utils')),
   // Needed by the real valkey.service, which this spec now exercises rather than stubs.
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
+  // `isObjectRow` backs the `accept` predicates this service passes to the cache. Omitting it did
+  // not fail loudly: vitest throws "No export is defined on the mock" from INSIDE `getJson`'s try,
+  // which fails soft to a cache miss — so every read missed and the cache assertions here were
+  // asserting against a cache that never hit. `cache-hit-path` guards it.
+  ...(await import('../../../../../packages/shared/src/utils/object.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
@@ -478,11 +483,32 @@ describe('OrgLensEventsService company-email scoping', () => {
     checkLFStaff.mockResolvedValue(true);
     expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].eventRegistrationsGoal).toBe(10000);
 
+    const fetchesBefore = execute.mock.calls.length;
     checkLFStaff.mockResolvedValue(false);
     const external = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
+    // The point of the test: the external read must be served from the entry the STAFF read wrote.
+    // Without this the test passes on a refetch, which redacts correctly for a different reason and
+    // would keep passing if redaction moved inside the cached fetcher — the regression it guards.
+    expect(execute.mock.calls).toHaveLength(fetchesBefore);
     expect(external.data[0]).not.toHaveProperty('eventRegistrationsGoal');
     expect(JSON.stringify(external)).not.toContain('10000');
+  });
+
+  // Every cache assertion in this file rests on reads actually hitting. They did not: the shared
+  // `accept` predicates call `isObjectRow`, and a gap in the `@lfx-one/shared/utils` mock made that
+  // throw inside `getJson`, which fails soft to a miss. Nothing failed, the cache just never hit.
+  it('serves a repeated identical read from the cache', async () => {
+    addEvent(EVENT, 99);
+    addCompanyEmail('ada@company.example');
+    addRegistration('ada@company.example', 'Ada Lovelace');
+
+    const first = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const fetchesAfterFirst = execute.mock.calls.length;
+    const second = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+
+    expect(execute.mock.calls).toHaveLength(fetchesAfterFirst);
+    expect(second).toEqual(first);
   });
 
   it('still lists events when registrations are unavailable', async () => {
