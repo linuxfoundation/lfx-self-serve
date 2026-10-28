@@ -76,8 +76,6 @@ export class EngagementNonMemberParticipationComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** No row at all is an empty foundation; rows with none active in the period are a measured zero. */
-  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
   /** The selected period's scope count, which the view denormalizes onto every row; `null` is unmeasured. */
   protected readonly periodCounts = computed(() => selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
   /** No non-member for the foundation, or none measured in the period; the shell shows the section's empty state instead. */

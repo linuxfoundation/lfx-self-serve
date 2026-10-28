@@ -32,7 +32,7 @@ export function isHealthMetricsL2SectionKey(sections: readonly HealthMetricsL2Se
 
 /** A section's empty state for the period: "Nothing recorded yet" with where it fills in from, or "Nothing in {Y}". */
 export function buildHealthMetricsL2EmptyCopy(empty: HealthMetricsL2SectionEmpty, pastYear: number | null): HealthMetricsL2EmptyCopy {
-  if (pastYear === null) {
+  if (pastYear === null || empty.snapshot) {
     return { icon: empty.icon, title: HEALTH_METRICS_L2_EMPTY_COPY.ytd.title, text: HEALTH_METRICS_L2_EMPTY_COPY.ytd.text.replace('{source}', empty.source) };
   }
   return { icon: empty.icon, title: HEALTH_METRICS_L2_EMPTY_COPY.past.title.replace('{Y}', String(pastYear)), text: HEALTH_METRICS_L2_EMPTY_COPY.past.text };

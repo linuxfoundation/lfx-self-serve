@@ -80,7 +80,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'risk',
-    empty: { icon: 'fa-light fa-file-invoice-dollar', source: HEALTH_METRICS_L2_EMPTY_SOURCES.invoice },
+    empty: { icon: 'fa-light fa-file-invoice-dollar', source: HEALTH_METRICS_L2_EMPTY_SOURCES.invoice, snapshot: true },
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
     description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',

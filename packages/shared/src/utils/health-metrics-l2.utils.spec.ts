@@ -62,6 +62,10 @@ describe('buildHealthMetricsL2EmptyCopy', () => {
     });
   });
 
+  it('keeps today’s wording in a past year for a section that shows today’s figures whatever the period', () => {
+    expect(buildHealthMetricsL2EmptyCopy({ ...empty, snapshot: true }, 2024).title).toBe('Nothing recorded yet');
+  });
+
   it('names a past year, with the same sentence for every section', () => {
     expect(buildHealthMetricsL2EmptyCopy(empty, 2024)).toEqual({
       icon: 'fa-light fa-ticket',

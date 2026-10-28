@@ -31,8 +31,8 @@ import { EventsSponsorshipComponent } from './components/events-sponsorship/even
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Events (Level 2) — nine anchored sections in the shared Level 2 shell. A foundation with no event held, none upcoming and no
- * event revenue gets one "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
+ * Events (Level 2) — nine anchored sections in the shared Level 2 shell, which swaps them for the Events blank card when none
+ * has anything for the period. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
   selector: 'lfx-health-metrics-events',

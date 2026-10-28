@@ -263,6 +263,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   private initEmptySections(): Signal<ReadonlyMap<string, HealthMetricsL2EmptyCopy>> {
+    // `readSections` is a plain Map; every write to it comes with a `readEmpty` update, which reruns this.
     return computed(() => {
       const readEmpty = this.readEmpty();
       const pastYear = this.pastYear();

@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, Signal } from '@angular/core';
 import { HEALTH_METRICS_OVERVIEW_BLANK_TILES } from '@lfx-one/shared/constants';
-import { buildHealthMetricsBlankCopy, toHealthMetricsOverviewPastYear } from '@lfx-one/shared/utils';
+import { buildHealthMetricsOverviewBlankCopy, toHealthMetricsOverviewPastYear } from '@lfx-one/shared/utils';
 
 import { HealthMetricsBlankCardComponent } from '../components/health-metrics-blank-card/health-metrics-blank-card.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -49,6 +49,8 @@ export class HealthMetricsOverviewComponent {
   protected readonly blank: Signal<HealthMetricsBlankCopy | null> = this.initBlank();
 
   private initBlank(): Signal<HealthMetricsBlankCopy | null> {
-    return computed(() => (this.emptyTracker.allEmpty() ? buildHealthMetricsBlankCopy(toHealthMetricsOverviewPastYear(this.chrome.selectedRange())) : null));
+    return computed(() =>
+      this.emptyTracker.allEmpty() ? buildHealthMetricsOverviewBlankCopy(toHealthMetricsOverviewPastYear(this.chrome.selectedRange())) : null
+    );
   }
 }

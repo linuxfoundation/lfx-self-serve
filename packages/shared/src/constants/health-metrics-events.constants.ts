@@ -60,7 +60,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'reg',
-    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event, snapshot: true },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
@@ -251,7 +251,7 @@ export const HEALTH_METRICS_EVENTS_PAST_UNMEASURED: HealthMetricsEventsPast = { 
 /** The periods the at-a-glance view compares with the year before; the two oldest carry no change columns. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
-/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
+/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as a foundation without events. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
 
 /** A year-over-year fall in speakers steeper than this sets the sub-nav note. */

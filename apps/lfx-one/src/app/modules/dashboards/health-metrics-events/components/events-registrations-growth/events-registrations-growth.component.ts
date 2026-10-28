@@ -135,10 +135,9 @@ export class EventsRegistrationsGrowthComponent {
             }),
             tap((response) => {
               this.loading.set(!foundationSeen);
-              // Held until a foundation is seen, so an unread section cannot release the shell's deep link. A metric
-              // with no years keeps the section's own empty state; a read with none for the metric shown is empty.
-              if (foundationSeen)
-                this.settled.emit(!this.loadFailed() && buildHealthMetricsEventsRegistrationsGrowthView(response, this.metric()).rows.length === 0);
+              // Held until a foundation is seen, so an unread section cannot release the shell's deep link. Only a read with no
+              // year is empty; a metric with none keeps the section's own note and the toggle to switch back.
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.years.length === 0);
             })
           )
         )

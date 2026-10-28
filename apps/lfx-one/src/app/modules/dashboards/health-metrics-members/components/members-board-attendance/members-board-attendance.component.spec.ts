@@ -291,6 +291,12 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(notes.at(-1)).toBe('');
   });
 
+  it('does not settle empty for a cohort with no meeting while the other cohort met, keeping the pills to switch back', async () => {
+    await render(response({ cohorts: { board: cohort({ meetingsInRangeCount: 4 }), voting_members: null }, trend: [], rows: [], totalRecords: 0 }));
+
+    expect(verdicts).toEqual([false]);
+  });
+
   it('separates a failed read from an empty one, settling it without a note', async () => {
     await render(response({ totalRecords: 30 }));
     notes.length = 0;

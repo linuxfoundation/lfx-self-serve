@@ -226,7 +226,8 @@ export class MembersBoardAttendanceComponent {
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersBoardNote(response.cohorts.board) : '');
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.totalRecords === 0 && response.trend.length === 0);
+              // Judged on every cohort, not the selected one, so an empty cohort never hides the pills to switch back.
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && Object.values(response.cohorts).every((cohort) => !cohort?.meetingsInRangeCount));
             })
           )
         )

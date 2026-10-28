@@ -33,6 +33,8 @@ export interface HealthMetricsL2Section {
 export interface HealthMetricsL2SectionEmpty {
   icon: string;
   source: string;
+  /** The section shows today's figures whatever the period, so its empty state never names a past year. */
+  snapshot?: boolean;
 }
 
 /** A section's empty state as shown, worded for YTD or the selected past year. */

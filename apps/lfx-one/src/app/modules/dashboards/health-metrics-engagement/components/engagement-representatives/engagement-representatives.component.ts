@@ -108,7 +108,6 @@ export class EngagementRepresentativesComponent {
   protected readonly countLabel: Signal<string> = this.initCountLabel();
   /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
    * with zero matches over a non-empty scope is a real measured zero. */
-  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
   /** The foundation has no representative; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response()));
 

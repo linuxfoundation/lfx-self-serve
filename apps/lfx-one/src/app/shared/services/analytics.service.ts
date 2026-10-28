@@ -1176,7 +1176,7 @@ export class AnalyticsService {
   public getEventsAtAGlance(query: HealthMetricsEventsAtAGlanceQuery): Observable<HealthMetricsEventsAtAGlance> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
 
-    // Errors propagate: a swallowed failure would read as "No events yet" and blank the whole tab.
+    // Errors propagate: a swallowed failure would read as a foundation with no events measured.
     return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-at-a-glance failed', { query, error });

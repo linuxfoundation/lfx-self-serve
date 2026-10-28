@@ -72,7 +72,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'trend',
-    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board, snapshot: true },
     label: 'Attendance trend',
     heading: 'Attendance trend',
     description:
