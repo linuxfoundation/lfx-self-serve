@@ -63,13 +63,23 @@ describe('Marketing kit home', () => {
     ['foundation-message', 'writing', 'Writing…', 'Open'],
     ['foundation-message', 'storing', 'Writing…', 'Open'],
     ['foundation-message', 'questions', 'Waiting for your answers', 'Answer the questions'],
-    ['member-360', 'questions', 'Paused', 'Answer the questions'],
+    ['member-360', 'questions', 'Paused', 'Open'],
+    ['linkedin-post', 'questions', 'Waiting for your answers', 'Answer the questions'],
     ['foundation-message', 'failed', 'Not run yet', null],
   ] as const)('shows %s %s without changing Next step', async (agentKey, state, status, label) => {
     documents.set({
       project: 'synthetic',
       groups: [],
-      runs: [{ agentKey, state, project: 'synthetic', documentId: 'living', runId: 'synthetic-run', startedAt: '2026-10-28T12:00:00Z' }],
+      runs: [
+        {
+          agentKey,
+          state,
+          project: 'synthetic',
+          documentId: agentKey === 'foundation-message' ? 'living' : 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        },
+      ],
     });
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
@@ -80,9 +90,10 @@ describe('Marketing kit home', () => {
     expect(link?.textContent ?? null).toBe(label);
     if (label) {
       expect(row?.querySelector('[data-testid="mktg-kit-run-status"]')?.textContent).toContain(status);
-      const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
-      const target = state === 'questions' ? runTarget : 'documents/foundation-message/living';
-      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (state === 'questions' ? '' : '&run=synthetic-run'));
+      const livingQuestions = state === 'questions' && agentKey === 'foundation-message';
+      const documentId = agentKey === 'foundation-message' ? 'living' : 'run-synthetic';
+      const target = livingQuestions ? 'foundation-setup' : `documents/${agentKey}/${documentId}`;
+      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (livingQuestions ? '' : '&run=synthetic-run'));
     }
     expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
   });
