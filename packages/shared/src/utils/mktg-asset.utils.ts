@@ -2,8 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
-import type { MktgAssetHeaderMetadata } from '../interfaces/mktg-asset.interface';
+import type { MktgAssetHeaderMetadata, MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import type { MktgDocumentAgentKey, MktgRevisionApproval, MktgRevisionResponse } from '../interfaces/mktg-document-store.interface';
+
+/** Completion is not source completeness; describe the viewed revision's report only. */
+export function describeMktgAssetReadiness(report: MktgAssetReport | null): string {
+  const failed = report?.sources_failed.length ?? 0;
+  const gaps = report?.gaps.length ?? 0;
+  const total = failed + (report?.sources_read.length ?? 0);
+  const clauses: string[] = [];
+  if (failed) clauses.push(`${failed} of ${total} ${total === 1 ? 'source' : 'sources'} could not be read`);
+  if (gaps) clauses.push(`${gaps} ${gaps === 1 ? 'gap' : 'gaps'}`);
+  return clauses.length ? `Ready — ${clauses.join('; ')}.` : 'Ready.';
+}
 
 /** Standalone asset previews have no other-current annotation until their caller resolves it. */
 export function mktgAssetHeaderFallback(
