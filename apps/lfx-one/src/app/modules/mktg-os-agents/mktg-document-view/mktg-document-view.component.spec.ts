@@ -59,6 +59,7 @@ import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
+import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
 // Typed document fixtures and providers share one seam with sibling agents.
@@ -1475,7 +1476,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('The revision will appear here when it is ready.');
     expect(query('mktg-document-view-live-state')?.textContent).toBe('Generating the asset.');
     expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('TestOrbit Brand kit');
-    expect((harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent)['generatingLabel']()).toBe('Working on Brand kit');
+    const progress = harness.routeDebugElement?.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+    expect(progress['generatingLabel']()).toBe('Working on Brand kit');
     store.getDocument.mockReturnValue(of(detail));
     await harness.navigateByUrl(`/documents/${BRAND_KIT.agentKey}/living?run=${runId}&revision=${LATEST.id}`, MktgDocumentViewComponent);
     await settle();
