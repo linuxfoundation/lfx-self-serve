@@ -1015,8 +1015,10 @@ export interface PollCommentResult {
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
-  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview — used as a privacy-safe identity (e.g. across pages) */
+  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
   position: number;
+  /** UI-only Overview key: prompt plus ballot ID, or prompt-local position when the response is text-only. */
+  previewKey?: string;
 }
 
 /**

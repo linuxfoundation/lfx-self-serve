@@ -800,6 +800,38 @@ describe('getRecentCommentResponses', () => {
     expect(recent.map((r) => r.comment_text)).toEqual(['Apple', 'Cherry', 'Banana']);
   });
 
+  it('keeps prompt-aware ballot keys stable across fresh objects, prompt ordering and newer insertions', () => {
+    const before = getRecentCommentResponses(
+      [result('p1', [response('same-ballot', '2025-06-02T00:00:00Z')]), result('p2', [response('same-ballot', '2025-06-02T00:00:00Z')])],
+      3
+    );
+    const after = getRecentCommentResponses(
+      [
+        result('p2', [response('same-ballot', '2025-06-02T00:00:00Z')]),
+        result('p1', [response('new-ballot', '2025-06-03T00:00:00Z'), response('same-ballot', '2025-06-02T00:00:00Z')]),
+      ],
+      3
+    );
+
+    const beforeKeys = before.map((item) => item.previewKey).sort();
+    const afterKeys = after
+      .filter((item) => item.vote_id === 'same-ballot')
+      .map((item) => item.previewKey)
+      .sort();
+    expect(new Set(beforeKeys).size).toBe(2);
+    expect(afterKeys).toEqual(beforeKeys);
+  });
+
+  it('uses distinct prompt-local positions for text-only keys without inventing ballot metadata', () => {
+    const recent = getRecentCommentResponses(
+      [result('p1', [{ comment_text: 'Same text' }, { comment_text: 'Same text' }]), result('p2', [{ comment_text: 'Same text' }])],
+      3
+    );
+
+    expect(recent.map((item) => item.previewKey)).toEqual(['["p1",0]', '["p1",1]', '["p2",0]']);
+    expect(recent.every((item) => item.vote_id === undefined && item.vote_creation_time === undefined && item.user_name === undefined)).toBe(true);
+  });
+
   it('respects the limit', () => {
     const responses = ['a', 'b', 'c', 'd'].map((id, i) => response(id, `2025-06-0${i + 1}T00:00:00Z`));
     expect(getRecentCommentResponses([result('p1', responses)], 2).map((r) => r.vote_id)).toEqual(['d', 'c']);

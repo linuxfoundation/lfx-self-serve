@@ -7,6 +7,7 @@ import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal, Type } from '@a
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import {
@@ -1277,6 +1278,38 @@ describe('VoteDetailComponent', () => {
           'Synthetic comment r-2',
         ]);
         expect(warn.mock.calls.flat().join('\n')).not.toContain('NG0955');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('retains preview rows and expansion across a same-vote results refresh', async () => {
+      const refreshed = new Subject<VoteResultsResponse>();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: false, poll_comment_prompts: prompts })));
+      voteService.getVoteResults.mockReturnValueOnce(of(namedResults())).mockReturnValueOnce(refreshed);
+
+      try {
+        const fixture = await setup('browser', [VoteCommentItemComponent]);
+        const before = items(fixture);
+        const expanded = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+        expanded.isExpanded.set(true);
+        TestBed.tick();
+
+        call(fixture, 'onVoteSubmitted', 'vote-1');
+        TestBed.tick();
+        refreshed.next(namedResults());
+        refreshed.complete();
+        TestBed.tick();
+
+        const after = items(fixture);
+        expect(after).toHaveLength(before.length);
+        after.forEach((item, index) => expect(item).toBe(before[index]));
+        const retained = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+        expect(retained).toBe(expanded);
+        expect(retained.isExpanded()).toBe(true);
+        expect(warn.mock.calls.flat().join('\n')).not.toContain('NG0956');
       } finally {
         warn.mockRestore();
       }

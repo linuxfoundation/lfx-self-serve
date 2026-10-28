@@ -415,10 +415,15 @@ export function mergeCommentResults(commentResults: PollCommentResult[], detailP
  * server's comment-text order — rather than implying a recency nobody may know.
  * @param commentResults - Per-prompt comment results, e.g. from {@link mergeCommentResults}
  * @param limit - Maximum number of responses to return
- * @returns Up to `limit` responses decorated for display, `position` being the index in the preview
+ * @returns Up to `limit` responses decorated for display, with a stable prompt-aware `previewKey` and preview `position`
  */
 export function getRecentCommentResponses(commentResults: PollCommentResult[], limit: number): CommentResponseView[] {
-  const responses = commentResults.flatMap((cr) => cr.responses);
+  const responses = commentResults.flatMap((cr) =>
+    cr.responses.map((response, index) => ({
+      ...response,
+      previewKey: JSON.stringify([cr.prompt.prompt_id, response.vote_id ?? index]),
+    }))
+  );
   const ordered = responses.some((response) => response.vote_creation_time) ? sortCommentResponsesByRecency(responses) : responses;
 
   return ordered.slice(0, limit).map((response, index) => ({
