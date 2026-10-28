@@ -3548,6 +3548,10 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-remove-7777"]')).not.toBeNull();
         expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in left with the earlier list still included').not.toBeNull();
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'stranded as pending').toBeNull();
+
+        // The re-draft kept the earlier list as the draft's list: removing it still withdraws its opt-in.
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list').toBeNull();
       });
 
       it('says which opt-in signal has no list', async () => {

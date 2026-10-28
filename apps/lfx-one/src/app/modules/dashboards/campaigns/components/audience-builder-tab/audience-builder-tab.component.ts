@@ -2186,8 +2186,16 @@ export class AudienceBuilderTabComponent {
     this.mode.set('build');
     this.draftedEventUrl.set(url);
     this.eventDraftActive.set(true);
-    this.draftListId.set(null);
-    this.lookUpOptIns(url);
+    // A re-draft of the same page while the earlier draft's list is still included keeps that list
+    // as the draft's list, and its opt-ins stay owned by it: dropped here, removing that list later
+    // would leave the opt-ins alone in Include (a send to only the portfolio-wide newsletter list).
+    const keptList = this.draftListId();
+    const keepDraft = !otherEvent && keptList !== null && this.inclusion().has(keptList);
+    const carried = keepDraft ? this.optIns().added : [];
+    if (!keepDraft) {
+      this.draftListId.set(null);
+    }
+    this.lookUpOptIns(url, carried);
     this.customPreset.set({
       version: ++this.customPresetVersion,
       eventUrl: url,
@@ -3664,7 +3672,7 @@ export class AudienceBuilderTabComponent {
    * The largest list per signal is added; any others are offered, since a brand often keeps older
    * variants that should not all join the send by default.
    */
-  private lookUpOptIns(eventUrl: string): void {
+  private lookUpOptIns(eventUrl: string, carried: AudienceDiscoveredList[] = []): void {
     const run = this.runGeneration;
     const seq = ++this.optInSeq;
     const current = (): boolean => run === this.runGeneration && seq === this.optInSeq;
@@ -3676,16 +3684,18 @@ export class AudienceBuilderTabComponent {
     // Discovery already ran for this very page: its classified lists hold the opt-in buckets, so a
     // second full discovery stream would only repeat it.
     if (this.hasDiscovered() && eventUrl === this.discoveredEventUrl()) {
-      this.applyOptIns({ lists: [...this.discoveredLists()], missingSignals: [...this.missingSignals()] });
+      this.applyOptIns({ lists: [...this.discoveredLists()], missingSignals: [...this.missingSignals()] }, carried);
       return;
     }
-    this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'loading' });
+    // Carried opt-ins stay owned while the lookup runs, so removing the kept list meanwhile still
+    // withdraws them (`reconcileOptInOwnership`).
+    this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'loading', added: carried });
     let result: AudienceDiscoveryResult | null = null;
     // Settled on `done` or on completion, whichever comes first: the stream may end either way.
     const settle = (): void => {
       if (!current() || this.optIns().status !== 'loading') return;
       if (result === null) this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
-      else this.applyOptIns(result);
+      else this.applyOptIns(result, this.optIns().added);
     };
     this.optInSubscription = this.campaignService
       .discoverAudience(this.projectSlug(), { eventUrl })
@@ -3708,7 +3718,7 @@ export class AudienceBuilderTabComponent {
       });
   }
 
-  private applyOptIns(result: AudienceDiscoveryResult): void {
+  private applyOptIns(result: AudienceDiscoveryResult, carried: AudienceDiscoveredList[] = []): void {
     const added: AudienceDiscoveredList[] = [];
     const others: AudienceDiscoveredList[] = [];
     const missing: AudienceOptInLookup['missing'] = [];
@@ -3735,11 +3745,15 @@ export class AudienceBuilderTabComponent {
     }
     // Held until the drafted list exists. Added now, they let one click attach a send to only the
     // portfolio-wide newsletter list before the draft was reviewed or created. A pick already in
-    // Include (kept from an earlier draft of this page) waits for nothing: it is shown as added.
+    // Include waits for nothing: one the earlier draft of this page added stays owned (shown as
+    // added, withdrawn with that draft's list); one the operator included by hand is offered.
     const included = this.inclusion();
+    const carriedIds = new Set(carried.filter((list) => included.has(list.listId)).map((list) => list.listId));
     const waiting = added.filter((list) => !included.has(list.listId));
     const present = added.filter((list) => included.has(list.listId));
-    this.optIns.set({ status: 'done', added: [], pending: waiting, others: [...present, ...others], missing });
+    const owned = uniqueLists([...carried.filter((list) => carriedIds.has(list.listId)), ...present.filter((list) => carriedIds.has(list.listId))]);
+    const handPicked = present.filter((list) => !carriedIds.has(list.listId));
+    this.optIns.set({ status: 'done', added: owned, pending: waiting, others: [...handPicked, ...others], missing });
     if (this.draftListId() !== null) {
       this.addPendingOptIns();
     }
