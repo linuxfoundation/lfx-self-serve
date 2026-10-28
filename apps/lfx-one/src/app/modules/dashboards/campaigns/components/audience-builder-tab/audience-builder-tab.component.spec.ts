@@ -4536,4 +4536,95 @@ describe('AudienceBuilderTabComponent', () => {
       expect(tab.attachUnavailableMessage()).not.toContain('step 3');
     });
   });
+
+  describe('PR review fixes, round 2 (#4462)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const MASTER = { listId: '501', name: 'Synthetic Summit - Master', size: 3000, hubspotUrl: 'u' };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    it('returns focus to the step-4 button a cancelled reuse confirmation was opened from', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+
+      click('campaigns-audience-reuse-attach-cancel');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('audience-last-sent-master-use-501');
+    });
+
+    it("counts a copied past send's standing-list id as the one standing list", async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-8',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-8/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover();
+
+      click('audience-last-sent-copy-em-8');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('1');
+    });
+
+    it('moves focus to the review step from the summary bar', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-summary-bar-review');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-step-compose');
+    });
+
+    it('withdraws a reuse confirmation once attaching is no longer possible', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')).toBeNull();
+    });
+
+    it('does not promise step 4 creates nothing while the standing list does not exist', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await discover('brief-1');
+      toggleStandardRow('lf_events_gdpr');
+
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).not.toContain('nothing new is created');
+    });
+  });
 });

@@ -566,7 +566,8 @@
           (copySelection)="onCopySelection($event)"
           (useSendLists)="onUseSendLists($event)"
           (useMasterList)="onUseMasterList($event)" />
-        @if (reuseAttachConfirming(); as pending) {
+        <!-- Gated like the other confirmations: an attach that can no longer run is not offered. -->
+        @if (canUseExistingMaster() ? reuseAttachConfirming() : null; as pending) {
           <div
             class="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3"
             role="alertdialog"

@@ -848,11 +848,16 @@ export class AudienceBuilderTabComponent {
   });
 
   /** Step 4's "Use for this email" note: whether its attach creates anything in HubSpot. */
-  protected readonly reuseAttachNote = computed(() =>
-    this.writeCreates().length > 0
-      ? `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`
-      : 'No master list is built and nothing new is created in HubSpot.'
-  );
+  protected readonly reuseAttachNote = computed(() => {
+    if (this.writeCreates().length > 0) {
+      return `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`;
+    }
+    // A past send's own exclusions can complete the standard set while the standing list does not
+    // exist yet, so "nothing is created" holds only once it does; that attach asks first.
+    return this.standardList() === null
+      ? "No master list is built. A past send's own exclusions can still create the project's shared standard suppression list; it asks first if so."
+      : 'No master list is built and nothing new is created in HubSpot.';
+  });
 
   /**
    * The compose confirmation's exclusion count, counted as upstream reports it afterwards: the
@@ -860,8 +865,10 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly composeExcludeCount = computed(() => {
     const standard = new Set(this.standardRowIds());
+    // A copied past send can carry the standing list's own id: it is the same one list.
+    const standingId = this.standardList()?.listId;
     const sent = this.sentExcludeIds();
-    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id)).length + 1 : sent.length;
+    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id) && id !== standingId).length + 1 : sent.length;
     return count + (this.registrantsEvent() === '' ? 0 : 1);
   });
 
@@ -2269,7 +2276,9 @@ export class AudienceBuilderTabComponent {
     if (step === 'discover' || step === 'include' || step === 'reuse' || step === 'gaps') {
       this.mode.set('reuse');
     }
-    this.scrollTo(`campaigns-audience-step-${step}`);
+    // Focus, not only scroll: from the summary bar at the bottom, keyboard and screen-reader users
+    // otherwise kept their place there and tabbed out of the builder. Focusing scrolls it into view.
+    this.scrollTo(`campaigns-audience-step-${step}`, true);
   }
 
   protected onReadinessAction(action: AudienceReadinessAction): void {
@@ -2309,11 +2318,14 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onCancelUseSelection(): void {
-    const reuse = this.pendingReuseAttach() !== null;
+    const reuse = this.pendingReuseAttach();
     this.attachConfirmedFor.set(null);
     this.pendingReuseAttach.set(null);
-    if (!reuse) {
+    // Back to the button the confirmation was opened from: its Cancel leaves the DOM with it.
+    if (reuse === null) {
       this.scrollTo('campaigns-audience-use-direct', true);
+    } else {
+      this.scrollTo(reuse.kind === 'master' ? `audience-last-sent-master-use-${reuse.id}` : `audience-last-sent-use-${reuse.id}`, true);
     }
   }
 
