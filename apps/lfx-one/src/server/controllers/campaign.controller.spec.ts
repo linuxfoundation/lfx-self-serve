@@ -4543,6 +4543,35 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
   });
 
+  /**
+   * A ROOT caller's segments are REFUSED, not dropped, when the serving create path cannot carry
+   * them: the legacy creator never reads the key and would report success without the user lists.
+   * Reachable from the page mid-rollout, when the capability read and the create land on pods with
+   * different flags.
+   */
+  it("refuses a root caller's segments by name when the cutover is off, rather than falling through to legacy", async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('audienceSegments');
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(createCampaigns).not.toHaveBeenCalled();
+  });
+
+  it('still serves a root caller on the legacy path when the segment list is empty', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_legacy_2' });
+
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments: [] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+  });
+
   it('dispatches segments for a ROOT campaign manager who is not a root writer', async () => {
     vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(false);
     vi.mocked(personaDetectionService.checkRootCampaignManager).mockResolvedValueOnce(true);
@@ -7042,6 +7071,8 @@ describe('CampaignController.listBriefCampaigns', () => {
     ['a non-root caller on the create path', true, [false, false], false],
   ])('answers googleAudienceSegmentsEnabled for %s', async (_label, createPath, [writer, manager], expected) => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: createPath, googleAudienceSegmentsEnabled: false });
+    // The create path is the three cutover flags, read here exactly as the create route reads them.
+    isServerFeatureEnabled.mockReturnValue(createPath as boolean);
     vi.mocked(personaDetectionService.checkRootWriter).mockResolvedValueOnce(writer as boolean);
     // Queued only when it will be asked: a root writer short-circuits, and a leftover queued answer
     // would leak into the next test.
@@ -7054,6 +7085,7 @@ describe('CampaignController.listBriefCampaigns', () => {
 
   it('answers no without asking who the caller is when the create path does not serve', async () => {
     listBriefCampaigns.mockResolvedValue({ campaigns: [], possiblyStale: true, googleCreativeEnabled: false, googleAudienceSegmentsEnabled: false });
+    isServerFeatureEnabled.mockReturnValue(false);
 
     await controller.listBriefCampaigns(listReq({ project: 'tlf', brief_id: 'b-1' }), res, next);
 

@@ -211,6 +211,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateMicrosoftSchedule,
+  canCreateWithAudienceSegments,
   canCreateWithBidding,
   canUseGoogleCreativeAssets,
   canUseMetaCreativeAssets,
@@ -684,6 +685,20 @@ export class CampaignController {
             service: 'campaign_controller',
             path: req.path,
             code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+          })
+        );
+        return;
+      }
+      // Then, for a caller who MAY send them, refused rather than dropped when the serving create
+      // path cannot carry them — the `bidding` reasoning below. Only campaign-service reads the key;
+      // the legacy creator would create the campaign without the user lists and report success. The
+      // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
+      // capability read and a create can land on pods with different flags mid-rollout.
+      if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
+        next(
+          ServiceValidationError.forField('audienceSegments', 'Google audience segments are not enabled on this deployment; omit audienceSegments', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
           })
         );
         return;
@@ -2780,9 +2795,10 @@ export class CampaignController {
     try {
       const listed = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
       // The one PER-CALLER capability, so it is decided here where the caller is known rather than
-      // in the service. Only on the campaign-service create path (`googleCreativeEnabled`), and that
-      // test runs first so a deployment that cannot send segments asks no persona question at all.
-      const googleAudienceSegmentsEnabled = listed.googleCreativeEnabled === true && (await this.isRootCampaignPrincipal(req));
+      // in the service. Only on the campaign-service create path (`canCreateWithAudienceSegments`, the
+      // same test the create route refuses on), and that test runs first so a deployment that cannot
+      // send segments asks no persona question at all.
+      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && (await this.isRootCampaignPrincipal(req));
       const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
