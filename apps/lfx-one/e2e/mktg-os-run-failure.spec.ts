@@ -14,10 +14,10 @@ test('ICP document failure returns its retained inputs and explicit Retry starts
   const submitted: unknown[] = [];
   const sessions: string[] = [];
   let ready = false;
-  const history = documentFixture();
-  const revision = history.revisions[0];
+  const storedHistory = documentFixture();
+  const revision = storedHistory.revisions[0];
   const stored = {
-    ...history,
+    ...storedHistory,
     revisions: [revision],
     revision,
     current: { revisionId: revision.id, changedAt: revision.createdAt, changedBy: null },
