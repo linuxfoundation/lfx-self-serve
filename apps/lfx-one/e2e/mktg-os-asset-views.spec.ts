@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import {
-  BRAND_KIT_PRINT_BODY_CLASS,
-  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
-  MKTG_SLIDES_EXPORT_AGENT_KEYS,
-  MKTG_SLIDES_EXPORT_API_PATH,
-} from '@lfx-one/shared/constants';
+import { BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/brand-kit.constants';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-print.constants';
+import { MKTG_SLIDES_EXPORT_AGENT_KEYS, MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+
 import {
   columnAssetRevisionResponse,
   nativeAssetRevisionResponse,
@@ -15,6 +14,8 @@ import {
   openDraftAssetRun,
   openUnapprovedAssetDocument,
 } from './helpers/mktg-os-asset-views.helper';
+
+test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
 test.describe('Native FAQ document approval and header', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });

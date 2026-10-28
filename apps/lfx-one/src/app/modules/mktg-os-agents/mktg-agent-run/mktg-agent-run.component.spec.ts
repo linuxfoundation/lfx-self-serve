@@ -818,7 +818,7 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-waiting-notice')?.textContent).toContain(`This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`);
       const open = query('mktg-run-waiting-open')?.querySelector('a');
       const url = new URL(open?.getAttribute('href') ?? '', 'https://synthetic.example');
-      expect(url.pathname).toBe(`/mktg-os-agents/documents/${type.agentKey}/living`);
+      expect(url.pathname).toBe(`/mktg-os-agents/${agentId}`);
       expect(url.searchParams.get('run')).toBe('b'.repeat(64));
       expect(url.searchParams.get('project')).toBe(PROJECT_1.slug);
       expect(open?.classList.contains('p-button-text')).toBe(false);
@@ -857,6 +857,46 @@ describe('MktgAgentRunComponent', () => {
         expect(generate).not.toHaveBeenCalled();
       }
     );
+
+    it.each(['browser', 'public'] as const)('dates stale waiting questions from the %s without starting another run', async (origin) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const now = Date.parse('2026-10-28T12:00:00Z');
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+      try {
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+        if (!type) throw new Error('Missing living fixture');
+        const startedAt = '2026-10-26T12:00:00Z';
+        if (origin === 'public')
+          listDocuments.mockReturnValue(
+            of({
+              groups: [],
+              runs: [{ project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', runId: 'c'.repeat(64), state: 'questions', startedAt }],
+            })
+          );
+        else
+          vi.spyOn(TestBed.inject(MktgRunAttemptService), 'load').mockReturnValue({
+            request: { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: {} },
+            state: 'questions',
+            updatedAt: startedAt,
+            pendingQuestions: {
+              attempt: { priorVersion: 0, session: { agentId, sessionId: 'synthetic-stale', ownerToken: 'synthetic-proof' } },
+              questionsId: 'synthetic-stale-block',
+              questions: [],
+            },
+          });
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(query('mktg-run-waiting-notice')?.textContent).toContain(
+          'Waiting for your answers since 26 Oct. Continue to answer them — if the agent no longer responds, start over.'
+        );
+        expect(query(origin === 'browser' ? 'mktg-run-waiting-continue' : 'mktg-run-waiting-open')).not.toBeNull();
+        expect(query('mktg-run-waiting-start-over')).not.toBeNull();
+        expect(generate).not.toHaveBeenCalled();
+        expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+      } finally {
+        clock.mockRestore();
+      }
+    });
 
     it.each(['empty', 'error', 'unavailable', 'failed', 'other-project', 'other-asset'] as const)(
       'keeps fresh Sources without a notice on %s discovery',
@@ -1324,6 +1364,19 @@ describe('MktgAgentRunComponent', () => {
       expect(reader.project()).toBe(PROJECT_1.uid);
       expect(component['publicReceiver']()).toBe(true);
       if (state === 'questions') expect(host().textContent).toContain('browser that started this run');
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
+    it('resolves a plain Needs answers entry to public progress when this browser has no questions', async () => {
+      await configure('browser', type.catalogAgentId);
+      listDocuments.mockReturnValue(of({ ...record('questions'), groups: [] }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { run: runId }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
       expect(generate).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });

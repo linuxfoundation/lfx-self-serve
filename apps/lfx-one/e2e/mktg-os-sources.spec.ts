@@ -91,9 +91,13 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText(`This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`);
     await expect(page.getByTestId('mktg-run-waiting-open').getByRole('link', { name: 'Open it', exact: true })).toHaveAttribute(
       'href',
-      `${base}/documents/${type.agentKey}/living?project=${DOCUMENT_PROJECT.slug}&run=${runId}`
+      `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`
     );
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
+    expect(sources.generated).toHaveLength(1);
+    await page.getByTestId('mktg-run-waiting-open').getByRole('link').click();
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/documents\//);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     await expect(page.getByTestId(`mktg-documents-started-run-${runId}`)).toContainText('Writing the document');
@@ -143,6 +147,41 @@ test.describe('Marketing OS new run Sources', () => {
     expect(sources.generated[1]['answers']).toEqual(sources.generated[0]['answers']);
     await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
   });
+  test('dates stale public questions without starting over automatically', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing living fixture');
+    await page.route('**/api/mktg-agents/documents?*', (route) =>
+      route.fulfill({
+        json: {
+          project: DOCUMENT_PROJECT.uid,
+          groups: [],
+          runs: [
+            {
+              project: DOCUMENT_PROJECT.uid,
+              agentKey: type.agentKey,
+              documentId: 'living',
+              runId: 'e'.repeat(64),
+              state: 'questions',
+              startedAt: '2026-10-01T12:00:00Z',
+            },
+          ],
+        },
+      })
+    );
+    await page.evaluate((url) => {
+      history.pushState({}, '', url);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, `/project/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText(
+      'Waiting for your answers since 1 Oct. Continue to answer them — if the agent no longer responds, start over.'
+    );
+    await expect(page.getByTestId('mktg-run-waiting-open').getByRole('link')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-waiting-start-over')).toBeVisible();
+    expect(sources.generated).toHaveLength(0);
+    await page.screenshot({ path: test.info().outputPath('stale-public-questions.png'), fullPage: true });
+  });
+
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
       const sources = await setupFreshSources(page);
