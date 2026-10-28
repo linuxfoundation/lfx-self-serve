@@ -24,12 +24,15 @@ import {
   MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
+  SendVoteBallotsResponse,
   SendVoteReminderRequest,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  VoteLinkBallot,
+  VoteLinkResponseRequest,
   VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
@@ -338,6 +341,25 @@ export class VoteService {
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
+  }
+
+  /** Emails a personalized ballot link to every non-responder — vote managers only (#4363). */
+  public sendBallots(voteUid: string): Observable<SendVoteBallotsResponse> {
+    return this.http.post<SendVoteBallotsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/send-ballots`, {}).pipe(take(1));
+  }
+
+  /**
+   * Login-free vote link calls (#4363). The token travels only in the request body and is passed in by the caller;
+   * this service never stores it, so nothing about the voter's link outlives the page component that holds it.
+   */
+  public getLinkBallot(voteToken: string): Observable<VoteLinkBallot> {
+    return this.http.post<VoteLinkBallot>('/public/api/votes/link-ballot', { vote_token: voteToken }).pipe(take(1));
+  }
+
+  /** First submission (`update: false`, POST) or change (`update: true`, PUT) of a ballot by vote link token. */
+  public submitLinkResponse(body: VoteLinkResponseRequest, update: boolean): Observable<void> {
+    const url = '/public/api/votes/link-responses';
+    return (update ? this.http.put<void>(url, body) : this.http.post<void>(url, body)).pipe(take(1));
   }
 
   /** Eligible voters who have not voted yet — vote managers only (#3769). */
