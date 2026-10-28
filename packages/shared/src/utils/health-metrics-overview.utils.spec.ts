@@ -111,22 +111,29 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Low', '0', '0%'],
     ]);
     expect(nonMembers.rows[0].pctLabel).toBe('<1%');
-    expect(nonMembers.lowPctLabel).toBe('100%');
   });
 
-  it('draws a ring per level with organizations, offset so the round caps never touch', () => {
+  it('draws every level on the 36px ring, 2px short of the next and never shorter than 1.5px', () => {
     const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
+    const circumference = 2 * Math.PI * 36;
 
-    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium']);
-    expect(donut[0].dashOffset).toBe('-4.00');
-    expect(Number(donut[1].dashOffset)).toBeLessThan(-4);
+    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium', 'low']);
+    expect(donut[0]).toMatchObject({ dashArray: `${((64 / 228) * circumference - 2).toFixed(2)} ${circumference.toFixed(2)}`, dashOffset: '0.00' });
+    expect(donut[1].dashOffset).toBe((-(64 / 228) * circumference).toFixed(2));
+    expect(donut[2].dashArray.startsWith('1.50 ')).toBe(true);
+  });
+
+  it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 7, mediumCount: 993, lowCount: 0, highPct: null, mediumPct: null, lowPct: null } };
+    const [members] = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves;
+
+    expect(members.rows.map((row) => row.pctLabel)).toEqual(['<1%', '99%', '0%']);
   });
 
   it('leaves the split unmeasured for a period the view does not model', () => {
     const half = buildHealthMetricsOverviewOrgsView(orgs, 'COMPLETED_YEAR_2').halves[0];
 
     expect(half.donut).toEqual([]);
-    expect(half.lowPctLabel).toBe('—');
     expect(half.rows.map((row) => row.countLabel)).toEqual(['—', '—', '—']);
   });
 
@@ -157,7 +164,11 @@ describe('buildHealthMetricsOverviewNpsView', () => {
   it('reads the survey, the change against the previous wave and the response split', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.subtitle).toBe('Last survey: Q2 2026 · 15 of 22 responded (68%)');
+    expect(view.meta).toEqual([
+      { label: 'Latest NPS:', value: 'Q2 2026' },
+      { label: 'Audience:', value: 'Board' },
+      { label: 'Responses:', value: '15 of 22 (68%)' },
+    ]);
     expect(view.scoreLabel).toBe('80');
     expect(view.delta).toEqual({ label: '12 pts vs Q4 2025', direction: 'up', good: true });
     expect(view.rows.map((row) => [row.label, row.range, row.countLabel, row.pctLabel])).toEqual([
@@ -169,14 +180,18 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     expect(view.ariaLabel).toBe('Net Promoter Score 80 on a scale from -100 to 100');
   });
 
-  it('lights only the band the score falls in and points the needle at it', () => {
+  it('lights only the band the score falls in, mixing the rest toward white, and points the needle at it', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.segments.map((segment) => [segment.key, segment.opacity])).toEqual([
-      ['very-low', 0.22],
-      ['low', 0.22],
-      ['medium', 0.22],
-      ['high', 1],
+    expect(view.segments.map((segment) => [segment.key, segment.stroke])).toEqual([
+      ['very-low', '#FFDDDE'],
+      ['low', '#FFDDDE'],
+      ['medium', '#FFF0C7'],
+      ['high', '#00BC7D'],
+    ]);
+    expect(view.caps.map((cap) => [cap.key, cap.fill])).toEqual([
+      ['start', '#FFDDDE'],
+      ['end', '#00BC7D'],
     ]);
     expect(view.needle).not.toBeNull();
     expect(Number(view.needle?.x)).toBeGreaterThan(66);
@@ -187,7 +202,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     const view = buildHealthMetricsOverviewNpsView(fell, 'YTD');
 
     expect(view.delta).toEqual({ label: '1 pt', direction: 'down', good: false });
-    expect(view.segments.find((segment) => segment.opacity === 1)?.key).toBe('low');
+    expect(view.segments.find((segment) => segment.stroke === '#FF6467')?.key).toBe('low');
   });
 
   it('is empty for a period with no survey sent', () => {
@@ -195,7 +210,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
 
     expect(view.isEmpty).toBe(true);
     expect(view.needle).toBeNull();
-    expect(view.segments.every((segment) => segment.opacity === 0.22)).toBe(true);
+    expect(view.segments.map((segment) => segment.stroke)).toEqual(['#FFDDDE', '#FFDDDE', '#FFF0C7', '#C7F0E2']);
   });
 });
 
