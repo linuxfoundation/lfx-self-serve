@@ -10,11 +10,30 @@
       @if (warning()) {
         {{ warning() }}
       } @else if (runState() === 'questions') {
-        Waiting for your answers. <span data-testid="mktg-run-progress-owner-note">Answering needs the browser that started this run.</span>
+        Waiting for your answers.
+        @if (!publicQuestions() && !answersError()) {
+          <span data-testid="mktg-run-progress-owner-note"
+            >Answering needs project write access or the browser that started this run. Refresh progress to check again.</span
+          >
+        }
       } @else {
         {{ runState() === 'storing' ? 'Saving…' : 'Writing…' }} You can leave this page — the agent keeps working.
       }
     </p>
+    @if (runState() === 'questions') {
+      @if (publicQuestions(); as pending) {
+        <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
+      }
+      <lfx-button
+        label="Refresh progress"
+        [text]="true"
+        [disabled]="answersSending()"
+        (onClick)="onRefreshProgress()"
+        data-testid="mktg-run-progress-questions-refresh" />
+    }
+    @if (answersError()) {
+      <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
+    }
     @if (warning()) {
       <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
@@ -61,13 +80,18 @@
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
       }
     } @else if (state === 'questions') {
-      @if (pausedWithoutAnswers()) {
+      @if (publicQuestions(); as pending) {
+        <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
+      } @else if (pausedWithoutAnswers()) {
         <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
           The agent needs an answer before it can finish — this version of the page cannot answer yet; the run stays open.
         </p>
         <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-paused-refresh" />
       } @else {
-        <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+        <p class="text-sm text-gray-600">The agent is waiting for answers.</p>
+        @if (!answersError()) {
+          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Open the intake form to continue with an available questions block.</p>
+        }
       }
     } @else {
       <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
@@ -84,6 +108,17 @@
       } @else {
         <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
       }
+    }
+    @if (state === 'questions' && (!pausedWithoutAnswers() || publicQuestions())) {
+      <lfx-button
+        label="Refresh progress"
+        [text]="true"
+        [disabled]="answersSending()"
+        (onClick)="onRefreshProgress()"
+        data-testid="mktg-run-progress-questions-refresh" />
+    }
+    @if (answersError()) {
+      <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
     }
     @if (visibleRunActivity(); as activity) {
       <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
@@ -115,7 +150,7 @@
             data-testid="mktg-document-view-intake-link" />
         }
       </div>
-    } @else if (runAgentId() && !pausedWithoutAnswers() && state === 'questions' && !runPage()) {
+    } @else if (runAgentId() && !publicQuestions() && !answersError() && !pausedWithoutAnswers() && state === 'questions' && !runPage()) {
       <lfx-button
         label="Open the intake form"
         [text]="true"

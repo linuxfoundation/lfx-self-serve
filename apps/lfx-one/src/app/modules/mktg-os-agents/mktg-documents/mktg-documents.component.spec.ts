@@ -413,12 +413,13 @@ describe('MktgDocumentsComponent', () => {
     const startedLink = query('mktg-documents-open-started-' + 'b'.repeat(64));
     if (state === 'questions') {
       expect(startedLink?.textContent?.trim()).toBe('Answer the questions');
-      expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
       expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
       expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
       const entry = query('mktg-documents-nav-brand-kit');
       expect(entry?.textContent).toContain('Needs answers');
-      expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
+      expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain(`/${BRAND_KIT.catalogAgentId}?`);
       expect(query('mktg-documents-pending-document')?.textContent).toContain(
         'use its Started runs link to follow progress, answer its questions or retry it.'
       );

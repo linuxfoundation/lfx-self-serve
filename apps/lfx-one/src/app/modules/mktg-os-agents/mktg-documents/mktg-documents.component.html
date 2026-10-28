@@ -92,7 +92,15 @@
               [routerLink]="item.badge === 'Needs answers' && item.type.catalogAgentId ? [kitRoot(), item.type.catalogAgentId] : []"
               [queryParams]="
                 item.badge === 'Needs answers' && item.type.catalogAgentId
-                  ? { project: projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null }
+                  ? {
+                      project: projectSlug(),
+                      type: null,
+                      mode: null,
+                      questions: null,
+                      generation: null,
+                      revision: null,
+                      run: questionRunIds()[item.type.agentKey] ?? null,
+                    }
                   : { type: item.type.agentKey, project: projectSlug() }
               "
               queryParamsHandling="merge"

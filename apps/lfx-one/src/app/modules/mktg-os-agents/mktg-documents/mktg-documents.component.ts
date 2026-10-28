@@ -155,6 +155,16 @@ export class MktgDocumentsComponent {
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
+  protected readonly questionRunIds = computed(() =>
+    Object.fromEntries(
+      this.runs()
+        .filter(
+          (run) =>
+            run.state === 'questions' && MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.agentKey === run.agentKey && type.catalogAgentId)
+        )
+        .map((run) => [run.agentKey, run.runId])
+    )
+  );
   protected readonly runTargets = computed(() =>
     Object.fromEntries(
       this.runs().map((run) => {
@@ -165,7 +175,15 @@ export class MktgDocumentsComponent {
             {
               label: 'Answer the questions',
               commands: [this.kitRoot(), type.catalogAgentId],
-              params: { project: this.projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null },
+              params: {
+                project: this.projectSlug(),
+                type: null,
+                mode: null,
+                questions: null,
+                generation: null,
+                revision: null,
+                run: run.state === 'questions' ? run.runId : null,
+              },
             },
           ];
         const commands =

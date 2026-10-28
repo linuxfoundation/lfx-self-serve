@@ -849,7 +849,15 @@ describe('MktgAgentRunComponent', () => {
         expect(query('mktg-run-waiting-notice')?.textContent).toContain(
           state === 'questions' ? 'This run is waiting for your answers.' : `This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`
         );
-        expect(query('mktg-run-waiting-open')?.querySelector('a')?.getAttribute('href')).toContain(`run=${'c'.repeat(64)}`);
+        const open = query('mktg-run-waiting-open')?.querySelector('a');
+        expect(open?.getAttribute('href')).toContain(`run=${'c'.repeat(64)}`);
+        if (state === 'questions') {
+          expect(open?.textContent).toContain('Answer the questions');
+          expect(open?.getAttribute('href')).toContain(`/mktg-os-agents/${agentId}?`);
+        } else {
+          expect(open?.textContent).toContain('Open it');
+          expect(open?.getAttribute('href')).toContain(`/mktg-os-agents/documents/${type.agentKey}/living?`);
+        }
         expect(query('mktg-run-waiting-continue')).toBeNull();
         expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, agentId)).toBeNull();
         expect(listDocuments).toHaveBeenCalledExactlyOnceWith(PROJECT_1.uid);

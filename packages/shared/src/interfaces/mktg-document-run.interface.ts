@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
-import type { MktgRunActivity } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
@@ -49,6 +49,26 @@ export interface MktgSessionOutcome {
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'questions' | 'storing' | 'failed';
 
+/** Writer-visible questions; no session capability or creator identity is exposed. */
+export interface MktgRunPendingQuestions {
+  questionsId: string;
+  questions: MktgRunQuestion[];
+  askedAt: string;
+}
+
+/** Answers scoped to the opaque public run id in the route. */
+export interface MktgRunAnswersRequest {
+  project: string;
+  questionsId: string;
+  answers: MktgRunAnswer[];
+}
+
+/** Public continuation acknowledgement, distinct from the private agent answers response. */
+export interface MktgPublicRunAnswersResponse {
+  runId: string;
+  state: 'writing';
+}
+
 /** Server-only terminal markers for completion and superseded unfinished or failed runs. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded';
 
@@ -68,6 +88,8 @@ export interface MktgDocumentRunProgress {
   state: MktgDocumentRunState;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
+  /** Present only for project writers while this run is waiting for answers. */
+  pendingQuestions?: MktgRunPendingQuestions;
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
   failureText?: string;
   /** Server-classified failure code, independent of private agent text. */

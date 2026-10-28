@@ -420,9 +420,15 @@ run page owns one asset heading, one status line and the progress steps.
 One-off receivers keep their existing poll and generating presentation. A living run-page `?run=` reader uses that public progress unless
 this browser holds the matching private attempt. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave
-`runs[]` without a public completion receipt. Public questions show the browser
-ownership limitation; the questions output/block is the extension point for a
-future answer-from-any-device flow. Catalog/intakes own membership/routing.
+`runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the
+shared questions UI. A matching private attempt wins and continues through its
+existing owner-token flow, never also posting publicly. Other writers submit
+`project`, `questionsId` and answers to `/api/mktg-agents/runs/:runId/answers`
+without any session capability. An accepted answer resumes public progress;
+403 retains a reason-bearing waiting notice without retries, while 409/412
+refresh the current row. A waiting reader can Refresh progress after another browser
+answers; successful Send resumes normal polling. One-off answers remain creator-only.
+Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
 own changes; the existing asset-store current pointer remains authoritative.

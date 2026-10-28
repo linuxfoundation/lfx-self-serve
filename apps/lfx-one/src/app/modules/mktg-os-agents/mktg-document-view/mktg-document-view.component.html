@@ -130,6 +130,7 @@
     @if (!isAeoDocument()) {
       <lfx-mktg-run-progress
         [project]="projectUid()"
+        [projectName]="projectName()"
         [agentKey]="params().agentKey"
         [documentId]="params().documentId"
         [runId]="runParam() || handoffRunId()"

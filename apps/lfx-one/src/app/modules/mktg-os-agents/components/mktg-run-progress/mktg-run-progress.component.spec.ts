@@ -8,6 +8,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,9 +38,22 @@ describe('MktgRunProgressComponent', () => {
   let fixture: ComponentFixture<MktgRunProgressComponent>;
   const user = signal<User | null>({ sub: 'synthetic-creator' } as User);
   const read = vi.fn();
+  const answer = vi.fn();
+  const loadAttempt = vi.fn();
+  const waiting = {
+    ...run,
+    state: 'questions' as const,
+    pendingQuestions: {
+      questionsId: 'd'.repeat(64),
+      askedAt: run.startedAt,
+      questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+    },
+  };
   const setup = async (platform = 'browser') => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     read.mockReset().mockReturnValue(of(detail()));
+    answer.mockReset().mockReturnValue(of({ runId, state: 'writing' }));
+    loadAttempt.mockReset().mockReturnValue(null);
     user.set({ sub: 'synthetic-creator' } as User);
     await TestBed.configureTestingModule({
       imports: [MktgRunProgressComponent],
@@ -47,6 +62,8 @@ describe('MktgRunProgressComponent', () => {
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: { user } },
         { provide: MktgDocumentStoreService, useValue: { getDocument: read } },
+        { provide: MktgRunAnswersService, useValue: { answer } },
+        { provide: MktgRunAttemptService, useValue: { load: loadAttempt } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MktgRunProgressComponent);
@@ -83,6 +100,119 @@ describe('MktgRunProgressComponent', () => {
     expect(read).toHaveBeenCalledOnce();
     expect(observed).toHaveBeenCalledOnce();
     expect(fixture.nativeElement.textContent.trim()).toBe('');
+  });
+
+  it('renders public questions with suggestions, sends once and resumes polling through current-document landing', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    expect(text()).toContain('A few questions before the draft');
+    expect(fixture.nativeElement.querySelector('textarea').value).toBe('Synthetic maintainers');
+    const response = new Subject<{ runId: string; state: 'writing' }>();
+    answer.mockReturnValue(response);
+    const send = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button');
+    send.click();
+    send.click();
+    expect(answer).toHaveBeenCalledExactlyOnceWith(runId, {
+      project: run.project,
+      questionsId: waiting.pendingQuestions.questionsId,
+      answers: [{ key: 'audience', text: 'Synthetic maintainers', origin: 'accepted' }],
+    });
+    read.mockReturnValue(of(detail()));
+    response.next({ runId, state: 'writing' });
+    response.complete();
+    await fixture.whenStable();
+    expect(text()).not.toContain('A few questions before the draft');
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    const stored = detail([]);
+    stored.revisions = [{ id: 'synthetic-stored', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
+    read.mockReturnValue(of(stored));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(landed).toHaveBeenCalledOnce();
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
+  it('stops answer submission on 403, retaining the waiting notice and server reason without retries', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Synthetic access reason' } })));
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    await fixture.whenStable();
+    expect(text()).toContain('Synthetic access reason');
+    expect(text()).toContain('waiting for answers');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(answer).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledOnce();
+  });
+
+  it.each([409, 412])('refreshes current state on %s without repeating answers', async (status) => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+    await fixture.whenStable();
+    read.mockReturnValue(of(detail()));
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
+  it('shows a failed send without silently retrying and keeps the entered answer', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    await fixture.whenStable();
+    expect(text()).toContain('Your answers could not be sent');
+    expect(fixture.nativeElement.querySelector('textarea').value).toBe('Synthetic maintainers');
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
+  it('refreshes a waiting row when another browser has answered it', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    read.mockReturnValue(of(detail()));
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"] button').click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(answer).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('lets a matching private questions attempt win and never also posts publicly', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    loadAttempt.mockReturnValue({ attempt: { runId }, pendingQuestions: { questionsId: 'private' } });
+    const questions = vi.fn();
+    fixture.componentInstance.questions.subscribe(questions);
+    await fixture.whenStable();
+    expect(questions).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    fixture.componentInstance['onPublicAnswers']([]);
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('cancels a pending answer on subject change so its late ACK cannot refresh another viewer', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    const response = new Subject<{ runId: string; state: 'writing' }>();
+    answer.mockReturnValue(response);
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    user.set({ sub: 'synthetic-other-writer' } as User);
+    await fixture.whenStable();
+    expect(response.observed).toBe(false);
+    const reads = read.mock.calls.length;
+    response.next({ runId, state: 'writing' });
+    expect(read).toHaveBeenCalledTimes(reads);
   });
 
   it('polls the same public record and emits only a current-document landing, never an inferred revision id', async () => {
@@ -131,7 +261,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('browser that started this run');
+    expect(text()).toContain('available questions block');
   });
 
   it('retains the last measured record on transient failure and fails closed on denied reads', async () => {

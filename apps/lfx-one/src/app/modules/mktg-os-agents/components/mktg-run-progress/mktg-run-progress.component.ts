@@ -20,12 +20,16 @@ import {
   MktgDocumentReadCycle,
   MktgRevisionResponse,
   MktgRunActivity,
+  MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
 import { findMktgRunIntake, mktgKitAssetLabel, mktgSentenceCaseLabel } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, defer, distinctUntilChanged, EMPTY, expand, map, of, switchMap, tap, throwError, timer } from 'rxjs';
+import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
+import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 
 /**
@@ -34,20 +38,24 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
  * Completed runs leave runs[] without a public receipt, so landed never claims
  * a particular revision. Creator activity is filtered by the BFF, not inferred here.
  * Legacy one-off receivers supply their existing snapshot with polling disabled.
- * The questions block / questions output is the extension point for a future
- * answer-from-any-device flow; today only a matching private browser can continue.
+ * Writers can answer public kit questions; matching private attempts keep their
+ * existing continuation path and never also submit through the public route.
  */
 @Component({
   selector: 'lfx-mktg-run-progress',
-  imports: [DatePipe, ButtonComponent, MessageComponent, MktgRunActivityComponent],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgRunActivityComponent, MktgRunQuestionsComponent],
   templateUrl: './mktg-run-progress.component.html',
 })
 export class MktgRunProgressComponent {
   private readonly store = inject(MktgDocumentStoreService);
+  private readonly answersService = inject(MktgRunAnswersService);
+  private readonly attempts = inject(MktgRunAttemptService);
+  private readonly answerRequests = new Subject<MktgRunAnswer[]>();
   private readonly user = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly project = input.required<string>();
+  public readonly projectName = input('your project');
   public readonly agentKey = input.required<string>();
   public readonly documentId = input.required<string>();
   public readonly runId = input('');
@@ -86,6 +94,10 @@ export class MktgRunProgressComponent {
   protected readonly warning = signal('');
   protected readonly readFailure = signal('');
   private readonly reload = signal(0);
+  protected readonly answersSending = signal(false);
+  protected readonly answersError = signal('');
+  private readonly answersDenied = signal(false);
+  protected readonly publicQuestions = this.initPublicQuestions();
 
   protected readonly detail = computed(() => {
     const detail = this.polling() ? this.loaded() : this.snapshot();
@@ -126,6 +138,61 @@ export class MktgRunProgressComponent {
       refresh: this.refreshKey(),
       reload: this.reload(),
     }));
+    toObservable(
+      computed(() => ({
+        project: this.project(),
+        agentKey: this.agentKey(),
+        documentId: this.documentId(),
+        runId: this.runId(),
+        subject: this.user.user()?.sub ?? '',
+      }))
+    )
+      .pipe(
+        switchMap((request) => {
+          this.answersDenied.set(false);
+          this.answersError.set('');
+          return this.answerRequests.pipe(
+            exhaustMap((answers) => {
+              const run = this.selectedRun();
+              const pending = this.publicQuestions();
+              if (!isPlatformBrowser(this.platformId) || !request.subject || !run || !pending) return EMPTY;
+              this.answersSending.set(true);
+              this.answersError.set('');
+              return this.answersService.answer(run.runId, { project: request.project, questionsId: pending.questionsId, answers }).pipe(
+                tap(() => {
+                  this.loaded.update(
+                    (detail) =>
+                      detail && {
+                        ...detail,
+                        runs: detail.runs?.map((row) => (row.runId === run.runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)),
+                      }
+                  );
+                  this.onRefreshProgress();
+                }),
+                catchError((error: HttpErrorResponse) => {
+                  if (error.status === 403) {
+                    this.answersDenied.set(true);
+                    const reason: unknown = error.error?.error?.message ?? error.error?.message;
+                    this.answersError.set(
+                      typeof reason === 'string' && reason.trim()
+                        ? reason
+                        : 'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
+                    );
+                  } else if (error.status === 409 || error.status === 412) {
+                    this.onRefreshProgress();
+                  } else {
+                    this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
+                  }
+                  return EMPTY;
+                }),
+                finalize(() => this.answersSending.set(false))
+              );
+            })
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe();
     toObservable(scope)
       .pipe(
         distinctUntilChanged(
@@ -267,10 +334,26 @@ export class MktgRunProgressComponent {
     this.loadedSubject.set('');
   }
 
+  protected onPublicAnswers(answers: MktgRunAnswer[]): void {
+    this.answerRequests.next(answers);
+  }
+
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
     if (this.polling() && this.runPage()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
+  }
+
+  private initPublicQuestions() {
+    return computed(() => {
+      const run = this.selectedRun();
+      if (!run || run.state !== 'questions' || !run.pendingQuestions || this.answersDenied() || this.waitingForQuestions()) return null;
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());
+      if (type?.kind !== 'living' || !type.catalogAgentId) return null;
+      const privateAttempt = this.attempts.load(this.project(), type.catalogAgentId);
+      if (privateAttempt?.attempt?.runId === run.runId && privateAttempt.pendingQuestions) return null;
+      return run.pendingQuestions;
+    });
   }
 
   private initSelectedRun() {
