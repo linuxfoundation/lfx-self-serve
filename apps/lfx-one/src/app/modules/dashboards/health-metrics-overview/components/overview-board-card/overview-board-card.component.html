@@ -18,16 +18,9 @@
     </span>
   }
 
-  @if (addPastMeetingUrl()) {
-    <div overviewEmptyAction class="mt-[4px]">
-      <a
-        class="inline-flex h-[30px] items-center gap-[6px] rounded-[12px] border border-blue-400 bg-white px-[13px] text-[12px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
-        target="_blank"
-        rel="noopener noreferrer"
-        [href]="addPastMeetingUrl()"
-        data-testid="overview-board-empty-add-meeting"
-        >Add Past Meeting<i class="fa-light fa-plus text-[12px]" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></a
-      >
+  @if (addPastMeetingUrl(); as addMeetingUrl) {
+    <div overviewEmptyAction class="mt-[8px]">
+      <lfx-overview-explore-link [href]="addMeetingUrl" label="Add Past Meeting" leadingIcon="fa-light fa-plus" testId="overview-board-empty-add-meeting" />
     </div>
   }
 
