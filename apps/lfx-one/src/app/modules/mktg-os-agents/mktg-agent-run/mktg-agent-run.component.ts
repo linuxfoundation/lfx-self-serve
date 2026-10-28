@@ -697,7 +697,9 @@ export class MktgAgentRunComponent {
     const destination = this.navigation();
     if (!destination) return;
     if (destination.projectUid !== this.projectContext.activeContextUid() || !destination.subject || destination.subject !== this.userService.user()?.sub) {
-      this.discardPendingNavigation();
+      // The public receiver can retry this public destination after signing in;
+      // it has no private generation capability to restore or submit.
+      if (!this.publicReceiver()) this.discardPendingNavigation();
       this.navigating.set(false);
       this.writingStretch.set(false);
       this.phase.set('form');
@@ -1866,6 +1868,7 @@ export class MktgAgentRunComponent {
         runId &&
         MKTG_STARTED_RUN_ID_REGEX.test(runId)
       ) {
+        this.runFailed.set(false); // Recorded failures offer navigation recovery, never a new Generate retry.
         this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey: type.agentKey, runId });
         this.onRetryHandoff();
       } else if (progress.type === 'refused') {

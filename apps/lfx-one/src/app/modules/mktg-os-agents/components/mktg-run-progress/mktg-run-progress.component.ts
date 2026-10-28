@@ -126,11 +126,17 @@ export class MktgRunProgressComponent {
       refresh: this.refreshKey(),
       reload: this.reload(),
     }));
+    let identityResolved = false;
     toObservable(scope)
       .pipe(
-        distinctUntilChanged(
-          (a, b) => JSON.stringify(a) === JSON.stringify(b) || (!a.subject && !!b.subject && JSON.stringify({ ...a, subject: b.subject }) === JSON.stringify(b))
-        ),
+        distinctUntilChanged((a, b) => {
+          // Keep the first public read in flight while identity initially resolves.
+          // Every later identity change is a scope change and cancels the old reader.
+          identityResolved ||= !!a.subject;
+          const firstResolution = !identityResolved && !!b.subject;
+          identityResolved ||= !!b.subject;
+          return JSON.stringify(a) === JSON.stringify(b) || (firstResolution && JSON.stringify({ ...a, subject: b.subject }) === JSON.stringify(b));
+        }),
         switchMap((request) => {
           this.loaded.set(null);
           this.loadedSubject.set('');
@@ -159,6 +165,9 @@ export class MktgRunProgressComponent {
             this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
           };
           const read = (poll: boolean) => {
+            // Authentication may resolve after this reader started. Stamp each read,
+            // not the long-lived polling scope, before exposing creator-only activity.
+            const readerSubject = this.user.user()?.sub ?? '';
             const metadata$ = defer(() => this.store.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
               switchMap((detail) => {
                 const selector = this.runId();
@@ -215,9 +224,9 @@ export class MktgRunProgressComponent {
               tap((cycle) => {
                 if (request.project !== this.project() || request.agentKey !== this.agentKey() || request.documentId !== this.documentId()) return;
                 if (this.runPage() && request.runId !== this.runId()) return;
-                if (request.subject && request.subject !== this.user.user()?.sub) return;
+                if (readerSubject && readerSubject !== this.user.user()?.sub) return;
                 this.loaded.set(cycle.detail);
-                this.loadedSubject.set(request.subject);
+                this.loadedSubject.set(readerSubject);
                 this.observed.emit(cycle);
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
                 const outcome = this.selectedRun()?.state ?? (request.runId && cycle.detail.revisions.length ? 'landed' : '');

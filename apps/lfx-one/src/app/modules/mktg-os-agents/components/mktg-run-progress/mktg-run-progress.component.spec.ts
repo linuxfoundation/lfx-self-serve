@@ -187,6 +187,52 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('This run could not be found');
   });
 
+  it('keeps the initial read in flight and exposes creator activity on the next authenticated cycle', async () => {
+    await setup();
+    user.set(null);
+    const initial = new Subject<MktgDocumentDetailResponse>();
+    read.mockReturnValue(initial);
+    await fixture.whenStable();
+    user.set({ sub: 'synthetic-creator' } as User);
+    await fixture.whenStable();
+    expect(initial.observed).toBe(true);
+    expect(read).toHaveBeenCalledOnce();
+    const activity = [
+      { id: 'synthetic-step', kind: 'checking' as const, label: 'Synthetic creator step', status: 'running' as const, startedAt: run.startedAt },
+    ];
+    initial.next(detail([{ ...run, activity }]));
+    initial.complete();
+    await fixture.whenStable();
+    expect(text()).not.toContain('Synthetic creator step');
+    read.mockReturnValue(of(detail([{ ...run, activity }])));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(text()).toContain('Synthetic creator step');
+    const replacement = new Subject<MktgDocumentDetailResponse>();
+    read.mockReturnValue(replacement);
+    user.set({ sub: 'synthetic-other-reader' } as User);
+    await fixture.whenStable();
+    expect(replacement.observed).toBe(true);
+    expect(text()).not.toContain('Synthetic creator step');
+  });
+
+  it('refreshes a public questions pause after the owner continues elsewhere', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
+    await fixture.whenStable();
+    expect(text()).toContain('Waiting for your answers');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledOnce();
+    read.mockReturnValue(of(detail()));
+    fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"] button').click();
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(text()).toContain('Writing…');
+    expect(text()).not.toContain('Waiting for your answers');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
   it('cancels a previous reader on subject change and hides its creator feed immediately', async () => {
     await setup();
     const old = new Subject<MktgDocumentDetailResponse>();

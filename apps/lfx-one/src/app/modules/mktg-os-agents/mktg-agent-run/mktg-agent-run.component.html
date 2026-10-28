@@ -29,9 +29,9 @@
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)"
         (questions)="onPublicQuestions()" />
-      @if (navigation() && errorText()) {
-        <lfx-message severity="error" [text]="errorText()" />
-        <lfx-button label="Open asset" (onClick)="onRetryHandoff()" data-testid="mktg-agent-run-open-asset" />
+      @if (errorText()) {
+        <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
+        <lfx-button label="Open asset" (onClick)="onPublicLanding(!!navigation()?.runId)" data-testid="mktg-agent-run-open-asset" />
       }
     </div>
   }

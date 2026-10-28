@@ -15,7 +15,7 @@
         {{ runState() === 'storing' ? 'Saving…' : 'Writing…' }} You can leave this page — the agent keeps working.
       }
     </p>
-    @if (warning()) {
+    @if (warning() || runState() === 'questions') {
       <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
     @if (visibleRunActivity(); as activity) {

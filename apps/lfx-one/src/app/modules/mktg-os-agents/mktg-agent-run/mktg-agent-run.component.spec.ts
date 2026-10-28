@@ -976,7 +976,7 @@ describe('MktgAgentRunComponent', () => {
       });
       discardPrompt()?.reject?.(ConfirmEventType.REJECT);
       await fixture.whenStable();
-      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', conflict.agentKey, 'living'], {
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/mktg-os-agents', agentId], {
         queryParams: { project: PROJECT_1.slug, run: conflict.activeRunId },
       });
       expect(generate).not.toHaveBeenCalled();
@@ -1415,6 +1415,38 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
+    it.each([false, true])('keeps public landing recovery visible without identity and retries only navigation (failed=%s)', async (failed) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      userSignal.set(null);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      component['onPublicLanding'](failed);
+      await fixture.whenStable();
+      expect(query('mktg-run-public-error')?.textContent).toContain('Sign in before opening this run');
+      expect(query('mktg-agent-run-open-asset')).not.toBeNull();
+      expect(component['navigation']()?.runId).toBe(failed ? runId : undefined);
+      expect(navigate).not.toHaveBeenCalled();
+      userSignal.set({ sub: 'synthetic-signed-in' } as User);
+      await fixture.whenStable();
+      // Identity changes reset private state. The fresh public reader observes
+      // the same terminal run again and can now attempt its public destination.
+      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+      if (failed) reader.failed.emit();
+      else reader.landed.emit();
+      await fixture.whenStable();
+      expect(query('mktg-run-public-error')?.textContent).toContain('could not be opened');
+      navigate.mockClear();
+      query('mktg-agent-run-open-asset')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledWith(
+        ['..', 'documents', type.agentKey, 'living'],
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: failed ? runId : null }), replaceUrl: true })
+      );
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
     it.each([false, true])('continues only this browser’s matching questions attempt (matching=%s)', async (matching) => {
       await configure('browser', type.catalogAgentId, { run: runId });
       const attempt = {
@@ -1613,6 +1645,9 @@ describe('MktgAgentRunComponent', () => {
         ['..', 'documents', type?.agentKey, 'living'],
         expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ run: runId, revision: null, generation: null }) })
       );
+      expect(component['runFailed']()).toBe(false);
+      expect(query('mktg-agent-run-retry')).toBeNull();
+      expect(query('mktg-agent-run-open-asset')).not.toBeNull();
       component['onRetryHandoff']();
       await fixture.whenStable();
       expect(navigate).toHaveBeenCalledTimes(2);
