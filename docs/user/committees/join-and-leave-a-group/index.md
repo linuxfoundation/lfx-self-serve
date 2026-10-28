@@ -78,7 +78,7 @@ Hover over a badge for a short explanation of what it allows.
 
 - **Members and managers** see the Votes, Meetings, and Surveys tabs, subject to the group's settings. Votes appears only when the group has voting enabled.
 - **Visitors** see the Overview, About, and Documents tabs. They also see Meetings when the group's calendar is public.
-- Whether people other than managers and auditors can see the member list depends on the group's **Member Visibility**: **Hidden** keeps it private, and **Basic Profile** shows it.
+- Whether people other than managers and auditors can see the member list depends on the group's **Member Visibility**: **Hidden** keeps it private, and **Basic Profile** shows it. In an Invite Only group, members who can send invites also see the **Members** tab so they can use **Invite Someone**.
 - Settings is shown only to managers and auditors.
 
 ## Related

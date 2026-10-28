@@ -1,7 +1,7 @@
 ---
 title: Group Settings
 description: How managers change a group's name, type, join mode, visibility, mailing lists, chat channel, and features, and how to delete a group.
-audience: [maintainer, board-member, executive-director]
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
 last_updated: 2026-10-28
@@ -83,7 +83,7 @@ The **Danger Zone** at the bottom of the tab holds **Delete Group**.
 1. Select **Delete Group**.
 2. Read the **Delete Group** dialog, which names the group, and select **Delete**.
 
-Deletion permanently removes the group and its meetings, votes, surveys, and member records, and can't be undone. A "Deleted" message confirms it. If deletion fails, you see "Failed to delete group" and nothing is removed.
+Deletion permanently removes the group and its meetings, votes, surveys, and member records, and can't be undone. A "Deleted" message confirms it. If you see "Failed to delete group", check whether the group still exists before trying again: deletion may have finished even if its reply was lost.
 
 ## Related
 

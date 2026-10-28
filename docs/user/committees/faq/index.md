@@ -10,7 +10,7 @@ intercom_collection: Committees
 
 ## Who can create a group?
 
-You need write access to the selected foundation or project (executive directors always have it), and you create groups from the **Foundation** or **Project** lens. **Create Group** isn't shown in the **Me** lens. Contributors can view groups and join or leave them where the join mode allows. See [Create a Group](../create-committee/).
+You need write access to the selected foundation or project, and you create groups from the **Foundation** or **Project** lens. **Create Group** isn't shown in the **Me** lens. Contributors can view groups and join or leave them where the join mode allows. See [Create a Group](../create-committee/).
 
 ## How do I join a group?
 
@@ -36,7 +36,7 @@ Two things cause this: either you're not currently on that group's list, or you 
 
 ## Why can't I see the member list or some tabs?
 
-What you see depends on your access and the group's settings. Managers and auditors always see the member list. Everyone else sees it only when the group's **Member Visibility** is **Basic Profile**. **Votes** appears only when voting is enabled, **Meetings** is shown to visitors only when the group's calendar is public, and **Settings** is for managers and auditors. See [Manage Groups](../manage-committees/#the-group-page).
+What you see depends on your access and the group's settings. Managers and auditors always see the member list. Everyone else sees it only when the group's **Member Visibility** is **Basic Profile**. In an Invite Only group, members who can send invites also see the **Members** tab so they can use **Invite Someone**. **Votes** appears only when voting is enabled, **Meetings** is shown to visitors only when the group's calendar is public, and **Settings** is for managers and auditors. See [Manage Groups](../manage-committees/#the-group-page).
 
 ## How do I add members to a group?
 
@@ -54,7 +54,7 @@ Yes, a single user can be a member of multiple groups within the same project or
 
 ## How do I change a group's name, type, or join mode?
 
-Open the group and use **Edit Group**, or open its **Settings** tab and select **Save Changes**. Changing the group type asks you to confirm first. See [Group Settings](../group-settings/).
+Open the group and use **Edit Group**, or open its **Settings** tab and select **Save Changes**. Changing the group type in **Settings** asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. See [Group Settings](../group-settings/).
 
 ## How do I delete a group?
 

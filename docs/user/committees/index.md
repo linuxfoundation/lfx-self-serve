@@ -8,7 +8,7 @@ last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This page applies to everyone who is signed in. Contributors, maintainers, board members, and executive directors can all find their groups and join or leave them where a group allows it. Creating a group takes write access to the selected foundation or project (executive directors always have it). Managing an existing group takes manager access to that group.
+This page applies to everyone who is signed in. Contributors, maintainers, board members, and executive directors can all find their groups and join or leave them where a group allows it. Creating a group takes write access to the selected foundation or project. Managing an existing group takes manager access to that group.
 
 In LFX Self Serve, committees are called **Groups**: Technical Steering Committees (TSCs), boards, working groups, and other formal groups that govern a project. The Groups pages and these articles use "group"; the section is still filed under Committees in the help center.
 
