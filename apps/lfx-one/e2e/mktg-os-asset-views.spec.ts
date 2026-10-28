@@ -16,12 +16,23 @@ import {
   openUnapprovedAssetDocument,
 } from './helpers/mktg-os-asset-views.helper';
 
+// The canonical FAQ report has a failed source and an unanswered question; clean approval scenarios opt out explicitly.
+function cleanFaqResponse() {
+  const base = nativeAssetRevisionResponse('faq');
+  return {
+    ...base,
+    markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }),
+    sidecar: { ...base.sidecar, report: { sources_read: ['Docs'], sources_failed: [], gaps: [], notes: '' } },
+  }; // openAssetDocument and the other openers call suppressCookieBanner before navigation.
+}
+
 test.describe('Native FAQ document approval and header', () => {
   test.use({ viewport: { width: 1440, height: 1000 } });
   test('keeps Create a new version and Approve in the title card for native FAQ without exports', async ({ page }, info) => {
     await openAssetDocument(page, 'faq');
     const view = page.getByTestId('mktg-faq-view');
     await expect(view).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
     await expect(page.getByTestId('mktg-document-view-meta')).toContainText('v1');
     await expect(page.getByTestId('mktg-faq-view-metadata')).toHaveCount(0);
@@ -40,7 +51,8 @@ test.describe('Native FAQ document approval and header', () => {
     await page.screenshot({ path: info.outputPath('loaded.png'), fullPage: true });
   });
   test('approves directly without confirmation and updates the header', async ({ page }, info) => {
-    await openAssetDocument(page, 'faq');
+    await openAssetDocument(page, 'faq', 200, true, false, cleanFaqResponse());
+    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready.');
     const status = page.getByTestId('mktg-document-view-saving-status');
     await expect(status).toHaveAttribute('aria-live', 'polite');
     await expect(status).toHaveText('');
@@ -50,9 +62,33 @@ test.describe('Native FAQ document approval and header', () => {
     await expect(status).toHaveText('Revision 1 is approved and current.');
     await page.screenshot({ path: info.outputPath('approved.png'), fullPage: true });
   });
+  test('confirms open source and question gaps before approval, with a no-op Cancel', async ({ page }, info) => {
+    await openAssetDocument(page, 'faq');
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/approve?')) writes.push(request.url());
+    });
+    const approve = page.getByTestId('mktg-document-view-approve').getByRole('button');
+    await approve.click();
+    const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
+    await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
+    await expect(dialog).toContainText('https://search.example.org/members — 404');
+    await expect(dialog).toContainText('How much does membership cost?');
+    await dialog.getByTestId('mktg-document-view-approve-cancel').getByRole('button').click();
+    await expect(dialog).toBeHidden();
+    expect(writes).toHaveLength(0);
+    await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
+    await approve.click();
+    await dialog.getByTestId('mktg-document-view-approve-anyway').getByRole('button').click();
+    await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
+    expect(writes).toHaveLength(1);
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Ready — 1 of 2 sources could not be read; 1 gap.');
+    await page.screenshot({ path: info.outputPath('approved-with-gaps.png'), fullPage: true });
+  });
   for (const first of ['approve', 'restore'] as const) {
     test(`disables both writes while ${first} is pending and enables retry after finalize`, async ({ page }, info) => {
-      const base = nativeAssetRevisionResponse('faq');
+      const base = cleanFaqResponse();
       const older = { ...base.revision, id: `000002-${'b'.repeat(64)}`, number: 2, latest: false };
       await openAssetDocument(page, 'faq', 200, true, false, { ...base, revisions: [base.revision, older] });
       let release: (() => void) | undefined;
@@ -110,7 +146,7 @@ test.describe('Native FAQ document approval and header', () => {
   }
   for (const status of [500, 412]) {
     test(`keeps the Draft and inline retry on approval ${status}`, async ({ page }, info) => {
-      await openAssetDocument(page, 'faq');
+      await openAssetDocument(page, 'faq', 200, true, false, cleanFaqResponse());
       const message = 'The document changed while making a revision current. Reload and try again.';
       await page.route('**/api/mktg-agents/documents/faq/living/revisions/*/approve?*', (route) =>
         route.fulfill({ status, json: { error: message, code: 'PRECONDITION_FAILED' } })

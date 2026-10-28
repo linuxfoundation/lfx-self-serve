@@ -37,7 +37,7 @@
                 [loading]="approvingId() === current.revision.id"
                 [disabled]="writePending()"
                 data-testid="mktg-document-view-approve"
-                (onClick)="onApprove()" />
+                (onClick)="requestApproval()" />
               @if (approvalError()) {
                 <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
               }
