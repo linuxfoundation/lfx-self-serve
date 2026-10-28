@@ -1,14 +1,14 @@
 ---
 title: Votes
-description: Create polls, cast votes, and view results for project governance decisions in LFX Self Serve.
+description: Create votes, cast your ballot, and view results for project governance decisions in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, polls, governance, decisions, elections]
+tags: [votes, governance, decisions, elections]
 last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
-All authenticated users can view votes and cast a ballot on the ones they are eligible for. Creating and managing votes requires a **maintainer**, **board-member**, or **executive-director** persona.
+All authenticated users can view votes and cast a ballot on the ones they are eligible for. Creating and managing votes requires permission to manage votes for the project, foundation, or group.
 
 The Votes section lets you create and manage votes for formal project governance decisions. Votes are used for committee elections, policy approvals, and other decisions that require a recorded community response.
 
@@ -27,7 +27,7 @@ To view and cast votes, select **Votes** from the left navigation sidebar in the
 
 To manage votes for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the votes for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see votes with every status.
 
-In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching polls.
+In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching votes.
 
 ### Project and Foundation summaries
 
@@ -99,5 +99,5 @@ Votes are scoped to a specific project or foundation. Use the lens switcher to c
 
 ## Related sections
 
-- [Committees](../committees/) — committee members are often the eligible voter set for polls
+- [Committees](../committees/) — committee members are often the eligible voter set for votes
 - [Surveys](../surveys/) — for collecting general feedback rather than formal decisions

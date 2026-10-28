@@ -1,7 +1,7 @@
 ---
 title: Manage Votes
 description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
-audience: [maintainer, board-member, executive-director]
+audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link]
 last_updated: 2026-10-28
@@ -19,27 +19,27 @@ This article is for people who manage votes for a project, foundation, or group,
 
 ## What each row offers
 
-The buttons on a row depend on the vote's status and on whether you can manage it.
+The buttons on a row depend on the vote's status and on whether you can manage votes there. On the Project and Foundation dashboards, and on a group's **Votes** tab, people who can manage votes see the buttons below. Anyone else sees **Vote** or **Review** on active votes and **Results** on ended votes, with no buttons on drafts.
 
 | Status     | Buttons on the row   | What they do                                                         |
 | ---------- | -------------------- | -------------------------------------------------------------------- |
 | **Draft**  | **Edit**, **Delete** | Edit the draft, or delete it. Drafts have no **⋮** menu.             |
-| **Active** | **View**             | Opens the [Results drawer](../vote-results/) with live tallies.      |
+| **Active** | **View**             | Opens the [Results drawer](../vote-results/) with live results.      |
 | **Ended**  | **Results**          | Opens the [Results drawer](../vote-results/) with the final results. |
 
 Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name opens the same drawer as the main button.
 
 ### The ⋮ menu
 
-| Item                              | Who sees it                                              | When                   |
-| --------------------------------- | -------------------------------------------------------- | ---------------------- |
-| **Copy link**                     | Anyone who can see the row                               | Active and ended votes |
-| **Present**                       | People who can manage the vote                           | Active and ended votes |
-| **Extend**                        | People who can manage the vote                           | Active votes           |
-| **Send reminder**                 | People who can manage the vote                           | Active votes           |
-| **Send reminder to mailing list** | People who can manage the vote                           | Active votes           |
-| **Send summary**                  | People who can manage the vote                           | Ended votes            |
-| **Clone**                         | People with project or foundation access to manage votes | Active and ended votes |
+| Item                              | Who sees it                                                       | When                   |
+| --------------------------------- | ----------------------------------------------------------------- | ---------------------- |
+| **Copy link**                     | Anyone who can see the row                                        | Active and ended votes |
+| **Present**                       | People who can manage the vote                                    | Active and ended votes |
+| **Extend**                        | People who can manage the vote                                    | Active votes           |
+| **Send reminder**                 | People who can manage the vote                                    | Active votes           |
+| **Send reminder to mailing list** | People who can manage the vote                                    | Active votes           |
+| **Send summary**                  | People who can manage the vote                                    | Ended votes            |
+| **Clone**                         | People who can manage votes for the project, foundation, or group | Active and ended votes |
 
 **Present**, **Extend**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). Reminders and **Copy link** are below.
 

@@ -58,7 +58,7 @@ LFX shows how many voters received the summary, and how many failed if any did. 
 
 ## Clone a vote
 
-**Clone** starts a new vote from an existing one, so you don't have to retype the questions. It is available from the menu of active and ended votes, to people with project or foundation access to manage votes. See [Create a vote from an existing one](../create-vote/#create-a-vote-from-an-existing-one) for what is copied.
+**Clone** starts a new vote from an existing one, so you don't have to retype the questions. It is available from the menu of active and ended votes, to people with project or foundation access to manage votes, and to people who can edit a group's votes from its **Votes** tab. Ranked-choice and secret-ballot votes can't be cloned yet. See [Create a vote from an existing one](../create-vote/#create-a-vote-from-an-existing-one) for what is copied.
 
 ## Delete a draft
 

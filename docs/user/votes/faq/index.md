@@ -26,12 +26,12 @@ If the creator turned on **Allow Abstain**, voters can select **Abstain from thi
 
 ## What are comment questions?
 
-Comment questions are optional open-ended questions the creator adds, such as "Why did you vote this way?" Voters answer them under **Additional Comments (Optional)**. Managers see the responses with the voter's name in the results.
+Comment questions are optional open-ended questions the creator adds, such as "Why did you vote this way?" Voters answer them under **Additional Comments (Optional)**. Comment responses appear in the results with the commenter's name and the date. Managers see them, and voters see them too once the vote closes, so write comments as if others can read them.
 
 ## Who can see the results?
 
-- **Managers** see live tallies while the vote is open and final results after it closes.
-- **Voters** don't see tallies while the vote is open. After it closes they see the final results.
+- **From the Me lens**, you see the voter view. There are no tallies while the vote is open, and after it closes you see the final results.
+- **From the Project or Foundation Votes dashboard, or a group's Votes tab**, people who manage the vote see live results while it is open and final results after it closes.
 - Anyone watching a [presenter screen](../present-extend-clone/#present-a-vote) sees only how many people have voted until the vote ends.
 
 ## Can a vote be extended?
@@ -40,7 +40,7 @@ Yes, while it is still active. Select **⋮ → Extend** on the vote's row and c
 
 ## Can I edit or close an active vote?
 
-No. Only drafts can be edited, and there is no action to close a vote early. To fix a mistake, clone the vote and open the corrected copy.
+No. Only drafts can be edited, and there is no action to close a vote early. To fix a mistake, clone the vote and open the corrected copy. Ranked-choice and secret-ballot votes can't be cloned yet.
 
 ## How do I show a vote in a meeting?
 

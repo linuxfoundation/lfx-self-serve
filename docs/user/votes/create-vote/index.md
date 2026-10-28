@@ -64,7 +64,7 @@ The review step summarizes the vote's details, questions, and comment questions.
 
 When everything looks right, select **Open Vote**. A confirmation asks whether to open it now, and warns that once opened, notifications are sent and voting begins immediately. Select **Yes, open vote** to continue, or **Cancel** to go back.
 
-If the close time passes while you are on the form, you see a **Deadline expired** message. Go back to step 1 and pick a new deadline.
+If the close time passes while you are on the form, you see a **Deadline expired** message and LFX takes you back to step 1 to pick a new deadline.
 
 ## Save a draft instead
 
@@ -79,6 +79,8 @@ To reuse a vote's questions and settings, select **⋮ → Clone** on its row. T
 - The title starts with **Copy of**.
 - The questions, options, comment questions, eligible participants, and **Allow Abstain** setting are copied.
 - If the original deadline is still in the future it is kept. Otherwise the close date is set seven days from today at `11:59 PM` in your timezone.
+
+Ranked-choice votes and secret-ballot votes can't be cloned yet. LFX shows **Cannot clone** and doesn't open the form.
 
 Review and change anything you like, then open the vote or save it as a draft. **Clone** is covered with the other row actions in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 
