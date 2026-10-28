@@ -307,6 +307,26 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
 
   /**
+   * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
+   * `linkedInConfig.variants[].imageAssetId` (the same image on every variant).
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
+   * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
+   * URN as each dark post's article thumbnail (`internal/dispatch/linkedin_creative.go`,
+   * `resolveLinkedInImages`). What it says is that the DEPLOYED campaign-service resolves LinkedIn
+   * asset ids, which every release from v1.0.21 does. Its own flag so LinkedIn uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.linkedInAssetUploadEnabled`) needs both. With it off the LinkedIn upload
+   * control is hidden and the create route refuses a request carrying a LinkedIn `imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.

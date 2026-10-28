@@ -939,6 +939,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers an image upload — `CampaignListResult.linkedInAssetUploadEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsLinkedInAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
@@ -2507,6 +2509,7 @@ export class CampaignsComponent {
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
         this.briefCampaignsMetaCreativeEnabled.set(null);
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
+        this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
@@ -4606,6 +4609,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
           this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
+          this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
@@ -4626,6 +4630,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
           this.briefCampaignsMetaCreativeEnabled.set(null);
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
+          this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
@@ -4692,6 +4697,7 @@ export class CampaignsComponent {
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
     this.briefCampaignsMetaCreativeEnabled.set(null);
     this.briefCampaignsMetaAssetUploadEnabled.set(null);
+    this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     this.briefCampaignsMicrosoftScheduleEnabled.set(null);
     this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
@@ -4728,6 +4734,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
             this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
+            this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
@@ -4754,6 +4761,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
             this.briefCampaignsMetaCreativeEnabled.set(null);
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
+            this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);

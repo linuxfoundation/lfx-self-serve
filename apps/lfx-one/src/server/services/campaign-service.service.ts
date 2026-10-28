@@ -614,6 +614,19 @@ export function canUseMetaCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may reference an uploaded image by `imageAssetId` on its variants.
+ *
+ * Needs the campaign-service create path to serve the create AND the LinkedIn-assets flag. Like the
+ * Meta sibling, the flag is not about URL signing: LinkedIn's dispatch path uploads the stored bytes
+ * through the Images API and uses the image as the dark post's thumbnail. The legacy creator reads
+ * no `imageAssetId`, hence the cutover half. Admits an upload into the brief's library alongside the
+ * other asset flags.
+ */
+export function canUseLinkedInCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAssets);
+}
+
+/**
  * One stored creative asset, snake_case upstream shape to the camelCase one the browser reads.
  *
  * Returns `null` rather than a partly-filled object when the answer is unusable, so the caller can
@@ -809,6 +822,7 @@ export class CampaignServiceClient {
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+        linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
@@ -873,6 +887,7 @@ export class CampaignServiceClient {
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+      linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.

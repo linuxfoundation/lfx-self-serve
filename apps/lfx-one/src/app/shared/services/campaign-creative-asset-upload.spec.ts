@@ -119,4 +119,23 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
     reddit.flush(ASSET);
     http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
+
+  // A LinkedIn pick is a third owner on the same terms: cancelling it leaves the Meta upload alone.
+  it('keeps a LinkedIn upload apart from a Meta one', () => {
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'meta').subscribe();
+    const meta = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+    const linkedIn$ = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'linkedin');
+    linkedIn$.subscribe();
+
+    expect(meta.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('linkedin', BRIEF_ID)).toBe(linkedIn$);
+
+    service.cancelCreativeAssetUpload('linkedin');
+    expect(meta.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('linkedin', BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload('meta', BRIEF_ID)).not.toBeNull();
+
+    meta.flush(ASSET);
+    http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
+  });
 });
