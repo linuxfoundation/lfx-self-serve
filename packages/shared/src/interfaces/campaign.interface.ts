@@ -107,9 +107,9 @@ export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 /**
  * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
- * upload per owner, so a Meta pick never cancels or takes over a Reddit one, or the reverse.
+ * upload per owner, so a pick on one platform never cancels or takes over another's.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'microsoft';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -1101,6 +1101,17 @@ export interface CampaignImplementationDraft {
   metaImageUploadFailedMessage?: string;
   metaImageUploadFailedBriefId?: string;
   /**
+   * The Microsoft image extension, an upload only, on the Meta upload fields' terms above.
+   * Round-trips regardless of `microsoftAssetUploadEnabled`.
+   */
+  microsoftImageAssetId?: string;
+  microsoftImageAssetName?: string;
+  microsoftImageAssetBriefId?: string;
+  microsoftImageUploadPendingName?: string;
+  microsoftImageUploadPendingBriefId?: string;
+  microsoftImageUploadFailedMessage?: string;
+  microsoftImageUploadFailedBriefId?: string;
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1806,6 +1817,13 @@ export interface MicrosoftCampaignCreateRequest {
    * manual one beside a different `cpcBid`.
    */
   bidding?: CampaignBiddingConfig;
+  /**
+   * OPTIONAL creative asset uploaded to the brief. At dispatch campaign-service uploads it to the ad
+   * account's media library and attaches it to the campaign as an image ad extension. Refused
+   * pre-create over 76,800 bytes or outside 40x20..2592x2048 pixels; its alt text defaults to the
+   * event name.
+   */
+  imageAssetId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -4878,6 +4896,16 @@ export interface CampaignListResult {
    */
   metaAssetUploadEnabled: boolean;
   /**
+   * Whether the Microsoft section may offer an image UPLOAD, sent as
+   * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: Microsoft's dispatch path uploads the stored bytes to the account's media library.
+   * Modelled on the client like the capabilities above.
+   */
+  microsoftAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -5098,6 +5126,12 @@ export interface CampaignRedditImageAssetBlock {
  * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.
  */
 export interface CampaignMetaImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s Microsoft sibling, with the same kinds. */
+export interface CampaignMicrosoftImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }

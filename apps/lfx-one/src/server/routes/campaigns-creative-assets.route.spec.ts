@@ -194,9 +194,22 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
    * unchanged now that the gate has widened.
    */
   it.each([
-    ['only Reddit', [ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMetaAssets]],
-    ['only Google', [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceMetaAssets]],
-    ['only Meta', [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceGoogleAssets]],
+    [
+      'only Reddit',
+      [ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMetaAssets, ServerFeatureFlag.CampaignServiceMicrosoftAssets],
+    ],
+    [
+      'only Google',
+      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceMetaAssets, ServerFeatureFlag.CampaignServiceMicrosoftAssets],
+    ],
+    [
+      'only Meta',
+      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMicrosoftAssets],
+    ],
+    [
+      'only Microsoft',
+      [ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceGoogleAssets, ServerFeatureFlag.CampaignServiceMetaAssets],
+    ],
   ])('admits an upload when %s can consume the asset', async (_label, offFlags) => {
     isServerFeatureEnabled.mockImplementation((flag: unknown) => !(offFlags as unknown[]).includes(flag));
     uploadCreativeAsset.mockResolvedValue(ASSET);

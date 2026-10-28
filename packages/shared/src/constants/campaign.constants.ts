@@ -2903,6 +2903,19 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
 /**
+ * The largest image Microsoft Advertising takes as an image ad extension, in bytes. campaign-service
+ * refuses anything larger at dispatch (`microsoft.MaxImageBytes`: the Image `Data` field holds at
+ * most 102,400 base64 characters, which is 76,800 bytes) and never resizes it. Far below
+ * `CREATIVE_ASSET_MAX_BYTES`, so the Implement tab checks it before uploading rather than storing an
+ * image the create would then fail on.
+ */
+export const MICROSOFT_IMAGE_MAX_BYTES = 76_800;
+
+/** Shown when a Microsoft image exceeds `MICROSOFT_IMAGE_MAX_BYTES`. */
+export const MICROSOFT_IMAGE_TOO_LARGE_MESSAGE =
+  'Microsoft Advertising accepts images up to 75 KB (76,800 bytes), far smaller than other platforms. Choose a smaller or more compressed PNG or JPEG.';
+
+/**
  * The creative-asset type the leading bytes of an image actually are, or `null`.
  *
  * Checked by the BFF before forwarding, because a declared `Content-Type` is the caller's claim:

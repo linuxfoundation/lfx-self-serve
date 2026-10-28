@@ -307,6 +307,26 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
 
   /**
+   * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
+   * `microsoftConfig.imageAssetId`.
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because Microsoft's dispatch path
+   * reads the stored bytes, uploads them to the ad account's media library and attaches them to the
+   * campaign as an image ad extension (`internal/dispatch/microsoft_creative.go`,
+   * `resolveMicrosoftImage`). What it says is that the DEPLOYED campaign-service resolves Microsoft
+   * asset ids, which every release from v1.0.21 does. Its own flag so Microsoft uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.microsoftAssetUploadEnabled`) needs both. With it off the Microsoft upload
+   * control is hidden and the create route refuses a request carrying `microsoftConfig.imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceMicrosoftAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
