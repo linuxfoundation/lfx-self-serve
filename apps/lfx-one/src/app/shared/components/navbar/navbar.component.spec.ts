@@ -575,14 +575,18 @@ describe('NavbarComponent', () => {
   describe('sidebar collapse', () => {
     afterEach(() => {
       vi.restoreAllMocks();
+      vi.unstubAllGlobals();
       localStorage.clear();
     });
 
     /** Reports every viewport as narrow (and non-touch) when `narrow`; otherwise matches nothing. */
     const stubViewport = (narrow: boolean): void => {
-      vi.spyOn(window, 'matchMedia').mockImplementation(
-        (media: string) =>
-          ({ matches: narrow && media.includes('max-width'), media, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(
+          (media: string) =>
+            ({ matches: narrow && media.includes('max-width'), media, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList
+        )
       );
     };
 

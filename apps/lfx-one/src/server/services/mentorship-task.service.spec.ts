@@ -170,6 +170,10 @@ describe('MentorshipTaskService.updateTask', () => {
     updated_on: '2026-08-02T00:00:00Z',
   };
 
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.mocked(logger.debug).mockClear();
