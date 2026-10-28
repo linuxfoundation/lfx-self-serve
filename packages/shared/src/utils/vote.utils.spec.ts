@@ -785,9 +785,9 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('Tied: A, B and C (33% each)');
   });
 
-  it('says no votes are recorded on an open vote with zero votes', () => {
+  it('describes zero choices without asserting no ballots were recorded on an open vote', () => {
     const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
-    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('No votes recorded yet');
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('No choices selected');
   });
 
   it('names the closed winner', () => {
@@ -800,9 +800,9 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Tied: Yes and No (50% each)');
   });
 
-  it('says no votes were submitted on a closed vote with zero votes', () => {
+  it('describes zero choices without asserting no ballots were submitted on a closed vote', () => {
     const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
-    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('No votes were submitted');
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('No choices selected');
   });
 
   it('names the ranked leader with a singular voter', () => {

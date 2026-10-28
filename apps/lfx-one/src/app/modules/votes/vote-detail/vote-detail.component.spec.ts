@@ -1967,11 +1967,30 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
     });
 
-    it('does not describe abstention-only results as no votes', async () => {
-      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 1, num_abstained: 1 }));
+    it.each([
+      { status: PollStatus.ACTIVE, pollType: PollType.GENERIC },
+      { status: PollStatus.ENDED, pollType: PollType.GENERIC },
+      { status: PollStatus.ACTIVE, pollType: PollType.MAJORITY },
+      { status: PollStatus.ENDED, pollType: PollType.MAJORITY },
+    ])('describes abstention-only $pollType results without denying recorded responses on an $status vote', async ({ status, pollType }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status, poll_type: pollType, pseudo_anonymity: false, allow_abstain: true })));
+      const results = makeMethodResults();
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...results,
+          num_votes_cast: 2,
+          num_abstained: 2,
+          poll_results: results.poll_results.map((result) => ({
+            ...result,
+            generic_choice_votes: result.generic_choice_votes?.map((choice) => ({ ...choice, vote_count: 0, percentage: 0 })),
+          })),
+        })
+      );
       const fixture = await setup();
 
+      expect(summary(fixture)).toBe('No choices selected');
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[0]).toMatchObject({ value: '2 / 4', subLine: '50% participation · 2 abstentions' });
     });
 
     it('names the winner once the vote has closed', async () => {

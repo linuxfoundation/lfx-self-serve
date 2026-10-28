@@ -429,7 +429,7 @@ export function buildVoteResultsSummary(
     const leaders = question.options.filter((option) => (isClosed ? option.isWinner || option.isTied : option.isLeading));
     const percentage = leaders.length > 0 ? Math.round(leaders[0].percentage) : 0;
 
-    let text = isClosed ? 'No votes were submitted' : 'No votes recorded yet';
+    let text = 'No choices selected';
     if (question.totalVotes > 0 && leaders.length > 1) {
       text = `Tied: ${joinNames(leaders.map((option) => option.text))} (${percentage}% each)`;
     } else if (question.totalVotes > 0 && leaders.length === 1) {
