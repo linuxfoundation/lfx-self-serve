@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MEMBER_360_API, MEMBER_360_TRACKER_FILENAME_HEADER } from '@lfx-one/shared/constants';
-import { Member360GenerateRequest, Member360Session, Member360Tracker } from '@lfx-one/shared/interfaces';
+import { Member360GenerateRequest, Member360Session, Member360TrackerReceipt } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, take, throwError } from 'rxjs';
 
 /** Dedicated intake/workbook transport. The shared Documents reader owns durable run progress. */
@@ -25,9 +25,9 @@ export class Member360Service {
     );
   }
 
-  public parseTracker(project: string, file: File): Observable<Member360Tracker> {
+  public parseTracker(project: string, file: File): Observable<Member360TrackerReceipt> {
     return this.http
-      .post<Member360Tracker>(`${MEMBER_360_API}/tracker`, file, {
+      .post<Member360TrackerReceipt>(`${MEMBER_360_API}/tracker`, file, {
         params: { project },
         headers: { 'Content-Type': 'application/octet-stream', [MEMBER_360_TRACKER_FILENAME_HEADER]: encodeURIComponent(file.name) },
       })

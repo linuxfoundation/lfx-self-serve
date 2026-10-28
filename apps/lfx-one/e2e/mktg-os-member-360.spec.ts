@@ -146,7 +146,7 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
       mimeType: 'text/csv',
       buffer: Buffer.from(`company,speaker,session\n${SYNTHETIC_ORG_NAME},Sample speaker,Sample session`),
     });
-  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · company, speaker, session');
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
   await expect(page.getByTestId('member-360-tracker')).toContainText('CSV');
   await expect(page.getByRole('button', { name: 'Upload tracker', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Remove speaking.csv' }).click();
@@ -155,7 +155,7 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await expect(create).toBeEnabled();
   await expect(page.getByTestId('member-360-compare')).toContainText('No comparison');
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-first-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => member360Progress('writing'));
@@ -165,11 +165,31 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await page.screenshot({ path: info.outputPath('first-run-no-comparison.png'), fullPage: true });
 });
 
+test('a parsed tracker sends only its opaque id when generating', async ({ page }, info) => {
+  await setupMember360(page);
+  await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.trackerIds).toEqual(['a'.repeat(64)]);
+    expect(body).not.toHaveProperty('trackers');
+    expect(JSON.stringify(body)).not.toContain('synthetic-contact');
+    await json(route, { sessionId: 'synthetic-tracker-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
+  });
+  await stubMember360Progress(page, () => member360Progress('writing'));
+  await openMember360(page);
+  await page
+    .locator('lfx-file-upload input[type=file]')
+    .setInputFiles({ name: 'tracker.csv', mimeType: 'text/csv', buffer: Buffer.from('email\nsynthetic-contact@example.test') });
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
+  await page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true }).click();
+  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('opaque-tracker-run.png'), fullPage: true });
+});
+
 test('Generate lands on the document and stays generating until the run is stored', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let stored = false;
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: true, trackers: [] });
+    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: true, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => (stored ? member360Revision() : member360Progress('writing')));

@@ -179,9 +179,9 @@ export function mktgRunProgress(
   if (run.state === 'completed' || run.state === 'superseded') {
     return null;
   }
-  // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
-  const failureText =
-    run.agentKey === 'linkedin-post' && (!run.creatorSubject || readerSubject !== run.creatorSubject) ? MKTG_ONE_OFF_STOPPED_MESSAGE : fullReply;
+  // Agent prose can contain private source data; unknown creators fail closed.
+  const genericFailure = run.agentKey === 'member-360' ? MEMBER_360_FAILURE_MESSAGES[run.failureReason ?? 'agent_stopped'] : MKTG_ONE_OFF_STOPPED_MESSAGE;
+  const failureText = !run.creatorSubject || readerSubject !== run.creatorSubject ? genericFailure : fullReply;
   const progress: MktgDocumentRunProgress = {
     runId: run.runId,
     project: run.project,

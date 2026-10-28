@@ -10,7 +10,12 @@ import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from '../../../e2
 import * as workbookUtils from '../utils/member-360-workbook.util';
 import { Member360WorkbookService } from './member-360-workbook.service';
 
-const mocks = vi.hoisted(() => ({ getProjectById: vi.fn(), getDocument: vi.fn(), getRevision: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getProjectById: vi.fn(), getDocument: vi.fn(), getRevision: vi.fn(), save: vi.fn() }));
+vi.mock('./member-360-tracker-store.service', () => ({
+  Member360TrackerStoreService: class {
+    save = mocks.save;
+  },
+}));
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = mocks.getProjectById;
@@ -77,7 +82,9 @@ describe('Member 360 stored workbook boundary', () => {
     mocks.getRevision.mockResolvedValue({ member360: { ...member360Fixture(), project_uid: 'other-project' } });
     await expect(new Member360WorkbookService().download(req, 'sample-project', doc)).rejects.toThrow('not found');
   });
-  it('parses CSV to the form contract without persisting the upload', async () => {
+  it('parses CSV privately and returns only the stored receipt', async () => {
+    const receipt = { trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 2, byteCount: 100 };
+    mocks.save.mockResolvedValue(receipt);
     expect(
       await new Member360WorkbookService().parseTracker(
         req,
@@ -85,7 +92,11 @@ describe('Member 360 stored workbook boundary', () => {
         'speaking.csv',
         Buffer.from(`company,session\n${SYNTHETIC_ORG_NAME},Sample session`)
       )
-    ).toEqual({ filename: 'speaking.csv', rows: [{ company: SYNTHETIC_ORG_NAME, session: 'Sample session' }] });
+    ).toEqual(receipt);
+    expect(mocks.save).toHaveBeenCalledWith(req, 'sample-project', {
+      filename: 'speaking.csv',
+      rows: [{ company: SYNTHETIC_ORG_NAME, session: 'Sample session' }],
+    });
     expect(mocks.getDocument).not.toHaveBeenCalled();
   });
   it('preserves the parser reason and the service parsed-size reason', async () => {

@@ -10,6 +10,7 @@ import {
   MEMBER_360_TRACKER_KINDS,
   MEMBER_360_MAX_TRACKERS,
   MEMBER_360_TRACKER_FILENAME_REGEX,
+  MEMBER_360_TRACKER_ID_REGEX,
   MEMBER_360_QUESTIONS_MARKER,
 } from '../constants/member-360.constants';
 import type { Member360FormInput } from '../interfaces/member-360.interface';
@@ -60,7 +61,7 @@ export const member360GenerateSchema = z
     project: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
     window: z.enum(['12', '6', 'year']).optional(),
     compare: z.boolean().optional(),
-    trackers: z.array(trackerSchema).max(MEMBER_360_MAX_TRACKERS).optional(),
+    trackerIds: z.array(z.string().regex(MEMBER_360_TRACKER_ID_REGEX)).max(MEMBER_360_MAX_TRACKERS).optional(),
   })
   .strict();
 

@@ -164,7 +164,7 @@ export class Member360RunComponent {
         project,
         window: this.form.controls.window.value,
         compare: this.form.controls.compare.value,
-        trackers: this.trackers().map((upload) => upload.tracker),
+        trackerIds: this.trackers().map((upload) => upload.tracker.trackerId),
       })
       .subscribe({
         next: (session) => {
@@ -213,14 +213,13 @@ export class Member360RunComponent {
         parsed.push({
           id: ++this.nextTrackerId,
           tracker,
+          filename: file.name,
           format: /\.xlsx$/i.test(file.name) ? 'XLSX' : 'CSV',
-          summary: Object.keys(tracker.rows[0] ?? {})
-            .slice(0, 3)
-            .join(', '),
+          summary: `${tracker.columnCount} columns`,
         });
       }
       const combined = [...this.trackers(), ...parsed];
-      if (new TextEncoder().encode(JSON.stringify(combined.map((upload) => upload.tracker))).length > MEMBER_360_MAX_BYTES)
+      if (combined.reduce((bytes, upload) => bytes + upload.tracker.byteCount, 0) > MEMBER_360_MAX_BYTES)
         throw new Error('The parsed trackers together must be smaller than 5 MB.');
       if (attempt === this.uploadSequence) this.form.controls.trackers.setValue(combined);
     } catch (error) {

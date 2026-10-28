@@ -17,6 +17,7 @@ import {
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_CHAT_MESSAGE_MAX_CHARS,
+  MEMBER_360_CONTRACT_ID,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -75,6 +76,7 @@ import {
   validateFoundationMessageIntakeAnswers,
   validateIcpIntakeAnswers,
 } from '@lfx-one/shared/utils';
+import { createMember360Redactor, extractMktgEnvelopeCandidates, member360CandidateContacts } from '@lfx-one/shared/server';
 import { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
@@ -299,8 +301,11 @@ export class MktgAgentsController {
 
     try {
       const messages = await this.guildService.getHistory(req, validSessionId);
+      const payloads = await this.guildService.getRawEventPayloads(req, validSessionId);
+      const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
+      const redact = createMember360Redactor(contacts);
+      const response: MktgHistoryResponse = { messages: messages.map((message) => ({ ...message, text: redact(message.text) })) };
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
-      const response: MktgHistoryResponse = { messages };
       res.json(response);
     } catch (error) {
       next(error);

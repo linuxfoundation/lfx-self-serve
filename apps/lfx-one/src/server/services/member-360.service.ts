@@ -3,6 +3,7 @@
 
 import {
   MEMBER_360_CONTRACT_ID,
+  MEMBER_360_ACTIVITY_LABELS,
   MEMBER_360_FINALIZE_TOOL,
   MEMBER_360_FINALIZE_RECEIPT_ID,
   MEMBER_360_PARTIAL_SUMMARY_PREFIX,
@@ -49,6 +50,7 @@ import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectService } from './project.service';
+import { Member360TrackerStoreService } from './member-360-tracker-store.service';
 
 /** Form-only Member 360. Project identity and previous output come from trusted server reads. */
 export class Member360Service {
@@ -76,6 +78,7 @@ export class Member360Service {
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
+    const trackers = body.trackerIds?.length ? await new Member360TrackerStoreService().load(req, project.uid, body.trackerIds) : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -83,7 +86,7 @@ export class Member360Service {
       project_uid: project.uid,
       project_slug: project.slug,
       ...this.window(body.window ?? '12'),
-      trackers: body.trackers,
+      trackers,
       ...(prior && { prior_run: prior }),
     });
     logger.debug(req, 'member_360_generate', 'Starting entitled form-only run', { project: project.uid, comparison: !!prior });
@@ -103,11 +106,15 @@ export class Member360Service {
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
     const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
-    const redactActivity = createMember360Redactor(contacts);
-    const activity = buildMktgRunActivity(payloads).map((step) => ({
-      ...step,
-      label: redactActivity(step.label),
-      ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),
+    // A report/contact mask may not exist yet. Whitelist structural fields and
+    // fixed labels rather than forwarding search queries, URLs or usernames.
+    const activity = buildMktgRunActivity(payloads).map(({ id, kind, status, startedAt, endedAt }) => ({
+      id,
+      kind,
+      status,
+      startedAt,
+      ...(endedAt !== undefined && { endedAt }),
+      label: MEMBER_360_ACTIVITY_LABELS[kind],
     }));
     const finalizeResults = payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL));
     for (const payload of finalizeResults) {

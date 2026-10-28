@@ -51,7 +51,7 @@ summary below the minimum length, a neutral summary replaces it and is revalidat
 This is a bounded deterministic policy, not name detection: model-authored prose may
 still repeat names that require the upstream contract to forbid identity or use opaque IDs.
 The Markdown bundle has its own summary hash. Revision reads validate the sidecar schema and sanitized tabs hash
-again before returning the optional `member360` typed field. Navigation and persistence
+again before returning the optional `member360` typed field. Revision responses return that report once, omit `sidecar.member360`, and strip `inputs.research` provenance from the typed projection; immutable storage remains unchanged. Navigation and persistence
 share `buildMktgRunDocumentId`; repeated result polls address that same document ID,
 including after a storage failure. The sanitized envelope is stored once as the typed
 sidecar, independently of the summary's Markdown hash.
@@ -72,7 +72,7 @@ The shared generating card renders optional server-filtered activity through the
 existing `lfx-mktg-run-activity` below its existing lines, for any tracked document
 whose progress carries activity (including living assets). Only the original creator receives
 activity; another project writer sees the same generating card without a feed or extra placeholder.
-Member activity also uses the stored-envelope contact/email redactor. Cached activity is bound to
+Member activity carries only fixed server-written labels per kind and structural timing/status fields. Search queries, URLs, usernames and all detail text are omitted even before a contact mask exists. Cached activity is bound to
 the viewer identity at its read: an identity change hides it immediately, without re-reading the
 subject-independent Member document. A response begun for another viewer cannot re-expose its feed. Its title and breadcrumbs
 come from the registered type. No questions text or reasoning reaches this feed.
@@ -83,7 +83,7 @@ answers endpoint, the page cannot answer; the run is never failed by the clock. 
 Guild ends the session without a valid result (#4267): the stored record stays `questions`/pending
 past the two-hour ceiling and an authorized read keeps reconciling it, never surfacing question text. A classified
 failure keeps the short reason, collapsed Details and host-scoped Run again; the
-server-projected `failureReason` preserves that classification independently of prose on failed runs only.
+server-projected `failureReason` preserves that classification independently of prose on failed runs only. Agent failure prose is creator-only for every agent; other project writers receive the existing fixed Member failure message or shared stopped message.
 The `MktgRunFailureReason` union currently contains `Member360FailureReason`; the dedicated
 `isMktgRunFailureReason` guard accepts only the codes in the Member failure-message allow-list,
 not arbitrary metadata/attempt IDs. A new one-off's classified failures extend that union and
@@ -109,7 +109,7 @@ After that ceiling, reload or Retry makes one result check without restarting th
 polling window; a nonterminal response keeps the capability and shows the notice again.
 Only a ready or failed result (or a permanent transport error) forgets it.
 
-The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes parsed files into the tracker FormControl, with synthetic stable IDs independent of filenames. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
+The intake and ranking filters use LFX wrappers with reactive FormGroups. The file-upload wrapper exposes custom upload events rather than a ControlValueAccessor: its handler writes opaque tracker receipts into the tracker FormControl, with local stable IDs independent of filenames. The browser retains its locally selected filename for display, never parsed rows or headers. The chooser stays mounted; its wrapper clears the custom-upload queue and restores focus after parsing. Classified tracker validation reasons reach the form unchanged; only unclassified library errors use the generic fallback. The shared, browser-safe ranking policy supplies the same ordering to the view and workbook; schema constructors remain outside browser barrels.
 
 ## Trackers, export and verification
 
@@ -118,7 +118,7 @@ The intake and ranking filters use LFX wrappers with reactive FormGroups. The fi
 project's writer grant before parsing. XLSX expansion is streamed and bounded before
 ExcelJS reads XML; trackers have one sheet, unique non-empty headers, at most 2,000
 rows and 100 columns. The form accepts up to ten files with a 5 MB combined parsed
-payload cap. Generate re-validates the shared form contract, including the tracker
+payload cap. Parsing stores rows privately in the same object-store purpose as run records, under `member-360-trackers/{project}/{opaqueId}.json`, bound to a hash of the creator subject. The response contains only an opaque id, row/column counts, parsed byte count and optional kind. Generate accepts `trackerIds`, not rows, resolves writer entitlement first, then reloads and validates the project/creator-bound records and aggregate size before rendering the unchanged upstream intake. Records expire for reads after one hour; expired or unavailable ids require re-upload. Physical deletion remains subject to the object-store bucket lifecycle policy, not a background cleanup job in this application. Generate re-validates the private tracker
 filename's single-line CSV/XLSX allowlist (no CR, LF, slash or backslash); the renderer
 also flattens CR/LF defensively before placing a filename in a tracker delimiter.
 The mirrored upstream schema retains its literal limits, while the browser/parser

@@ -120,7 +120,8 @@ export class MktgDocumentStoreService {
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {
-    console.error(message, error);
+    const response = error instanceof HttpErrorResponse ? error : null;
+    console.error(message, { status: response?.status, code: typeof response?.error?.code === 'string' ? response.error.code : undefined });
     return throwError(() => error);
   }
 

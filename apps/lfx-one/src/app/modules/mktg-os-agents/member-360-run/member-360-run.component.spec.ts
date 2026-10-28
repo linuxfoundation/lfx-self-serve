@@ -33,7 +33,7 @@ describe('Member360RunComponent', () => {
   };
   const run = {
     generate: vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })),
-    parseTracker: vi.fn(() => of({ filename: 'repeat.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] })),
+    parseTracker: vi.fn(() => of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 })),
   };
   async function render(): Promise<void> {
     fixture = TestBed.createComponent(Member360RunComponent);
@@ -137,7 +137,7 @@ describe('Member360RunComponent', () => {
     expect(button().disabled).toBe(false);
     button().click();
     fixture.detectChanges();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).toHaveBeenCalledOnce();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
@@ -194,6 +194,9 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.querySelector('lfx-file-upload')).toBe(chooser);
     expect(document.activeElement).toBe(chooser.querySelector('button'));
     const uploads = fixture.componentInstance.form.controls.trackers.value;
+    expect(uploads[0].filename).toBe('repeat.csv');
+    expect(uploads[0].tracker).not.toHaveProperty('rows');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-tracker-summary"]').textContent).toContain('1 row · 1 columns');
     expect(new Set(uploads.map((upload) => upload.id)).size).toBe(3);
     const retained: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="member-360-remove-${uploads[2].id}"] button`);
     retained.focus();
@@ -205,6 +208,16 @@ describe('Member360RunComponent', () => {
     expect(retained.classList.contains('p-button-text')).toBe(true);
     expect(retained.classList.contains('p-button-outlined')).toBe(false);
   });
+  it('submits only tracker ids after upload, keeping no parsed cells in the form', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['email\nsynthetic@example.test'], 'tracker.csv')]);
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    expect(run.generate).toHaveBeenCalledWith(expect.objectContaining({ trackerIds: ['a'.repeat(64)] }));
+    expect(JSON.stringify(run.generate.mock.calls)).not.toContain('"trackers"');
+  });
+
   it('explains an unavailable comparison instead of a generic server error', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
@@ -221,7 +234,7 @@ describe('Member360RunComponent', () => {
     const api = TestBed.inject(Member360Service),
       http = TestBed.inject(HttpTestingController);
     const file = new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv', { type: 'text/csv' });
-    const tracker = { filename: file.name, rows: [{ company: SYNTHETIC_ORG_NAME }] };
+    const tracker = { trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 };
     let received: unknown;
     api.parseTracker('sample-project', file).subscribe((value) => {
       received = value;
@@ -294,7 +307,7 @@ describe('Member360RunComponent', () => {
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     await fixture.whenStable();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).toHaveBeenCalledWith(
       ['../documents/member-360', 'run-0123456789abcdef01234567'],
       expect.objectContaining({ queryParams: { revision: null, generation: null, run: null }, queryParamsHandling: 'merge' })

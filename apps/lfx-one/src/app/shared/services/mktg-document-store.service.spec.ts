@@ -228,6 +228,21 @@ describe('MktgDocumentStoreService', () => {
       consoleError.mockRestore();
     }
   });
+  it('logs only status and code, never the private error response', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      service.listDocuments('proj-1').subscribe({ error: () => undefined });
+      http
+        .expectOne((request) => request.url === '/api/mktg-agents/documents')
+        .flush({ code: 'RUN_ALREADY_STARTED', startedBy: 'synthetic-person@example.test', details: 'private reply' }, { status: 409, statusText: 'Conflict' });
+      expect(consoleError).toHaveBeenCalledWith('Failed to load Marketing OS documents', { status: 409, code: 'RUN_ALREADY_STARTED' });
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('synthetic-person');
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private reply');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const next = vi.fn();
