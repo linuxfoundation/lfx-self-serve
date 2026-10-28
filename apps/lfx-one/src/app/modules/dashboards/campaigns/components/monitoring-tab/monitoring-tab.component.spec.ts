@@ -905,6 +905,21 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
     });
 
+    it('re-checks the source on Retry, so a rollback since the tab opened clears the error instead of repeating it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'not found' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      const reads = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
     it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
       await setup(allConnected);
       service['getGoogleAdsAccounts'].mockReturnValue(
