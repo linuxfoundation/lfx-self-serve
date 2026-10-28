@@ -2,24 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
-import {
-  BRAND_KIT_CONTRACT_ID,
-  BRAND_KIT_INTAKE,
-  FOUNDATION_MESSAGE_INTAKE,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_SLIDES_EXPORT_API_PATH,
-  MKTG_FAMILY_EXPORT_API_PATH,
-  MKTG_LAST_INTAKE_API,
-  MKTG_RUN_NEW_MODE,
-} from '@lfx-one/shared/constants';
-import type {
-  MktgArtifactStoredResponse,
-  MktgDocumentRunProgress,
-  MktgDocumentsResponse,
-  MktgRevisionResponse,
-  MktgRunResultResponse,
-  MktgRunSessionResponse,
-} from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_CONTRACT_ID } from '@lfx-one/shared/constants/brand-kit.constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
+import { MKTG_FAMILY_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-family-export.constants';
+import { MKTG_LAST_INTAKE_API, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
+import type { MktgArtifactStoredResponse } from '@lfx-one/shared/interfaces/mktg-artifact.interface';
+import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
+import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { expect, Page } from '@playwright/test';
