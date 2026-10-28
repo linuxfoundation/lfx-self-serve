@@ -34,12 +34,16 @@
       } @else {
         <section class="flex flex-col gap-3 rounded-xl border border-gray-200 p-5" data-testid="member-360-generating">
           @if (result()?.status === 'ready') {
-            <lfx-button label="Open document" [routerLink]="['../documents/member-360', pending.request.documentId]" [queryParams]="projectParams()" />
+            @if (pending.request.documentId; as documentId) {
+              <lfx-button label="Open document" [routerLink]="['../documents/member-360', documentId]" [queryParams]="projectQuery()" />
+            }
           } @else if (result()?.status !== 'failed') {
             <p role="status">{{ progressNote() }}</p>
             <lfx-mktg-run-activity [activity]="result()?.activity ?? []" title="Working on Member 360" [startedAt]="startedAt()" [showQuestions]="false" />
           } @else {
-            <lfx-button label="Open run details" [routerLink]="['../documents/member-360', pending.request.documentId]" [queryParams]="projectParams()" />
+            @if (pending.request.documentId; as documentId) {
+              <lfx-button label="Open run details" [routerLink]="['../documents/member-360', documentId]" [queryParams]="projectQuery()" />
+            }
           }
         </section>
       }

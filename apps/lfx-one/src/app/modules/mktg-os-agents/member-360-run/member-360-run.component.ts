@@ -128,6 +128,10 @@ export class Member360RunComponent {
   protected readonly latestPeriod = computed(() => this.latest()?.period.label.replace(/^(\d{4})-(Q[1-4])$/, '$2 $1') ?? '');
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
+  protected readonly projectQuery = computed((): Record<string, string> => {
+    const project = this.context.activeContext()?.slug;
+    return project ? { project } : {};
+  });
   private lastScope = '';
   private uploadSequence = 0;
   private nextTrackerId = 0;
