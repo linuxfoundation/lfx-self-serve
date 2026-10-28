@@ -131,6 +131,15 @@ export class AllEmployeesComponent {
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
+  protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
+  protected readonly statSkeletonLabels: readonly string[] = [
+    'Employees Active in Open Source',
+    'In Governance',
+    ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
+    'Event Attendees',
+    'Trainees',
+  ];
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
@@ -217,21 +226,12 @@ export class AllEmployeesComponent {
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
-  // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
-  protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
   // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; say so.
   protected readonly codeStatNote = computed(() => (this.selectedEmployment() === 'current' ? ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE : null));
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
   );
-  protected readonly statSkeletonLabels: readonly string[] = [
-    'Employees Active in Open Source',
-    'In Governance',
-    ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
-    'Event Attendees',
-    'Trainees',
-  ];
 
   // Every view's rows are reconciled across both rosters, so the table waits for both.
   protected readonly isLoading = computed(() => this.loadingState() || this.formerLoadingState());

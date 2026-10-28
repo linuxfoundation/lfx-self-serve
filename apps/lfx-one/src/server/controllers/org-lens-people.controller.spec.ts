@@ -84,8 +84,8 @@ function buildRosterReq(query: Record<string, string>): Request {
 }
 
 const EMPTY_ROSTER = { accountId: ORG_UID, rows: [], stats: { activeInOss: 0 }, foundations: [] };
-// A request without the commit filters reads LF projects (lfx-self-serve#4160), commits on any branch.
-const DEFAULT_FILTERS = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+// A request without the commit filters reads LF projects (lfx-self-serve#4160) and all code contributions (#4559).
+const DEFAULT_FILTERS = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
 
 describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)', () => {
   const controller = new OrgLensPeopleController();

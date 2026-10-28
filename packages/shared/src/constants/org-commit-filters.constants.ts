@@ -40,15 +40,16 @@ export const ORG_COMMIT_SCOPE_OPTIONS: readonly OrgCommitScopeOption[] = [
 
 /** The BFF's allow-list for `metric`, default first. The UI picks it through {@link ORG_CODE_MEASURE_OPTIONS}. */
 export const ORG_CODE_METRIC_OPTIONS: readonly OrgCodeMetricOption[] = [
-  { label: 'Commits', value: 'commits' },
   { label: 'All code contributions', value: 'code' },
+  { label: 'Commits', value: 'commits' },
 ] as const;
 
 /**
- * Filter defaults: LF projects (lfx-self-serve#4160), commits on any branch. The URL drops a param while it holds its
- * default, so `?projectScope=all` (what LFX Insights counts) is written and a link without `projectScope` opens LF projects.
+ * Filter defaults: LF projects (lfx-self-serve#4160) and all code contributions (lfx-self-serve#4559). The URL drops a
+ * param while it holds its default, so `?projectScope=all` (what LFX Insights counts) and `?metric=commits` are written,
+ * and a link without them opens LF projects and code contributions.
  */
-export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
 
 /**
  * Filters the unranged people roster (assignment pickers, Org Lens Access, Key Contacts) is computed with: every
@@ -58,13 +59,13 @@ export const ORG_UNRANGED_ROSTER_FILTERS: Readonly<OrgCommitFilters> = { ...DEFA
 
 /** The one code-count dropdown on Code Contributions, People → Contributors and People → All Employees, default first. */
 export const ORG_CODE_MEASURE_OPTIONS: readonly OrgCodeMeasureOption[] = [
+  { label: 'All code contributions', value: 'code' },
   { label: 'All commits', value: 'commits' },
   { label: 'Only main branch commits', value: 'merged' },
-  { label: 'All code contributions', value: 'code' },
 ] as const;
 
 /** The code-count option the filter defaults show. The URL drops `metric` while it holds this. */
-export const DEFAULT_ORG_CODE_MEASURE: OrgCodeMeasure = 'commits';
+export const DEFAULT_ORG_CODE_MEASURE: OrgCodeMeasure = 'code';
 
 /** The BFF `commitScope` + `metric` each code-count option sends. */
 export const ORG_CODE_MEASURE_FILTERS: Readonly<Record<OrgCodeMeasure, Pick<OrgCommitFilters, 'commitScope' | 'metric'>>> = {

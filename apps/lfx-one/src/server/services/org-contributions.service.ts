@@ -52,10 +52,11 @@ export class OrgContributionsService {
       return emptyResponse(accountId, query.dateRange);
     }
 
-    // `v4`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559).
+    // `v5`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559), and filter arrays
+    // delimited by JSON in the signature.
     const raw = await withOrgCache(
       accountId,
-      `contributions:v4:${contributionsSignature(query)}`,
+      `contributions:v5:${contributionsSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributionsRaw(accountId, query),
       isContributionsRaw
@@ -598,7 +599,8 @@ function mapEmployeeOption(row: ContributionsEmployeeOptionRow): OrgContribution
 
 /**
  * Deterministic, key-safe cache-key suffix covering every query field that changes the SQL (filter arrays sorted so
- * member order never fragments the key). A SHA-256 hex digest, so the free-text search cannot grow the key.
+ * member order never fragments the key, and kept as arrays so JSON delimits their values: a value holding a comma
+ * cannot collide with two values). A SHA-256 hex digest, so the free-text search cannot grow the key.
  */
 function contributionsSignature(query: OrgContributionsQuery): string {
   const parts = [
@@ -615,8 +617,8 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     query.page,
     query.size,
     query.foundation,
-    [...query.projects].sort().join(','),
-    [...query.employees].sort().join(','),
+    [...query.projects].sort(),
+    [...query.employees].sort(),
   ];
   return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 }

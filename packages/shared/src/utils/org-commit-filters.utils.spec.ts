@@ -21,13 +21,16 @@ import {
 
 const read = (params: Record<string, string>): OrgCommitFilters => readOrgCommitFilters((name) => params[name]);
 
+// lfx-self-serve#4559 — All code contributions is the default on Code Contributions, People → Contributors and All Employees.
 describe('Org Lens code-count dropdown', () => {
-  it('offers All commits, Only main branch commits and All code contributions, defaulting to the default filters', () => {
+  it('offers All code contributions first, as the default, then All commits and Only main branch commits', () => {
     expect(ORG_CODE_MEASURE_OPTIONS).toEqual([
+      { label: 'All code contributions', value: 'code' },
       { label: 'All commits', value: 'commits' },
       { label: 'Only main branch commits', value: 'merged' },
-      { label: 'All code contributions', value: 'code' },
     ]);
+    expect(DEFAULT_ORG_CODE_MEASURE).toBe('code');
+    expect(DEFAULT_ORG_COMMIT_FILTERS).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
     expect(orgCommitFiltersFor({ projectScope: 'lf', metric: DEFAULT_ORG_CODE_MEASURE })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
@@ -50,38 +53,44 @@ describe('Org Lens code-count dropdown', () => {
     expect(orgCodeFilterValues(filters)).toEqual({ projectScope: 'lf', metric });
   });
 
-  it('reads the option from ?metric=, an unknown or missing value as Commits', () => {
-    expect(read({ metric: 'merged' })).toEqual({ ...DEFAULT_ORG_COMMIT_FILTERS, commitScope: 'merged' });
+  it('reads the option from ?metric=, an unknown or missing value as All code contributions', () => {
+    expect(read({ metric: 'merged' })).toEqual({ projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
+    expect(read({ metric: 'commits' })).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'commits' });
     expect(read({ projectScope: 'non_lf', metric: 'code' })).toEqual({ projectScope: 'non_lf', commitScope: 'all', metric: 'code' });
     expect(read({ projectScope: 'LF', metric: 'prs' })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
     expect(read({})).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
-  it('reads a legacy commitScope=merged link as Only main branch commits unless it asked for code contributions', () => {
-    expect(read({ commitScope: 'merged' })).toEqual({ ...DEFAULT_ORG_COMMIT_FILTERS, commitScope: 'merged' });
-    expect(read({ commitScope: 'merged', metric: 'commits' })).toEqual({ ...DEFAULT_ORG_COMMIT_FILTERS, commitScope: 'merged' });
-    expect(read({ commitScope: 'merged', metric: 'code' })).toEqual({ ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'code' });
+  it('reads a legacy commitScope=merged link (commits was the default then) as Only main branch commits unless it asked for code contributions', () => {
+    const merged: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
+    expect(read({ commitScope: 'merged' })).toEqual(merged);
+    expect(read({ commitScope: 'merged', metric: 'commits' })).toEqual(merged);
+    expect(read({ commitScope: 'merged', metric: 'code' })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
     expect(read({ commitScope: 'main' })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
-  it('writes the option to ?metric=, drops defaults and always drops ?commitScope=', () => {
+  it('writes the option to ?metric=, drops the default and always drops ?commitScope=', () => {
     expect(orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS)).toEqual({ projectScope: null, commitScope: null, metric: null });
     expect(orgCommitFiltersUrlParams({ projectScope: 'all', commitScope: 'merged', metric: 'commits' })).toEqual({
       projectScope: 'all',
       commitScope: null,
       metric: 'merged',
     });
-    expect(orgCommitFiltersUrlParams({ ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'code' })).toEqual({ projectScope: null, commitScope: null, metric: 'code' });
+    const commits: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+    expect(orgCommitFiltersUrlParams(commits)).toEqual({ projectScope: null, commitScope: null, metric: 'commits' });
+    // Round trip: an explicit ?metric=commits reads back as commits.
+    expect(read({ metric: 'commits' })).toEqual(commits);
   });
 
   it('matches only a URL that already spells the filters canonically', () => {
-    const merged: OrgCommitFilters = { ...DEFAULT_ORG_COMMIT_FILTERS, commitScope: 'merged' };
+    const merged: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
     const matches = (filters: OrgCommitFilters, params: Record<string, string>): boolean => orgCommitFiltersUrlMatches(filters, (name) => params[name]);
 
     expect(matches(merged, { metric: 'merged', tab: 'contributors' })).toBe(true);
     expect(matches(merged, { commitScope: 'merged' })).toBe(false);
-    expect(matches(DEFAULT_ORG_COMMIT_FILTERS, { metric: 'commits' })).toBe(false);
+    expect(matches(DEFAULT_ORG_COMMIT_FILTERS, { metric: 'code' })).toBe(false);
     expect(matches(DEFAULT_ORG_COMMIT_FILTERS, {})).toBe(true);
+    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'commits' }, { metric: 'commits' })).toBe(true);
     expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, { projectScope: 'all' })).toBe(true);
     expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, {})).toBe(false);
   });
@@ -107,7 +116,7 @@ describe('Org Lens project scope', () => {
   it('round-trips ?projectScope=all through the URL and drops the LF default', () => {
     const all = read({ projectScope: 'all' });
 
-    expect(all).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'commits' });
+    expect(all).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'code' });
     const params = orgCommitFiltersUrlParams(all);
     expect(params).toEqual({ projectScope: 'all', commitScope: null, metric: null });
     expect(readOrgCommitFilters((name) => params[name])).toEqual(all);

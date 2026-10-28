@@ -463,7 +463,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('folds the stored activity of someone with a live seat into their current row, tiles included, under "Current employees"', async () => {
-      await mount('browser');
+      // The merged row's count is checked as commits.
+      await mount('browser', '/?metric=commits');
       await answerCurrent();
       live$.next(
         response(
@@ -578,7 +579,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('shows someone with a live seat as one current row that keeps their code and takes their access badge, under "All"', async () => {
-      await mount('browser', '/?employment=all');
+      await mount('browser', '/?employment=all&metric=commits');
       await answerCurrent();
       live$.next(
         response(
@@ -678,7 +679,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('joins a key contact the server merged into a verified access principal: one current row with code and badge, under "All"', async () => {
-      await mount('browser', '/?employment=all');
+      await mount('browser', '/?employment=all&metric=commits');
       await answerCurrent();
       live$.next(
         response(
@@ -1035,10 +1036,11 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
     const picked: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'code' };
 
-    it('offers one code-count dropdown, Commits by default, and LF projects first and by default', async () => {
+    // lfx-self-serve#4559 — All code contributions is the default code count.
+    it('offers one code-count dropdown, All code contributions first and by default, and LF projects first and by default', async () => {
       await mount('browser');
 
-      expect(component().metricOptions.map((option) => option.label)).toEqual(['All commits', 'Only main branch commits', 'All code contributions']);
+      expect(component().metricOptions.map((option) => option.label)).toEqual(['All code contributions', 'All commits', 'Only main branch commits']);
       expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
         'LF projects',
         'LF and non-LF projects',
@@ -1046,7 +1048,20 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       ]);
       expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
       expect(el().querySelector('[data-testid="org-people-all-employees-commit-scope-filter"]')).toBeNull();
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    });
+
+    it('keeps an explicit ?metric=commits in the URL and drops it again for All code contributions', async () => {
+      await mount('browser', '/?employment=all&metric=commits');
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+      expect(TestBed.inject(Router).url).toBe('/?employment=all&metric=commits');
+
+      component().onFiltersChange({ metric: 'code' });
+      await settle();
+
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS);
+      expect(TestBed.inject(Router).url).toBe('/?employment=all');
     });
 
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
@@ -1066,7 +1081,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('opens a legacy commitScope=merged link as Only main branch commits and rewrites it to metric=merged', async () => {
       await mount('browser', '/?employment=all&commitScope=merged');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { ...FILTERS, commitScope: 'merged' });
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
       const url = TestBed.inject(Router).url;
       expect(url).toContain('metric=merged');
       expect(url).not.toContain('commitScope=');
@@ -1075,7 +1090,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it.each([
       ['merged', { commitScope: 'merged', metric: 'commits' }],
-      ['code', { commitScope: 'all', metric: 'code' }],
+      ['commits', { commitScope: 'all', metric: 'commits' }],
     ] as const)('sends metric=%s to every roster read as %o and writes it to the URL', async (metric, params) => {
       await mount('browser', '/?employment=all');
 
@@ -1123,12 +1138,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await TestBed.inject(Router).navigateByUrl('/?metric=merged');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, commitScope: 'merged' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
 
-      await TestBed.inject(Router).navigateByUrl('/?metric=code');
+      await TestBed.inject(Router).navigateByUrl('/?metric=commits');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'code' });
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'commits' });
     });
 
     it('shows Clear filters only while a filter is non-default, the code-count option included', async () => {
@@ -1145,7 +1160,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
-      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=all&metric=code');
+      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=all&metric=commits');
       const state = fixture.componentInstance as unknown as {
         filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
         searchTerm(): string;
@@ -1188,7 +1203,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('labels the count column, its badges and the activity option after the metric, and the code tile Code Contributors throughout', async () => {
       getFormerEmployees.mockImplementation(() => of(response([], 0)));
-      await mount('browser');
+      await mount('browser', '/?metric=commits');
       snowflake$.next(response([row('p-1', 'Ada Lovelace', { commitsCount: 3 })], 1));
       snowflake$.complete();
       await settle();

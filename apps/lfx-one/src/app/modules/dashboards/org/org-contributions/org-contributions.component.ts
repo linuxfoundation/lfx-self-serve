@@ -189,10 +189,7 @@ export class OrgContributionsComponent {
   protected readonly commitsTotalRecords = computed(() => this.response().commitsTotalRecords);
   protected readonly activeTotalRecords = computed(() => (this.mainTab() === 'commits' ? this.commitsTotalRecords() : this.totalRecords()));
 
-  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => [
-    { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
-    ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
-  ]);
+  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
   protected readonly projectOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initProjectOptions());
   protected readonly employeeOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initEmployeeOptions());
 
@@ -401,10 +398,14 @@ export class OrgContributionsComponent {
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });
           }
           return this.dataService.getContributions(orgUid, query).pipe(
-            // Options arrive with each project's foundation, so a deep-linked pick outside the foundation is dropped here.
+            // A new range or project type can drop the picked foundation from the options, and filtering on it would
+            // empty the page, so it is cleared (as on People → Contributors). Options also arrive with each project's
+            // foundation, so a deep-linked project pick outside the foundation is dropped here.
             tap((res) => {
               this.loadingState.set(false);
-              this.dropProjectsOutside(this.filterForm.controls.foundation.value, res.projectOptions);
+              const { foundation } = this.filterForm.controls;
+              if (foundation.value && !res.foundationOptions.some((option) => option.foundationId === foundation.value)) foundation.setValue('');
+              this.dropProjectsOutside(foundation.value, res.projectOptions);
             }),
             catchError(() => {
               this.fetchErrorState.set(true);
@@ -459,6 +460,13 @@ export class OrgContributionsComponent {
       username: sortFor('username'),
       date: sortFor('date'),
     };
+  }
+
+  private initFoundationOptions(): OrgDropdownOption[] {
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
   private initProjectOptions(): ContributionsFilterOption[] {

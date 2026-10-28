@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
 import type { OrgCommitFilters } from '@lfx-one/shared/interfaces';
 
 import { describeContributionsCaption, describeContributionsWindow, describeContributorsTooltip } from './org-contributions.util';
@@ -30,9 +29,11 @@ describe('describeContributionsWindow', () => {
 
 describe('describeContributionsCaption', () => {
   const window = 'from Oct 21, 2025 to Oct 21, 2026 (UTC)';
-  const caption = (filters: Partial<OrgCommitFilters>) => describeContributionsCaption({ ...DEFAULT_ORG_COMMIT_FILTERS, ...filters }, 'Acme', window);
+  // Every caption here is for commits on any branch in LF projects unless the case overrides it.
+  const caption = (filters: Partial<OrgCommitFilters>) =>
+    describeContributionsCaption({ projectScope: 'lf', commitScope: 'all', metric: 'commits', ...filters }, 'Acme', window);
 
-  it('describes commits on any branch in LF projects by default', () => {
+  it('describes commits on any branch in LF projects', () => {
     expect(caption({})).toBe(
       'Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
     );

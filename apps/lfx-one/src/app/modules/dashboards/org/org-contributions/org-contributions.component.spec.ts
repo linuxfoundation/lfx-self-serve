@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
   CONTRIBUTIONS_MAX_FILTER_VALUES,
@@ -18,7 +18,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgContributionsComponent } from './org-contributions.component';
 import { ContributionsService } from './services/contributions.service';
@@ -77,12 +77,28 @@ async function render(
   }).compileComponents();
 
   const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+  // The filter form's 250ms debounce runs on RxJS's asyncScheduler interval and clock, so only those are virtual;
+  // Angular's timeout scheduling stays real so whenStable settles.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
   const fixture = TestBed.createComponent(OrgContributionsComponent);
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
   return { fixture, navigate, getContributions, queryParamMap };
 }
+
+/** Advances virtual time past the filter form's 250ms debounce, then renders and settles. */
+async function pastDebounce(fixture: ComponentFixture<OrgContributionsComponent>): Promise<void> {
+  vi.advanceTimersByTime(250);
+  fixture.detectChanges();
+  await fixture.whenStable();
+}
+
+afterEach(() => {
+  TestBed.resetTestingModule();
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 describe('OrgContributionsComponent', () => {
   it('replaces the page with the contractor-no-grant state and renders none of its data sections', async () => {
@@ -133,24 +149,40 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('offers one code-count dropdown, Commits by default, LF projects first and by default, and sends the default BFF params', async () => {
+  // lfx-self-serve#4559 — All code contributions is the default; LF projects stays the default project type.
+  it('offers one code-count dropdown, All code contributions first and by default, LF projects first and by default, and sends the default BFF params', async () => {
     const { fixture, getContributions } = await render(null);
     const { controls } = fixture.componentInstance['filterForm'];
 
     expect(fixture.componentInstance['metricOptions'].map((option) => option.label)).toEqual([
+      'All code contributions',
       'All commits',
       'Only main branch commits',
-      'All code contributions',
     ]);
     expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
       'LF projects',
       'LF and non-LF projects',
       'Non-LF projects',
     ]);
-    expect(controls.metric.value).toBe('commits');
+    expect(controls.metric.value).toBe('code');
     expect(controls.projectScope.value).toBe('lf');
     expect('commitScope' in controls).toBe(false);
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'commits' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+  });
+
+  it('opens ?metric=commits on commits and keeps it in the URL, then drops it again for All code contributions', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { metric: 'commits' } });
+    const { metric } = fixture.componentInstance['filterForm'].controls;
+
+    expect(metric.value).toBe('commits');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ commitScope: 'all', metric: 'commits' }));
+    expect(navigate).not.toHaveBeenCalled();
+
+    metric.setValue('code');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ commitScope: 'all', metric: 'code' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ metric: null }) }));
   });
 
   // lfx-self-serve#4160 — LF projects is the default, so it stays out of the URL; LF and non-LF projects (the Insights comparison) is written.
@@ -164,10 +196,7 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['windowCaption']()).toContain(' in LF and non-LF projects, ');
 
     projectScope.setValue('lf');
-    // Past the form's 250ms debounce.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await pastDebounce(fixture);
 
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: null }) }));
@@ -179,21 +208,18 @@ describe('OrgContributionsComponent', () => {
     ['code', { commitScope: 'all', metric: 'code' }, 'Code contributions', 'Code contributions (commits, pull requests', ORG_CODE_CONTRIBUTIONS_DEFINITION],
     ['commits', { commitScope: 'all', metric: 'commits' }, 'Commits', 'on any branch', ORG_COMMITS_DEFINITION],
   ] as const)('maps metric=%s to the BFF params %o, labels, tooltip and caption, and writes it to the URL', async (picked, params, label, caption, tooltip) => {
-    const { fixture, navigate, getContributions } = await render(null, { queryParams: picked === 'commits' ? { metric: 'code' } : {} });
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: picked === 'code' ? { metric: 'commits' } : {} });
     const { projectScope, metric } = fixture.componentInstance['filterForm'].controls;
 
     projectScope.setValue('non_lf');
     metric.setValue(picked);
-    // Past the form's 250ms debounce.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await pastDebounce(fixture);
 
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', ...params }));
     expect(navigate).toHaveBeenLastCalledWith(
       [],
       expect.objectContaining({
-        queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: null, metric: picked === 'commits' ? null : picked }),
+        queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: null, metric: picked === 'code' ? null : picked }),
       })
     );
     expect(fixture.componentInstance['kpiCards']().map((card) => card.label)).toContain(label);
@@ -201,11 +227,11 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['metricDefinition']()).toBe(tooltip);
   });
 
-  it('reads an unknown metric as Commits and drops it from the URL on load, keeping ?projectScope=all', async () => {
+  it('reads an unknown metric as All code contributions and drops it from the URL on load, keeping ?projectScope=all', async () => {
     const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'all', metric: 'bogus' } });
 
-    expect(fixture.componentInstance['filterForm'].controls.metric.value).toBe('commits');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'commits' }));
+    expect(fixture.componentInstance['filterForm'].controls.metric.value).toBe('code');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'code' }));
     expect(navigate).toHaveBeenCalledWith(
       [],
       expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'all', commitScope: null, metric: null }), replaceUrl: true })
@@ -241,16 +267,22 @@ describe('OrgContributionsComponent', () => {
 
   it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
     const { fixture, navigate, getContributions } = await render(null, {
-      queryParams: { view: 'commits', q: 'kube', range: '90d', projectScope: 'all', metric: 'code', foundation: 'f-cncf', projects: 'alpha', employees: 'e-1' },
+      queryParams: {
+        view: 'commits',
+        q: 'kube',
+        range: '90d',
+        projectScope: 'all',
+        metric: 'commits',
+        foundation: 'f-cncf',
+        projects: 'alpha',
+        employees: 'e-1',
+      },
     });
     const el = fixture.nativeElement as HTMLElement;
     const clear = (): HTMLButtonElement | null => el.querySelector('[data-testid="org-contributions-filter-bar-clear-filters"]');
 
     clear()?.click();
-    // Past the form's 250ms debounce.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await pastDebounce(fixture);
     fixture.detectChanges();
 
     expect(fixture.componentInstance['filterForm'].getRawValue()).toEqual({
@@ -260,7 +292,7 @@ describe('OrgContributionsComponent', () => {
       projects: [],
       employees: [],
       projectScope: 'lf',
-      metric: 'commits',
+      metric: 'code',
     });
     expect(getContributions).toHaveBeenLastCalledWith(
       'org-uid-1',
@@ -273,7 +305,7 @@ describe('OrgContributionsComponent', () => {
         employees: [],
         projectScope: 'lf',
         commitScope: 'all',
-        metric: 'commits',
+        metric: 'code',
       })
     );
     expect(navigate).toHaveBeenLastCalledWith(
@@ -299,25 +331,22 @@ describe('OrgContributionsComponent', () => {
     const { fixture, navigate, getContributions, queryParamMap } = await render(null);
     const instance = fixture.componentInstance;
 
-    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', metric: 'code' }));
-    // Past the form's 250ms debounce.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', metric: 'commits' }));
+    await pastDebounce(fixture);
 
     expect(fixture.componentInstance).toBe(instance);
     const { projectScope, metric } = fixture.componentInstance['filterForm'].controls;
-    expect([projectScope.value, metric.value]).toEqual(['non_lf', 'code']);
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', commitScope: 'all', metric: 'code' }));
-    expect(fixture.componentInstance['kpiCards']().map((card) => card.label)).toContain('Code contributions');
+    expect([projectScope.value, metric.value]).toEqual(['non_lf', 'commits']);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', commitScope: 'all', metric: 'commits' }));
+    expect(fixture.componentInstance['kpiCards']().map((card) => card.label)).toContain('Commits');
 
     // The page's own write of the same params comes back through the URL; it must not patch the form again.
     const patchValue = vi.spyOn(fixture.componentInstance['filterForm'], 'patchValue');
-    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', metric: 'code', page: '1' }));
+    queryParamMap.next(convertToParamMap({ projectScope: 'non_lf', metric: 'commits', page: '1' }));
     expect(patchValue).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenLastCalledWith(
       [],
-      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: null, metric: 'code' }) })
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', commitScope: null, metric: 'commits' }) })
     );
   });
 
@@ -386,12 +415,6 @@ describe('OrgContributionsComponent', () => {
     };
     const { fixture, navigate, getContributions } = await render(null, { queryParams: { foundation: 'f-cncf' }, response });
     const { foundation } = fixture.componentInstance['filterForm'].controls;
-    const settle = async () => {
-      // Past the form's 250ms debounce.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      fixture.detectChanges();
-      await fixture.whenStable();
-    };
 
     expect(foundation.value).toBe('f-cncf');
     expect(fixture.componentInstance['foundationOptions']()).toEqual([
@@ -403,21 +426,51 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
 
     foundation.setValue('f-lfai');
-    await settle();
+    await pastDebounce(fixture);
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-lfai' }) }));
 
     foundation.setValue('');
-    await settle();
+    await pastDebounce(fixture);
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: null }) }));
   });
 
   it('rewrites an untrimmed ?foundation= on load', async () => {
-    const { fixture, navigate } = await render(null, { queryParams: { foundation: ' f-cncf ' } });
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [{ foundationId: 'f-cncf', foundationName: 'CNCF' }],
+    };
+    const { fixture, navigate } = await render(null, { queryParams: { foundation: ' f-cncf ' }, response });
 
     expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f-cncf');
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ foundation: 'f-cncf' }), replaceUrl: true }));
+  });
+
+  // As on People → Contributors: filtering on a foundation the options no longer offer would empty the page.
+  it('clears a picked foundation the new project type no longer offers, in the form, the request and the URL', async () => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [{ foundationId: 'f-cncf', foundationName: 'CNCF' }],
+    };
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { foundation: 'f-cncf' }, response });
+    const { foundation, projectScope } = fixture.componentInstance['filterForm'].controls;
+    expect(foundation.value).toBe('f-cncf');
+
+    getContributions.mockImplementation(() => of({ ...response, foundationOptions: [] }));
+    projectScope.setValue('non_lf');
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', foundation: 'f-cncf' }));
+    expect(foundation.value).toBe('');
+
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', foundation: '' }));
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'non_lf', foundation: null }) })
+    );
   });
 
   describe('projects and the picked foundation', () => {
@@ -461,10 +514,7 @@ describe('OrgContributionsComponent', () => {
       expect(getContributions).toHaveBeenCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai', projects: ['k8s', 'ghost'] }));
       expect(fixture.componentInstance['filterForm'].controls.projects.value).toEqual(['ghost']);
 
-      // Past the form's 250ms debounce.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      fixture.detectChanges();
-      await fixture.whenStable();
+      await pastDebounce(fixture);
       expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai', projects: ['ghost'] }));
     });
 
@@ -472,26 +522,26 @@ describe('OrgContributionsComponent', () => {
       const { fixture, getContributions } = await render(null, { queryParams: { foundation: 'f-lfai', projects: 'onnx,ghost' }, response });
       const calls = getContributions.mock.calls.length;
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      fixture.detectChanges();
-      await fixture.whenStable();
+      await pastDebounce(fixture);
       expect(fixture.componentInstance['filterForm'].controls.projects.value).toEqual(['onnx', 'ghost']);
       expect(getContributions).toHaveBeenCalledTimes(calls);
     });
   });
 
   it('follows ?foundation= on a query-only navigation, its removal included, ignoring the echo of its own URL write', async () => {
-    const { fixture, getContributions, queryParamMap } = await render(null, { queryParams: { foundation: 'f-cncf' } });
-    const { foundation } = fixture.componentInstance['filterForm'].controls;
-    const settle = async () => {
-      // Past the form's 250ms debounce.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      fixture.detectChanges();
-      await fixture.whenStable();
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      foundationOptions: [
+        { foundationId: 'f-cncf', foundationName: 'CNCF' },
+        { foundationId: 'f-lfai', foundationName: 'LF AI & Data' },
+      ],
     };
+    const { fixture, getContributions, queryParamMap } = await render(null, { queryParams: { foundation: 'f-cncf' }, response });
+    const { foundation } = fixture.componentInstance['filterForm'].controls;
 
     queryParamMap.next(convertToParamMap({ foundation: 'f-lfai' }));
-    await settle();
+    await pastDebounce(fixture);
     expect(foundation.value).toBe('f-lfai');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: 'f-lfai' }));
 
@@ -500,7 +550,7 @@ describe('OrgContributionsComponent', () => {
     expect(patchValue).not.toHaveBeenCalled();
 
     queryParamMap.next(convertToParamMap({}));
-    await settle();
+    await pastDebounce(fixture);
     expect(foundation.value).toBe('');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
   });
@@ -509,17 +559,13 @@ describe('OrgContributionsComponent', () => {
     const { fixture, navigate, getContributions, queryParamMap } = await render(null);
 
     queryParamMap.next(convertToParamMap({ range: 'all' }));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await pastDebounce(fixture);
 
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: 'all' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: 'all' }) }));
 
     fixture.componentInstance['filterForm'].controls.dateRange.setValue('365d');
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await pastDebounce(fixture);
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }) }));
   });
@@ -546,12 +592,12 @@ describe('OrgContributionsComponent', () => {
         },
       ],
     };
-    const commits = (await render(null, { response })).fixture;
+    const commits = (await render(null, { queryParams: { metric: 'commits' }, response })).fixture;
     expect(commits.componentInstance['kpiCards']().map((card) => card.label)).toContain('Commits');
     expect((commits.nativeElement as HTMLElement).textContent).toContain('First Commit');
     TestBed.resetTestingModule();
 
-    const code = (await render(null, { queryParams: { metric: 'code' }, response })).fixture;
+    const code = (await render(null, { response })).fixture;
     const el = code.nativeElement as HTMLElement;
     expect(code.componentInstance['kpiCards']().map((card) => card.label)).toContain('Code contributions');
     expect(code.componentInstance['kpiCards']().map((card) => card.label)).not.toContain('Commits');

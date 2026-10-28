@@ -113,11 +113,12 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     getContributors = vi.fn(() => of(contributorsResponse()));
   });
 
-  it('offers one code-count dropdown, Commits by default, and LF projects first and by default', async () => {
+  // lfx-self-serve#4559 — All code contributions is the default code count.
+  it('offers one code-count dropdown, All code contributions first and by default, and LF projects first and by default', async () => {
     await mount();
 
     const options = (fixture.componentInstance as unknown as { metricOptions: { label: string }[] }).metricOptions;
-    expect(options.map((option) => option.label)).toEqual(['All commits', 'Only main branch commits', 'All code contributions']);
+    expect(options.map((option) => option.label)).toEqual(['All code contributions', 'All commits', 'Only main branch commits']);
     expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
       'LF projects',
       'LF and non-LF projects',
@@ -125,10 +126,24 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     ]);
     expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
     expect(fixture.componentInstance['projectOptions']()[0]).toEqual({ label: 'Any project', value: '' });
-    expect(form().controls['metric'].value).toBe('commits');
+    expect(form().controls['metric'].value).toBe('code');
     expect(form().controls['projectScope'].value).toBe('lf');
     expect(form().contains('commitScope')).toBe(false);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' });
+  });
+
+  it('keeps an explicit ?metric=commits in the URL and drops it again for All code contributions', async () => {
+    await mount('/?tab=contributors&metric=commits');
+
+    expect(form().controls['metric'].value).toBe('commits');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+    expect(TestBed.inject(Router).url).toBe('/?tab=contributors&metric=commits');
+
+    form().controls['metric'].setValue('code');
+    await settle();
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
+    expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
   });
 
   it.each([
@@ -178,7 +193,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(url).toContain('metric=merged');
     expect(url).not.toContain('commitScope=');
 
-    form().patchValue({ projectScope: 'all', metric: 'commits' });
+    form().patchValue({ projectScope: 'all', metric: 'code' });
     await settle();
 
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' });
@@ -194,30 +209,30 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(url).not.toContain('metric=');
   });
 
-  it('shows commits by default, merged commits under Commits, and code contributions under metric=code, with the matching definition', async () => {
+  it('shows code contributions by default, commits and merged commits under Commits, with the matching definition', async () => {
     await mount();
 
-    expect(text('org-people-contributors-count-header')).toBe('Commits');
-    expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('12');
+    expect(text('org-people-contributors-count-header')).toBe('Code contributions');
+    expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('340');
     let info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
-    expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+    expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_CONTRIBUTIONS_DEFINITION);
 
     form().controls['metric'].setValue('merged');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, commitScope: 'merged' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
     expect(text('org-people-contributors-count-header')).toBe('Commits');
     info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(ORG_MAIN_BRANCH_COMMITS_DEFINITION);
 
-    form().controls['metric'].setValue('code');
+    form().controls['metric'].setValue('commits');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'code' });
-    expect(text('org-people-contributors-count-header')).toBe('Code contributions');
-    expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('340');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+    expect(text('org-people-contributors-count-header')).toBe('Commits');
+    expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('12');
     info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
-    expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_CONTRIBUTIONS_DEFINITION);
+    expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
   });
 
   it('orders the expanded projects by the metric', async () => {
@@ -245,7 +260,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
   it('clears every filter to its default and drops their URL params, keeping the tab', async () => {
     const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-contributors-clear-filters"]');
-    await mount('/?tab=contributors&range=90d&projectScope=all&metric=code');
+    await mount('/?tab=contributors&range=90d&projectScope=all&metric=commits');
     form().controls['search'].setValue('ada');
     // Past the filter bar's 150ms debounce.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -256,7 +271,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     await new Promise((resolve) => setTimeout(resolve, 200));
     await settle();
 
-    expect(form().getRawValue()).toEqual({ search: '', foundation: '', project: '', timeRange: '365d', projectScope: 'lf', metric: 'commits' });
+    expect(form().getRawValue()).toEqual({ search: '', foundation: '', project: '', timeRange: '365d', projectScope: 'lf', metric: 'code' });
     // The range and the commit filters reset together, so one read starts, not one per changed value.
     expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
@@ -269,18 +284,18 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     const instance = fixture.componentInstance;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
 
-    await TestBed.inject(Router).navigateByUrl('/?tab=contributors&projectScope=all&metric=code');
+    await TestBed.inject(Router).navigateByUrl('/?tab=contributors&projectScope=all&metric=commits');
     await settle();
 
     expect(fixture.componentInstance).toBe(instance);
-    expect(form().getRawValue()).toMatchObject({ projectScope: 'all', metric: 'code' });
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'all', commitScope: 'all', metric: 'code' });
-    expect(text('org-people-contributors-count-header')).toBe('Code contributions');
+    expect(form().getRawValue()).toMatchObject({ projectScope: 'all', metric: 'commits' });
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'all', commitScope: 'all', metric: 'commits' });
+    expect(text('org-people-contributors-count-header')).toBe('Commits');
 
     await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
     await settle();
 
-    expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', metric: 'commits' });
+    expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', metric: 'code' });
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS);
     expect(navigate).not.toHaveBeenCalled();
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');

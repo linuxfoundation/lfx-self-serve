@@ -85,7 +85,7 @@ describe('OrgContributionsService — commit filters', () => {
     expect(calls().some(({ sql }) => sql.includes('is_merged'))).toBe(false);
 
     execute.mockClear();
-    await service.getContributions(ACCOUNT, query({ commitScope: 'merged' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', commitScope: 'merged' }));
     expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of commitReads()) {
       expect(sql).toContain('is_merged = TRUE');
@@ -93,7 +93,7 @@ describe('OrgContributionsService — commit filters', () => {
   });
 
   it('reads every surface but the foundation options from the commits table with metric=commits', async () => {
-    await service.getContributions(ACCOUNT, query());
+    await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
 
     expect(commitReads()).toHaveLength(5);
     for (const { sql } of commitReads()) {
@@ -104,8 +104,8 @@ describe('OrgContributionsService — commit filters', () => {
 });
 
 describe('OrgContributionsService — range window', () => {
-  it('windows the default Past 365 days as 365 calendar days, on every commit read', async () => {
-    await service.getContributions(ACCOUNT, query());
+  it('windows Past 365 days as 365 calendar days, on every commit read', async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
 
     expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of commitReads()) {
@@ -122,7 +122,7 @@ describe('OrgContributionsService — range window', () => {
   });
 
   it('windows Past 2 years as 730 calendar days on the commit reads and on code activity', async () => {
-    await service.getContributions(ACCOUNT, query({ dateRange: '730d' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', dateRange: '730d' }));
 
     for (const { sql } of commitReads()) {
       expect(sql).toContain('activity_ts::date >= DATEADD(day, -730, CURRENT_DATE())');
@@ -236,16 +236,22 @@ describe('OrgContributionsService — exact project and foundation filters', () 
     }
   );
 
-  it.each(['commits', 'code'] as const)(
-    'adds foundation_id = ? to every data read and the employee options, bound before the project and employee picks (metric=%s)',
-    async (metric) => {
-      await service.getContributions(ACCOUNT, query({ metric, foundation: 'f-cncf', projects: ['k8s'], employees: ['m-1'] }));
+  it.each([
+    ['commits', [ACCOUNT]],
+    // The code read's lifetime first-activity CTE takes its own account bind.
+    ['code', [ACCOUNT, ACCOUNT]],
+  ] as const)(
+    'adds foundation_id = ? to every data read and the employee options, bound before the project, employee and search binds (metric=%s)',
+    async (metric, repoAccountBinds) => {
+      await service.getContributions(ACCOUNT, query({ metric, foundation: 'f-cncf', projects: ['k8s', 'helm'], employees: ['m-1'], search: 'api' }));
 
       for (const call of [kpiCall(), repoCall(), feedCall(), employeeOptionCall()]) {
         expect(call.sql).toContain('AND foundation_id = ?');
       }
-      expect(kpiCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
-      expect(feedCall().binds).toEqual([ACCOUNT, 'f-cncf', 'k8s', 'k8s', 'm-1']);
+      const picks = ['f-cncf', 'k8s', 'helm', 'k8s', 'helm', 'm-1'];
+      expect(kpiCall().binds).toEqual([ACCOUNT, ...picks, '%api%']);
+      expect(repoCall().binds).toEqual([...repoAccountBinds, ...picks, '%api%']);
+      expect(feedCall().binds).toEqual([ACCOUNT, ...picks, '%api%', '%api%', '%api%', '%api%']);
       // Employee options skip the project and employee picks but narrow to the foundation.
       expect(employeeOptionCall().binds).toEqual([ACCOUNT, 'f-cncf']);
     }
@@ -320,7 +326,7 @@ describe('OrgContributionsService — cache key', () => {
       { projectScope: 'all' },
       { projectScope: 'non_lf' },
       { commitScope: 'merged' },
-      { metric: 'code' },
+      { metric: 'commits' },
       { foundation: 'f-cncf' },
       { foundation: 'f-lfai' },
     ];
@@ -330,9 +336,17 @@ describe('OrgContributionsService — cache key', () => {
     const keys = withOrgCache.mock.calls.map((call) => call[1] as string);
 
     for (const key of keys) {
-      expect(key).toMatch(/^contributions:v4:[0-9a-f]{64}$/);
+      expect(key).toMatch(/^contributions:v5:[0-9a-f]{64}$/);
     }
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('keeps a value holding a comma apart from two values', async () => {
+    await service.getContributions(ACCOUNT, query({ projects: ['a,b'] }));
+    await service.getContributions(ACCOUNT, query({ projects: ['a', 'b'] }));
+    const [joined, split] = withOrgCache.mock.calls.map((call) => call[1] as string);
+
+    expect(joined).not.toBe(split);
   });
 
   it('stays the same length however long the search is', async () => {
