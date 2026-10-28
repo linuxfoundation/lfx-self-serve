@@ -9,6 +9,7 @@ import { provideRouter, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEE_STATS,
+  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
@@ -349,6 +350,27 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       expect(formerTags()).toEqual([]);
       expect(activeStat()).toContain('1');
+    });
+
+    it('notes on the code tile that former employees are left out, only under "Current employees"', async () => {
+      await mount('browser');
+      await answerCurrent();
+      await answerFormer();
+      const infoSelector = '[data-testid="org-people-all-employees-stat-code-info"]';
+      const info = (): Element | null => el().querySelector(infoSelector);
+
+      expect(info()).not.toBeNull();
+      // The note opens on keyboard focus as well as hover, with the current-only explanation.
+      const tooltip = fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip);
+      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE);
+      expect(tooltip.tooltipEvent).toBe('both');
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['all', 'former'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(info()).toBeNull();
+      }
     });
 
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
