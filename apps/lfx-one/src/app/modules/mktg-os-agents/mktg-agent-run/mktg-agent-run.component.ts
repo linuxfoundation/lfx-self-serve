@@ -752,65 +752,6 @@ export class MktgAgentRunComponent {
     this.confirmDiscard(() => this.startGeneration());
   }
 
-  private confirmDiscard(action: () => void): void {
-    const project = this.projectContext.activeContextUid();
-    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
-    const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
-    const runId = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? draft?.attempt?.runId ?? draft?.pendingQuestions?.attempt.runId ?? null;
-    if ((this.discardConfirmed && this.discardedRunId === runId) || (!this.hasWaitingNotice() && !this.existingRun() && !activeDraft)) {
-      action();
-      return;
-    }
-    this.confirmation.confirm({
-      header: `Discard the ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} run?`,
-      message: 'Its questions and progress will be lost.',
-      acceptLabel: 'Discard and start over',
-      rejectLabel: 'Keep it',
-      rejectButtonProps: { text: true },
-      ...this.confirmActions(
-        () => {
-          this.discardConfirmed = true;
-          this.discardedRunId = runId;
-          action();
-        },
-        () => this.keepExistingRun()
-      ),
-    });
-  }
-
-  private confirmActions(accept: () => void, reject: (reason: ConfirmEventType) => void) {
-    const epoch = this.discardEpoch;
-    const project = this.projectContext.activeContextUid();
-    const subject = this.userService.user()?.sub;
-    let settled = false;
-    const current = () =>
-      !settled &&
-      !this.destroyRef.destroyed &&
-      epoch === this.discardEpoch &&
-      project === this.projectContext.activeContextUid() &&
-      subject === this.userService.user()?.sub;
-    return {
-      accept: () => {
-        if (current()) {
-          settled = true;
-          accept();
-        }
-      },
-      reject: (reason: ConfirmEventType) => {
-        if (current()) {
-          settled = true;
-          reject(reason);
-        }
-      },
-    };
-  }
-
-  private keepExistingRun(): void {
-    this.startedOverWaiting.set(false);
-    this.readWaitingDraft(this.projectContext.activeContextUid());
-    if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
-  }
-
   protected onRetryRun(): void {
     const request = this.activeRequest;
     if (!this.runFailed() || !request || this.phase() === 'running') return;
@@ -901,6 +842,65 @@ export class MktgAgentRunComponent {
           }
         },
       });
+  }
+
+  private confirmDiscard(action: () => void): void {
+    const project = this.projectContext.activeContextUid();
+    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
+    const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
+    const runId = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? draft?.attempt?.runId ?? draft?.pendingQuestions?.attempt.runId ?? null;
+    if ((this.discardConfirmed && this.discardedRunId === runId) || (!this.hasWaitingNotice() && !this.existingRun() && !activeDraft)) {
+      action();
+      return;
+    }
+    this.confirmation.confirm({
+      header: `Discard the ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} run?`,
+      message: 'Its questions and progress will be lost.',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Keep it',
+      rejectButtonProps: { text: true },
+      ...this.confirmActions(
+        () => {
+          this.discardConfirmed = true;
+          this.discardedRunId = runId;
+          action();
+        },
+        () => this.keepExistingRun()
+      ),
+    });
+  }
+
+  private confirmActions(accept: () => void, reject: (reason: ConfirmEventType) => void) {
+    const epoch = this.discardEpoch;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    let settled = false;
+    const current = () =>
+      !settled &&
+      !this.destroyRef.destroyed &&
+      epoch === this.discardEpoch &&
+      project === this.projectContext.activeContextUid() &&
+      subject === this.userService.user()?.sub;
+    return {
+      accept: () => {
+        if (current()) {
+          settled = true;
+          accept();
+        }
+      },
+      reject: (reason: ConfirmEventType) => {
+        if (current()) {
+          settled = true;
+          reject(reason);
+        }
+      },
+    };
+  }
+
+  private keepExistingRun(): void {
+    this.startedOverWaiting.set(false);
+    this.readWaitingDraft(this.projectContext.activeContextUid());
+    if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
