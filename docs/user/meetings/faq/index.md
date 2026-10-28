@@ -59,3 +59,7 @@ On the meeting's join page, after the meeting has ended, if the organizer enable
 ## Where can I find meeting materials?
 
 On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). You need to be **signed in** to see materials, for any meeting.
+
+## Where do I find the Zoom host key?
+
+If you're a meeting host, the key appears on the meeting's card (**Host Key** button) and on its join page (**Host controls**) from 70 minutes before the meeting starts until 40 minutes after it ends. In Zoom, open **Participants → Claim Host** and enter the key. See [Host Controls and the Host Key](../host-controls/) for who can see it and how to make a guest a meeting host.

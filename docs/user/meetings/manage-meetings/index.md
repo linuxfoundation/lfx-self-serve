@@ -75,5 +75,6 @@ Meetings are scoped to a project (or foundation). Use the lens switcher to chang
 
 ## Related
 
+- [Host Controls and the Host Key](../host-controls/) — find the Zoom host key and make a guest a meeting host
 - [Schedule a Meeting](../schedule-meeting/) — create a new meeting
 - [Join a Meeting](../join-meeting/) — how attendees access the join page
