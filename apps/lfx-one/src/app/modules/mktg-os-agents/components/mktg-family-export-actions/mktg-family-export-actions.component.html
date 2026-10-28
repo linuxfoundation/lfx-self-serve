@@ -5,13 +5,11 @@
   class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
   aria-labelledby="family-export-title"
   data-testid="family-export-actions">
-  <h2 id="family-export-title" class="text-base font-bold">Export the whole family</h2>
+  <h2 id="family-export-title" class="text-base font-bold">Export the family</h2>
   @if (!target()) {
     <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
   } @else {
-    <p class="text-sm text-gray-500">
-      Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
-    </p>
+    <p class="text-sm text-gray-500">{{ slidesNote }}</p>
     <lfx-button
       label="Download PDF"
       [disabled]="!canPrint()"

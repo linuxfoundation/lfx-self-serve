@@ -13,6 +13,7 @@ import {
   MKTG_FAMILY_PDF_NOTE,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_FAMILY_SLIDES_NOTE,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -49,6 +50,7 @@ export class MktgFamilyExportActionsComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly familyId = input.required<string>();
+  protected readonly slidesNote = MKTG_FAMILY_SLIDES_NOTE;
   protected readonly pdfNote = MKTG_FAMILY_PDF_NOTE;
   protected readonly approvalNote = MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE;
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
