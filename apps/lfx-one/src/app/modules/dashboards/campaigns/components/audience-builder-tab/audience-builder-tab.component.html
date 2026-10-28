@@ -335,7 +335,7 @@
           </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-xs text-gray-500">{{ summary().reachExact ? 'Reach before exclusions (previewed)' : 'Reach before exclusions' }}</dt>
+          <dt class="text-xs text-gray-500" data-testid="campaigns-audience-summary-reach-label">{{ summary().reachLabel }}</dt>
           <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-reach">
             {{ summary().reachText }}
             @if (summary().reachPartial) {

@@ -1438,7 +1438,6 @@ export class AudienceBuilderTabComponent {
     return {
       included: included.length,
       reachText: preview === '' ? reachText : preview,
-      reachExact: preview !== '',
       reachLabel: this.reachLabel(preview !== '', known.length, included.length),
       reachPartial: preview === '' && known.length > 0 && known.length < included.length,
       reachKnownCount: known.length,
