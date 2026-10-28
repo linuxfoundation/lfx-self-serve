@@ -737,8 +737,7 @@ export class MktgDocumentRunService {
         questions: result.questions,
         askedAt: run.pendingQuestions && run.pendingQuestions.questionsId === result.questionsId ? run.pendingQuestions.askedAt : new Date().toISOString(),
       };
-      const pending =
-        MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living') && isMktgRunPendingQuestions(candidate) ? candidate : null;
+      const pending = isMktgRunPendingQuestions(candidate) ? candidate : null;
       if (run.state === 'questions' && JSON.stringify(run.pendingQuestions ?? null) === JSON.stringify(pending)) return run;
       return this.mark(req, stored, 'questions', run.retryAt, undefined, run.answeredQuestionsId, 0, result.failureText, run.failureReason, pending);
     }

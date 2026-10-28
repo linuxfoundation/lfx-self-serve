@@ -141,6 +141,7 @@ describe('mktg-document-store utils', () => {
     });
     it('accepts typed suggestions/basis while rejecting malformed persisted turns', () => {
       expect(isMktgRunPendingQuestions(turn)).toBe(true);
+      expect(isMktgRunPendingQuestions({ ...turn, questions: turn.questions.map((question) => ({ ...question, basis: [] })) })).toBe(true);
       for (const invalid of [
         undefined,
         null,

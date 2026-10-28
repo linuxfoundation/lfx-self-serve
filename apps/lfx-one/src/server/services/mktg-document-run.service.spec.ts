@@ -301,12 +301,12 @@ describe('MktgDocumentRunService core', () => {
       flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
       await expect(service.questionsForAnswers(req, 'synthetic-other-project', hash(session), questionsId)).rejects.toMatchObject({ statusCode: 404 });
     });
-    it('refuses one-offs with the plain creator-only reason even for a project writer', async () => {
+    it('stores a one-off turn privately but refuses it with the plain creator-only reason even for a project writer', async () => {
       await service.startForOneOff(req, 'linkedin-post', project, session);
       flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
       const progress = await service.readProgress(req, project);
       expect(progress.runs[0]).not.toHaveProperty('pendingQuestions');
-      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      expect(JSON.parse(stored().body).pendingQuestions).toMatchObject({ questionsId, questions });
       await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({
         statusCode: 403,
         message: 'Only the writer who started this run can answer it.',
