@@ -3,7 +3,7 @@
 
 <!-- Pixel spacing preserves the approved LinkedIn option-card board. -->
 <div class="flex flex-col gap-3" data-testid="mktg-linkedin-option-cards">
-  <div class="grid grid-cols-1 gap-[14px] lg:grid-cols-3">
+  <div class="grid grid-cols-1 items-stretch gap-[14px] lg:grid-cols-3">
     @for (option of presented(); track option.number) {
       <article class="flex min-w-0 flex-col gap-[10px] rounded-xl border border-gray-200 bg-white px-5 py-[18px]" data-testid="mktg-linkedin-option">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
@@ -36,7 +36,7 @@
             }
           }
         </p>
-        <div class="flex flex-wrap gap-1.5">
+        <div class="mt-auto flex flex-wrap gap-1.5">
           @for (tag of option.hashtags; track $index) {
             <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{{ tag }}</span>
           }

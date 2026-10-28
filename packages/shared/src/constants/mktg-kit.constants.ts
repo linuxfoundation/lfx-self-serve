@@ -130,8 +130,8 @@ export const MKTG_KIT_STATE_LABELS = {
   'coming-soon': 'Coming soon',
 } as const;
 export const MKTG_KIT_TABS = [
-  { path: '', label: 'Kit' },
-  { path: 'requests', label: 'Requests' },
-  { path: 'access', label: 'Access' },
-  { path: 'documents', label: 'Documents' },
+  { path: '', label: 'Kit', soon: false },
+  { path: 'requests', label: 'Requests', soon: true },
+  { path: 'access', label: 'Access', soon: true },
+  { path: 'documents', label: 'Documents', soon: false },
 ] as const;

@@ -40,6 +40,19 @@ describe('Shared LinkedIn option cards', () => {
     await fixture.whenStable();
     return fixture;
   }
+  it('stretches option cards and pushes hashtags and the following actions to the bottom', async () => {
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    const cards = root.querySelectorAll('[data-testid="mktg-linkedin-option"]');
+    expect(cards).toHaveLength(3);
+    expect(cards[0].parentElement?.classList.contains('items-stretch')).toBe(true);
+    for (const card of cards) {
+      expect(card.classList.contains('flex-col')).toBe(true);
+      const hashtags = card.querySelector('[data-testid="mktg-linkedin-post-text"]')?.nextElementSibling;
+      expect(hashtags?.classList.contains('mt-auto')).toBe(true);
+      expect(hashtags?.textContent).toContain('#Code');
+    }
+  });
   it('renders read-only cards and copies substituted text through the real native button', async () => {
     const fixture = await render('https://public.example/release');
     const host = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-copy-1"]');

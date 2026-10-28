@@ -45,6 +45,13 @@ describe('Member360ResultComponent', () => {
     };
     return { fixture, component: fixture.componentInstance, query, names, sort };
   }
+  it('presents the used sources in neutral grey rather than success green', () => {
+    const view = render();
+    const sources = view.query('member-360-sources-used');
+    expect(sources.textContent).toBeTruthy();
+    expect(sources.classList.contains('text-gray-700')).toBe(true);
+    expect(sources.className).not.toContain('emerald');
+  });
   it('builds New run through the shared route helper without carrying asset state or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
