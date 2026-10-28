@@ -74,12 +74,9 @@ export const VALKEY_CACHE = {
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
    * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
-   * `unlinkIdentity` (5s) + `cdpService.rejectIdentityForUser`. That last call's own worst case is
-   * ~50s, not a flat 10s: `resolveMember` first calls `resolveMemberId` (a cold `generateToken`,
-   * 10s, + a 10s resolve fetch), and on a still-unresolved member falls through to `createMember`
-   * (another 10s fetch); if that create races a concurrent request and CDP returns 409, it retries
-   * `resolveMemberId` once more (a 10s fetch, token already cached by then) before
-   * `rejectIdentityForUser`'s own reject call (10s). Set with real margin above that ~60s total so
+   * `unlinkIdentity` (5s) + the primary-email read (5s). `cdpService.rejectIdentityForUser` runs
+   * after the lock is released (#4523): meeting-invite resolution never reads CDP, and that call can
+   * wait behind the member's queued reconcile writes. Set with wide margin above that ~15s region so
    * the lock never expires (and gets silently re-acquired by a second request) while this request's
    * own upstream calls are still legitimately in flight. Also acts as the safety-net auto-release
    * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica
