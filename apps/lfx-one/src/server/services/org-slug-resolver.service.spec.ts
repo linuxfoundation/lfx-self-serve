@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,14 +12,14 @@ import { OrgSlugResolverService } from './org-slug-resolver.service';
 // The resolver is access-sensitive (spec 050, DR-002/DR-003/DR-007): these specs pin the outcome
 // decisions — which rows count, when a slug is a tie, what the cache may store — against a stubbed
 // query-service. `valkey.service` is mocked whole: it reaches the Angular-tainted shared utils barrel.
-const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg, assertOrgLensRead, holdsClaAdmin } = vi.hoisted(() => ({
+const { proxyRequest, getEffectiveUsername, withCache, buildPerUserOrgKey, resolveClaOnlyOrg, assertOrgLensRead, claAdminStatus } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getEffectiveUsername: vi.fn(),
   withCache: vi.fn(),
   buildPerUserOrgKey: vi.fn(),
   resolveClaOnlyOrg: vi.fn(),
   assertOrgLensRead: vi.fn(),
-  holdsClaAdmin: vi.fn(),
+  claAdminStatus: vi.fn(),
 }));
 
 vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn(), success: vi.fn() } }));
@@ -37,7 +38,7 @@ vi.mock('./org-cla-only-orgs.service', () => ({
 }));
 vi.mock('./org-cla-admin.service', () => ({
   OrgClaAdminService: class {
-    public holds = holdsClaAdmin;
+    public status = claAdminStatus;
   },
 }));
 
@@ -72,7 +73,7 @@ beforeEach(() => {
   withCache.mockImplementation((_key: string | null, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
   // Every row query-service returns is also admitted by the read gate, which is how it is today.
   assertOrgLensRead.mockResolvedValue('org-grant');
-  holdsClaAdmin.mockResolvedValue(false);
+  claAdminStatus.mockResolvedValue('not-held');
 });
 
 describe('OrgSlugResolverService — input', () => {
@@ -350,14 +351,14 @@ describe('OrgSlugResolverService — a returned row is not proof of the full len
     const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
 
     expect(result.outcome === 'hit' && result.org.claOnly).toBeFalsy();
-    expect(holdsClaAdmin).toHaveBeenCalledWith(req, UID_A);
+    expect(claAdminStatus).toHaveBeenCalledWith(req, UID_A);
     expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
   });
 
   it('does not open the full lens for a cla_admin row when the read gate cannot answer', async () => {
     proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
     assertOrgLensRead.mockRejectedValue(unverifiable());
-    holdsClaAdmin.mockResolvedValue(true);
+    claAdminStatus.mockResolvedValue('held');
     resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Org A', claOnly: true });
 
     expect(await new OrgSlugResolverService().resolveSegment(req, UID_A)).toEqual({
@@ -366,6 +367,32 @@ describe('OrgSlugResolverService — a returned row is not proof of the full len
       cache: 'bypass',
     });
     expect((await new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).outcome).toBe('miss');
+  });
+
+  it('propagates the outage when neither the read gate nor cla_admin can answer, so the address is never classified', async () => {
+    proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+    assertOrgLensRead.mockRejectedValue(unverifiable());
+    claAdminStatus.mockResolvedValue('unknown');
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).rejects.toMatchObject({ statusCode: 503 });
+    await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).rejects.toMatchObject({ statusCode: 503 });
+    expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+  });
+
+  it('gives up on a stalled authorization within the resolver budget instead of the authorizer timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      proxyRequest.mockResolvedValue(page([{ uid: UID_A }]));
+      assertOrgLensRead.mockReturnValue(new Promise(() => undefined));
+
+      const pending = new OrgSlugResolverService().resolveSegment(req, UID_A);
+      const settled = expect(pending).rejects.toMatchObject({ statusCode: 504 });
+      await vi.advanceTimersByTimeAsync(ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS);
+      await settled;
+      expect(resolveClaOnlyOrg).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // An auditor of A who is only a CLA Manager of B, where A and B share a slug: B is returned by

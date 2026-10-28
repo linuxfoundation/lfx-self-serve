@@ -143,14 +143,27 @@ export class OrgSlugResolverService {
    * 403 means the row is not a full-lens organization for this caller. When the read gate cannot
    * answer (503), `cla_admin` decides instead: a returned row the caller is not `cla_admin` on was
    * admitted through `auditor`, so query-service's answer is kept, as before this check existed.
+   * When `cla_admin` cannot be checked either, the 503 propagates: classifying the row either way
+   * could rewrite an SFID address to a slug that stops resolving once the outage ends.
+   *
+   * Both checks share the resolver's fail-fast budget, because the SSR guard blocks the page on
+   * this lookup and the authorizer's own timeout is far longer.
    */
-  private async opensFullLens(req: Request, uid: string): Promise<boolean> {
+  private opensFullLens(req: Request, uid: string): Promise<boolean> {
+    return withDeadline(this.classifyFullLens(req, uid));
+  }
+
+  private async classifyFullLens(req: Request, uid: string): Promise<boolean> {
     try {
       await assertOrgLensRead(req, uid, OPERATION);
       return true;
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 403) return false;
-      if (error instanceof MicroserviceError && error.statusCode === 503) return !(await this.claAdmins.holds(req, uid));
+      if (error instanceof MicroserviceError && error.statusCode === 503) {
+        const claAdmin = await this.claAdmins.status(req, uid);
+        if (claAdmin === 'unknown') throw error;
+        return claAdmin === 'not-held';
+      }
       throw error;
     }
   }
@@ -258,6 +271,37 @@ function isCacheableHit(value: unknown): value is CachedResolution {
     typeof name === 'string' &&
     (slug === null || (typeof slug === 'string' && ORG_SLUG_SEGMENT_PATTERN.test(slug)))
   );
+}
+
+/**
+ * Caps the full-lens classification at {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}, following
+ * `OrgAffiliationService.withDeadline`. Expiry is an upstream failure, so the controller answers
+ * 502 and the client keeps the address as typed (FR-020). The underlying checks are not
+ * cancelled; they are simply no longer waited on.
+ */
+function withDeadline(classification: Promise<boolean>): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new MicroserviceError(`Full-lens check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'ORG_FULL_LENS_CHECK_TIMEOUT', {
+            operation: OPERATION,
+            service: 'org_slug_resolver_service',
+          })
+        ),
+      ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
+    );
+    classification.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
 function toResolveResponse(uid: string, doc: B2bOrgIndexedDoc): OrgResolveResponse {

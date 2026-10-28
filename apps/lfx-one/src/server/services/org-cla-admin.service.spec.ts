@@ -48,6 +48,12 @@ describe('OrgClaAdminService', () => {
     expect(warning).not.toHaveBeenCalled();
   });
 
+  it('keeps a failed check apart from a verified no in `status`', async () => {
+    await expect(build(vi.fn().mockResolvedValue(true)).status(req(), OWN)).resolves.toBe('held');
+    await expect(build(vi.fn().mockResolvedValue(false)).status(req(), OWN)).resolves.toBe('not-held');
+    await expect(build(vi.fn().mockRejectedValue(new Error('down'))).status(req(), OWN)).resolves.toBe('unknown');
+  });
+
   it('checks once per request and organization', async () => {
     const check = vi.fn().mockResolvedValue(true);
     const service = build(check);
