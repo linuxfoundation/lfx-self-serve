@@ -124,6 +124,25 @@ export class OrgLensEventsService {
 
     const scopedQuery = buildListQuery('scoped');
 
+    // Started before the read, not after it: the staff check is an upstream round trip that depends
+    // on nothing in the rows, and its per-request memo is always cold here because `/lens/events`
+    // mounts only `requireOrgLensAccess`. Awaiting it after the rows put that trip in series with
+    // Valkey or Snowflake on every list response, cache hits included. `checkLFStaff` catches and
+    // resolves `false`, so an early return that never awaits this promise cannot reject unhandled.
+    const includeGoal = this.callerIsLFStaff(req);
+
+    /** Every outage exit shapes the response identically; #4408 turns these into a labelled-unavailable surface. */
+    const emptyEvents = (err: unknown): OrgEventsResponse => {
+      logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', { err, account_id: accountId });
+      return { data: [], total: 0, pageSize, offset };
+    };
+
+    /** `ORG_EVENTS` alone with its precomputed count — the only tier left once a core table is gone. */
+    const platinumRows = (): Promise<OrgEventRow[]> => {
+      const platinumQuery = buildListQuery('platinum');
+      return this.fetchEventListRows(platinumQuery.sql, platinumQuery.binds);
+    };
+
     let rows: OrgEventRow[];
     try {
       rows = await withOrgCache(
@@ -151,31 +170,21 @@ export class OrgLensEventsService {
        * keep serving unfiltered counts long after the table came back.
        */
       if (!SnowflakeService.isMissingObjectError(scopedError)) {
-        logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-          err: scopedError,
-          account_id: accountId,
-        });
-        return { data: [], total: 0, pageSize, offset };
+        return emptyEvents(scopedError);
       }
 
-      // Something else is missing, so the unscoped spelling — which reads the same core tables —
+      // Some OTHER object is missing, so the unscoped spelling — which reads the same core tables —
       // cannot succeed either. Skip straight to the tier that might, instead of spending a breaker
       // failure proving it.
-      if (!isMissingObject(scopedError, COMPANY_EMAILS_TABLE)) {
+      if (!SnowflakeService.isMissingObjectError(scopedError, COMPANY_EMAILS_TABLE)) {
         logger.warning(req, 'get_org_lens_events', 'Core table unavailable, falling back to the platinum count', {
           err: scopedError,
           account_id: accountId,
         });
-        const directPlatinum = buildListQuery('platinum');
         try {
-          rows = await this.fetchEventListRows(directPlatinum.sql, directPlatinum.binds);
-          return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsLFStaff(req));
+          return this.toEventsResponse(req, await platinumRows(), pageSize, offset, await includeGoal);
         } catch (platinumError) {
-          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-            err: platinumError,
-            account_id: accountId,
-          });
-          return { data: [], total: 0, pageSize, offset };
+          return emptyEvents(platinumError);
         }
       }
 
@@ -196,31 +205,22 @@ export class OrgLensEventsService {
          * the org's events with a stale count beats telling it that it has none.
          */
         if (!SnowflakeService.isMissingObjectError(unscopedError)) {
-          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-            err: unscopedError,
-            account_id: accountId,
-          });
-          return { data: [], total: 0, pageSize, offset };
+          return emptyEvents(unscopedError);
         }
 
         logger.warning(req, 'get_org_lens_events', 'Registrations unavailable, falling back to the platinum count', {
           err: unscopedError,
           account_id: accountId,
         });
-        const platinumQuery = buildListQuery('platinum');
         try {
-          rows = await this.fetchEventListRows(platinumQuery.sql, platinumQuery.binds);
+          rows = await platinumRows();
         } catch (error) {
-          logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', {
-            err: error,
-            account_id: accountId,
-          });
-          return { data: [], total: 0, pageSize, offset };
+          return emptyEvents(error);
         }
       }
     }
 
-    return this.toEventsResponse(req, rows, pageSize, offset, await this.callerIsLFStaff(req));
+    return this.toEventsResponse(req, rows, pageSize, offset, await includeGoal);
   }
 
   /** GET /api/orgs/:accountId/lens/events/summary — org-wide total / past / upcoming counts for the stat strip. */
@@ -318,13 +318,15 @@ export class OrgLensEventsService {
         isContactRowArray
       );
     } catch (scopedError) {
-      // Same reasoning as the list, including the missing-object guard: any other failure must not
-      // quietly drop the filter. Both surfaces fall back on the same condition, so a row and the
-      // drawer it opens still agree.
-      // Not a missing object, or the missing object is one the unscoped spelling needs too: either
-      // way the retry cannot succeed, and running it would spend a breaker failure to find that out.
-      // Concurrent drawer opens during an EVENT_REGISTRATIONS outage would do so once per request.
-      if (!isMissingObject(scopedError, COMPANY_EMAILS_TABLE)) {
+      // Only a missing ADDRESS TABLE retries unscoped, exactly as the list does, so a row and the
+      // drawer it opens agree in both of the tiers they share. Any other failure — a timeout above
+      // all — must not retry: the unscoped spelling would silently drop the company-email filter,
+      // which is the one thing this rule exists to prevent. A missing CORE table is a third case:
+      // the unscoped spelling reads those tables too, so retrying could only spend a breaker failure
+      // to prove it. There the two surfaces part company — the list has a platinum tier that reads
+      // ORG_EVENTS alone, and the drawer has nothing to list without registrations, so it returns
+      // empty and a row count may stand beside an empty drawer.
+      if (!SnowflakeService.isMissingObjectError(scopedError, COMPANY_EMAILS_TABLE)) {
         logger.warning(req, 'get_event_attendees', 'Snowflake query failed, returning empty attendees', {
           err: scopedError,
           account_id: accountId,
@@ -547,7 +549,14 @@ export class OrgLensEventsService {
  */
 const EMAIL_WHITESPACE = `CHR(9) || CHR(10) || CHR(13) || CHR(160) || ' '`;
 
-/** One normalization, used everywhere an address is compared, grouped, counted or tested for blankness. */
+/**
+ * One normalization, used everywhere an address is compared, grouped or counted. NOT used by the
+ * blankness guards — the coverage CTE and `REGISTRANT_HAS_ADDRESS` each write their own
+ * `NULLIF(TRIM(…, EMAIL_WHITESPACE), '')`, because this expression is declared after the first of
+ * them and `REGISTRANT_EMAIL_KEY` after the second. They agree today only because `LOWER` never
+ * turns a non-empty string empty; anything added here that `TRIM` cannot do (stripping a zero-width
+ * space, say) has to be mirrored into both guards or a blank key slips past them.
+ */
 function normalizedEmail(column: string): string {
   return `LOWER(TRIM(${column}, ${EMAIL_WHITESPACE}))`;
 }
@@ -616,14 +625,6 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * the chosen scope across both requests and both cache keys, or reporting the drawer as unavailable
  * when it cannot honour the list's scope — the labelled-unavailable surface tracked in #4408.
  *
- * KNOWN, DELIBERATE GAP. The non-blank requirement applies on the fallback path too, so a registration
- * with no address at all is dropped there, where before this rule it would have reached the drawer.
- * Upstream dedup is `PARTITION BY email, event_id` and NULLs partition together, so this is at most one
- * row per event. Keeping it would mean emitting an attendee whose `CONTACT_ID` is null — against the
- * non-nullable `OrgEventAttendee.contactId`, rejected by `isContactRowArray` so the event's whole cache
- * entry is refused on every read, and invisible to `COUNT(DISTINCT …)` so the row and the drawer would
- * disagree again. Giving it a synthesized identity instead needs a registration-level key this query
- * does not select. Revisit with the platinum measure in #4409, where the grain can carry one.
  */
 const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)`;
 
@@ -634,6 +635,15 @@ const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)
  * `isContactRowArray`, and with a null `name` when the registration carries none either, which the
  * drawer then calls `computePersonInitials` on. The scoped predicate used to carry this clause, so
  * splitting the fallback out of it originally dropped the guard on exactly the degraded path.
+ *
+ * KNOWN, DELIBERATE GAP, and this is the guard that drops the row. Applying it on the fallback path
+ * too means a registration with no address at all is dropped there, where before this rule it would
+ * have reached the drawer. Upstream dedup is `PARTITION BY email, event_id` and NULLs partition
+ * together, so this is at most one row per event. Keeping it would mean emitting an attendee whose
+ * `CONTACT_ID` is null — rejected by `isContactRowArray`, so the event's whole cache entry is
+ * refused on every read, and invisible to `COUNT(DISTINCT …)`, so the row and the drawer would
+ * disagree again. Giving it a synthesized identity instead needs a registration-level key this query
+ * does not select. Revisit with the platinum measure in #4409, where the grain can carry one.
  */
 const REGISTRANT_HAS_ADDRESS = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL`;
 
@@ -661,15 +671,18 @@ const REGISTRANT_EMAIL_KEY = normalizedEmail('er.EMAIL');
 const ORG_PERSON_EMAIL_KEY = normalizedEmail('p.EMAIL');
 
 /**
- * Per-event registrant count, so a row and the drawer it opens never disagree.
- * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used: it is precomputed with no company-email scoping.
- * It counts on `REGISTRANT_EMAIL_KEY`, the same grain the drawer groups by.
+ * Per-event registrant count, so a row and the drawer it opens agree in the two tiers they share.
+ * `ORG_EVENTS.ORG_REGISTRATION_COUNT` cannot be used here: it is precomputed with no company-email
+ * scoping. This counts on `REGISTRANT_EMAIL_KEY`, the same grain the drawer groups by.
  *
- * The unscoped spelling drops the company-email filter and nothing else — it still recomputes from the
- * same registrations, at the same grain, with the same address guard. Falling back to the precomputed
- * platinum column instead would restore pre-rule behaviour literally, but it would also break the one
- * invariant this PR is built on: a row saying 99 while the drawer it opens lists 2. Dropping the scope
- * is the point of the fallback; dropping the agreement is not.
+ * The unscoped spelling drops the company-email filter and nothing else — it still recomputes from
+ * the same registrations, at the same grain, with the same address guard. So dropping the scope is
+ * the point of that fallback; dropping the agreement is not, and it doesn't.
+ *
+ * The list has a third tier the drawer lacks: when `EVENT_REGISTRATIONS` itself is unavailable this
+ * CTE cannot run at all, and `buildListQuery('platinum')` reads the precomputed column instead. That
+ * tier DOES give up the agreement — a row may say 99 beside an empty drawer — and it is a deliberate
+ * last resort, because showing the org its events with a stale count beats telling it it has none.
  *
  * Binds: two account ids when scoped (coverage CTE, registrations CTE), one when not.
  * Replacing the scoped spelling with a column on the platinum model is #4409.
@@ -689,16 +702,7 @@ function registrationCountsCte(scoped: boolean): string {
       )`;
 }
 
-/**
- * True when the error says THIS object is the missing one — not enough to ask of the bare predicate,
- * which only answers "some object is absent": the unscoped and platinum spellings still read the core
- * tables, so retrying after `EVENT_REGISTRATIONS` goes missing cannot succeed and costs a breaker
- * failure for nothing. Snowflake names the object, so the tier can be chosen rather than guessed at.
- */
-function isMissingObject(error: unknown, objectName: string): boolean {
-  return SnowflakeService.isMissingObjectError(error, objectName);
-}
-
+/** The one object either surface may legitimately find absent; every other table here is core. */
 const COMPANY_EMAILS_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
 
 /** scoped → company-email filtered; unscoped → same grain, no filter; platinum → ORG_EVENTS alone. */

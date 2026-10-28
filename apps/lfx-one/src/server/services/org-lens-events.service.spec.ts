@@ -461,17 +461,6 @@ describe('OrgLensEventsService company-email scoping', () => {
     expect(checkLFStaff).toHaveBeenCalled();
   });
 
-  it('withholds the goal when the staff check cannot be trusted', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    // `checkLFStaff` already degrades to false when the access check fails, so a withheld goal is
-    // the documented outcome of an authorizer problem rather than an accident of this call site.
-    checkLFStaff.mockResolvedValue(false);
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
-  });
-
   it('does not leak a staff-populated cache entry to an external admin', async () => {
     addEvent(EVENT, 99);
     addCompanyEmail('ada@company.example');
@@ -571,13 +560,12 @@ describe('OrgLensEventsService company-email scoping', () => {
 
     await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
 
-    // The unscoped retry and the platinum last resort both read core tables. Flagging them would
+    // A missing EVENT_REGISTRATIONS sends the list straight to platinum, so this is the platinum
+    // query alone — not the unscoped retry, which never runs on this path. Flagging it would
     // suppress the error telemetry for a genuinely broken warehouse and reset the shared breaker.
-    const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
-    expect(unscopedCalls.length).toBeGreaterThan(0);
-    for (const [, , options] of unscopedCalls) {
-      expect(options).toBeUndefined();
-    }
+    const platinumCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
+    expect(platinumCalls).toHaveLength(1);
+    expect(platinumCalls[0][2]).toBeUndefined();
   });
 
   it('keeps a missing address table out of the shared circuit breaker', async () => {
@@ -600,10 +588,26 @@ describe('OrgLensEventsService company-email scoping', () => {
       expect(options).toEqual({ expectMissingObject: 'ORG_PEOPLE_COMPANY_EMAILS' });
     }
 
-    // And ONLY the scoped spellings. The flag means "this statement references an object that may
-    // legitimately not exist yet"; the unscoped and platinum spellings read core tables, whose
-    // absence must keep its telemetry and count toward the breaker.
-    for (const [, , options] of calls.filter(([query]) => !query.includes('company_email_coverage'))) {
+    // Nothing is dropped here, so the scoped spellings are the ONLY calls — asserting that the
+    // others carry no option would iterate an empty array and prove nothing. The test below drops
+    // the address table so the unscoped retries actually run, and pins their options there.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('does not flag the unscoped retries that run when the address table is missing', async () => {
+    addEvent(EVENT, 99);
+    addRegistration('someone@gmail.example', 'Someone Else');
+    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+
+    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+
+    // Both surfaces retry unscoped here, and both retries read core tables only. Flagging one would
+    // let a missing core table call recordSuccess() and reset the pod-wide breaker — the exact gap
+    // c1f8cc729 narrowed the option to close, one layer up from where the service spec can see it.
+    const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
+    expect(unscopedCalls).toHaveLength(2);
+    for (const [, , options] of unscopedCalls) {
       expect(options).toBeUndefined();
     }
   });

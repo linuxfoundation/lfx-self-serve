@@ -30,9 +30,11 @@ export interface OrgEvent {
   readonly eventRegistrationUrl: string | null;
   readonly orgAttendeeCount: number;
   /**
-   * Event-wide registration goal. OPTIONAL and absent for non-staff: #4432 requires the figure to be
-   * missing from the payload, not merely unrendered, for external admins. Present only when the
-   * caller is LF staff.
+   * Event-wide registration goal; `null` when the event has none, or when its goal is 0.
+   *
+   * OPTIONAL as well as nullable, and the two mean different things: ABSENT means the caller is not
+   * LF staff, since #4432 requires the figure to be missing from the payload rather than merely
+   * unrendered for external admins. `null` means the caller may see it and there is none to see.
    */
   readonly eventRegistrationsGoal?: number | null;
   readonly orgSpeakerAcceptedCount: number;

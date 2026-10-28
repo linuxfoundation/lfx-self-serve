@@ -251,6 +251,10 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-event-attendees-event-1')).toBeVisible();
     // The org's own registrant count only. The goal is no longer in the payload at all (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
+    // And the HEADER drops "/ Goal" too. `showGoal` reads the payload, so shortening it to
+    // `!== null` would leave external admins reading "My Org / Goal" with the cell assertion above
+    // still passing — `undefined !== null` is true. The exact match is what catches that.
+    await expect(page.getByTestId('org-events-panel-past').getByText('My Org', { exact: true })).toBeVisible();
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
 
@@ -327,6 +331,8 @@ test.describe('Org Events Dashboard', () => {
 
     // Upcoming tab: the cell is the org's count alone; no goal is served or rendered (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
+    // Header too — the exact match fails on "My Org / Goal", which the cell assertion cannot see.
+    await expect(page.getByTestId('org-events-panel-upcoming').getByText('My Org', { exact: true })).toBeVisible();
 
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();
