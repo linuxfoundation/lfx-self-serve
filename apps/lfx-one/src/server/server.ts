@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
 import { ProfileController } from './controllers/profile.controller';
+import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
@@ -824,6 +825,8 @@ export function startServer() {
       routes_ms: Math.round(routesReadyMs),
       boot_ms: Math.round(performance.now()),
     });
+    // Once per process: which model AI_MODEL resolved to and which sampling params it gets.
+    logAiModelConfig();
   });
   // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
   // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev

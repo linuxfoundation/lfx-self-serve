@@ -547,6 +547,20 @@ export function canCreateWithFinerGoogleGeo(): boolean {
 }
 
 /**
+ * Whether a Google create may carry the criteria and ad extension fields in
+ * `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` — excluded locations, languages, ad schedules, device bid
+ * modifiers, demographic exclusions and the six extension lists.
+ *
+ * Needs only the campaign-service create path: upstream reads all of them, and each has its own
+ * BFF guard on that path. The LEGACY creator reads none of them, so with the cutover dark a create
+ * carrying any would serve without it while reporting success — `deviceBidModifiers` set to stop
+ * mobile serving, and the campaign serves on mobile anyway (#3692).
+ */
+export function canCreateWithGoogleCriteria(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
@@ -556,6 +570,17 @@ export function canCreateWithFinerGoogleGeo(): boolean {
  */
 export function canCreateMicrosoftSchedule(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftSchedule);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Meta Instagram/DSA flag. The
+ * legacy creator never reads the three keys, and the flag says the deployed campaign-service
+ * enforces the EU disclosure rule (linuxfoundation/lfx-v2-campaign-service#414) that the form's required inputs mirror.
+ */
+export function canCreateMetaInstagramDsa(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInstagramDsa);
 }
 
 /**
@@ -855,6 +880,7 @@ export class CampaignServiceClient {
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -922,6 +948,7 @@ export class CampaignServiceClient {
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),

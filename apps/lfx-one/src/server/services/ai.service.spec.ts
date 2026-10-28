@@ -603,3 +603,56 @@ describe('AiService error bodies from the AI proxy (#3996 parity)', () => {
     expect((err as Error).message).not.toContain('socket hang up');
   });
 });
+
+// The guard end to end: the model comes from `AI_MODEL` at runtime, so each case re-imports the
+// service after `vi.resetModules()` — the helper memoizes the model per process, and a fresh
+// module registry is a fresh process as far as that memo is concerned.
+describe('AiService request body per model family (#4460)', () => {
+  const originalEnv = { ...process.env };
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn().mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  async function sentBody(model: string | undefined): Promise<Record<string, unknown>> {
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    if (model === undefined) delete process.env['AI_MODEL'];
+    else process.env['AI_MODEL'] = model;
+    const { AiService: FreshAiService } = await import('./ai.service');
+    await new FreshAiService().extractBriefActionItems(req, { brief_text: 'The committee met.' });
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  }
+
+  it.each(['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'])('%s gets temperature', async (model) => {
+    const body = await sentBody(model);
+    expect(body['model']).toBe(model);
+    expect(body['temperature']).toBe(AI_REQUEST_CONFIG.TEMPERATURE);
+    expect(body).not.toHaveProperty('top_p');
+  });
+
+  it.each(['claude-opus-4-7', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'amazon-nova-pro'])(
+    '%s gets no sampling parameter',
+    async (model) => {
+      const body = await sentBody(model);
+      expect(body['model']).toBe(model);
+      expect(body).not.toHaveProperty('temperature');
+      expect(body).not.toHaveProperty('top_p');
+    }
+  );
+
+  it('falls back to the AI_MODEL constant when the env var is unset', async () => {
+    // This file mocks the constant to `mock-model`, a name the table does not know — so the
+    // fallback is visible and, by the same rule, is sent no temperature.
+    const body = await sentBody(undefined);
+    expect(body['model']).toBe('mock-model');
+    expect(body).not.toHaveProperty('temperature');
+  });
+});

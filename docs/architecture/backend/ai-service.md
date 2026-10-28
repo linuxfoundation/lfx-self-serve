@@ -32,8 +32,6 @@ The "Feature API" is whichever controller fronts the request: `meeting.controlle
 
 ```typescript
 export class AiService {
-  private readonly model = AI_MODEL;
-
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
   // then memoized — env is stable after startup.
   private _aiProxyUrl: string | undefined;
@@ -210,9 +208,20 @@ router.post('/generate-agenda', async (req: Request, res: Response, next: NextFu
 # AI Service Configuration
 AI_PROXY_URL={{https://lite-llm-url}}/chat/completions
 AI_API_KEY=your-ai-api-key
+# Optional — unset or empty falls back to AI_MODEL in ai.constants.ts
+AI_MODEL=claude-sonnet-4-5
 ```
 
 ### Model Configuration
+
+The model is a deploy-time setting. `getAiModel()` (`server/helpers/ai-model.helper.ts`) reads the
+`AI_MODEL` env var once, trims it, and falls back to the `AI_MODEL` constant in `ai.constants.ts`
+when it is unset or empty. The chart sets `environment.AI_MODEL` to that same constant, so the key
+changes nothing on deploy; a model swap is then an argocd values change rather than a code change,
+a release and an image bump. `ai.service.ts` and `campaign-proxy.service.ts` both read the model
+from the helper, so the two cannot disagree. At startup the server logs one `ai_model_config` line
+with the model, whether it came from the env var or the default, and the sampling mode it resolved
+to — the model name only, never `AI_API_KEY` or `AI_PROXY_URL`.
 
 `AI_MODEL` must name a model the LiteLLM proxy actually publishes. The proxy's own `model_list`
 lives in `lfx-v2-argocd` at `values/global/lfit-litellm.yaml`, and every name it publishes is
@@ -228,7 +237,10 @@ short name resolves to:
 
 Sending the routing destination asks the router for a model it publishes no deployment for, and
 that answers `429` rather than a `400` that would name the real problem — the failure mode in #4333,
-where every AI feature returned `AI streaming request failed (429)`.
+where every AI feature returned `AI streaming request failed (429)`. The startup log warns when the
+configured name is not lower-case letters, digits and hyphens, which catches both spellings of a
+Bedrock routing id; a well-formed name the proxy does not publish still passes, and only argocd's
+`model_list` can rule it out.
 
 Read the status code when generation fails: a `429` is the model name not matching anything the
 proxy serves (or a genuine rate limit), a `400` is the request body being rejected with auth fine,
@@ -238,27 +250,37 @@ the host moved alone. `litellm.tools.lfx.dev` is the retired OCI instance from b
 routed on the bare inference-profile id and answered `401` to a prefixed name. Anything still
 pointing at that host is stale whichever model name it sends.
 
-A published name is necessary but not sufficient: the list spans two sampling contracts. Every send
-site here reads `AI_REQUEST_CONFIG.TEMPERATURE` into the request body, and on Claude Sonnet 5 and
-later Anthropic's model reference states that "Setting `temperature`, `top_p`, or `top_k` returns a
-400 error". The proxy does not absorb that — `lfit-litellm.yaml`'s `litellm_settings` sets no
-`drop_params`, so the value reaches Bedrock as sent. Naming `claude-sonnet-5-5` or any other
-5-series-or-later Claude model while still sending `temperature` therefore trades #4333's `429` for
-a `400` on every AI feature. Moving to one is a two-part change: drop `temperature` from all six
-send sites first. `ai.constants.spec.ts` pins the pair so the halves cannot drift apart silently,
-and `claude-(sonnet|opus|haiku)-[5-9]` is the exact set it rejects.
+A published name is necessary but not sufficient: the list spans two sampling contracts.
+Anthropic's [extended-thinking doc](https://platform.claude.com/docs/en/build-with-claude/thinking)
+lists Claude Opus 4.8 and Opus 4.7 alongside Sonnet 5.5, Sonnet 5 and Haiku 5.5 as returning a `400`
+on a non-default `temperature`, `top_p` or `top_k`, on every request, thinking or not. The proxy
+does not absorb that — `lfit-litellm.yaml`'s `litellm_settings` sets no `drop_params`, so the value
+reaches Bedrock as sent. So no send site sets `temperature` itself: all six spread
+`getAiSamplingParams()`, which looks the model up in `AI_SAMPLING_COMPATIBILITY` (first match wins):
+
+| Model family                                              | Sampling sent                              |
+| --------------------------------------------------------- | ------------------------------------------ |
+| Claude Sonnet 4/4.5/4.6, Opus 4/4.1/4.5/4.6, Haiku 4.5    | `temperature` (`AI_REQUEST_CONFIG`), alone |
+| Claude Opus 4.7 or later, any 5-series Claude model       | none                                       |
+| Anything else — a newer family, a non-Claude name, a typo | none                                       |
+
+The table fails safe: only an allowlist row grants `temperature`, so a model released after it was
+written loses nothing but the tuned temperature, where sending one would cost a `400` on every AI
+feature. `top_p` is never sent — the accepting 4.x families take `temperature` or `top_p` but not
+both, and only `temperature` has ever been tuned. `ai.constants.spec.ts` pins the table, including
+every family the doc names.
 
 `lfx-v2-campaign-service` names its own model in an `AI_MODEL` env var, set in argocd, and builds
 its own request body with an unconditional `temperature` field (`internal/platform/llm/client.go`,
 no `omitempty`). The two services are not currently on the same name: argocd pins campaign-service
-to `claude-sonnet-5-5` (`values/global/lfx-v2-campaign-service.yaml`) while this repo sends
+to `claude-sonnet-5-5` (`values/global/lfx-v2-campaign-service.yaml`) while this repo defaults to
 `claude-sonnet-4-5`. By the paragraph above, that service's pairing is the one that returns `400`.
-Closing the gap is a change in that repo — a non-5-series name, or dropping `temperature` from its
-request body — not one this repo can make.
+Closing the gap is a change in that repo — a name that is neither Claude Opus 4.7 or later nor
+5-series, or dropping `temperature` from its request body — not one this repo can make.
 
 ```typescript
 // AI Constants (/packages/shared/src/constants/ai.constants.ts)
-export const AI_MODEL = 'claude-sonnet-4-5';
+export const AI_MODEL = 'claude-sonnet-4-5'; // default when the AI_MODEL env var is unset or empty
 
 export const AI_REQUEST_CONFIG = {
   MAX_TOKENS: 4000,
@@ -335,7 +357,7 @@ public async generateMeetingAgenda(request: GenerateAgendaRequest): Promise<Gene
     ],
     response_format: { /* JSON schema */ },
     max_tokens: AI_REQUEST_CONFIG.MAX_TOKENS,
-    temperature: AI_REQUEST_CONFIG.TEMPERATURE
+    ...getAiSamplingParams(), // { temperature } only for a family that accepts it
   };
 
   const response = await this.makeAiRequest(chatRequest);
@@ -430,7 +452,7 @@ app.get('/readyz', (req, res) => {
   const healthStatus = {
     ai_service: {
       configured: !!process.env['AI_PROXY_URL'] && !!process.env['AI_API_KEY'],
-      model: AI_MODEL,
+      model: getAiModel(),
     },
   };
   res.json(healthStatus);

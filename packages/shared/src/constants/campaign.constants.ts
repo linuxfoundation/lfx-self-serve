@@ -780,6 +780,58 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
 /**
+ * The countries for which Meta requires the EU Digital Services Act disclosures
+ * (`dsa_beneficiary` / `dsa_payor` on the ad set): "For ad sets targeting the EU and/or associated
+ * territories, the dsa_payor and dsa_beneficiary fields are required." The 27 member states, the
+ * parts of the EU that carry their own ISO code (Åland and France's outermost regions), and the
+ * non-EU EEA states (IS, LI, NO) — inclusive on purpose. Mirrors campaign-service's
+ * `dsaTerritories` (linuxfoundation/lfx-v2-campaign-service#414), which refuses a create targeting
+ * any of these without both disclosures. GB and CH are not in it.
+ */
+export const META_DSA_TERRITORIES: ReadonlySet<string> = new Set([
+  'AT',
+  'BE',
+  'BG',
+  'HR',
+  'CY',
+  'CZ',
+  'DK',
+  'EE',
+  'FI',
+  'FR',
+  'DE',
+  'GR',
+  'HU',
+  'IE',
+  'IT',
+  'LV',
+  'LT',
+  'LU',
+  'MT',
+  'NL',
+  'PL',
+  'PT',
+  'RO',
+  'SK',
+  'SI',
+  'ES',
+  'SE',
+  'AX',
+  'GF',
+  'GP',
+  'MQ',
+  'RE',
+  'YT',
+  'MF',
+  'IS',
+  'LI',
+  'NO',
+]);
+
+/** Longest DSA beneficiary or payor name campaign-service accepts (runes). Mirrors `maxDSANameRunes`. */
+export const META_DSA_NAME_MAX_LENGTH = 256;
+
+/**
  * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
  * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
  *
@@ -1872,6 +1924,45 @@ export function googleAdsTrimSpace(text: string): string {
   while (start < end && isGoSpaceCode(text.charCodeAt(start))) start++;
   while (end > start && isGoSpaceCode(text.charCodeAt(end - 1))) end--;
   return text.slice(start, end);
+}
+
+/**
+ * `text` as Go's `encoding/json` decodes it: every unpaired UTF-16 surrogate replaced with U+FFFD.
+ *
+ * `JSON.stringify` escapes a lone surrogate as `\ud800`, and Go's decoder reads every such escape as
+ * U+FFFD. So `\ud800` and `\ud801` are two strings here and one string upstream, and a duplicate check
+ * run on the raw text would pass a list that `validateSitelinks` then refuses after dispatch (#3644).
+ * A well-formed pair is kept as it is. An index walk rather than a lookbehind regex, for the reason
+ * {@link googleAdsTrimSpace} gives; it returns `text` itself when there is nothing to replace.
+ */
+export function googleAdsWellFormed(text: string): string {
+  let out = '';
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0xd800 || code > 0xdfff) continue;
+    if (code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++;
+        continue;
+      }
+    }
+    out += `${text.slice(last, i)}\ufffd`;
+    last = i + 1;
+  }
+  return last === 0 ? text : out + text.slice(last);
+}
+
+/**
+ * An ad extension's text as upstream judges it: decoded as Go decodes it ({@link googleAdsWellFormed}),
+ * then trimmed with Go's rules ({@link googleAdsTrimSpace}). This is the one normalisation the BFF applies
+ * to sitelinks, callouts, structured snippets and the call, promotion and price extensions before their
+ * duplicate checks and before it forwards them. Applying it once to all of them means no list can
+ * disagree with upstream about which two entries are the same.
+ */
+export function googleAdsDecodedText(text: string): string {
+  return googleAdsTrimSpace(googleAdsWellFormed(text));
 }
 
 /**
@@ -3891,6 +3982,34 @@ export const GOOGLE_ADS_CHANNEL_TYPE_ENUMS = {
  * Demand Gen on a deployment that was not ready for it.
  */
 export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
+
+/**
+ * The Google criteria and ad extension fields that only the campaign-service create path reads,
+ * each with the name the operator knows it by.
+ *
+ * With the cutover dark the legacy creator (`campaign-proxy.service.ts`) serves the create, and it
+ * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
+ * Every field here would be dropped there while the create reports success, so the BFF refuses a
+ * non-empty one by name instead (#3692). `geoTargets` postal-code ids and `proximityTargets` have
+ * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
+ *
+ * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
+ * carrying several is refused by the one upstream would have judged first.
+ */
+export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
+  { field: 'excludedGeoTargets', label: 'excluded locations' },
+  { field: 'languages', label: 'languages' },
+  { field: 'adSchedules', label: 'ad schedules' },
+  { field: 'deviceBidModifiers', label: 'device bid modifiers' },
+  { field: 'excludedAgeRanges', label: 'excluded age ranges' },
+  { field: 'excludedGenders', label: 'excluded genders' },
+  { field: 'sitelinks', label: 'sitelinks' },
+  { field: 'callouts', label: 'callouts' },
+  { field: 'structuredSnippets', label: 'structured snippets' },
+  { field: 'callExtensions', label: 'call extensions' },
+  { field: 'promotions', label: 'promotions' },
+  { field: 'prices', label: 'price extensions' },
+] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string }[];
 
 /**
  * Whether this application offers Video as a CREATABLE channel.

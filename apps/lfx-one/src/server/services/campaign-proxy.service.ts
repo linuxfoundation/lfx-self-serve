@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  AI_MODEL,
-  AI_REQUEST_CONFIG,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -54,6 +52,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { AiProxyError, aiErrorDetail, aiErrorSummary } from '../helpers/ai-error.helper';
+import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -468,13 +467,13 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+      ...getAiSamplingParams(),
     }),
     signal,
   });
@@ -503,13 +502,13 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: AI_REQUEST_CONFIG.TEMPERATURE,
+      ...getAiSamplingParams(),
       stream: true,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),

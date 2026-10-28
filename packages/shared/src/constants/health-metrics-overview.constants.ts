@@ -33,16 +33,51 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
 /** Board members read for the Overview table; one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;
 
-/** Each card's title and the info tooltip beside it. */
+/** Each card's title and its tooltip, in the PCC copy. */
 export const HEALTH_METRICS_OVERVIEW_CARDS = {
-  orgs: { title: 'Participating organizations', info: 'Organizations with an active or lapsed membership in this period' },
-  nps: { title: 'Net Promoter Score', info: 'Share of promoters minus share of detractors' },
-  churn: { title: 'Membership churn', info: 'Memberships that did not renew, by tier' },
-  balance: { title: 'Outstanding balance', info: 'Unpaid membership invoices past their due date' },
-  events: { title: 'Events', info: 'The data here corresponds to the selected time period at the top right of the page.\n\n(Source: Salesforce)' },
-  training: { title: 'Training and certification', info: 'Enrollments and revenue from LF Education' },
-  code: { title: 'Code contribution', info: "Contributors across the foundation's repositories" },
-  board: { title: 'Board meeting participation', info: 'Attendance of board members at governing board meetings' },
+  orgs: {
+    title: 'Participating organizations',
+    info: 'Engagement scores are calculated for every participating organization, classifying them into three distinct levels: low, medium, and high engagement. These scores are derived from nine engagement areas:\n\n1. Board Meeting Attendance (Source: Attendance Record in PCC)\n2. Event Attendance (Source: Cvent)\n3. Code Contribution (Source: Insights)\n4. Mailing List Contributions (Source: Groups.io)\n5. Training and Certification (Source: Thought Industries)\n6. Event Sponsorship (Source: Salesforce)\n7. Corporate Training Purchases (Source: Salesforce)\n8. Speaking Proposal Submissions (Source: Sessionize)\n9. Satisfaction Levels (Source: NPS surveys in PCC)',
+  },
+  nps: {
+    title: 'Net Promoter Score',
+    info: 'The Net Promoter Score (NPS) is derived from the most recent NPS survey conducted. It is calculated by taking the difference between the percentage of promoters and the percentage of demoters.\n\nTypically, an NPS score exceeding 30 is widely considered to be an excellent rating.\n\n(Source: NPS Survey in PCC)',
+  },
+  churn: {
+    title: 'Membership churn',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nPlease note that all metrics in this section exclude free membership accounts and “Downgrades” are included in Lost Members.\n\n(Source: Salesforce)',
+  },
+  balance: {
+    title: 'Outstanding balance',
+    info: 'Outstanding Balance:\nUSD amount that is overdue from your members.\n(Source: NetSuite)\n\nMedium Risk:\nUSD amount that is currently between 60 and 89 days overdue from your members\n(Source: NetSuite)\n\nHigh Risk:\nUSD amount that is currently overdue for 90 days and more from your members, This amount also includes members that have indicated not to renew their membership independent from their invoice status.\n(Source: NetSuite)',
+  },
+  events: {
+    title: 'Events',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nYou can set and edit your annual goals for sponsorship and each upcoming event by clicking on the set goal link or edit icon.\n\n(Source: Salesforce)',
+  },
+  training: {
+    title: 'Training and certification',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nYou can switch between enrollments and revenue and set or edit your annual goals for number of enrollments and revenue, respectively.\n\n(Source: Thought Industries)',
+  },
+  code: {
+    title: 'Code contribution',
+    info: 'The data here corresponds to the selected time period at the top right of the page and originates from LFX Insights.\n\nAll percentage comparisons are against previous period’s figures.\n\n(Source: Insights)',
+  },
+  board: {
+    title: 'Board meeting participation',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nBoard meeting participation is recorded at 100% for an organization when at least one of its eligible members attends the meeting. In this metric, only voting representatives are considered eligible. The calculation takes into account all past board meetings held within the selected time period. (Source: PCC Meeting Attendance Record)',
+  },
+} as const;
+
+/** The participating organizations card's KPI tooltips, in the PCC copy. */
+export const HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS = {
+  active:
+    'Total active members in SFDC at the end of the selected time period. In the case of the YTD time period, the member count reflects yesterday’s status.\n\n(Source: Salesforce)',
+  new: 'Total number of members added in the selected time period based on the recorded install date. In the case of YTD time period, the new member count reflects yesterday’s status.\n\n(Source: Salesforce)',
+  nonMembers:
+    'Total number of organizations with a recorded activity in the selected time period but who do not have a membership.\n\nPlease note that organizations where a parent or child has a membership to the project are excluded.\n\n(Source: Salesforce)',
+  nonRenewals:
+    'Members who chose not to continue their membership in the selected time period but were active members in the last period.\n\n(Source: Salesforce)',
 } as const;
 
 /** The circle behind an empty state's icon, grey by default and green for good news. */
@@ -120,13 +155,13 @@ export const HEALTH_METRICS_OVERVIEW_ERROR_COPY: HealthMetricsOverviewEmptyCopy 
 /** The "Explore …" links into each Level 2 section; each clears that section's filters on arrival. */
 export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   members: {
-    label: 'Explore All Members',
+    label: 'Explore Members',
     commands: [HEALTH_METRICS_BASE_PATH, 'members'],
     fragment: 'list',
     queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null },
   },
   nonMembers: {
-    label: 'Explore Company Participation',
+    label: 'Explore Non-Member Participation',
     commands: [HEALTH_METRICS_BASE_PATH, 'non-members'],
     fragment: 'orgs',
     queryParams: { nonFit: null, nonSearch: null, nonPage: null },
@@ -207,7 +242,7 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRIC
 /** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
 export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;
 
-/** The events card's tooltips. */
+/** The events card's tooltips, in the PCC copy. */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
   total:
     'Total past and upcoming events that had their start date in the selected time period or have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
@@ -215,11 +250,15 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
   upcoming: 'All events that have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
   past: 'All events that had their start date in the selected time period.\n\n(Source: Salesforce)',
   registrations: 'Total number of registrations for the event.\n\n(Source: Cvent)',
-  talks: 'Accepted speaking proposals out of all proposals for the event. CFP In Review shows while proposals are being reviewed.\n\n(Source: Sessionize)',
+  talks:
+    'Total number of speaking proposals for the event.\nCFP Not Yet Open, CFP Not Yet Closed and CFP In Review indicate the relevant status within the CFP (Call for Proposal) process.\n\n(Source: Sessionize)',
 } as const;
 
 /** Events shown before "View all". */
 export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
+
+/** How strongly the NPS gauge's inactive segments keep their color, mixed toward white. */
+export const HEALTH_METRICS_OVERVIEW_GAUGE_TINT = 0.22;
 
 /** The registration trend's window: days before the event at the chart's left edge. */
 export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
