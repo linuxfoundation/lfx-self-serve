@@ -788,6 +788,7 @@ describe('getRecentCommentResponses', () => {
       3
     );
     expect(recent.map((r) => r.vote_id)).toEqual(['c', 'a', 'd']);
+    expect(recent.map((r) => r.promptText)).toEqual(['Prompt p2', 'Prompt p1', 'Prompt p2']);
     expect(recent.map((r) => r.position)).toEqual([0, 1, 2]);
     expect(recent[0].paragraphs).toEqual(['Comment c', 'Second paragraph']);
   });
@@ -798,6 +799,7 @@ describe('getRecentCommentResponses', () => {
       3
     );
     expect(recent.map((r) => r.comment_text)).toEqual(['Apple', 'Cherry', 'Banana']);
+    expect(recent.map((r) => r.promptText)).toEqual(['Prompt p1', 'Prompt p1', 'Prompt p2']);
   });
 
   it('keeps prompt-aware ballot keys stable across fresh objects, prompt ordering and newer insertions', () => {

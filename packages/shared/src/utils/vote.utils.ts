@@ -421,6 +421,7 @@ export function getRecentCommentResponses(commentResults: PollCommentResult[], l
   const responses = commentResults.flatMap((cr) =>
     cr.responses.map((response, index) => ({
       ...response,
+      promptText: cr.prompt.prompt,
       previewKey: JSON.stringify([cr.prompt.prompt_id, response.vote_id ?? index]),
     }))
   );

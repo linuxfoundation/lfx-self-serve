@@ -1232,6 +1232,8 @@ describe('VoteDetailComponent', () => {
       [...fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-overview-comment"] [data-testid="vote-results-comment"]')] as HTMLElement[];
     const meta = (fixture: ComponentFixture<VoteDetailComponent>): Element | null =>
       testId(fixture, 'vote-detail-overview-comment')?.querySelector('[data-testid="vote-results-comment-meta"]') ?? null;
+    const questionLabels = (fixture: ComponentFixture<VoteDetailComponent>): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-overview-comment-question"]')].map((label) => label.textContent.trim());
 
     it('shows a manager the three newest comments across prompts, with names and ballot links', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
@@ -1245,6 +1247,7 @@ describe('VoteDetailComponent', () => {
         'Synthetic comment r-3',
         'Synthetic comment r-2',
       ]);
+      expect(questionLabels(fixture)).toEqual(['Anything else?', 'Any concerns?', 'Anything else?']);
       expect(rendered[0].querySelector('[data-testid="vote-results-comment-meta"]')?.textContent).toContain('Synthetic Voter r-4');
       expect(testId(fixture, 'vote-detail-overview-all-comments')).not.toBeNull();
 
@@ -1253,6 +1256,16 @@ describe('VoteDetailComponent', () => {
         [],
         expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: 'r-4' } })
       );
+    });
+
+    it('omits redundant question labels when the vote has one comment question', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: false, poll_comment_prompts: [prompts[0]] })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: [{ prompt: prompts[0], responses: [named('r-1', 22)] }] }));
+      const fixture = await setup('browser', [VoteCommentItemComponent]);
+
+      expect(items(fixture)).toHaveLength(1);
+      expect(questionLabels(fixture)).toEqual([]);
     });
 
     it('renders answers from the same ballot across prompts without duplicate tracking keys', async () => {
@@ -1277,6 +1290,20 @@ describe('VoteDetailComponent', () => {
           'Second answer',
           'Synthetic comment r-2',
         ]);
+        // Ballot-scoped IDs intentionally repeat; each row still owns a separate link to the same ballot.
+        vi.mocked(router.navigate).mockClear();
+        items(fixture)
+          .slice(0, 2)
+          .forEach((item, index) => {
+            const link = item.querySelector('[data-testid="vote-results-comment-view-ballot-r-1"]');
+            expect(link).not.toBeNull();
+            link!.querySelector('button')!.click();
+            expect(router.navigate).toHaveBeenCalledTimes(index + 1);
+            expect(router.navigate).toHaveBeenLastCalledWith(
+              [],
+              expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: 'r-1' } })
+            );
+          });
         expect(warn.mock.calls.flat().join('\n')).not.toContain('NG0955');
       } finally {
         warn.mockRestore();
@@ -1330,6 +1357,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup('browser', [VoteCommentItemComponent]);
 
       expect(items(fixture).map((item) => item.textContent?.trim())).toEqual(['Alpha', 'Charlie', 'Bravo']);
+      expect(questionLabels(fixture)).toEqual(['Any concerns?', 'Any concerns?', 'Anything else?']);
       expect(meta(fixture)).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid^="vote-results-comment-view-ballot-"]')).toBeNull();
     });
@@ -1344,6 +1372,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read(fixture, 'audience')).toBe('voter');
       expect(items(fixture).map((item) => item.textContent?.trim())).toEqual(['Synthetic voter-view comment']);
+      expect(questionLabels(fixture)).toEqual(['Any concerns?']);
       expect(meta(fixture)).toBeNull();
     });
 

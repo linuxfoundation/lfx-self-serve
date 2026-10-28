@@ -18,6 +18,7 @@
         <span class="text-slate-400">(Abstained)</span>
       }
       @if (showBallotLink() && response().vote_id; as voteId) {
+        <!-- The test ID identifies the ballot, not the question: scope lookups to this comment row when a ballot answers multiple questions. -->
         <lfx-button
           label="View ballot"
           [text]="true"

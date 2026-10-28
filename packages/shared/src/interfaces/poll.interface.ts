@@ -1017,6 +1017,8 @@ export interface CommentResponseView extends PollCommentResponse {
   paragraphs: string[];
   /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
   position: number;
+  /** UI-only question text for answers flattened into the Overview preview. */
+  promptText?: string;
   /** UI-only Overview key: prompt plus ballot ID, or prompt-local position when the response is text-only. */
   previewKey?: string;
 }
