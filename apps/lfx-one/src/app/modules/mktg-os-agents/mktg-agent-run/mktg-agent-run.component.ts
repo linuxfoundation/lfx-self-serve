@@ -218,12 +218,16 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
-  protected readonly publicReceiver = signal(false);
+  protected readonly publicReceiver = signal(!!this.route.snapshot.queryParamMap.get('run'));
   protected readonly publicRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
     initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
   });
   protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
+  protected readonly publicIdentityPending = computed(
+    () => this.publicReceiver() && (!this.userService.user()?.sub || (this.navigation() !== null && !this.navigation()?.subject))
+  );
+  private pendingPublicRunId = '';
   protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
   protected readonly waitingQuestions = signal(false);
   protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
@@ -608,6 +612,23 @@ export class MktgAgentRunComponent {
               this.consumedFreshSubject = null;
               return EMPTY;
             }
+            const destination = this.navigation();
+            if (
+              this.publicReceiver() &&
+              user?.sub &&
+              runId &&
+              runId === this.pendingPublicRunId &&
+              destination &&
+              destination.projectUid === context?.uid &&
+              destination.agentKey === this.publicAgentKey() &&
+              !destination.subject
+            ) {
+              // First identity fill must not discard an already observed public outcome.
+              this.pendingPublicRunId = '';
+              this.navigation.set({ ...destination, subject: user.sub });
+              this.onRetryHandoff();
+              return EMPTY;
+            }
             this.resetForContext(context, fresh);
             if (!context || this.publicReceiver()) return EMPTY;
             const history =
@@ -679,11 +700,14 @@ export class MktgAgentRunComponent {
     const agentKey = this.publicAgentKey();
     if (!this.publicReceiver() || !projectUid || !agentKey) return;
     // Public completion has no exact-revision receipt: open the current document, without revision=.
-    this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey, ...(failed && { runId: this.publicRunId() }) });
-    this.onRetryHandoff();
+    const subject = this.userService.user()?.sub ?? '';
+    this.navigation.set({ projectUid, subject, agentKey, ...(failed && { runId: this.publicRunId() }) });
+    this.pendingPublicRunId = subject ? '' : this.publicRunId();
+    if (subject) this.onRetryHandoff();
   }
 
   protected onPublicQuestions(): void {
+    if (this.publicIdentityPending()) return;
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
     if (!pending?.pendingQuestions || pending.attempt?.runId !== this.publicRunId()) return;
     this.activeRequest = pending.request;
@@ -696,6 +720,7 @@ export class MktgAgentRunComponent {
   protected onRetryHandoff(): void {
     const destination = this.navigation();
     if (!destination) return;
+    if (this.publicIdentityPending() && !destination.subject) return;
     if (destination.projectUid !== this.projectContext.activeContextUid() || !destination.subject || destination.subject !== this.userService.user()?.sub) {
       // The public receiver can retry this public destination after signing in;
       // it has no private generation capability to restore or submit.
@@ -1532,8 +1557,10 @@ export class MktgAgentRunComponent {
     this.priorLogoCount.set(0);
     const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
     this.publicReceiver.set(!!publicId);
+    this.pendingPublicRunId = '';
     if (!context) return;
     if (publicId) {
+      if (!this.userService.user()?.sub) return;
       const owned = this.runAttempts.load(context.uid, this.agent.id);
       if (owned?.attempt?.runId !== publicId || (owned.state !== 'writing' && !(owned.state === 'questions' && owned.pendingQuestions))) return;
       this.publicReceiver.set(false);

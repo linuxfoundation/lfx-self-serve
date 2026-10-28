@@ -782,6 +782,10 @@ describe('MktgDocumentViewComponent', () => {
       store.getRevision.mockReturnValue(of(report));
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(query('mktg-document-view-overall')?.textContent).toContain('6.0');
+      const regions = harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]');
+      expect(regions).toHaveLength(1);
+      expect(regions?.[0].textContent?.trim()).toBe('Ready.');
+      expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
       expect(query('mktg-document-view-overall')?.classList.contains('text-amber-700')).toBe(true);
       expect(query('mktg-document-view-verdict')?.textContent).toContain('A useful baseline');
       expect(query('mktg-document-view-scorecard')?.querySelectorAll('[data-testid^="mktg-document-view-score-"]')).toHaveLength(6);
@@ -1437,6 +1441,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(regions?.[0].getAttribute('role')).toBe('status');
     expect(regions?.[0].getAttribute('aria-live')).toBe('polite');
     expect(regions?.[0].textContent?.trim()).toBeTruthy();
+    expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
+    expect(progressReader().announceState()).toBe(false);
   });
 
   it.each(
@@ -1475,7 +1481,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     expect(progressReader().headless()).toBe(true);
     expect(query('mktg-document-view-run')).toBeNull();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
@@ -1821,7 +1827,7 @@ describe('MktgDocumentViewComponent', () => {
     events.next({ type: 'submitted' });
     events.next(writingActivity());
     await settle();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
     expect(progressReader().runState()).toBe('writing');
     const run: MktgStoredAgentRun = {
       agentId: pending.request.agentId,
@@ -1903,7 +1909,7 @@ describe('MktgDocumentViewComponent', () => {
         vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
         expect(store.getDocument).toHaveBeenCalledTimes(1);
         expect(progressReader().runState()).toBe('questions');
-        expect(query('mktg-document-view-live-state')).toBeNull();
+        expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
       }
       if (state === 'failed') {
         expect(query('mktg-document-view-failure-reply')?.textContent).toBe(started(state).failureText);

@@ -414,6 +414,7 @@ export class MktgDocumentViewComponent {
   protected readonly selectedRun: Signal<MktgDocumentRunProgress | null> = this.initSelectedRun();
   protected readonly progressView = viewChild(MktgRunProgressComponent);
   protected readonly runState = computed(() => this.progressView()?.runState() ?? null);
+  protected readonly liveState = this.initLiveState();
   protected readonly waitingForQuestions = computed(
     () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
   );
@@ -1212,6 +1213,19 @@ export class MktgDocumentViewComponent {
       if (!view || !this.commentContent() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
       if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
       return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
+    });
+  }
+
+  private initLiveState(): Signal<string> {
+    return computed(() => {
+      if (this.loading()) return '';
+      const state = this.runState();
+      if (state) {
+        // Living documents observe active runs headlessly; only failure belongs here.
+        if (this.publicProgressPolling() && state !== 'failed') return '';
+        return this.progressView()?.liveState() ?? '';
+      }
+      return this.view() ? this.readiness() : '';
     });
   }
 

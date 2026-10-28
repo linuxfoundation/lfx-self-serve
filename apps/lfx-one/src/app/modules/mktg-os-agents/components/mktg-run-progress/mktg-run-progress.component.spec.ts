@@ -73,6 +73,19 @@ describe('MktgRunProgressComponent', () => {
     }
   });
 
+  it('lets the document host own the announcement without hiding its progress card', async () => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('announceState', false);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-live-state"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run"]')).not.toBeNull();
+    fixture.componentRef.setInput('announceState', true);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-document-view-live-state"]')).toHaveLength(1);
+    expect(read).toHaveBeenCalledOnce();
+  });
+
   it('keeps the document observer headless without rendering any live card or status', async () => {
     await setup();
     fixture.componentRef.setInput('runPage', false);

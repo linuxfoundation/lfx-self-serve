@@ -20,7 +20,16 @@
     <div [ngClass]="pageClass" data-testid="mktg-run-public-progress">
       <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
       <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
+      @if (publicIdentityPending()) {
+        <div class="flex flex-col gap-3" role="status" aria-busy="true" data-testid="mktg-run-public-identity-loading">
+          <span class="sr-only">Checking the run…</span>
+          <div class="h-4 w-48 animate-pulse rounded bg-gray-100" aria-hidden="true"></div>
+          <div class="h-4 w-full animate-pulse rounded bg-gray-100" aria-hidden="true"></div>
+          <div class="h-4 w-2/3 animate-pulse rounded bg-gray-100" aria-hidden="true"></div>
+        </div>
+      }
       <lfx-mktg-run-progress
+        [style.display]="publicIdentityPending() ? 'none' : null"
         [project]="publicProject()"
         [agentKey]="publicAgentKey()"
         [documentId]="livingDocumentId"
@@ -29,7 +38,7 @@
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)"
         (questions)="onPublicQuestions()" />
-      @if (errorText()) {
+      @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
         <lfx-button label="Open asset" (onClick)="onPublicLanding(!!navigation()?.runId)" data-testid="mktg-agent-run-open-asset" />
       }

@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!headless() && !runPage()) {
+@if (announceState() && !headless() && !runPage()) {
   <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
 }
 @if (!headless() && runPage() && (warning() || (runState() && runState() !== 'failed'))) {
