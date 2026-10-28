@@ -2934,6 +2934,17 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
 /**
+ * The largest image LinkedIn takes as a dark post's article thumbnail, in bytes. campaign-service
+ * refuses anything larger at dispatch (`linkedin.MaxImageBytes`, the decimal reading of the single
+ * image ad spec's "5 MB"), so the Implement tab checks it before uploading rather than storing an
+ * image the create would then fail on.
+ */
+export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
+
+/** Shown when a LinkedIn image exceeds `LINKEDIN_IMAGE_MAX_BYTES`. */
+export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
+
+/**
  * The largest image Microsoft Advertising takes as an image ad extension, in bytes. campaign-service
  * refuses anything larger at dispatch (`microsoft.MaxImageBytes`: the Image `Data` field holds at
  * most 102,400 base64 characters, which is 76,800 bytes) and never resizes it. Far below

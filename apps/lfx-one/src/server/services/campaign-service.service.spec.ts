@@ -4700,6 +4700,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5000,6 +5001,40 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The LinkedIn upload capability: the cutover AND its own flag, and not any sibling's. There is no
+   * LinkedIn image-URL capability to pair it with, since LinkedIn takes no image URL.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, linkedIn: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, linkedIn: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, linkedIn: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, linkedIn: true, others: false }, false],
+  ])('reports the LinkedIn upload capability from the cutover and the LinkedIn-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.linkedIn;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
   it.each([
     [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
@@ -5067,6 +5102,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
