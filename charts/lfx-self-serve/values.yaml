@@ -691,6 +691,24 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
     value: "true"
 
+  # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
+  # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
+  # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the
+  # shared 10 MB upload cap, so the Implement tab checks the size before uploading.
+  #
+  # A CAPABILITY flag like META_ASSETS: no URL signing is involved, because Microsoft's dispatch path
+  # reads the stored bytes and uploads them to the ad account's media library. What it says is that
+  # the DEPLOYED campaign-service resolves Microsoft asset ids, which every release from v1.0.21
+  # does. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator
+  # reads no `imageAssetId`.
+  #
+  # ON in this chart, like META_ASSETS, because nothing has to be configured on campaign-service
+  # first. Off, the Microsoft upload control is hidden and a create request carrying
+  # `microsoftConfig.imageAssetId` is refused with a 400 rather than dropped. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS:
+    value: "true"
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.

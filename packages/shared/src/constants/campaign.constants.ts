@@ -2974,6 +2974,26 @@ export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
 export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
 
 /**
+ * The largest image Microsoft Advertising takes as an image ad extension, in bytes. campaign-service
+ * refuses anything larger at dispatch (`microsoft.MaxImageBytes`: the Image `Data` field holds at
+ * most 102,400 base64 characters, which is 76,800 bytes) and never resizes it. Far below
+ * `CREATIVE_ASSET_MAX_BYTES`, so the Implement tab checks it before uploading rather than storing an
+ * image the create would then fail on.
+ */
+export const MICROSOFT_IMAGE_MAX_BYTES = 76_800;
+
+/**
+ * The pixel bounds Microsoft takes for an image ad extension (GenericImage: 40x20 minimum, 2592x2048
+ * maximum), which campaign-service checks at dispatch (`microsoft.ValidateImage`). The Implement tab
+ * reads the picked image's size and refuses one outside them before uploading.
+ */
+export const MICROSOFT_IMAGE_PIXEL_BOUNDS = { minWidth: 40, minHeight: 20, maxWidth: 2592, maxHeight: 2048 } as const;
+
+/** Shown when a Microsoft image exceeds `MICROSOFT_IMAGE_MAX_BYTES`. */
+export const MICROSOFT_IMAGE_TOO_LARGE_MESSAGE =
+  'Microsoft Advertising accepts images up to 75 KB (76,800 bytes), far smaller than other platforms. Choose a smaller or more compressed PNG or JPEG.';
+
+/**
  * The creative-asset type the leading bytes of an image actually are, or `null`.
  *
  * Checked by the BFF before forwarding, because a declared `Content-Type` is the caller's claim:

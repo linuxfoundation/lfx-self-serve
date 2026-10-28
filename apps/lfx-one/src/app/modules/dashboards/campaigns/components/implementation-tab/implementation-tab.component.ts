@@ -44,6 +44,9 @@ import {
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
+  MICROSOFT_IMAGE_MAX_BYTES,
+  MICROSOFT_IMAGE_PIXEL_BOUNDS,
+  MICROSOFT_IMAGE_TOO_LARGE_MESSAGE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
@@ -137,7 +140,7 @@ import { CampaignService } from '@services/campaign.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, filter, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, timer } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -164,6 +167,7 @@ import type {
   CampaignGoogleImageAssetBlock,
   CampaignLinkedInImageAssetBlock,
   CampaignMetaImageAssetBlock,
+  CampaignMicrosoftImageAssetBlock,
   CampaignProximityTarget,
   CampaignProximityTargetDraft,
   CampaignRedditImageAssetBlock,
@@ -474,6 +478,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInAssetUploadEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInAssetUploadAvailable = computed<boolean>(() => this.linkedInAssetUploadEnabled() === true);
+
+  /**
+   * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
+   * attached to the campaign as an image ad extension. `null` (unknown) withholds it, as for Meta.
+   * There is no pasted-URL path, so this one capability is the whole of the image control.
+   */
+  public readonly microsoftAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see microsoftAssetUploadEnabled — an explicit yes, never a `null`. */
+  protected readonly microsoftAssetUploadAvailable = computed<boolean>(() => this.microsoftAssetUploadEnabled() === true);
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -1063,6 +1077,29 @@ export class ImplementationTabComponent implements OnInit {
   private linkedInImageUploadSub: Subscription | null = null;
   /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
   protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  /**
+   * The Microsoft image extension, sent as `microsoftConfig.imageAssetId` (see `microsoftImageSent`):
+   * an upload made for this brief, and nothing else. The upload state mirrors the Meta fields above
+   * one for one.
+   */
+  protected readonly microsoftImageAssetId = signal('');
+  protected readonly microsoftImageAssetName = signal('');
+  protected readonly microsoftImageAssetBriefId = signal('');
+  protected readonly microsoftImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly microsoftImageUploadPendingName = signal('');
+  private readonly microsoftImageUploadPendingBriefId = signal('');
+  private readonly microsoftImageUploadFailedBriefId = signal('');
+  protected readonly microsoftImageUploadError = signal('');
+  protected readonly microsoftImageFileDescribedBy = computed(() =>
+    ['microsoft-image-file-hint', 'microsoft-image-file-status', ...(this.microsoftImageUploadStatus() === 'error' ? ['microsoft-image-file-error'] : [])].join(
+      ' '
+    )
+  );
+  private microsoftImageUploadSub: Subscription | null = null;
+  /** Whether the picked Microsoft image's pixel size is being read, which holds Create like an upload does. */
+  protected readonly microsoftImageChecking = signal(false);
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly microsoftImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -2503,6 +2540,31 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInImageSent() ? `Image: ${this.linkedInImageAssetName() || 'uploaded image'}` : ''
   );
 
+  /**
+   * Why Create is blocked for an uploaded Microsoft image this tab still holds but cannot send, or
+   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL Microsoft does not have here.
+   */
+  protected readonly microsoftImageAssetBlock: Signal<CampaignMicrosoftImageAssetBlock | null> = this.initMicrosoftImageAssetBlock();
+  /** Whether the draft holds an uploaded Microsoft image made for the brief now open — the only one sent. */
+  protected readonly microsoftImageAssetForThisBrief = computed(
+    () => this.microsoftImageAssetId() !== '' && this.microsoftImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly microsoftAssetWithheld = computed(
+    () =>
+      (this.microsoftImageAssetForThisBrief() || this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking()) &&
+      !this.microsoftAssetUploadAvailable()
+  );
+  protected readonly microsoftImageAssetBlockMessage = computed(() => this.microsoftImageAssetBlock()?.message ?? '');
+  protected readonly microsoftImageUploadStatusMessage = computed(() => {
+    if (this.microsoftImageChecking()) return 'Checking image…';
+    if (this.microsoftImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.microsoftImageAssetForThisBrief() ? `Uploaded: ${this.microsoftImageAssetName() || 'image'}` : '';
+  });
+  protected readonly microsoftImageUploadLiveMessage = computed(() => (this.microsoftAssetUploadAvailable() ? this.microsoftImageUploadStatusMessage() : ''));
+  /** Whether the uploaded Microsoft image goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
+  private readonly microsoftImageSent = computed(() => this.microsoftAssetUploadAvailable() && this.microsoftImageAssetForThisBrief());
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -2661,6 +2723,7 @@ export class ImplementationTabComponent implements OnInit {
     if (this.metaImageAssetBlock() !== null) return false;
     if (this.googleImageAssetBlock() !== null) return false;
     if (this.linkedInImageAssetBlock() !== null) return false;
+    if (this.microsoftImageAssetBlock() !== null) return false;
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
     // dropped. Unlike the extensions they change who the campaign is aimed at, so the create waits.
     if (this.googleAudienceSegmentsBlock() !== null) return false;
@@ -2710,6 +2773,12 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach()) return false;
     if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading') return false;
+    if (
+      this.showMicrosoftSection() &&
+      this.microsoftAssetUploadAvailable() &&
+      (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking())
+    )
+      return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -3317,6 +3386,77 @@ export class ImplementationTabComponent implements OnInit {
   /** Forget the uploaded LinkedIn image (the stored asset stays upstream, unused). */
   protected onLinkedInImageAssetRemove(): void {
     this.clearLinkedInImageAsset();
+    this.emitDraft();
+  }
+  /**
+   * Upload the chosen Microsoft image for this brief — `onMetaImageFileChange`'s sibling, step for
+   * step, plus Microsoft's own 76,800-byte limit: far below the shared upload cap, and
+   * campaign-service refuses a larger image at dispatch, so it is refused here before anything is
+   * stored.
+   */
+  protected onMicrosoftImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearMicrosoftImageAsset();
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, like a failed upload: the image
+    // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failMicrosoftImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    if (file.size > MICROSOFT_IMAGE_MAX_BYTES) {
+      this.failMicrosoftImageUpload(MICROSOFT_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failMicrosoftImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    // The pixel bounds are read from the image itself, which is asynchronous. A size that cannot be
+    // read (no decoder in this browser, or an image it cannot decode) is left to campaign-service,
+    // which checks the same bounds before anything is created.
+    //
+    // The pick is recorded as pending, and told to the parent, BEFORE the read: a tab switch during
+    // it destroys this component, and the remount then finds no upload to resume and raises the
+    // interrupted-upload block rather than restoring an empty selection. The read rides the upload
+    // subscription, so a clear or the component's destruction drops its answer.
+    this.microsoftImageChecking.set(true);
+    this.microsoftImageUploadPendingName.set(file.name);
+    this.microsoftImageUploadPendingBriefId.set(briefId);
+    this.emitDraft();
+    this.microsoftImageUploadSub = from(this.readImageSize(file))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((size) => {
+        this.microsoftImageChecking.set(false);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        const bounds = MICROSOFT_IMAGE_PIXEL_BOUNDS;
+        if (size && (size.width < bounds.minWidth || size.height < bounds.minHeight || size.width > bounds.maxWidth || size.height > bounds.maxHeight)) {
+          this.failMicrosoftImageUpload(
+            `Microsoft Advertising accepts images from ${bounds.minWidth}x${bounds.minHeight} to ${bounds.maxWidth}x${bounds.maxHeight} pixels; this one is ${size.width}x${size.height}.`,
+            briefId
+          );
+          this.emitDraft();
+          return;
+        }
+        this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
+        this.emitDraft();
+      });
+  }
+
+  /** Forget the uploaded Microsoft image (the stored asset stays upstream, unused). */
+  protected onMicrosoftImageAssetRemove(): void {
+    this.clearMicrosoftImageAsset();
     this.emitDraft();
   }
 
@@ -4332,6 +4472,9 @@ export class ImplementationTabComponent implements OnInit {
               ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('microsoft-ads'),
+              // Sent only while `microsoftImageSent()`; `microsoftImageAssetBlock` holds Create for
+              // an upload the request cannot carry, so it is never left out without a word.
+              ...(this.microsoftImageSent() ? { imageAssetId: this.microsoftImageAssetId() } : {}),
             },
           }
         : {}),
@@ -4869,6 +5012,132 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInImageUploadError.set(message);
     this.linkedInImageUploadFailedBriefId.set(briefId);
   }
+  /** `initMetaImageAssetBlock`'s sibling, for the upload alone. */
+  private initMicrosoftImageAssetBlock(): Signal<CampaignMicrosoftImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showMicrosoftSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.microsoftImageAssetId() !== '' && briefId && this.microsoftImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded Microsoft image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.microsoftImageUploadStatus() === 'error' && briefId && this.microsoftImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Microsoft image upload did not complete: ${this.microsoftImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.microsoftAssetWithheld()) return null;
+      if (this.microsoftAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'Microsoft ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Microsoft ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Microsoft ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that Microsoft ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followMetaImageUpload`'s sibling. */
+  private followMicrosoftImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.microsoftImageUploadStatus.set('uploading');
+    this.microsoftImageUploadError.set('');
+    this.microsoftImageUploadPendingName.set(fileName);
+    this.microsoftImageUploadPendingBriefId.set(briefId);
+    this.microsoftImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('microsoft', upload$);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failMicrosoftImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.microsoftImageAssetId.set(asset.id);
+        this.microsoftImageAssetName.set(fileName);
+        this.microsoftImageAssetBriefId.set(briefId);
+        this.microsoftImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('microsoft', upload$);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        this.failMicrosoftImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeMicrosoftImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.microsoftImageUploadPendingName.set(fileName);
+      this.microsoftImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('microsoft', briefId) : null;
+    if (!upload$) {
+      this.failMicrosoftImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followMicrosoftImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearMicrosoftImageAsset(): void {
+    this.microsoftImageChecking.set(false);
+    this.microsoftImageUploadSub?.unsubscribe();
+    this.microsoftImageUploadSub = null;
+    if (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('microsoft');
+    }
+    this.microsoftImageUploadPendingName.set('');
+    this.microsoftImageUploadPendingBriefId.set('');
+    this.microsoftImageAssetId.set('');
+    this.microsoftImageAssetName.set('');
+    this.microsoftImageAssetBriefId.set('');
+    this.microsoftImageUploadStatus.set('idle');
+    this.microsoftImageUploadError.set('');
+    this.microsoftImageUploadFailedBriefId.set('');
+  }
+
+  private failMicrosoftImageUpload(message: string, briefId = ''): void {
+    this.microsoftImageUploadStatus.set('error');
+    this.microsoftImageUploadError.set(message);
+    this.microsoftImageUploadFailedBriefId.set(briefId);
+  }
+  /** The image's pixel size, or `null` when this browser cannot read it. Only ever called from a file pick, so never on the server. */
+  private async readImageSize(file: Blob): Promise<{ width: number; height: number } | null> {
+    if (typeof createImageBitmap !== 'function') return null;
+    try {
+      // `imageOrientation: 'none'`: the ENCODED frame's size, which is what campaign-service's header
+      // check reads. The default applies a JPEG's EXIF rotation and would swap width and height.
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'none' });
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return size;
+    } catch {
+      return null;
+    }
+  }
 
   /** `followMetaImageUpload`'s sibling, holding the stored image in `slotKey` once it lands. */
   private followGoogleImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string, slotKey: string): void {
@@ -5074,7 +5343,8 @@ export class ImplementationTabComponent implements OnInit {
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
    * names the problem with the image (not decodable, too many pixels, …). `offersImageUrl` is false
-   * for a platform with no pasted-URL alternative (LinkedIn), whose fallback says to remove the image.
+   * for a control with no pasted-URL alternative (LinkedIn, Microsoft), whose fallback says to remove
+   * the image.
    */
   private creativeAssetUploadErrorMessage(err: unknown, offersImageUrl = true): string {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
@@ -5402,6 +5672,18 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.linkedInImageUploadPendingName) {
       this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
     }
+    // The Microsoft image, on the Meta upload's terms above.
+    if (draft.microsoftImageAssetId !== undefined) {
+      this.microsoftImageAssetId.set(draft.microsoftImageAssetId);
+      this.microsoftImageAssetName.set(draft.microsoftImageAssetName ?? '');
+      this.microsoftImageAssetBriefId.set(draft.microsoftImageAssetBriefId ?? '');
+    }
+    if (draft.microsoftImageUploadFailedMessage && draft.microsoftImageUploadFailedBriefId) {
+      this.failMicrosoftImageUpload(draft.microsoftImageUploadFailedMessage, draft.microsoftImageUploadFailedBriefId);
+    }
+    if (draft.microsoftImageUploadPendingName) {
+      this.resumeMicrosoftImageUpload(draft.microsoftImageUploadPendingName, draft.microsoftImageUploadPendingBriefId ?? '');
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -5612,6 +5894,13 @@ export class ImplementationTabComponent implements OnInit {
       linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
       linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
       linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+      microsoftImageAssetId: this.microsoftImageAssetId(),
+      microsoftImageAssetName: this.microsoftImageAssetName(),
+      microsoftImageAssetBriefId: this.microsoftImageAssetBriefId(),
+      microsoftImageUploadPendingName: this.microsoftImageUploadPendingName(),
+      microsoftImageUploadPendingBriefId: this.microsoftImageUploadPendingBriefId(),
+      microsoftImageUploadFailedMessage: this.microsoftImageUploadFailedBriefId() ? this.microsoftImageUploadError() : '',
+      microsoftImageUploadFailedBriefId: this.microsoftImageUploadFailedBriefId(),
     });
   }
 

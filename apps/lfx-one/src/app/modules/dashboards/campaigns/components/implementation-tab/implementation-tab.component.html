@@ -2968,6 +2968,99 @@
               }
             }
           </div>
+
+          <!-- Image ad extension (one upload, attached to the campaign). Offered only on an explicit
+               yes from `microsoftAssetUploadAvailable()`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-microsoft-image-status-live">
+            {{ microsoftImageUploadLiveMessage() }}
+          </div>
+          @if (microsoftAssetUploadAvailable()) {
+            <div class="mt-4 flex flex-col gap-1" data-testid="implementation-microsoft-image-upload">
+              <label class="text-xs font-medium text-gray-700" for="microsoft-image-file">Image extension</label>
+              <input
+                id="microsoft-image-file"
+                type="file"
+                [attr.accept]="creativeAssetAccept"
+                (change)="onMicrosoftImageFileChange($event)"
+                [disabled]="microsoftImagePickerDisabled()"
+                [attr.aria-describedby]="microsoftImageFileDescribedBy()"
+                [attr.aria-invalid]="microsoftImageUploadStatus() === 'error' ? 'true' : null"
+                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                data-testid="implementation-microsoft-image-file" />
+              <p id="microsoft-image-file-hint" class="text-xs text-gray-500">
+                PNG or JPEG, up to 75 KB (76,800 bytes) and 40x20 to 2592x2048 pixels. Attached to the campaign as an image extension. Available once the brief
+                is saved.
+              </p>
+              <p id="microsoft-image-file-status" class="text-xs text-gray-700" data-testid="implementation-microsoft-image-status">
+                {{ microsoftImageUploadStatusMessage() }}
+              </p>
+              @if (microsoftImageUploadStatus() === 'uploading' || microsoftImageChecking()) {
+                <div>
+                  <lfx-button
+                    label="Cancel upload"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onMicrosoftImageAssetRemove()"
+                    data-testid="implementation-microsoft-image-cancel" />
+                </div>
+              } @else if (microsoftImageAssetId()) {
+                <div>
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onMicrosoftImageAssetRemove()"
+                    data-testid="implementation-microsoft-image-remove" />
+                </div>
+              }
+              @if (microsoftImageUploadStatus() === 'error') {
+                <p id="microsoft-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-image-error">
+                  {{ microsoftImageUploadError() }}
+                </p>
+              }
+            </div>
+          }
+
+          <!-- A Microsoft upload the request cannot carry, or a failed upload; see `initMicrosoftImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-microsoft-image-asset-block-live">
+            {{ microsoftImageAssetBlockMessage() }}
+          </div>
+          @if (microsoftImageAssetBlock(); as block) {
+            <div
+              class="mt-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-microsoft-image-asset-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-microsoft-image-asset-block-retry" />
+                }
+                <lfx-button
+                  label="Remove image"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onMicrosoftImageAssetRemove()"
+                  data-testid="implementation-microsoft-image-asset-block-remove" />
+              </div>
+            </div>
+          }
         </div>
       }
 

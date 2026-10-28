@@ -643,6 +643,19 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a Microsoft create may reference an uploaded image by `microsoftConfig.imageAssetId`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Microsoft-assets flag. Like
+ * the Meta sibling, the flag is not about URL signing: Microsoft's dispatch path uploads the stored
+ * bytes to the account's media library and attaches them as an image ad extension. The legacy
+ * creator reads no `imageAssetId`, hence the cutover half. Admits an upload into the brief's library
+ * alongside the other asset flags.
+ */
+export function canUseMicrosoftCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftAssets);
+}
+
+/**
  * One stored creative asset, snake_case upstream shape to the camelCase one the browser reads.
  *
  * Returns `null` rather than a partly-filled object when the answer is unusable, so the caller can
@@ -839,6 +852,7 @@ export class CampaignServiceClient {
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+        microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
@@ -905,6 +919,7 @@ export class CampaignServiceClient {
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+      microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
