@@ -31,7 +31,7 @@ import {
 import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { AiProxyError, aiErrorDetail } from '../helpers/ai-error.helper';
+import { AiProxyError, aiErrorDetail, readAiJson } from '../helpers/ai-error.helper';
 import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { logger } from './logger.service';
 
@@ -638,7 +638,9 @@ export class AiService {
       throw new AiProxyError(`AI request failed: ${response.status} ${response.statusText}`, await aiErrorDetail(response, this.aiKey));
     }
 
-    return response.json();
+    // Parsed through the same helper, so a 2xx that is not JSON fails as a named, redacted
+    // `AiProxyError` rather than a raw `SyntaxError` quoting the body (#4500).
+    return readAiJson<OpenAIChatResponse>(response, this.aiKey);
   }
 
   /**
