@@ -39,6 +39,8 @@ import {
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
+  META_DSA_NAME_MAX_LENGTH,
+  META_DSA_TERRITORIES,
   META_NUMERIC_ID_PATTERN,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
@@ -197,6 +199,7 @@ import type {
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   MetaAdVariant,
+  MetaCampaignCreateRequest,
   MetaObjective,
   MetaPlacement,
   MicrosoftKeyword,
@@ -512,6 +515,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
 
   /**
+   * Whether this deployment collects the Meta Instagram account id and the EU DSA
+   * beneficiary/payor — `CampaignListResult.metaInstagramDsaEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA`. `null` (unanswered) and `false` hide the
+   * three inputs and send none of the keys, which is the Meta create exactly as it was before.
+   */
+  public readonly metaInstagramDsaEnabled = input<boolean | null>(null);
+
+  /** @see metaInstagramDsaEnabled — an explicit yes, never a `null`. */
+  protected readonly metaInstagramDsaAvailable = computed<boolean>(() => this.metaInstagramDsaEnabled() === true);
+
+  /**
    * Where the create-capability read stands — what tells "still checking" from "the check failed"
    * while a capability is `null`.
    *
@@ -600,6 +614,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
+  /** The DSA disclosure length cap campaign-service enforces, bound to each box's `maxlength`. */
+  protected readonly metaDsaNameMaxLength = META_DSA_NAME_MAX_LENGTH;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
@@ -793,6 +809,14 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googlePostalGeoForm = this.fb.nonNullable.group({ postalId: '' });
   protected readonly googleProximityForm = this.fb.nonNullable.group<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
+  /**
+   * The Meta Instagram account id and EU DSA beneficiary/payor, on the wrappers' form-control API.
+   * Its own group rather than `campaignForm`, so `campaignForm.invalid` (Google's gate) never reads
+   * it. NOT transient: every edit reaches the draft (`emitDraft` names all three), and raw text is
+   * kept so a refused value stays on screen as typed.
+   */
+  protected readonly metaInstagramDsaForm = this.fb.nonNullable.group({ instagramUserId: '', dsaBeneficiary: '', dsaPayor: '' });
+  private readonly metaInstagramDsaDraft = this.initFormDraft(this.metaInstagramDsaForm);
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
@@ -2292,6 +2316,55 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * Whether the ad set runs on Instagram — Instagram Feed, Stories or Reels, the three placements
+   * campaign-service maps to Instagram positions (`meta.UsesInstagram`). Only then is the Instagram
+   * account id sent, and only then does Meta need it to publish.
+   */
+  protected readonly metaUsesInstagram = computed(() => {
+    const placements = this.metaPlacements();
+    return placements.instagramFeed || placements.stories || placements.reels;
+  });
+
+  /** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
+  protected readonly metaDsaCountries = computed<string[]>(() => this.metaEffectiveGeoTargets().filter((c) => META_DSA_TERRITORIES.has(c)));
+
+  /**
+   * Why the Instagram account id cannot be sent, or `null`. Required only when the capability is on
+   * AND an Instagram placement is enabled — Meta creates the ad without it but will not publish it.
+   * Numeric, as campaign-service's `numericIDRE` requires; trimmed first because upstream trims.
+   */
+  protected readonly metaInstagramUserIdError = computed<string | null>(() => {
+    if (!this.metaInstagramDsaAvailable() || !this.metaUsesInstagram()) return null;
+    const id = this.metaInstagramDsaDraft().instagramUserId.trim();
+    if (id === '') return 'An Instagram account ID is required for the Instagram placements. Enter it, or turn off Instagram Feed, Stories and Reels.';
+    if (!META_NUMERIC_ID_PATTERN.test(id)) return 'The Instagram account ID must be numeric.';
+    return null;
+  });
+
+  /** Why the DSA beneficiary cannot be sent, or `null` — see `metaDsaFieldError`. */
+  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => this.metaDsaFieldError('dsaBeneficiary'));
+  /** Why the DSA payor cannot be sent, or `null` — see `metaDsaFieldError`. */
+  protected readonly metaDsaPayorError = computed<string | null>(() => this.metaDsaFieldError('dsaPayor'));
+
+  /**
+   * The three keys `submit` adds to `metaConfig`, or none. Off: nothing, so the create is exactly
+   * the one before this shipped (and the create route refuses the keys). On: the Instagram id only
+   * for an Instagram placement, and the disclosures only as a pair — `canSubmit` has already blocked
+   * a one-sided or an EU-without-both state, so a lone value is never sent.
+   */
+  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() => {
+    if (!this.metaInstagramDsaAvailable()) return {};
+    const draft = this.metaInstagramDsaDraft();
+    const instagramUserId = draft.instagramUserId.trim();
+    const dsaBeneficiary = draft.dsaBeneficiary.trim();
+    const dsaPayor = draft.dsaPayor.trim();
+    return {
+      ...(this.metaUsesInstagram() && instagramUserId !== '' ? { instagramUserId } : {}),
+      ...(dsaBeneficiary !== '' && dsaPayor !== '' ? { dsaBeneficiary, dsaPayor } : {}),
+    };
+  });
+
+  /**
    * The placement entries that DIFFER from `META_DEFAULT_PLACEMENTS`, which is all the payload
    * needs to carry: campaign-service merges the override map field-by-field over the same
    * defaults, so an omitted key and a key repeating the default are indistinguishable upstream.
@@ -2595,6 +2668,9 @@ export class ImplementationTabComponent implements OnInit {
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
+    // The Instagram id and EU DSA disclosures (behind `metaInstagramDsaAvailable`; each error is
+    // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
+    if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError())) return false;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -2911,6 +2987,11 @@ export class ImplementationTabComponent implements OnInit {
     // from a fetch on every mount rather than edited. The snapshot is scoped to what a user EDITS,
     // which is broader than what they type.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
+    // The Meta Instagram/DSA group is not on `campaignForm`, so it needs its own trigger.
+    this.metaInstagramDsaForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
     });
@@ -4323,6 +4404,7 @@ export class ImplementationTabComponent implements OnInit {
               // would be a field the service ignores — and one a reader of the payload would
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
+              ...this.metaInstagramDsaFields(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('meta-ads'),
             },
@@ -5463,6 +5545,7 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaPixelId !== undefined) {
       this.metaPixelId.set(draft.metaPixelId);
     }
+    this.restoreMetaInstagramDsa(draft);
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
     }
@@ -5688,6 +5771,10 @@ export class ImplementationTabComponent implements OnInit {
       metaPlacements: { ...this.metaPlacements() },
       metaPixelId: this.metaPixelId(),
       metaGeoTargets: [...this.metaGeoTargets()],
+      // As typed, whether or not the capability is on, so a draft survives the answer arriving late.
+      metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
+      metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
+      metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
@@ -7876,6 +7963,46 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.biddingAvailable()) return {};
     const bidding = this.biddingPayloads()[platform];
     return bidding === null ? {} : { bidding };
+  }
+
+  /**
+   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
+   * same present-only rule, and the same `emitEvent: false`, as `restoreGoogleBidding`.
+   */
+  private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
+    const fields = [
+      ['metaInstagramUserId', 'instagramUserId'],
+      ['metaDsaBeneficiary', 'dsaBeneficiary'],
+      ['metaDsaPayor', 'dsaPayor'],
+    ] as const;
+    for (const [draftKey, control] of fields) {
+      const value = draft[draftKey];
+      if (typeof value !== 'string') continue;
+      this.metaInstagramDsaForm.controls[control].setValue(value, { emitEvent: false });
+    }
+  }
+
+  /**
+   * Why one EU DSA disclosure cannot be sent, or `null` while the capability is off. Mirrors
+   * campaign-service's `CheckPublishIdentity`: at most `META_DSA_NAME_MAX_LENGTH` characters
+   * (counted as code points, as Go counts runes), no C0/C1 control, Unicode line/paragraph separator
+   * or bidi control (its `isLineBreakingOrControl`), and present whenever the
+   * other one is OR an EU country is targeted. Trimmed first, as upstream trims.
+   */
+  private metaDsaFieldError(field: 'dsaBeneficiary' | 'dsaPayor'): string | null {
+    if (!this.metaInstagramDsaAvailable()) return null;
+    const draft = this.metaInstagramDsaDraft();
+    const value = draft[field].trim();
+    const other = (field === 'dsaBeneficiary' ? draft.dsaPayor : draft.dsaBeneficiary).trim();
+    if ([...value].length > META_DSA_NAME_MAX_LENGTH) return `Enter at most ${META_DSA_NAME_MAX_LENGTH} characters.`;
+    // eslint-disable-next-line no-control-regex -- matching control characters is the point.
+    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value))
+      return 'Enter the name on one line, without tabs or line breaks.';
+    if (value !== '') return null;
+    const eu = this.metaDsaCountries();
+    if (eu.length > 0) return `Required when targeting the EU/EEA (${eu.join(', ')}).`;
+    if (other !== '') return 'Enter both the beneficiary and the payor, or neither.';
+    return null;
   }
 
   /**

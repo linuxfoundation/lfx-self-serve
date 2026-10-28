@@ -212,6 +212,7 @@ import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-m
 import {
   asResumeRefusal,
   CampaignServiceClient,
+  canCreateMetaInstagramDsa,
   canCreateMicrosoftSchedule,
   canCreateWithAudienceSegments,
   canCreateWithBidding,
@@ -802,6 +803,26 @@ export class CampaignController {
           ServiceValidationError.forField(
             unservedMicrosoftScheduleField,
             'Microsoft flight dates are not enabled on this deployment; omit startDate and endDate from microsoftConfig',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
+      // The Meta Instagram id and EU DSA disclosures are refused, not dropped, on the same terms.
+      // Off means either the legacy creator serves (it never reads them) or the deployed
+      // campaign-service predates linuxfoundation/lfx-v2-campaign-service#414's EU rule; the form never sends them in that state
+      // (`metaInstagramDsaEnabled` hides the inputs). Forwarded untouched otherwise: campaign-service
+      // judges them, and answers a missing or malformed one with a 400 before any job exists.
+      const unservedMetaInstagramDsaField = this.unservedMetaInstagramDsaField(body);
+      if (unservedMetaInstagramDsaField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedMetaInstagramDsaField,
+            'The Meta Instagram account and EU DSA fields are not enabled on this deployment; omit instagramUserId, dsaBeneficiary and dsaPayor from metaConfig',
             {
               operation: 'campaign_create',
               service: 'campaign_controller',
@@ -4767,6 +4788,20 @@ export class CampaignController {
     const proximityTargets: unknown = body?.proximityTargets;
     if (proximityTargets !== undefined && proximityTargets !== null && !(Array.isArray(proximityTargets) && proximityTargets.length === 0)) {
       return 'proximityTargets';
+    }
+    return null;
+  }
+
+  /**
+   * `metaConfig.instagramUserId`, `dsaBeneficiary` or `dsaPayor` when this deployment cannot honour
+   * them, else `null`. `in`, as for the Microsoft dates below: an explicit `null` is still the field.
+   */
+  private unservedMetaInstagramDsaField(body: CampaignCreateRequest): string | null {
+    if (canCreateMetaInstagramDsa()) return null;
+    const config: unknown = body?.metaConfig;
+    if (config === null || typeof config !== 'object') return null;
+    for (const key of ['instagramUserId', 'dsaBeneficiary', 'dsaPayor'] as const) {
+      if (key in config) return `metaConfig.${key}`;
     }
     return null;
   }

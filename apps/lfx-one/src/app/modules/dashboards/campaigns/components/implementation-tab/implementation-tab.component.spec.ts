@@ -10742,6 +10742,245 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
 });
 
 /**
+ * Meta Instagram account id and EU DSA disclosures, behind `metaInstagramDsaEnabled`
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA`, linuxfoundation/lfx-v2-campaign-service#414).
+ *
+ * Off: no inputs, no keys, Create unchanged. On: the Instagram id is required (and sent) for an
+ * Instagram placement, both disclosures are required for an EU geo and sent only as a pair, and a
+ * missing or malformed one blocks Create. All three survive a tab switch through the draft.
+ */
+describe('ImplementationTabComponent meta instagram and dsa', () => {
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['meta-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  function component(f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    return f.componentInstance as unknown as Record<string, any>;
+  }
+
+  function query(testId: string, f: ComponentFixture<ImplementationTabComponent> = fixture): HTMLElement | null {
+    return f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function mount(enabled: boolean | null | undefined, draft?: Record<string, unknown>): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (enabled !== undefined) f.componentRef.setInput('metaInstagramDsaEnabled', enabled);
+    if (draft) f.componentRef.setInput('draft', { eventSlug: 'kubecon-eu-2026', headlines: [''], descriptions: [''], ...draft });
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    const c = component(f);
+    c['selectedPlatforms'].set(['meta-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  async function type(values: Partial<Record<'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor', string>>, f = fixture): Promise<void> {
+    component(f)['metaInstagramDsaForm'].patchValue(values);
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  async function setGeos(geos: string[], f = fixture): Promise<void> {
+    component(f)['metaGeoTargets'].set(geos);
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  async function submitted(f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, Record<string, unknown>>> {
+    expect(component(f)['canSubmit']()).toBe(true);
+    component(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  describe.each([
+    ['unanswered', undefined],
+    ['null', null],
+    ['false', false],
+  ])('while the capability is %s', (_label, enabled) => {
+    it('shows no inputs and sends none of the keys, even for an EU geo', async () => {
+      fixture = await mount(enabled);
+      await setGeos(['DE']);
+
+      expect(query('implementation-meta-instagram-dsa')).toBeNull();
+      const request = await submitted();
+      expect(Object.keys(request['metaConfig'])).not.toContain('instagramUserId');
+      expect(Object.keys(request['metaConfig'])).not.toContain('dsaBeneficiary');
+      expect(Object.keys(request['metaConfig'])).not.toContain('dsaPayor');
+    });
+
+    it('ignores a value restored from a draft rather than sending it', async () => {
+      fixture = await mount(enabled, { metaInstagramUserId: '123', metaDsaBeneficiary: 'CNCF', metaDsaPayor: 'LF' });
+
+      const request = await submitted();
+      expect(Object.keys(request['metaConfig'])).not.toContain('instagramUserId');
+      expect(Object.keys(request['metaConfig'])).not.toContain('dsaBeneficiary');
+    });
+  });
+
+  describe('while the capability is an explicit yes', () => {
+    it('renders the three inputs on the LFX wrapper', async () => {
+      fixture = await mount(true);
+
+      expect(query('implementation-meta-instagram-dsa')).not.toBeNull();
+      for (const id of ['meta-instagram-user-id', 'meta-dsa-beneficiary', 'meta-dsa-payor']) {
+        expect(fixture.nativeElement.querySelector(`lfx-input-text #${id}`)).not.toBeNull();
+      }
+    });
+
+    it('blocks Create until an Instagram id is entered for the default Instagram Feed placement', async () => {
+      fixture = await mount(true);
+
+      expect(component()['metaUsesInstagram']()).toBe(true);
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-meta-instagram-user-id-error')?.textContent).toContain('An Instagram account ID is required');
+
+      await type({ instagramUserId: ' 17841400000000000 ' });
+      const request = await submitted();
+      expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
+    });
+
+    it('refuses a non-numeric Instagram id', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '@lfprojects' });
+
+      expect(component()['metaInstagramUserIdError']()).toBe('The Instagram account ID must be numeric.');
+      expect(component()['canSubmit']()).toBe(false);
+    });
+
+    it('neither requires nor sends the Instagram id when every Instagram placement is off', async () => {
+      fixture = await mount(true);
+      component()['metaPlacements'].update((p: Record<string, boolean>) => ({ ...p, instagramFeed: false, stories: false, reels: false }));
+      await type({ instagramUserId: '17841400000000000' });
+
+      expect(component()['metaInstagramUserIdError']()).toBeNull();
+      const request = await submitted();
+      expect(Object.keys(request['metaConfig'])).not.toContain('instagramUserId');
+    });
+
+    it('requires both disclosures for an EU geo, naming the countries, and sends them trimmed', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000' });
+      await setGeos(['US', 'DE', 'FR']);
+
+      expect(component()['metaDsaCountries']()).toEqual(['DE', 'FR']);
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-meta-dsa-beneficiary-error')?.textContent).toContain('Required when targeting the EU/EEA (DE, FR).');
+      expect(query('implementation-meta-dsa-payor-error')?.textContent).toContain('Required when targeting the EU/EEA (DE, FR).');
+
+      await type({ dsaBeneficiary: '  CNCF ', dsaPayor: ' The Linux Foundation ' });
+      const request = await submitted();
+      expect(request['metaConfig']['dsaBeneficiary']).toBe('CNCF');
+      expect(request['metaConfig']['dsaPayor']).toBe('The Linux Foundation');
+    });
+
+    it('does not require the disclosures for a non-EU geo, and sends none', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000' });
+      await setGeos(['US', 'GB', 'CH']);
+
+      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
+      const request = await submitted();
+      expect(Object.keys(request['metaConfig'])).not.toContain('dsaBeneficiary');
+      expect(Object.keys(request['metaConfig'])).not.toContain('dsaPayor');
+    });
+
+    it('refuses a one-sided pair even without an EU geo', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF' });
+
+      expect(component()['metaDsaPayorError']()).toBe('Enter both the beneficiary and the payor, or neither.');
+      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
+      expect(component()['canSubmit']()).toBe(false);
+    });
+
+    it('requires both disclosures for a non-EU EEA geo too, as campaign-service does', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000' });
+      await setGeos(['NO']);
+
+      expect(component()['metaDsaCountries']()).toEqual(['NO']);
+      expect(component()['canSubmit']()).toBe(false);
+    });
+
+    it.each([
+      ['a tab', 'CNCF\tFoundation'],
+      ['a line separator', 'CNCF\u2028Foundation'],
+      ['a bidi override', '\u202eFNCC'],
+    ])('refuses a disclosure carrying %s', async (_label, value) => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: value, dsaPayor: 'LF' });
+
+      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter the name on one line, without tabs or line breaks.');
+      expect(component()['canSubmit']()).toBe(false);
+    });
+
+    it('accepts a non-Latin disclosure', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'Fondation Linux — Zürich', dsaPayor: 'リナックス財団' });
+
+      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
+      expect(component()['metaDsaPayorError']()).toBeNull();
+    });
+
+    it('persists the three values in the draft as typed, and restores them on remount', async () => {
+      fixture = await mount(true);
+      let draft: Record<string, unknown> | undefined;
+      component()['draftChange'].subscribe((d: Record<string, unknown>) => (draft = d));
+      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'CNCF ', dsaPayor: 'LF' });
+
+      expect(draft?.['metaInstagramUserId']).toBe('17841400000000000');
+      expect(draft?.['metaDsaBeneficiary']).toBe('CNCF ');
+      expect(draft?.['metaDsaPayor']).toBe('LF');
+
+      const restored = await mount(true, draft);
+      expect(component(restored)['metaInstagramDsaForm'].getRawValue()).toEqual({
+        instagramUserId: '17841400000000000',
+        dsaBeneficiary: 'CNCF ',
+        dsaPayor: 'LF',
+      });
+    });
+  });
+});
+
+/**
  * The Google image slots' stored-image library (`googleAssetUploadEnabled`): picks and uploads ride
  * as `{ imageAssetId }` after the slot's pasted URLs, only images that fit are offered, and a held
  * image the request cannot carry blocks Create rather than vanishing.

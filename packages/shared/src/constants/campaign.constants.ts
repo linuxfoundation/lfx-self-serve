@@ -776,6 +776,58 @@ export const META_MESSENGER_INBOX_RETIRED_REASON = 'Removed by Meta in November 
 export const META_NUMERIC_ID_PATTERN = /^[0-9]+$/;
 
 /**
+ * The countries for which Meta requires the EU Digital Services Act disclosures
+ * (`dsa_beneficiary` / `dsa_payor` on the ad set): "For ad sets targeting the EU and/or associated
+ * territories, the dsa_payor and dsa_beneficiary fields are required." The 27 member states, the
+ * parts of the EU that carry their own ISO code (Åland and France's outermost regions), and the
+ * non-EU EEA states (IS, LI, NO) — inclusive on purpose. Mirrors campaign-service's
+ * `dsaTerritories` (linuxfoundation/lfx-v2-campaign-service#414), which refuses a create targeting
+ * any of these without both disclosures. GB and CH are not in it.
+ */
+export const META_DSA_TERRITORIES: ReadonlySet<string> = new Set([
+  'AT',
+  'BE',
+  'BG',
+  'HR',
+  'CY',
+  'CZ',
+  'DK',
+  'EE',
+  'FI',
+  'FR',
+  'DE',
+  'GR',
+  'HU',
+  'IE',
+  'IT',
+  'LV',
+  'LT',
+  'LU',
+  'MT',
+  'NL',
+  'PL',
+  'PT',
+  'RO',
+  'SK',
+  'SI',
+  'ES',
+  'SE',
+  'AX',
+  'GF',
+  'GP',
+  'MQ',
+  'RE',
+  'YT',
+  'MF',
+  'IS',
+  'LI',
+  'NO',
+]);
+
+/** Longest DSA beneficiary or payor name campaign-service accepts (runes). Mirrors `maxDSANameRunes`. */
+export const META_DSA_NAME_MAX_LENGTH = 256;
+
+/**
  * Input bounds the Microsoft client enforces BEFORE its first create call, mirrored here so the
  * form and the BFF refuse synchronously instead of enqueuing a job that cannot succeed.
  *

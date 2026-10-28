@@ -2520,6 +2520,90 @@
             </div>
           </div>
 
+          <!--
+            Instagram identity and EU DSA disclosures, offered only on an explicit yes
+            (`metaInstagramDsaAvailable`, LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA). Meta creates
+            an ad without them but will not PUBLISH it: the Instagram id for any Instagram placement, and
+            both disclosures for an EU geo target. Each error blocks Create (`canSubmit`).
+          -->
+          @if (metaInstagramDsaAvailable()) {
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="implementation-meta-instagram-dsa">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-instagram-user-id">
+                  Instagram account ID
+                  @if (metaUsesInstagram()) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="instagramUserId"
+                  inputId="meta-instagram-user-id"
+                  type="text"
+                  size="small"
+                  inputmode="numeric"
+                  placeholder="e.g. 17841400000000000"
+                  [required]="metaUsesInstagram()"
+                  [invalid]="metaInstagramUserIdError() !== null"
+                  [describedBy]="metaInstagramUserIdError() !== null ? 'meta-instagram-user-id-error' : 'meta-instagram-user-id-help'"
+                  dataTest="implementation-meta-instagram-user-id" />
+                @if (metaInstagramUserIdError(); as error) {
+                  <p id="meta-instagram-user-id-error" class="text-xs text-red-600" data-testid="implementation-meta-instagram-user-id-error">{{ error }}</p>
+                } @else {
+                  <p id="meta-instagram-user-id-help" class="text-xs text-gray-500">
+                    {{ metaUsesInstagram() ? 'Used for the Instagram placements.' : 'Not sent: no Instagram placement is enabled.' }}
+                  </p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-dsa-beneficiary">
+                  EU DSA beneficiary
+                  @if (metaDsaCountries().length > 0) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="dsaBeneficiary"
+                  inputId="meta-dsa-beneficiary"
+                  type="text"
+                  size="small"
+                  placeholder="Who the ads benefit"
+                  [maxlength]="metaDsaNameMaxLength"
+                  [required]="metaDsaCountries().length > 0"
+                  [invalid]="metaDsaBeneficiaryError() !== null"
+                  [describedBy]="metaDsaBeneficiaryError() !== null ? 'meta-dsa-beneficiary-error' : null"
+                  dataTest="implementation-meta-dsa-beneficiary" />
+                @if (metaDsaBeneficiaryError(); as error) {
+                  <p id="meta-dsa-beneficiary-error" class="text-xs text-red-600" data-testid="implementation-meta-dsa-beneficiary-error">{{ error }}</p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="meta-dsa-payor">
+                  EU DSA payor
+                  @if (metaDsaCountries().length > 0) {
+                    <span class="text-red-500" aria-hidden="true">*</span>
+                  }
+                </label>
+                <lfx-input-text
+                  [form]="metaInstagramDsaForm"
+                  control="dsaPayor"
+                  inputId="meta-dsa-payor"
+                  type="text"
+                  size="small"
+                  placeholder="Who pays for the ads"
+                  [maxlength]="metaDsaNameMaxLength"
+                  [required]="metaDsaCountries().length > 0"
+                  [invalid]="metaDsaPayorError() !== null"
+                  [describedBy]="metaDsaPayorError() !== null ? 'meta-dsa-payor-error' : null"
+                  dataTest="implementation-meta-dsa-payor" />
+                @if (metaDsaPayorError(); as error) {
+                  <p id="meta-dsa-payor-error" class="text-xs text-red-600" data-testid="implementation-meta-dsa-payor-error">{{ error }}</p>
+                }
+              </div>
+            </div>
+          }
+
           <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
           @if (biddingAvailable()) {
             <div class="mb-4">
