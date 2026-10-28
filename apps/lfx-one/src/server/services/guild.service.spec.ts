@@ -9,6 +9,8 @@ vi.mock('./logger.service', () => ({
 }));
 
 import type { Request } from 'express';
+import type { GuildRawEventsPage } from '@lfx-one/shared/interfaces';
+import { MKTG_RAW_EVENTS_MAX_PAGES } from '@lfx-one/shared/constants/mktg-run.constants';
 import {
   MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS,
   MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
@@ -20,11 +22,11 @@ import { logger } from './logger.service';
 const req = { path: '/api/mktg-agents/brand-kit/result' } as unknown as Request;
 
 /** Builds an ok JSON Response stand-in returning the given raw-events page. */
-function mockEventsResponse(items: unknown[]): Response {
+function mockEventsResponse(items: unknown[], pagination?: GuildRawEventsPage['pagination']): Response {
   return {
     ok: true,
     status: 200,
-    json: () => Promise.resolve({ items }),
+    json: () => Promise.resolve({ items, ...(pagination && { pagination }) }),
   } as unknown as Response;
 }
 
@@ -170,26 +172,73 @@ describe('GuildService.getRawEventPayloads', () => {
     });
   });
 
-  describe('truncation guard', () => {
-    it('warns on a full raw page measured against the UNFILTERED count, so user-event filtering cannot mask truncation', async () => {
-      // 500-item page (the GUILD_RAW_EVENTS_LIMIT cap) where filtering removes items.
-      const items = Array.from({ length: 500 }, (_, i) =>
-        i % 2 === 0 ? { type: 'user_message', created_at: '2026-01-01T00:00:00Z' } : { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }
-      );
-      fetchMock.mockResolvedValue(mockEventsResponse(items));
-
+  describe('bounded raw event pagination', () => {
+    it('reads 500/500/120 newest-first events, sorts all 1120, and reuses the request cache', async () => {
+      const events = Array.from({ length: 1120 }, (_, i) => ({
+        id: `event-${i}`,
+        type: 'llm_done',
+        created_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(),
+      })).reverse();
+      for (let offset = 0; offset < events.length; offset += 500)
+        fetchMock.mockResolvedValueOnce(
+          mockEventsResponse(events.slice(offset, offset + 500), { offset, limit: 500, has_more: offset + 500 < events.length, total_count: events.length })
+        );
       const payloads = await service.getRawEventPayloads(req, 'session-1');
-
-      expect(payloads).toHaveLength(501); // content-free turns plus an explicit incomplete-page marker
-      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
-      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', expect.stringContaining('truncated'), { count: 500, limit: 500 });
+      expect(payloads).toHaveLength(1120);
+      expect(JSON.parse(payloads[0]).id).toBe('event-0');
+      expect(JSON.parse(payloads.at(-1) ?? '{}').id).toBe('event-1119');
+      expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('offset'))).toEqual(['0', '500', '1000']);
+      expect(payloads.some((payload) => payload.includes('mktg_session_events_truncated'))).toBe(false);
+      expect(logger.warning).not.toHaveBeenCalled();
+      expect(await service.resolveRunOutcome(req, 'session-1', { status: 'pending' })).toEqual({ status: 'pending' });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
-
-    it('does not warn on a partial page', async () => {
-      fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }]));
-
-      await service.getRawEventPayloads(req, 'session-1');
-
+    it('warns only after four full pages still have more, preserving turn masking', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        return mockEventsResponse(
+          Array.from({ length: 500 }, (_, i) => ({
+            id: `event-${offset + i}`,
+            type: i % 2 ? 'llm_done' : 'user_message',
+            content: i % 2 ? 'agent output' : 'private caller content',
+            created_at: '2026-01-01T00:00:00Z',
+          })),
+          { offset, limit: 500, has_more: true, total_count: 2500 }
+        );
+      });
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(MKTG_RAW_EVENTS_MAX_PAGES);
+      expect(payloads).toHaveLength(2001);
+      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
+      expect(JSON.stringify(payloads)).not.toContain('private caller content');
+      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', 'Raw events truncated at 4 pages', { count: 2000, limit: 500, pages: 4 });
+    });
+    it('de-duplicates event ids across page boundaries', async () => {
+      const first = Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' }));
+      fetchMock
+        .mockResolvedValueOnce(mockEventsResponse(first, { has_more: true }))
+        .mockResolvedValueOnce(mockEventsResponse([first[0], { id: 'event-500', type: 'llm_done' }], { has_more: false }));
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(payloads).toHaveLength(501);
+      expect(new Set(payloads.map((payload) => JSON.parse(payload).id)).size).toBe(501);
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('does not truncate a full page whose metadata says it is the last page', async () => {
+      fetchMock.mockResolvedValue(
+        mockEventsResponse(
+          Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' })),
+          { has_more: false }
+        )
+      );
+      expect(await service.getRawEventPayloads(req, 'session-1')).toHaveLength(500);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('keeps a short legacy page unchanged without a marker or another request', async () => {
+      const event = { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' };
+      fetchMock.mockResolvedValue(mockEventsResponse([event]));
+      expect(await service.getRawEventPayloads(req, 'session-1')).toEqual([JSON.stringify(event)]);
+      expect(fetchMock).toHaveBeenCalledOnce();
       expect(logger.warning).not.toHaveBeenCalled();
     });
   });

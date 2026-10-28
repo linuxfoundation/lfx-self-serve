@@ -929,6 +929,9 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
+/** Bound raw Guild history reads to 2,000 events per result request. */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
+
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
 /** Content-free BFF marker: a user/trigger turn queued before runtime_start appears. */
