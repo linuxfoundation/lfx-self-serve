@@ -101,3 +101,9 @@ export interface OrgPersonEmploymentRow {
   PERSON_KEY: string;
   EMPLOYMENT: OrgPersonEmployment;
 }
+
+/**
+ * The account's classification for a (range, project scope) as stored in Valkey: the person keys of each class, without
+ * the per-row field names (`people-employment:v2`). Someone in neither list has no roster row.
+ */
+export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;

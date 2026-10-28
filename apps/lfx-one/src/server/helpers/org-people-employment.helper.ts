@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import type { OrgEmploymentFilter, OrgLensTimeRange, OrgPersonEmploymentRow, OrgProjectScope } from '@lfx-one/shared/interfaces';
+import type { OrgEmploymentFilter, OrgLensTimeRange, OrgPersonEmploymentKeys, OrgPersonEmploymentRow, OrgProjectScope } from '@lfx-one/shared/interfaces';
 
 import type { SnowflakeService } from '../services/snowflake.service';
 import { withOrgCache } from '../services/valkey.service';
@@ -12,7 +12,9 @@ import { withOrgCache } from '../services/valkey.service';
  * Each person is classified by their ORG_PEOPLE_ALL_RANGES row for the range and project scope — the All Employees
  * roster, so every tab agrees on who is current and who left: `IS_FORMER = FALSE` is current, `TRUE` is former, and
  * someone with no row is neither, listed only under `all`. The classification is cached once per (range, scope) and
- * shared by every tab and pick.
+ * shared by every tab and pick, as the person keys of each class (`v2`; `v1` stored one named-field row per person).
+ * Measured 2026-10-28 against prod ANALYTICS.PLATINUM_LFX_ONE: the largest entry (all time, every project) is about
+ * 0.48 MiB (17,526 people), under the 1 MiB default cap; the named-field `v1` rows exceeded it on that account.
  */
 export async function readOrgEmploymentPersonKeys(
   snowflakeService: SnowflakeService,
@@ -24,9 +26,9 @@ export async function readOrgEmploymentPersonKeys(
   if (employment === 'all') {
     return null;
   }
-  const rows = await withOrgCache(
+  const keys = await withOrgCache(
     accountId,
-    `people-employment:v1:${range}:${projectScope}`,
+    `people-employment:v2:${range}:${projectScope}`,
     VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
     async () => {
       const query = `
@@ -34,11 +36,14 @@ export async function readOrgEmploymentPersonKeys(
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
         WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ?
       `;
-      return (await snowflakeService.execute<OrgPersonEmploymentRow>(query, [accountId, range, projectScope])).rows;
+      const { rows } = await snowflakeService.execute<OrgPersonEmploymentRow>(query, [accountId, range, projectScope]);
+      const classified: OrgPersonEmploymentKeys = { current: [], former: [] };
+      for (const row of rows) classified[row.EMPLOYMENT].push(row.PERSON_KEY);
+      return classified;
     },
-    isEmploymentRows
+    isEmploymentKeys
   );
-  return new Set(rows.filter((row) => row.EMPLOYMENT === employment).map((row) => row.PERSON_KEY));
+  return new Set(keys[employment]);
 }
 
 /**
@@ -59,16 +64,15 @@ export async function readOrgFormerUsernames(snowflakeService: SnowflakeService,
       `;
       return (await snowflakeService.execute<{ LF_USERNAME: string }>(query, [accountId])).rows.map((row) => row.LF_USERNAME);
     },
-    (value) => Array.isArray(value) && value.every((item) => typeof item === 'string')
+    isStringList
   );
 }
 
-/** A stored classification is an array of person-key rows classified current or former; anything else is a miss. */
-function isEmploymentRows(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (row: Partial<OrgPersonEmploymentRow> | null) => typeof row?.PERSON_KEY === 'string' && (row.EMPLOYMENT === 'current' || row.EMPLOYMENT === 'former')
-    )
-  );
+/** A stored classification holds both classes, each a list of person keys; anything else is a miss. */
+function isEmploymentKeys(value: unknown): boolean {
+  return !!value && typeof value === 'object' && 'current' in value && 'former' in value && isStringList(value.current) && isStringList(value.former);
+}
+
+function isStringList(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }

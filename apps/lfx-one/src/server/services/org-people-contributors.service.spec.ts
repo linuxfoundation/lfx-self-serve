@@ -535,7 +535,7 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
 });
 
 describe('OrgPeopleContributorsService employment filter (lfx-self-serve#4627)', () => {
-  const EMPLOYMENT_KEY = buildOrgCacheKey(ACCOUNT, 'people-employment:v1:365d:all')!;
+  const EMPLOYMENT_KEY = buildOrgCacheKey(ACCOUNT, 'people-employment:v2:365d:all')!;
 
   /** A code contributor the roster has no row for in the window and scope — neither current nor former. */
   const UNCLASSIFIED_ROW = {
@@ -624,24 +624,30 @@ describe('OrgPeopleContributorsService employment filter (lfx-self-serve#4627)',
     expect(cacheValues.has(EMPLOYMENT_KEY)).toBe(false);
   });
 
-  it('caches the classification under its own key and shares it, the rows and the roles between current and former', async () => {
+  it('caches the classification under its own key, as the person keys of each class, and shares it, the rows and the roles between current and former', async () => {
     await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
     const former = await service.getContributors(ACCOUNT, '365d', FILTERS, 'former');
 
-    expect(cacheValues.has(EMPLOYMENT_KEY)).toBe(true);
+    expect(JSON.parse(cacheValues.get(EMPLOYMENT_KEY)!)).toEqual({ current: ['person-one'], former: ['person-two'] });
     expect(readsOf('ORG_PEOPLE_ALL_RANGES')).toHaveLength(1);
     expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(1);
     expect(readsOf('ORG_MAINTAINER_ROLES')).toHaveLength(1);
     expect(former.contributors.map((row) => row.personKey)).toEqual(['person-two']);
   });
 
-  it('treats a stored classification that is not a list of classified person keys as a miss', async () => {
-    cacheValues.set(EMPLOYMENT_KEY, JSON.stringify([{ PERSON_KEY: 'person-two', EMPLOYMENT: true }]));
+  it.each([
+    ['the v1 named-field rows', [{ PERSON_KEY: 'person-two', EMPLOYMENT: 'former' }]],
+    ['a class missing', { current: ['person-one'] }],
+    ['a class that is not a list', { current: 'person-one', former: [] }],
+    ['a key that is not a string', { current: ['person-one'], former: [42] }],
+  ])('treats a stored classification with %s as a miss and reads it again', async (_case, stored) => {
+    cacheValues.set(EMPLOYMENT_KEY, JSON.stringify(stored));
 
     const response = await service.getContributors(ACCOUNT, '365d', FILTERS, 'current');
 
     expect(readsOf('ORG_PEOPLE_ALL_RANGES')).toHaveLength(1);
     expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one']);
+    expect(JSON.parse(cacheValues.get(EMPLOYMENT_KEY)!)).toEqual({ current: ['person-one'], former: ['person-two'] });
   });
 
   it('keeps the Maintainer roles tile unavailable when the roles table is missing', async () => {
