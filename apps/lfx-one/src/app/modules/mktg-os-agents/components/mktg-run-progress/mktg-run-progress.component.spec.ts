@@ -142,7 +142,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
     await fixture.whenStable();
     expect(text()).toContain('Synthetic access reason');
-    expect(text()).toContain('waiting for answers');
+    expect(text()).toContain('Waiting for your answers');
     expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(answer).toHaveBeenCalledOnce();
@@ -185,6 +185,34 @@ describe('MktgRunProgressComponent', () => {
     expect(answer).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([false, true])('keeps unavailable-questions guidance specific to its surface (run page: %s)', async (runPage) => {
+    await setup();
+    fixture.componentRef.setInput('runPage', runPage);
+    read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
+    await fixture.whenStable();
+    if (runPage) {
+      expect(text()).toContain('Answering needs project write access or the browser that started this run. Refresh progress to check again.');
+      expect(text()).not.toContain('Open the intake form');
+    } else {
+      expect(text()).toContain('Open the intake form to continue with an available questions block.');
+    }
+  });
+
+  it('never mounts public answering for a one-off row even if it carries pendingQuestions', async () => {
+    await setup();
+    const oneOff = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
+    if (!oneOff) throw new Error('Missing synthetic one-off type');
+    const documentId = 'run-' + 'e'.repeat(24);
+    fixture.componentRef.setInput('agentKey', oneOff.agentKey);
+    fixture.componentRef.setInput('documentId', documentId);
+    read.mockReturnValue(of({ ...detail([{ ...waiting, agentKey: oneOff.agentKey, documentId }]), type: oneOff, documentId }));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedRun()?.pendingQuestions).toEqual(waiting.pendingQuestions);
+    expect(fixture.nativeElement.querySelector('lfx-mktg-run-questions')).toBeNull();
+    fixture.componentInstance['onPublicAnswers']([]);
+    expect(answer).not.toHaveBeenCalled();
   });
 
   it('lets a matching private questions attempt win and never also posts publicly', async () => {
@@ -261,7 +289,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('available questions block');
+    expect(text()).toContain('Answering needs project write access or the browser that started this run. Refresh progress to check again.');
   });
 
   it('retains the last measured record on transient failure and fails closed on denied reads', async () => {

@@ -856,7 +856,7 @@ describe('MktgAgentRunComponent', () => {
           expect(open?.getAttribute('href')).toContain(`/mktg-os-agents/${agentId}?`);
         } else {
           expect(open?.textContent).toContain('Open it');
-          expect(open?.getAttribute('href')).toContain(`/mktg-os-agents/documents/${type.agentKey}/living?`);
+          expect(open?.getAttribute('href')).toContain(`/mktg-os-agents/${agentId}?`);
         }
         expect(query('mktg-run-waiting-continue')).toBeNull();
         expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, agentId)).toBeNull();

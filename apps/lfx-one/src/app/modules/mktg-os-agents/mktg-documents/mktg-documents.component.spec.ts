@@ -406,7 +406,7 @@ describe('MktgDocumentsComponent', () => {
   it.each(['writing', 'questions', 'storing', 'failed'] as const)('shows a %s recorded run without inventing a stored draft', async (state) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
-    await render();
+    await render('/?type=brand-kit&mode=new&questions=synthetic-old');
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
@@ -419,7 +419,12 @@ describe('MktgDocumentsComponent', () => {
       const entry = query('mktg-documents-nav-brand-kit');
       expect(entry?.textContent).toContain('Needs answers');
       expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
-      expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain(`/${BRAND_KIT.catalogAgentId}?`);
+      const startedHref = query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href');
+      expect(startedHref).toContain(`/${BRAND_KIT.catalogAgentId}?`);
+      const params = new URL(startedHref ?? '', 'http://localhost').searchParams;
+      expect(params.has('type')).toBe(false);
+      expect(params.has('mode')).toBe(false);
+      expect(params.has('questions')).toBe(false);
       expect(query('mktg-documents-pending-document')?.textContent).toContain(
         'use its Started runs link to follow progress, answer its questions or retry it.'
       );

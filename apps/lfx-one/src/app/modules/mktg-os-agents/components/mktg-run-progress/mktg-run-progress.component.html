@@ -90,7 +90,13 @@
       } @else {
         <p class="text-sm text-gray-600">The agent is waiting for answers.</p>
         @if (!answersError()) {
-          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Open the intake form to continue with an available questions block.</p>
+          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">
+            @if (runPage()) {
+              Answering needs project write access or the browser that started this run. Refresh progress to check again.
+            } @else {
+              Open the intake form to continue with an available questions block.
+            }
+          </p>
         }
       }
     } @else {
