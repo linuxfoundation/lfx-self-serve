@@ -1184,6 +1184,15 @@ export interface CampaignImplementationDraft {
    */
   googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
+   * Google's audience segments, as the user-list resource names the operator entered — already
+   * trimmed, because an entry only becomes a chip once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
+   * saved under a non-Search channel is kept rather than discarded. Typed by hand like
+   * {@link googleStructuredSnippets}, so it shares their shorter lifetime.
+   */
+  googleAudienceSegments?: string[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -2513,6 +2522,17 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   structuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * The existing Google Ads user lists the Search ad group targets, as full resource names
+   * (`customers/{customerId}/userLists/{id}`, see `GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN`).
+   *
+   * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
+   * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
+   * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
+   * upstream refuses the create on any other channel, so the UI withholds the list there and the BFF
+   * refuses it by name.
+   */
+  audienceSegments?: string[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *

@@ -452,6 +452,80 @@
       }
 
       <!--
+        Google Ads: audience segments.
+
+        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
+        to the Search ad group and refuses them on every other channel rather than dropping them.
+        Each entry is an EXISTING user list's resource name: campaign-service creates no audiences
+        and lists none, so there is nothing to pick from. Empty sends no key, so an untouched
+        section changes nothing about the campaign.
+      -->
+      @if (googleAudienceSegmentsAvailable()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-audience-segments-section">
+          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
+            Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
+          </label>
+          <div class="flex flex-wrap items-center gap-2">
+            @for (segment of googleAudienceSegments(); track segment; let i = $index) {
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                {{ segment }}
+                <button
+                  type="button"
+                  (click)="removeGoogleAudienceSegment(i)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + segment"
+                  [attr.data-testid]="'implementation-google-audience-segment-remove-' + i">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            @if (!googleAudienceSegmentsFull()) {
+              <!-- Free text, as the callout box is: the resource name is the input, and its shape is
+                   judged on add so a refusal arrives while the text is still in the box. -->
+              <input
+                id="google-audience-segment-add"
+                type="text"
+                placeholder="+ Add user list resource name"
+                [value]="googleAudienceSegmentDraft()"
+                (input)="onGoogleAudienceSegmentDraftInput($event)"
+                (change)="onGoogleAudienceSegmentAdd($event)"
+                (keydown.enter)="onGoogleAudienceSegmentAdd($event); $event.preventDefault()"
+                [attr.aria-invalid]="googleAudienceSegmentDraftError() ? 'true' : null"
+                [attr.aria-describedby]="googleAudienceSegmentDraftErrorId()"
+                class="rounded-md border border-dashed border-blue-300 bg-white px-3 py-1.5 text-xs text-blue-600 placeholder:text-blue-400"
+                data-testid="implementation-google-audience-segment-add" />
+            } @else {
+              <span class="text-xs text-gray-500" data-testid="implementation-google-audience-segments-full">
+                Maximum of {{ googleMaxAudienceSegments }} audience segments reached — remove one to add another.
+              </span>
+            }
+          </div>
+          @if (googleAudienceSegmentDraftError() === 'custom') {
+            <p id="google-audience-segment-custom" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-custom">
+              Custom audiences cannot target a Search campaign — only user lists can. Enter a user list resource name, like
+              customers/1234567890/userLists/987654321, instead.
+            </p>
+          } @else if (googleAudienceSegmentDraftError() === 'shape') {
+            <p id="google-audience-segment-shape" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-shape">
+              Enter a user list's full resource name, like customers/1234567890/userLists/987654321 — the customer id without dashes.
+            </p>
+          } @else if (googleAudienceSegments().length === 0) {
+            <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-audience-segments-default">
+              No audience segments added — this campaign targets no user lists.
+            </span>
+          }
+        </div>
+      }
+
+      <!-- Segments entered under Search and withheld after a switch: said out loud, as the languages are. -->
+      @if (googleAudienceSegmentsWithheldOn(); as channelLabel) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-audience-segments-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take audience segments, so the
+          {{ googleAudienceSegments().length }} you added will not be sent. Switch back to Search to keep them.
+        </p>
+      }
+
+      <!--
         Callouts and sitelinks withheld because the create capability is not an explicit yes — the
         state in which the two channel warnings below cannot speak, because the channel they read is
         itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is

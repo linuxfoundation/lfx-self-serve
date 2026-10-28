@@ -57,7 +57,9 @@ import {
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
@@ -72,6 +74,7 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
+  GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -82,6 +85,7 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
@@ -928,6 +932,24 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
   /**
+   * Google's audience segments — existing Customer Match or remarketing user lists the Search ad
+   * group targets, as full resource names (`customers/{customerId}/userLists/{id}`).
+   *
+   * Free text rather than a select, unlike {@link googleGeoOptions}, because there is nothing to
+   * enumerate from: campaign-service creates no audiences and exposes no listing of an account's
+   * user lists — its Google audience read is an age/gender/device breakdown, and the brief's
+   * audience rows are HubSpot lists. The resource name is what upstream takes, so it is the input.
+   * Its SHAPE is what upstream judges, and that judgement is mirrored on the add path.
+   */
+  protected readonly googleAudienceSegments = signal<string[]>([]);
+  protected readonly googleMaxAudienceSegments = GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS;
+  /**
+   * The segment box's live text, so the shape warning describes what is in the box rather than
+   * what was last committed. Transient: it reaches the draft only when a segment is ADDED, exactly
+   * as {@link googleCalloutDraft} does.
+   */
+  protected readonly googleAudienceSegmentDraft = signal('');
+  /**
    * Google's callout extensions — short claims appended to the Search ad, each carrying no link.
    *
    * Free text rather than a closed list, the opposite choice from {@link googleGeoOptions} and for
@@ -1354,6 +1376,28 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
+
+  /**
+   * Why the text in the segment box would be refused, or `null` when it is blank or well formed.
+   *
+   * `validateAudienceSegments`' per-entry branches, after Go's trim: a custom audience is named for
+   * what it is — upstream parses it and refuses it on Search — and anything else that is not a
+   * `.../userLists/{id}` resource name is refused as unrecognized. A repeat is not here: upstream
+   * collapses it rather than refusing, so the add simply declines to chip it twice.
+   */
+  protected readonly googleAudienceSegmentDraftError = computed<'custom' | 'shape' | null>(() => {
+    const trimmed = googleAdsTrimSpace(this.googleAudienceSegmentDraft());
+    if (trimmed === '' || GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return null;
+    return GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN.test(trimmed) ? 'custom' : 'shape';
+  });
+
+  /** The id of the message line describing the segment box, for `aria-describedby`, or `null`. */
+  protected readonly googleAudienceSegmentDraftErrorId = computed<string | null>(() => {
+    const error = this.googleAudienceSegmentDraftError();
+    return error ? `google-audience-segment-${error}` : null;
+  });
+
+  protected readonly googleAudienceSegmentsFull = computed(() => this.googleAudienceSegments().length >= GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS);
 
   /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
   protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
@@ -1999,6 +2043,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
+  protected readonly googleAudienceSegmentsAvailable: Signal<boolean> = this.initGoogleAudienceSegmentsAvailable();
+  protected readonly googleAudienceSegmentsWithheldOn: Signal<string | null> = this.initGoogleAudienceSegmentsWithheldOn();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -2613,6 +2659,51 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Add one audience segment, reporting whether it was actually added.
+   *
+   * Each refusal mirrors upstream's `validateAudienceSegments` (`internal/platform/googleads/
+   * targeting.go`), so a segment that becomes a chip is one the create will accept:
+   *   - CAP: upstream compares the RAW list length first, so the cap is the door here too.
+   *   - BLANK: never chipped. Upstream refuses an empty entry, which would cost the whole create.
+   *   - SHAPE: only `customers/{id}/userLists/{id}` is attached; a custom audience or any other
+   *     resource name is refused upstream, so it stays in the box with its warning beside it.
+   *   - REPEAT: declined quietly. Upstream collapses a repeat rather than refusing it, so a second
+   *     chip would show the operator a segment the request does not carry twice.
+   *
+   * Trimmed with Go's rules ({@link googleAdsTrimSpace}), as the callout add is. The BOOLEAN keeps
+   * the text in the box on a refusal, the same contract as {@link addGoogleCallout}.
+   */
+  protected addGoogleAudienceSegment(text: string): boolean {
+    if (this.googleAudienceSegments().length >= GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) return false;
+    const trimmed = googleAdsTrimSpace(text);
+    if (!GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return false;
+    if (this.googleAudienceSegments().includes(trimmed)) return false;
+    this.googleAudienceSegments.update((segments) => [...segments, trimmed]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleAudienceSegmentDraftInput(event: Event): void {
+    // Draft text only — no `emitDraft()`, exactly as the callout box: it reaches the draft when the
+    // segment is ADDED.
+    this.googleAudienceSegmentDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onGoogleAudienceSegmentAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    // Cleared ONLY on success, so a refused resource name stays in the box with its warning.
+    if (this.addGoogleAudienceSegment(input.value)) {
+      input.value = '';
+      this.googleAudienceSegmentDraft.set('');
+    }
+  }
+
+  protected removeGoogleAudienceSegment(index: number): void {
+    this.googleAudienceSegments.update((segments) => segments.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
    * Add one callout, reporting whether it was actually added.
    *
    * Every refusal below is one branch of upstream's `validateCallouts`
@@ -2907,6 +2998,9 @@ export class ImplementationTabComponent implements OnInit {
       // The language narrowing, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is one upstream accepts campaign languages on.
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
+      // The audience segments, Google-gated for the same reason, and already withheld unless the
+      // dispatched channel is Search, the one channel upstream attaches audience criteria on.
+      ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
       // The callout extensions, Google-gated for the same reason the creative and the bidding plan
       // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
       // extensions on.
@@ -3469,6 +3563,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleLanguages !== undefined) {
       this.googleLanguages.set([...draft.googleLanguages]);
     }
+    // Copied on the same rule, and restored whatever the channel selection is: the section and
+    // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
+    // restored under a non-Search channel is held, not sent.
+    if (draft.googleAudienceSegments !== undefined) {
+      this.googleAudienceSegments.set([...draft.googleAudienceSegments]);
+    }
     // Copied on the same rule, and restored WHATEVER channel the draft was saved under: the section
     // and the payload both gate on the dispatched channel, so a list restored under Performance Max
     // is held rather than sent, and is still there if the operator switches back to Search.
@@ -3656,6 +3756,7 @@ export class ImplementationTabComponent implements OnInit {
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
       googleLanguages: [...this.googleLanguages()],
+      googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
       googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
@@ -4259,6 +4360,35 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * Whether the request will carry audience segments: the dispatched channel is one in
+   * {@link GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS}, which is Search alone.
+   *
+   * Built on `googleBiddingChannel` for the reason {@link initGoogleLanguagesChannel} is — it is
+   * already the channel the REQUEST will carry, null on the legacy road, whose in-process creator
+   * reads nothing on `googleAdsConfig`. Upstream REFUSES audience segments off Search rather than
+   * dropping them, so the section and `googleAudienceSegmentsPayload` both open on this one signal.
+   */
+  private initGoogleAudienceSegmentsAvailable(): Signal<boolean> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      return channel !== null && (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
+    });
+  }
+
+  /**
+   * The label of the channel an entered segment list is being WITHHELD on, or null when nothing is
+   * — the audience twin of {@link initGoogleLanguagesWithheldOn}, on the same terms: non-null only
+   * on a dispatched channel that takes no segments, with segments entered.
+   */
+  private initGoogleAudienceSegmentsWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel || this.googleAudienceSegmentsAvailable() || this.googleAudienceSegments().length === 0) return null;
       return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
     });
   }
@@ -4902,6 +5032,20 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleLanguagesChannel()) return {};
     const languages = this.googleLanguages();
     return languages.length > 0 ? { languages: [...languages] } : {};
+  }
+
+  /**
+   * The audience segments as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gated by `googleAudienceSegmentsAvailable`, the SAME computed the section opens on, so a list
+   * entered under Search and then left behind by a channel switch is withheld rather than forwarded
+   * into a refusal. Omitted rather than sent empty, by the absent-key route every caller predating
+   * the field takes.
+   */
+  private googleAudienceSegmentsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleAudienceSegmentsAvailable()) return {};
+    const segments = this.googleAudienceSegments();
+    return segments.length > 0 ? { audienceSegments: [...segments] } : {};
   }
 
   /**

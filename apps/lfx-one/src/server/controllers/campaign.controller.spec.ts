@@ -1308,6 +1308,10 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized callout list', { callouts: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `c-${i}`) }],
     ['an oversized callout, which would otherwise reach the trim', { callouts: [`x${' '.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}x`] }],
     [
+      'an oversized audience segment list',
+      { audienceSegments: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `customers/1/userLists/${i}`) },
+    ],
+    [
       'an oversized sitelink list',
       { sitelinks: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ text: `s-${i}`, finalUrl: 'https://x.example' })) },
     ],
@@ -4378,6 +4382,125 @@ describe('CampaignController.createCampaign cutover', () => {
     const error = refusalFrom();
     expect(error.field).toBe(field);
     expect(error.message).toContain(expected);
+  });
+
+  /**
+   * The audience segment guards, one test per branch of upstream's `validateAudienceSegments`
+   * (`internal/platform/googleads/targeting.go`) plus its Search-only fence, and the accept-cases
+   * that keep them from over-refusing. Each runs before the budget mutate upstream, so each would
+   * otherwise cost the whole campaign as the orchestrator's opaque "platform campaign creation failed".
+   */
+  const SEGMENTS_20 = Array.from({ length: 20 }, (_, i) => `customers/1234567890/userLists/${i + 1}`);
+
+  it("dispatches the segments inside googleAdsConfig as audienceSegments, trimmed with Go's rules", async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a1', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: ['\u00a0customers/1234567890/userLists/111\u0085', 'customers/1234567890/userLists/222'] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const sent = envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>;
+    expect(sent['audienceSegments']).toEqual(['customers/1234567890/userLists/111', 'customers/1234567890/userLists/222']);
+    // Under googleAdsConfig only: no other platform config carries Google's resource names.
+    expect(envelopeFor(createCampaigns)).not.toHaveProperty('audienceSegments');
+  });
+
+  it('dispatches a list of 20 segments, and a repeat, which upstream collapses rather than refuses', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a2', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: [...SEGMENTS_20.slice(0, 19), SEGMENTS_20[0]] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['audienceSegments']).toHaveLength(20);
+  });
+
+  it('refuses a 21-segment list even when the 21st is a repeat, because upstream caps the raw list', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ audienceSegments: [...SEGMENTS_20, SEGMENTS_20[0]] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain('21');
+  });
+
+  it.each([
+    ['a blank entry beside a valid one', ['customers/1/userLists/2', '  '], 'blank entry (segment 2)'],
+    ['a custom audience, which upstream parses and refuses on Search', ['customers/1/customAudiences/2'], 'custom audience'],
+    ['a customer id written with dashes', ['customers/123-456-7890/userLists/2'], 'not a user list resource name'],
+    ['a bare id', ['2'], 'not a user list resource name'],
+    ['an interest category', ['customers/1/userInterests/80'], 'not a user list resource name'],
+    ['a bare string', 'customers/1/userLists/2', 'must be a list'],
+    ['a list holding a number', ['customers/1/userLists/2', 123], 'must be a list'],
+    ['a list holding null', [null], 'must be a list'],
+  ])('refuses %s by name rather than dropping it', async (_label, audienceSegments, expected) => {
+    await controller.createCampaign(buildReq(googleBody({ audienceSegments } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['demand-gen', 'Demand Gen'],
+    ['performance-max', 'Performance Max'],
+    ['display', 'Display'],
+  ])('refuses segments on %s by name, because upstream refuses the whole create there', async (channel, label) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: [channel], audienceSegments: ['customers/1/userLists/2'] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(label);
+  });
+
+  it.each([
+    ['the cap before a bad entry', { audienceSegments: [...SEGMENTS_20, 'nope'] }, '21'],
+    ['the first bad entry', { audienceSegments: ['customers/1/customAudiences/2', 'nope'] }, 'custom audience'],
+    [
+      'a bad entry before the channel, as upstream validates before it fences',
+      { campaignTypes: ['demand-gen'], audienceSegments: ['nope'] },
+      'not a user list',
+    ],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, expected) => {
+    await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const error = refusalFrom();
+    expect(error.field).toBe('audienceSegments');
+    expect(error.message).toContain(expected);
+  });
+
+  it.each([
+    ['an absent segment list', {}],
+    ['an empty segment list', { audienceSegments: [] }],
+    ['a null segment list, which the Go decode reads as absent', { audienceSegments: null }],
+  ])('omits the audienceSegments key entirely for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a3', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('audienceSegments');
   });
 
   it.each([

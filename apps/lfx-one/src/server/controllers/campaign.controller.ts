@@ -69,6 +69,7 @@ import {
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
@@ -77,6 +78,7 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_AD_SCHEDULES,
   GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
@@ -101,11 +103,13 @@ import {
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
+  GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
@@ -1190,6 +1194,48 @@ export class CampaignController {
         if (genderRefusal) {
           next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
+        }
+      }
+
+      // Audience segments, in `validateAudienceSegments`' own order: JSON decode, the cap on the RAW
+      // list, then each entry, first bad one wins — and only THEN the Search-only fence, because
+      // upstream validates the list in `precomputeAdGroupAdInputs` before `preflightCampaignKind`
+      // refuses it off Search. Each would otherwise fail in Go as the opaque "platform campaign
+      // creation failed". A repeat is not refused: upstream collapses it.
+      const rawAudienceSegments = body?.audienceSegments;
+      if (cutoverOn && platforms.includes('google-ads') && rawAudienceSegments !== undefined && rawAudienceSegments !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('audienceSegments', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // Upstream decodes `audienceSegments` into a Go `[]string`, so either fault is refused there
+        // before any validator runs. Reading it as absent would create the campaign untargeted.
+        if (!Array.isArray(rawAudienceSegments) || rawAudienceSegments.some((s) => typeof s !== 'string')) {
+          refuse('Google Ads audience segments must be a list of user list resource names.');
+          return;
+        }
+        const segments = this.googleAudienceSegmentList(rawAudienceSegments);
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (segments.length > 0 && typeof googleChannel === 'string') {
+          if (segments.length > GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS} audience segments on one campaign, and this one has ${segments.length}. Remove some and create again.`
+            );
+            return;
+          }
+          for (const [index, segment] of segments.entries()) {
+            const refusal = this.googleAudienceSegmentRefusal(segment, index);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
+          }
+          // REFUSED by name, not withheld: upstream fails the whole create on any channel but
+          // Search. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts audience segments on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the segments or pick Search, then create again.`
+            );
+            return;
+          }
         }
       }
 
@@ -4614,10 +4660,8 @@ export class CampaignController {
    * `<platform>Config` object, because the legacy path had a dedicated Google endpoint. Every
    * field below is one the dispatcher reads from `config` and cannot recover from the stored
    * brief: sending nothing creates a campaign with no budget and an ad group with no criteria,
-   * which per `googleAdsConfig.Keywords` "can never serve". The dispatcher's remaining optional
-   * fields are omitted because this request has no source for them — `audienceSegments` expects
-   * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
-   * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
+   * which per `googleAdsConfig.Keywords` "can never serve". `adoptExisting` is omitted because it
+   * must default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
    *
    * Budget depends on WHICH channel this config is for, and the two cases differ.
    *
@@ -4801,6 +4845,8 @@ export class CampaignController {
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
     const sitelinks = this.googleSitelinks(body);
+    // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
+    const audienceSegments = this.googleAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
     const structuredSnippets = this.googleStructuredSnippets(body);
 
@@ -4835,10 +4881,51 @@ export class CampaignController {
       ...this.googleDeviceBidModifiers(body, 'search'),
       ...this.googleDemographicExclusions(body, 'search'),
       ...searchLanguages,
+      ...audienceSegments,
       ...callouts,
       ...sitelinks,
       ...structuredSnippets,
     };
+  }
+
+  /**
+   * The Search ad group's audience segments, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, so only the Search branch calls it: `createCampaign` refuses segments on any other
+   * channel by name, because upstream fails the whole create there. Omitted rather than sent empty,
+   * the absent-key route every caller predating the field takes.
+   */
+  private googleAudienceSegments(body: CampaignCreateRequest): { audienceSegments?: string[] } {
+    const clean = this.googleAudienceSegmentList(body?.audienceSegments);
+    return clean.length > 0 ? { audienceSegments: clean } : {};
+  }
+
+  /**
+   * The segment list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * each trimmed with Go's rules as `validateAudienceSegments` trims it. Blanks are KEPT so they are
+   * refused by name, and repeats are kept for upstream to collapse.
+   */
+  private googleAudienceSegmentList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((s): s is string => typeof s === 'string').map((s) => googleAdsTrimSpace(s));
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed segment list, or `null` when it would not.
+   *
+   * `validateAudienceSegments`' per-entry branches in order: blank, then a resource name that is not
+   * `customers/{id}/userLists/{id}`, with a well-formed custom audience named for what it is —
+   * upstream parses one and refuses it on Search. The echo is cut short: the text comes from an
+   * unvalidated body.
+   */
+  private googleAudienceSegmentRefusal(segment: string, index: number): string | null {
+    if (segment === '') return `Google Ads audience segments cannot include a blank entry (segment ${index + 1}). Remove it and create again.`;
+    if (GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(segment)) return null;
+    const shown = googleAdsEchoed(segment);
+    if (GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN.test(segment)) {
+      return `Google Ads cannot target the custom audience ${shown} on a Search campaign — only user lists are accepted. Replace it with a user list and create again.`;
+    }
+    return `The Google Ads audience segment ${shown} is not a user list resource name. Use the form customers/{customerId}/userLists/{id}, with the customer id written without dashes, and create again.`;
   }
 
   /**
@@ -5020,6 +5107,7 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
+    candidates.push(['audienceSegments', raw['audienceSegments']]);
     // The geo lists, the ad schedules and the three criteria lists are bounded here and not only by
     // their own caps further down, because `createConfigEnvelope` runs BEFORE those caps and
     // normalizes whatever it is handed — `googleProximityList`, `googleAdScheduleList` and
