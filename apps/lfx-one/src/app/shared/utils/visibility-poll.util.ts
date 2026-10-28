@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { VisibilityPollEvent, VisibilityPollOptions } from '@lfx-one/shared/interfaces';
-import { defer, EMPTY, expand, fromEvent, map, Observable, of, startWith, switchMap, timer, catchError } from 'rxjs';
+import { defer, EMPTY, expand, fromEvent, map, merge, Observable, of, startWith, switchMap, timer, catchError } from 'rxjs';
 
 /** Capped exponential backoff: base, 2×base, 4×base … never above `maxMs`. */
 export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: number): number {
@@ -13,7 +13,8 @@ export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: numb
  * Visibility-aware poller: `timer` + sequential `expand`, so a slow response can never overlap the next request.
  * @description Polls immediately, then every `intervalMs` while `document.visibilityState === 'visible'`. A hidden tab
  * cancels the pending timer and any in-flight request; the next `visible` event fetches immediately and restarts the
- * loop (including after `shouldContinue` stopped it — that is how a reopened vote is noticed). Failures never end the
+ * loop (including after `shouldContinue` stopped it — that is how a reopened vote is noticed). Window focus also
+ * rechecks immediately when visible. Failures never end the
  * stream: they emit an `error` event and retry on capped exponential backoff, so recovery needs no reload.
  *
  * Browser-only: callers must not subscribe during SSR (`document` is passed in, never read from a global, so a server
@@ -22,7 +23,7 @@ export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: numb
 export function createVisibilityPoll<T>(doc: Document, fetch: () => Observable<T>, options: VisibilityPollOptions<T>): Observable<VisibilityPollEvent<T>> {
   const { intervalMs, backoffBaseMs, backoffMaxMs, shouldContinue = () => true } = options;
 
-  const visible$ = fromEvent(doc, 'visibilitychange').pipe(
+  const visible$ = merge(fromEvent(doc, 'visibilitychange'), doc.defaultView ? fromEvent(doc.defaultView, 'focus') : EMPTY).pipe(
     startWith(null),
     map(() => doc.visibilityState === 'visible')
   );

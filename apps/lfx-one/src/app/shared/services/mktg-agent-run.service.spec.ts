@@ -358,9 +358,13 @@ describe('MktgAgentRunService', () => {
     expect(service.canRetryActiveConflict(retained)).toBe(true);
     expect(JSON.stringify({ ...localStorage })).not.toContain('Synthetic retained bytes.');
     const originalBody = httpPost.mock.calls[0][1];
+    httpPost.mockReturnValueOnce(throwError(() => failure));
+    service.recheckActiveConflict(retained).subscribe({ error });
+    expect(httpPost.mock.calls[1][1]).toEqual(originalBody);
+    expect(httpPost.mock.calls[1][1]).not.toHaveProperty('discard');
     httpPost.mockReturnValueOnce(of({ sessionId: 'synthetic-new-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) }));
     const retry = service.generate(retained, conflict.activeRunId).subscribe();
-    expect(httpPost.mock.calls[1][1]).toEqual({ ...originalBody, discard: conflict.activeRunId });
+    expect(httpPost.mock.calls[2][1]).toEqual({ ...originalBody, discard: conflict.activeRunId });
     retry.unsubscribe();
   });
 
