@@ -2032,6 +2032,139 @@ export const GOOGLE_ADS_MIN_SNIPPET_VALUES = 3;
 export const GOOGLE_ADS_MAX_SNIPPET_VALUES = 10;
 
 /**
+ * Upstream's own bound on a Google Ads call-extension list (`assets_extended.go`'s
+ * `maxCallExtensions`), checked on the raw slice before any entry is inspected — the same shape as
+ * {@link GOOGLE_ADS_MAX_CALLOUTS}.
+ *
+ * Upstream calls this "a bound on this request's payload, not an upstream limit", and so does this
+ * mirror: Google's own per-campaign ceiling is higher. Refusing past it here refuses exactly what
+ * campaign-service refuses, which is the only line this constant exists to hold.
+ */
+export const GOOGLE_ADS_MAX_CALL_EXTENSIONS = 20;
+
+/**
+ * Upstream's ceiling on the characters of a call extension's phone number
+ * (`assets_extended.go`'s `maxPhoneNumberRunes`), in RUNES.
+ *
+ * A payload ceiling, not a format rule: Google validates the number against its country and
+ * neither upstream nor this app tries to, so the only other checks are the loose character set and
+ * the digit floor below.
+ */
+export const GOOGLE_ADS_MAX_PHONE_NUMBER_RUNES = 35;
+
+/**
+ * The fewest digits upstream accepts in a phone number (`assets_extended.go`'s `minPhoneDigits`).
+ *
+ * Four is below any real number anywhere, which is the point: it catches an empty or
+ * punctuation-only "number" without taking a position on national formats.
+ */
+export const GOOGLE_ADS_MIN_PHONE_DIGITS = 4;
+
+/**
+ * Every character a call extension's phone number may contain (`assets_extended.go`'s
+ * `phoneAllowedRE`). Letters are refused because Google rejects vanity numbers on call assets.
+ */
+export const GOOGLE_ADS_PHONE_NUMBER_PATTERN = /^[0-9+\-(). ]+$/;
+
+/**
+ * Upstream's own bound on a Google Ads promotion list (`assets_extended.go`'s
+ * `maxPromotionExtensions`) — a payload bound, as {@link GOOGLE_ADS_MAX_CALL_EXTENSIONS} is.
+ */
+export const GOOGLE_ADS_MAX_PROMOTIONS = 20;
+
+/**
+ * Upstream's bound on what a promotion says is on sale (`maxPromotionTargetRunes`), in RUNES.
+ * Count it with the spread — see {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES}.
+ */
+export const GOOGLE_ADS_MAX_PROMOTION_TARGET_RUNES = 25;
+
+/** Upstream's bound on a promotion's coupon code (`maxPromotionCodeRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PROMOTION_CODE_RUNES = 20;
+
+/**
+ * How a human percentage becomes Google's `PromotionAsset.percent_off` (`percentOffScale`), where
+ * 1,000,000 means 100%: 25% is 250,000.
+ *
+ * Mirrored only so a percentage that ROUNDS to zero is refused here as it is upstream. The wire
+ * carries the human percentage (`discountPercent: 25`); campaign-service does the scaling.
+ */
+export const GOOGLE_ADS_PERCENT_OFF_SCALE = 10_000;
+
+/**
+ * Upstream's own bound on a Google Ads price-extension list (`maxPriceExtensions`) — a payload
+ * bound, at half the count of {@link GOOGLE_ADS_MAX_PROMOTIONS}.
+ */
+export const GOOGLE_ADS_MAX_PRICE_EXTENSIONS = 10;
+
+/**
+ * How many rows one price extension must carry (`minPriceOfferings`), and the most it may
+ * (`maxPriceOfferings`). These two ARE Google's own: a price table of two rows or of nine is refused
+ * by Google, not just by campaign-service.
+ */
+export const GOOGLE_ADS_MIN_PRICE_OFFERINGS = 3;
+export const GOOGLE_ADS_MAX_PRICE_OFFERINGS = 8;
+
+/** Upstream's bound on a price row's header (`maxPriceHeaderRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PRICE_HEADER_RUNES = 25;
+
+/** Upstream's bound on a price row's description (`maxPriceDescRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PRICE_DESCRIPTION_RUNES = 25;
+
+/**
+ * The ceiling on any money amount a promotion or price row carries, in whole currency units —
+ * upstream's `validateMoney` reuses the campaign budget's own `maxBudget` for it.
+ */
+export const GOOGLE_ADS_MAX_ASSET_AMOUNT = 1_000_000_000;
+
+/**
+ * The shape every Google enum name has (`assets_extended.go`'s `enumShapeRE`): upper-case ASCII,
+ * digits and underscores, starting with a letter.
+ *
+ * A SHAPE test and never a membership test, for the reason {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}
+ * gives for snippet headers: Google adds occasions, price types, qualifiers and units without
+ * campaign-service's involvement, and a hardcoded list would refuse a create Google accepts. The
+ * Implementation tab's selects offer the lists below; the BFF judges only this shape.
+ */
+export const GOOGLE_ADS_ENUM_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+
+/** The ISO 4217 shape upstream's `currencyCodeRE` checks, after it upper-cases the code. */
+export const GOOGLE_ADS_CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+/**
+ * The language-tag shape upstream's `languageCodeRE` checks — loose on purpose, so `en`, `pt-BR`
+ * and `zh-Hant` all pass.
+ */
+export const GOOGLE_ADS_ASSET_LANGUAGE_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+/**
+ * The `YYYY-MM-DD` shape upstream's `campaignDateRE` checks on a promotion's serving and redemption
+ * dates, before it parses them as calendar dates. ASCII digits only, as Go's `\d` is.
+ */
+export const GOOGLE_ADS_ASSET_DATE_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+/**
+ * Google's `PriceExtensionType` names, for the Implementation tab's type select. The BFF does not
+ * test membership — see {@link GOOGLE_ADS_ENUM_NAME_PATTERN}.
+ */
+export const GOOGLE_ADS_PRICE_TYPES = [
+  'BRANDS',
+  'EVENTS',
+  'LOCATIONS',
+  'NEIGHBORHOODS',
+  'PRODUCT_CATEGORIES',
+  'PRODUCT_TIERS',
+  'SERVICES',
+  'SERVICE_CATEGORIES',
+  'SERVICE_TIERS',
+] as const;
+
+/** Google's `PriceExtensionPriceQualifier` names, optional on a price extension. */
+export const GOOGLE_ADS_PRICE_QUALIFIERS = ['FROM', 'UP_TO', 'AVERAGE'] as const;
+
+/** Google's `PriceExtensionPriceUnit` names, optional on each price row. */
+export const GOOGLE_ADS_PRICE_UNITS = ['PER_HOUR', 'PER_DAY', 'PER_WEEK', 'PER_MONTH', 'PER_YEAR', 'PER_NIGHT'] as const;
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
@@ -3653,8 +3786,9 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
- * The Google channels that accept campaign ad extensions — callouts, and the six other extension
- * types this application does not collect yet.
+ * The Google channels that accept campaign ad extensions — the six this application collects
+ * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
+ * does not collect yet.
  *
  * Search and nothing else, and upstream is categorical about it: `validateAssetPlan`
  * (`internal/platform/googleads/assets.go`) refuses the whole extension set with "supported on
