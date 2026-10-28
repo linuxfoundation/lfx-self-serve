@@ -68,6 +68,8 @@ for (const width of [1440, 1280, 390]) {
       return {
         cardRight: card.right,
         createRight: create.getBoundingClientRect().right,
+        createCenterY: (create.getBoundingClientRect().top + create.getBoundingClientRect().bottom) / 2,
+        downloadCenterY: (download.getBoundingClientRect().top + download.getBoundingClientRect().bottom) / 2,
         downloadLeft: download.getBoundingClientRect().left,
         downloadRight: download.getBoundingClientRect().right,
         follows: !!(create.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING),
@@ -75,7 +77,10 @@ for (const width of [1440, 1280, 390]) {
     });
     expect(positions.follows).toBe(true);
     expect(positions.downloadRight).toBeLessThanOrEqual(positions.cardRight);
-    if (width >= 1280) expect(positions.downloadLeft).toBeGreaterThanOrEqual(positions.createRight);
+    if (width >= 1280) {
+      expect(positions.downloadLeft).toBeGreaterThanOrEqual(positions.createRight);
+      expect(Math.abs(positions.createCenterY - positions.downloadCenterY)).toBeLessThanOrEqual(1);
+    }
     // The wrapper has no selected-label/placeholder hook; only these internal classes distinguish the two visual states.
     for (const id of ['member-360-tier', 'member-360-owner']) {
       await expect(page.getByTestId(id).locator('.p-select-label')).toHaveText('All');
