@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, MKTG_INTAKE_LINK_ADVICE } from '@lfx-one/shared/constants';
 import { MktgDocumentExtractResponse, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -61,8 +61,8 @@ describe('MktgIntakeDocumentsComponent', () => {
     fixture.componentRef.setInput('earlierUrls', [url]);
     component['linkForm'].controls.url.setValue(url + '/?usp=sharing');
     await fixture.whenStable();
-    expect(host().querySelector('[data-testid="mktg-intake-documents-link-warning"]')?.textContent).toContain('This link is already added above.');
-    expect(host().textContent).toContain("We can't open private Google Drive links or folders.");
+    expect(host().querySelector('[data-testid="mktg-intake-documents-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(host().textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
     expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-intake-documents-add-link"] button')?.disabled).toBe(false);
     component['onAddLink']();
     fixture.componentRef.setInput('earlierUrls', []);
@@ -71,7 +71,7 @@ describe('MktgIntakeDocumentsComponent', () => {
     await fixture.whenStable();
     expect(component.documents()).toHaveLength(2);
     expect(component['linkWarnings']()[component.documents()[0].id]).not.toContain('already added');
-    expect(component['linkWarnings']()[component.documents()[1].id]).toContain('This link is already added above.');
+    expect(component['linkWarnings']()[component.documents()[1].id]).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
     expect(host().querySelectorAll('[data-testid^="mktg-intake-documents-warning-"]')).toHaveLength(2);
     expect(component['linkForm'].valid).toBe(true);
   });

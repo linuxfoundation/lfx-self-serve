@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_INTAKE_LINK_ADVICE } from '../constants/mktg-intake-link-advice.constants';
+
 /** Client heuristic only: sharing permissions cannot be inferred from a URL. */
 export function describeMktgLinkAdvice(value: string): 'drive-folder' | 'drive-private' | null {
   try {
@@ -29,18 +31,6 @@ export function normalizeMktgLink(value: string): string {
   }
 }
 
-/** Returns normalized links that occur more than once; blanks/non-links never duplicate. */
-export function findDuplicateLinks(urls: string[]): Set<string> {
-  const seen = new Set<string>();
-  return new Set(
-    urls.map(normalizeMktgLink).filter((url) => {
-      const duplicate = seen.has(url);
-      seen.add(url);
-      return !!url && duplicate;
-    })
-  );
-}
-
 /** Ordered fields/lines: only a later occurrence says it is already added above. */
 export function mktgLinkWarnings(values: Record<string, string>, earlierUrls: string[] = []): Record<string, string> {
   const seen = new Set(earlierUrls.map(normalizeMktgLink).filter(Boolean));
@@ -49,8 +39,8 @@ export function mktgLinkWarnings(values: Record<string, string>, earlierUrls: st
       const warnings = value.split(/\r?\n/).flatMap((line) => {
         const normalized = normalizeMktgLink(line);
         const messages: string[] = [];
-        if (describeMktgLinkAdvice(line)) messages.push("We can't open private Google Drive links or folders. Share the document publicly, or paste its text.");
-        if (normalized && seen.has(normalized)) messages.push('This link is already added above.');
+        if (describeMktgLinkAdvice(line)) messages.push(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+        if (normalized && seen.has(normalized)) messages.push(MKTG_INTAKE_LINK_ADVICE.duplicate);
         if (normalized) seen.add(normalized);
         return messages;
       });

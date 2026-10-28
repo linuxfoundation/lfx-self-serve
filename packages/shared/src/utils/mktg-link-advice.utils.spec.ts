@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { describeMktgLinkAdvice, findDuplicateLinks, mktgLinkWarnings, normalizeMktgLink } from './mktg-link-advice.utils';
+import { MKTG_INTAKE_LINK_ADVICE } from '../constants/mktg-intake-link-advice.constants';
+import { describeMktgLinkAdvice, mktgLinkWarnings, normalizeMktgLink } from './mktg-link-advice.utils';
 
 describe('Marketing intake link advice', () => {
   it.each(['/drive/folders/synthetic', '/drive/u/2/folders/synthetic'])('recognizes Drive folder %s', (path) => {
@@ -31,24 +32,22 @@ describe('Marketing intake link advice', () => {
   it('normalizes decoration, not path case or meaningful query parameters', () => {
     expect(normalizeMktgLink(' https://PROJECT.example/Doc/?usp=sharing#heading ')).toBe('https://project.example/Doc');
     expect(
-      findDuplicateLinks([
-        'https://project.example/Doc',
-        'https://PROJECT.example/Doc/?usp=sharing#x',
-        'https://project.example/doc',
-        'https://project.example/Doc?version=2',
-        '',
-        'none',
-      ])
-    ).toEqual(new Set(['https://project.example/Doc']));
+      mktgLinkWarnings({
+        first: 'https://project.example/Doc',
+        duplicate: 'https://PROJECT.example/Doc/?usp=sharing#x',
+        lower: 'https://project.example/doc',
+        version: 'https://project.example/Doc?version=2',
+        blank: '',
+        invalid: 'none',
+      })
+    ).toEqual({ first: '', duplicate: MKTG_INTAKE_LINK_ADVICE.duplicate, lower: '', version: '', blank: '', invalid: '' });
   });
   it('warns only on later field/line occurrences and accepts earlier document slots', () => {
     expect(mktgLinkWarnings({ first: 'https://project.example/a', list: 'https://project.example/b\nhttps://PROJECT.example/a/#x' })).toEqual({
       first: '',
-      list: 'This link is already added above.',
+      list: MKTG_INTAKE_LINK_ADVICE.duplicate,
     });
-    expect(mktgLinkWarnings({ pending: 'https://project.example/a/' }, ['https://project.example/a'])['pending']).toBe('This link is already added above.');
-    expect(mktgLinkWarnings({ url: 'https://drive.google.com/drive/folders/synthetic' })['url']).toBe(
-      "We can't open private Google Drive links or folders. Share the document publicly, or paste its text."
-    );
+    expect(mktgLinkWarnings({ pending: 'https://project.example/a/' }, ['https://project.example/a'])['pending']).toBe(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(mktgLinkWarnings({ url: 'https://drive.google.com/drive/folders/synthetic' })['url']).toBe(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
   });
 });

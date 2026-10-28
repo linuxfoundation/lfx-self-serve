@@ -128,7 +128,7 @@ export class LinkedinPostRunComponent {
   protected readonly explicitProfileSave = signal(false);
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
   protected readonly pendingNotice = signal<ReturnType<MktgRunAttemptService['latestPending']>>(null);
-  private readonly contentUrl = toSignal(this.contentForm.controls.url.valueChanges, { initialValue: '' });
+  private readonly contentUrl = signal(this.contentForm.controls.url.value);
   protected readonly linkWarning = computed(() => mktgLinkWarnings({ url: this.contentUrl() })['url']);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
@@ -141,6 +141,7 @@ export class LinkedinPostRunComponent {
 
   public constructor() {
     if (!isPlatformBrowser(this.platform)) return;
+    this.contentForm.controls.url.valueChanges.pipe(takeUntilDestroyed()).subscribe((url) => this.contentUrl.set(url));
     this.initLastIntakeRestore();
     this.route.queryParamMap
       .pipe(
@@ -524,6 +525,8 @@ export class LinkedinPostRunComponent {
           { text: answers['content_text'] ?? '', url: answers['content_url'] ?? '', share_link: answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '' },
           { emitEvent: false }
         );
+        // Restore silently to preserve share-link ownership, but refresh advisory state.
+        this.contentUrl.set(this.contentForm.controls.url.value);
         if (source === 'url' && this.contentForm.controls.share_link.value !== this.contentForm.controls.url.value)
           this.contentForm.controls.share_link.markAsDirty();
         if (source === 'file') this.lastIntakeNote.set('The last run used a file — choose it again to draft.');

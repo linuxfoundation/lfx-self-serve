@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
+import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
 import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
@@ -149,11 +150,11 @@ test.describe('Marketing OS new run Sources', () => {
     await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
     const url = 'https://drive.google.com/drive/folders/synthetic';
     await page.locator('[data-test="mktg-intake-website_url"]').fill(url);
-    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText("We can't open private Google Drive links or folders.");
+    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
     const start = page.getByTestId('mktg-run-start').getByRole('button');
     await expect(start).toBeEnabled();
     await page.locator('[data-test="mktg-intake-brand_page_url"]').fill(url + '/?usp=sharing');
-    await expect(page.getByTestId('mktg-agent-run-link-warning-brand_page_url')).toContainText('This link is already added above.');
+    await expect(page.getByTestId('mktg-agent-run-link-warning-brand_page_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.duplicate);
     await expect(start).toBeEnabled();
     expect(sources.generated).toHaveLength(0);
     await page.screenshot({ path: test.info().outputPath('nonblocking-link-advice.png'), fullPage: true });

@@ -16,6 +16,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_INTAKE_LINK_ADVICE,
   MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 import {
@@ -2798,14 +2799,24 @@ describe('MktgAgentRunComponent', () => {
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
+    it('warns about a stored Drive source immediately on restore', async () => {
+      const stored = assetRun([]);
+      stored.answers['website_url'] = 'https://drive.google.com/file/d/synthetic/view';
+      storedRuns['proj-1'] = stored;
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(generate).not.toHaveBeenCalled();
+    });
+
     it('warns about Drive sources and duplicate fields without disabling Generate', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       const url = 'https://drive.google.com/drive/folders/synthetic';
       component['intakeForm'].patchValue({ project_name: 'Synthetic project', website_url: url, deck_url: url + '/?usp=sharing' });
       await fixture.whenStable();
-      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain("We can't open private Google Drive links or folders.");
-      expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain('This link is already added above.');
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
       expect(component['submitDisabled']()).toBe(false);
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-submit-button"] button')?.disabled).toBe(false);
       expect(component['documentsSection']()?.earlierUrls()).toContain(url);

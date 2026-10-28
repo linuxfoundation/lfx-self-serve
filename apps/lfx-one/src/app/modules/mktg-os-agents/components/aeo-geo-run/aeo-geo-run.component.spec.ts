@@ -8,7 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { provideRouter, Router } from '@angular/router';
-import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_INTAKE_LINK_ADVICE, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgAgentIntake, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
@@ -97,15 +97,22 @@ describe('AeoGeoRunComponent', () => {
     await render();
     const url = 'https://drive.google.com/drive/folders/synthetic';
     await fill('mktg-aeo-domain', url);
-    expect(query('mktg-aeo-link-warning-domain').textContent).toContain("We can't open private Google Drive links or folders.");
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
     expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
     await fill('mktg-aeo-page_1', url);
     await fill('mktg-aeo-page_2', url + '?usp=sharing');
-    expect(query('mktg-aeo-link-warning-page_1').textContent).not.toContain('already added above');
-    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain("We can't open private Google Drive links or folders.");
-    expect(query('mktg-aeo-link-warning-page_2').textContent).toContain('This link is already added above.');
-    expect(query('mktg-aeo-link-warning-domain').textContent).not.toContain('already added above');
+    expect(query('mktg-aeo-link-warning-page_1').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(query('mktg-aeo-link-warning-page_2').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(query('mktg-aeo-link-warning-domain').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
     expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('advises on a Drive website prefilled from LFX without editing', async () => {
+    getProject.mockReturnValue(of({ writer: true, website_url: 'https://drive.google.com/file/d/synthetic/view' }));
+    await render();
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(start).not.toHaveBeenCalled();
   });
 
   it('prefills the website from LFX and distinguishes empty previous runs', async () => {
