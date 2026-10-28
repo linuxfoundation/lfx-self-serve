@@ -1,0 +1,26 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ChangeDetectionStrategy, Component, input, model } from '@angular/core';
+
+@Component({
+  selector: 'lfx-ui-search-input',
+  templateUrl: './search-input.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // min() keeps the 300px default from overflowing a narrow container.
+  host: { class: 'block min-w-[min(300px,100%)]' },
+})
+export class UiSearchInputComponent {
+  /** The current text. Supports two-way binding with `[(value)]`. */
+  public readonly value = model<string>('');
+  /** Placeholder text. */
+  public readonly placeholder = input<string>('Search');
+  /** Accessible name for the field. */
+  public readonly ariaLabel = input<string>('Search');
+  /** Disables the field. */
+  public readonly disabled = input<boolean>(false);
+
+  protected onInput(event: Event): void {
+    this.value.set((event.target as HTMLInputElement).value);
+  }
+}

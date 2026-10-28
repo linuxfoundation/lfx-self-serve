@@ -196,6 +196,26 @@
             "include": ["src/app/**/*.spec.ts"],
             "watch": false
           }
+        },
+        "storybook": {
+          "builder": "@storybook/angular:start-storybook",
+          "options": {
+            "configDir": ".storybook",
+            "tsConfig": ".storybook/tsconfig.json",
+            "browserTarget": "lfx-one:build:development",
+            "compodoc": false,
+            "port": 6006
+          }
+        },
+        "build-storybook": {
+          "builder": "@storybook/angular:build-storybook",
+          "options": {
+            "configDir": ".storybook",
+            "tsConfig": ".storybook/tsconfig.json",
+            "browserTarget": "lfx-one:build:development",
+            "compodoc": false,
+            "outputDir": "storybook-static"
+          }
         }
       }
     }

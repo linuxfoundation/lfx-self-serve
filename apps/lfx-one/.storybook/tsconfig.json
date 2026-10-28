@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["../src/app/shared/uikit/**/*.stories.ts", "./preview.ts"]
+}
