@@ -149,6 +149,7 @@ describe('AudienceQaPanelComponent', () => {
   it.each([
     ['the send-time suppressions', () => fixture.componentRef.setInput('sendSuppressionIds', [])],
     ['the event', () => fixture.componentRef.setInput('eventName', 'Another Event')],
+    ['the email stage', () => fixture.componentRef.setInput('stage', 'Post-Event')],
   ])('drops a verdict when %s change', (_label, change) => {
     fixture.componentRef.setInput('eventName', 'Synthetic Summit');
     fixture.componentRef.setInput('sendSuppressionIds', ['201']);
@@ -340,6 +341,48 @@ describe('AudienceQaPanelComponent', () => {
 
       expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false });
       expect(host().textContent).not.toContain('Current registrants');
+    });
+
+    // lfx-v2-campaign-service#244: the stage lets upstream set the check aside for a Post-Event send.
+    it('sends the email stage with the run', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', {
+        listRef: '601',
+        targetsEu: false,
+        targetsCa: false,
+        eventName: 'Synthetic Summit 2026',
+        stage: 'Post-Event',
+      });
+    });
+
+    it('sends no stage when none is known', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).not.toHaveProperty('stage');
+    });
+
+    it('shows a check set aside for the stage as NOT APPLICABLE, with upstream reason', () => {
+      const note = 'Not applicable to a Post-Event send: its audience is this edition attendees.';
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'NOT APPLICABLE', findings: [], note } }) })));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(host().textContent).toContain('Current registrants');
+      expect(host().textContent).toContain('NOT APPLICABLE');
+      expect(host().textContent).toContain(note);
     });
 
     it('shows the check when upstream ran it', () => {

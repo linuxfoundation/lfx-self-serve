@@ -6754,6 +6754,13 @@ export interface AudienceListRef {
 
 export type AudienceQaVerdict = 'PASS' | 'NEEDS VERIFY' | 'FAIL';
 
+/**
+ * One check's verdict. `NOT APPLICABLE` is check-level only and only the current-registrants
+ * check returns it -- for a Post-Event send, whose intended audience IS this edition's attendees
+ * (lfx-v2-campaign-service#244). `overall` never takes it.
+ */
+export type AudienceQaCheckVerdict = AudienceQaVerdict | 'NOT APPLICABLE';
+
 export type AudienceQaSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
 
 export interface AudienceQaFinding {
@@ -6782,9 +6789,17 @@ export interface AudienceQaChecks {
   /**
    * Is this edition's own registration list suppressed rather than included? Absent when the
    * request named no event or the event name could not decide it — absent is "not checked",
-   * never a pass.
+   * never a pass. `NOT APPLICABLE` (with `note`) when the request's stage was Post-Event.
    */
-  currentRegistrants?: AudienceQaCheck;
+  currentRegistrants?: AudienceQaStageScopedCheck;
+}
+
+/** A check whose question depends on the send's stage, so it can also be `NOT APPLICABLE`. */
+export interface AudienceQaStageScopedCheck {
+  verdict: AudienceQaCheckVerdict;
+  findings: AudienceQaFinding[];
+  /** Why the check does not apply; set only with `NOT APPLICABLE`. */
+  note?: string;
 }
 
 export interface AudienceQaCandidate {
@@ -6828,7 +6843,7 @@ export type AudienceQaReport = Extract<AudienceQaResult, { needsDisambiguation: 
 export interface AudienceQaCheckRow {
   key: keyof AudienceQaChecks;
   name: string;
-  verdict: AudienceQaVerdict;
+  verdict: AudienceQaCheckVerdict;
   findings: readonly AudienceQaFinding[];
   note: string | null;
 }
@@ -6840,6 +6855,11 @@ export interface AudienceQaRunRequest {
   targetsCa?: boolean;
   /** This edition's event name; enables the current-registrants check. */
   eventName?: string;
+  /**
+   * The send's email stage. `Post-Event` marks the current-registrants check NOT APPLICABLE --
+   * that send is FOR this edition's attendees. Absent or any other stage runs it as before.
+   */
+  stage?: CampaignEmailStage;
   /**
    * Suppression lists the send applies on top of the list. Custom lists and directly attached
    * lists carry none of their own, so without these QA judges them on their filters alone.
