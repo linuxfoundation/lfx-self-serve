@@ -4,7 +4,7 @@
 import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { DefaultUrlSerializer, Router } from '@angular/router';
+import { DefaultUrlSerializer, NavigationEnd, Router } from '@angular/router';
 import { ALL_LENSES, NAVBAR_PEEK_CLOSE_DELAY_MS, NAVBAR_PEEK_RECHECK_DELAY_MS, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
 import type {
   Lens,
@@ -32,7 +32,7 @@ import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY } from 'rxjs';
+import { EMPTY, Observable, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NavbarComponent } from './navbar.component';
@@ -113,6 +113,8 @@ const createNavbarFixture = async (
     url = '/',
     retrying = false,
     template = '',
+    routerEvents = EMPTY,
+    navigation = null,
   }: {
     lens?: Lens;
     itemsPending?: boolean;
@@ -123,13 +125,24 @@ const createNavbarFixture = async (
     url?: string;
     retrying?: boolean;
     template?: string;
+    routerEvents?: Observable<unknown>;
+    navigation?: { extras: { replaceUrl?: boolean }; trigger: string } | null;
   } = {}
 ): Promise<ComponentFixture<NavbarComponent>> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [NavbarComponent],
     providers: [
-      { provide: Router, useValue: { url, events: EMPTY, navigate: vi.fn(), parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+      {
+        provide: Router,
+        useValue: {
+          url,
+          events: routerEvents,
+          currentNavigation: () => navigation,
+          navigate: vi.fn(),
+          parseUrl: (value: string) => new DefaultUrlSerializer().parse(value),
+        },
+      },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/org', 'acme', page]) } },
@@ -761,6 +774,28 @@ describe('NavbarComponent', () => {
       expect(collapse.peek()).toBe(true);
       expect(collapse.peekPinned()).toBe(true);
       expect(fixture.nativeElement.classList).toContain('is-pinned');
+    });
+
+    it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
+      stubViewport(true);
+      const events = new Subject<unknown>();
+      const navigation = { extras: { replaceUrl: true }, trigger: 'imperative' };
+      await createNavbarFixture([], [], {}, { routerEvents: events, navigation });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.openPeek(true);
+
+      events.next(new NavigationEnd(1, '/org/overview', '/org/overview?org=acme'));
+      expect(collapse.peek()).toBe(true);
+
+      navigation.trigger = 'popstate';
+      events.next(new NavigationEnd(2, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(false);
+
+      collapse.openPeek(true);
+      navigation.extras.replaceUrl = false;
+      navigation.trigger = 'imperative';
+      events.next(new NavigationEnd(3, '/votes', '/votes'));
+      expect(collapse.peek()).toBe(false);
     });
 
     it('never collapses the mobile drawer’s navbar', async () => {

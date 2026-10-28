@@ -4,7 +4,7 @@
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, Injector, input, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterModule } from '@angular/router';
+import { NavigationEnd, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
 import { CreateArtifactDialogComponent } from '@components/create-artifact-dialog/create-artifact-dialog.component';
@@ -59,7 +59,7 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
-import { filter, pairwise, skip } from 'rxjs';
+import { filter, pairwise } from 'rxjs';
 
 import { NavMenuBase } from './nav-menu-base.directive';
 
@@ -448,6 +448,8 @@ export class NavbarComponent extends NavMenuBase {
   protected onOrgSelected(): void {
     if (!this.lensService.previewingMenuLens()) {
       this.closeMobileDrawer();
+      // The same `replaceUrl` re-addressing leaves a pinned peek open, so the pick closes it too.
+      if (!this.mobile() && this.collapse.peekPinned()) this.morph(() => this.collapse.closePeek(), 'none');
       return;
     }
     this.lensService.commitMenuLens();
@@ -557,11 +559,16 @@ export class NavbarComponent extends NavMenuBase {
       if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
     });
 
-    // A pick from a click-opened peek navigates under it: close it, as an outside click would.
-    toObservable(this.navigatedUrl)
+    // A pick from a click-opened peek navigates under it: close it, as an outside click would. As with the mobile
+    // drawer, only a navigation the viewer made counts — a page rewriting its own address in place (`replaceUrl`, e.g.
+    // Org Lens writing in the default organization) would snap a just-opened peek shut; back/forward still closes it.
+    this.router.events
       .pipe(
-        skip(1),
-        filter(() => this.collapse.peekPinned()),
+        filter((event) => event instanceof NavigationEnd && this.collapse.peekPinned()),
+        filter(() => {
+          const navigation = this.router.currentNavigation();
+          return !navigation?.extras.replaceUrl || navigation.trigger === 'popstate';
+        }),
         takeUntilDestroyed()
       )
       .subscribe(() => this.morph(() => this.collapse.closePeek(), 'none'));

@@ -54,6 +54,35 @@ describe('NavbarCollapseService', () => {
     expect(service.visualCollapsed()).toBe(true);
   });
 
+  it('tells width-measuring pages when a restored rail narrows the server-rendered gutter', () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    const resize = vi.fn();
+    window.addEventListener('resize', resize);
+
+    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    setup().init();
+    expect(resize).toHaveBeenCalledTimes(1);
+    window.removeEventListener('resize', resize);
+  });
+
+  it('leaves the page alone when the restored state is the docked-open default', () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    const resize = vi.fn();
+    window.addEventListener('resize', resize);
+
+    const service = setup();
+    service.init();
+    expect(resize).not.toHaveBeenCalled();
+    expect(service.animated()).toBe(true);
+    window.removeEventListener('resize', resize);
+  });
+
   it('never reads storage on the server', () => {
     localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
     const service = setup('server');

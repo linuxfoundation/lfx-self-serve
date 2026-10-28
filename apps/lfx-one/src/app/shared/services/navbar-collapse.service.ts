@@ -100,8 +100,15 @@ export class NavbarCollapseService {
       touchQuery.addEventListener('change', update);
     }
 
-    // Two frames: the restored state paints first, so the transitions only apply to later changes.
-    view?.requestAnimationFrame(() => view.requestAnimationFrame(() => this.animatedState.set(true)));
+    // Two frames: the restored state paints first, so the transitions only apply to later changes. A restored rail
+    // narrows the gutter the server rendered at 288px, so width-measuring pages are told, as after any collapse.
+    const restoredRail = this.effectiveCollapsed();
+    view?.requestAnimationFrame(() =>
+      view.requestAnimationFrame(() => {
+        this.animatedState.set(true);
+        if (restoredRail) view.dispatchEvent(new Event('resize'));
+      })
+    );
   }
 
   /** Docks the navbar open or to its rail, and remembers the choice. Closes any peek. */
