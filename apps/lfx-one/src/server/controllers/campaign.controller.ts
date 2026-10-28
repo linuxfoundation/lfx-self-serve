@@ -129,7 +129,6 @@ import {
   GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
-  GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
@@ -141,6 +140,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -4945,7 +4945,11 @@ export class CampaignController {
    */
   private unservedGoogleCriteriaField(body: CampaignCreateRequest): (typeof GOOGLE_CUTOVER_ONLY_CREATE_FIELDS)[number] | null {
     if (canCreateWithGoogleCriteria()) return null;
-    if (!Array.isArray(body?.platforms) || !body.platforms.includes('google-ads')) return null;
+    // The legacy creator's own platform default (`campaign-proxy.service.ts`): an omitted or empty
+    // `platforms` list is a Google create there, so it is one here too, or exactly that request
+    // would slip past every refusal below.
+    const platforms = Array.isArray(body?.platforms) && body.platforms.length > 0 ? body.platforms : ['google-ads'];
+    if (!platforms.includes('google-ads')) return null;
     const raw = body as unknown as Record<string, unknown>;
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find(({ field }) => {

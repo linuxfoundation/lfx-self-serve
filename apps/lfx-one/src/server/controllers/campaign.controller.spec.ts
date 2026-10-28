@@ -3611,6 +3611,25 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom().field).toBe('languages');
     });
 
+    // The legacy creator reads an omitted or empty `platforms` list as `['google-ads']`, so both are
+    // Google creates on that road and get the same refusal.
+    it.each([
+      ['an omitted platforms list', undefined],
+      ['an empty platforms list', []],
+    ])('refuses them on %s, which the legacy creator defaults to google-ads', async (_label, platforms) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ platforms, deviceBidModifiers: NON_EMPTY.deviceBidModifiers }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('deviceBidModifiers');
+    });
+
     it('does not refuse them on a create that does not include google-ads', async () => {
       isServerFeatureEnabled.mockReturnValue(false);
       legacyServes();
