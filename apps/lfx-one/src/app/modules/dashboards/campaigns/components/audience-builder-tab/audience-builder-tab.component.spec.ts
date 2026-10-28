@@ -4034,6 +4034,26 @@ describe('AudienceBuilderTabComponent', () => {
       expect(tab.attachedMasterId(), 'a pending registrants exclusion read as already recorded').toBeNull();
     });
 
+    it('says the suppression is too large to count exactly instead of sending a refused count', async () => {
+      const many: AudienceSuppressionList[] = Array.from({ length: 50 }, (_, i) => ({
+        key: `brand_${i}`,
+        label: `Brand opt-out ${i}`,
+        listId: String(400 + i),
+        name: `Brand opt-out ${i}`,
+        size: 10,
+        category: 'brand',
+        hubspotUrl: '',
+      }));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, ...many], standardList: STANDING }));
+      await discover();
+
+      click('campaigns-audience-suppression-count-run');
+
+      expect(previewAudienceCount, 'a count over the 50-list limit was sent').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-too-many"]')?.textContent).toContain('52');
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-suppression-count-run"]')?.disabled).toBe(true);
+    });
+
     it('counts the standing list beside the standard rows once it exists', async () => {
       getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
       await discover();

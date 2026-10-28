@@ -592,7 +592,7 @@
           <button
             type="button"
             (click)="onCountSuppression()"
-            [disabled]="degraded() || suppressionCounting()"
+            [disabled]="degraded() || suppressionCounting() || suppressionCountTooMany()"
             class="rounded border border-gray-300 bg-white px-2 py-1 font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             data-testid="campaigns-audience-suppression-count-run">
             @if (suppressionCounting()) {
@@ -602,6 +602,12 @@
               Get exact suppression count
             }
           </button>
+          @if (suppressionCountTooMany()) {
+            <span class="text-gray-500" data-testid="campaigns-audience-suppression-count-too-many"
+              >Too many lists to count exactly: {{ countedExcludeIds().length }}, and one count unions at most {{ previewMaxListIds }}. Every one is still
+              excluded.</span
+            >
+          }
           @if (suppressionCount(); as count) {
             <span class="text-gray-700" data-testid="campaigns-audience-suppression-count-value">
               @if (count.exact) {

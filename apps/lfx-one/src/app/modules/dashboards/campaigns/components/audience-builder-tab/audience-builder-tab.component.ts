@@ -19,6 +19,7 @@ import {
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_PREVIEW_MAX_LIST_IDS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
   AUDIENCE_UNION_EXACT_CAP,
@@ -811,6 +812,15 @@ export class AudienceBuilderTabComponent {
     // newly resolved row, so until then the rows can hold contacts the standing list does not.
     return [standing.listId, ...this.excludeIds().filter((id) => id !== standing.listId)];
   });
+
+  /**
+   * More lists than one count can union. Shown as such rather than sent and refused, and never cut
+   * down: a count over fewer lists would understate the suppression. The standing list cannot stand
+   * in for the rows to save room, because the UI cannot see whether it already covers a newly
+   * resolved row (it is grown by the next attach or compose).
+   */
+  protected readonly suppressionCountTooMany = computed(() => this.countedExcludeIds().length > AUDIENCE_PREVIEW_MAX_LIST_IDS);
+  protected readonly previewMaxListIds = AUDIENCE_PREVIEW_MAX_LIST_IDS;
 
   /**
    * The exclusions actually sent: ticked suppression rows plus lists marked Exclude, minus inclusion.
@@ -2032,7 +2042,7 @@ export class AudienceBuilderTabComponent {
   /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
   protected onCountSuppression(): void {
     const listIds = [...this.countedExcludeIds()];
-    if (this.degraded() || this.suppressionCounting() || listIds.length === 0) {
+    if (this.degraded() || this.suppressionCounting() || listIds.length === 0 || this.suppressionCountTooMany()) {
       return;
     }
     const key = [...listIds].sort().join(',');
