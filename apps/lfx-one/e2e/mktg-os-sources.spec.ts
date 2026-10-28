@@ -101,7 +101,7 @@ test.describe('Marketing OS new run Sources', () => {
       expect(page.viewportSize()).toEqual(deviceViewport);
       await sources.open(mount);
       await expect(page.getByTestId('mktg-run-source-website_url')).toContainText(sources.answers.website_url);
-      await expect(page.getByTestId('mktg-run-source-notes')).toContainText('From the last run');
+      await expect(page.getByTestId('mktg-run-source-notes')).toContainText('From last time');
       const start = page.getByTestId('mktg-run-start').getByRole('button');
       await expect(start).toBeEnabled();
       expect(sources.generated).toHaveLength(0);
@@ -131,7 +131,8 @@ test.describe('Marketing OS new run Sources', () => {
       const card = page.getByTestId('mktg-run-sources');
       await expect(page.getByTestId('mktg-agent-run-form')).not.toBeVisible();
       await expect(card.getByTestId('mktg-agent-run-missing-dependency')).toBeVisible();
-      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+      await expect(card.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+      await expect(card.getByTestId('mktg-run-start-reason')).toBeVisible();
       if (status === 503) {
         await page.route('**/api/mktg-agents/foundation-message/stored**', (route) =>
           route.fulfill({ status: 404, json: { error: 'No approved synthetic framework' } })
@@ -155,7 +156,8 @@ test.describe('Marketing OS new run Sources', () => {
     });
     await sources.open();
     await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
-    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-run-start-reason')).toContainText('Re-attach');
     expect(sources.generated).toHaveLength(0);
     await page.getByTestId('mktg-run-drop-missing').getByRole('button').click();
     await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
@@ -169,12 +171,14 @@ test.describe('Marketing OS new run Sources', () => {
       await sources.open();
       if (state === 'loading') {
         await expect(page.getByTestId('mktg-run-sources-loading')).toBeVisible();
-        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+        await expect(page.getByTestId('mktg-run-start-reason')).toContainText('Wait for your sources');
         sources.releaseHistory();
         await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
       } else if (state === 'denied') {
         await expect(page.getByTestId('mktg-run-sources-denied')).toContainText('write access');
-        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+        await expect(page.getByTestId('mktg-run-start-reason')).toContainText('write access');
         await expect(page.getByTestId('mktg-run-source-notes')).toHaveCount(0);
       } else {
         await expect(page.getByTestId('mktg-run-sources-note')).toContainText(state === 'empty' ? 'Suggested defaults' : 'could not be loaded');

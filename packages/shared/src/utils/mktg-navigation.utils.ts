@@ -11,6 +11,11 @@ export function mktgKitRootPath(url: string): string {
   return index < 0 ? `/${MKTG_OS_AGENTS_ROUTE_SEGMENT}` : segments.slice(0, index + 1).join('/');
 }
 
+/** Sentence labels preserve acronyms and mixed-case names such as FAQ, ICP and LinkedIn. */
+export function mktgSentenceCaseLabel(label: string): string {
+  return label.replace(/^[A-Z][a-z]+\b/, (word) => word.charAt(0).toLowerCase() + word.slice(1));
+}
+
 /** All Run again links target the catalog's run page, without document-only state. */
 export function mktgRunRouteFor(agentKey: string, basePath: string): string[] | undefined {
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);

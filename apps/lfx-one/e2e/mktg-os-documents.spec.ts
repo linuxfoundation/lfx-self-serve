@@ -113,7 +113,8 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
-    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-run-start-reason')).toBeVisible();
     await expect(page.getByTestId('mktg-agent-run-result')).toHaveCount(0);
   });
 

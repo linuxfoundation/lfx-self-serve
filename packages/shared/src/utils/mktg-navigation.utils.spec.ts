@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgKitRootPath, mktgRunRouteFor } from './mktg-navigation.utils';
+import { mktgKitRootPath, mktgRunRouteFor, mktgSentenceCaseLabel } from './mktg-navigation.utils';
 
 describe('Marketing kit route roots', () => {
+  it.each([
+    ['Messaging framework', 'messaging framework'],
+    ['Brand Kit', 'brand Kit'],
+    ['FAQ', 'FAQ'],
+    ['ICP & target markets', 'ICP & target markets'],
+    ['LinkedIn post', 'LinkedIn post'],
+  ])('uses %s in a sentence without corrupting acronyms or mixed case', (label, expected) => {
+    expect(mktgSentenceCaseLabel(label)).toBe(expected);
+  });
   it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('preserves %s and strips document-only state', (base) => {
     expect(mktgKitRootPath(`${base}/documents/faq/living?project=synthetic&type=faq#sources`)).toBe(base);
     expect(mktgKitRootPath(`${base}?state=draft`)).toBe(base);

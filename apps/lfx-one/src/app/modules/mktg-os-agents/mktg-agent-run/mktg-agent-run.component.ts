@@ -55,7 +55,7 @@ import {
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import { mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable, mktgSentenceCaseLabel, mktgKitAssetLabel } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -65,6 +65,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -110,6 +111,7 @@ export class MktgAgentRunComponent {
   // === Injections ===
   private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
+  private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -154,6 +156,9 @@ export class MktgAgentRunComponent {
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
   protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
+  private readonly assetType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id);
+  protected readonly assetName = mktgKitAssetLabel(this.assetType?.agentKey ?? '') ?? this.assetType?.itemLabel ?? this.intake?.documentName ?? 'Document';
+  protected readonly sourcesHint = this.intakeSourcesHint();
   protected readonly dedicatedAudit = !!this.intake?.oneOffDocument && this.intake.agentId === AEO_GEO_INTAKE.agentId;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
@@ -199,6 +204,9 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly waitingQuestions = signal(false);
+  protected readonly startedOverWaiting = signal(false);
+  private readonly hasVersion = signal(false);
   protected readonly sourcesEditing = signal(false);
   protected readonly sourcesLoading = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
   protected readonly sourcesDenied = signal(false);
@@ -302,14 +310,34 @@ export class MktgAgentRunComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
-  protected readonly showIntakeForm = computed(() => !this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()));
-  protected readonly submitLabel = computed(() => (this.freshMode() ? 'Start' : `Generate ${this.intake?.documentName}`));
+  protected readonly showIntakeForm = computed(
+    () => !this.waitingQuestions() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
+  );
+  protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${mktgSentenceCaseLabel(this.assetName)}`));
+  protected readonly submitReason = computed(() => {
+    if (this.sourcesLoading()) return 'Wait for your sources to load.';
+    if (this.sourcesDenied()) return this.sourceNote() || 'You need write access to create this document.';
+    if (this.navigation()) return 'Open the accepted document before creating another version.';
+    if (this.documentsBusy() || this.logoFilesBusy()) return 'Wait for the attached files to finish loading.';
+    if (!this.dependenciesSatisfied()) return this.missingDependencyNote() || 'Wait while the required documents are checked.';
+    if (this.freshMode() && (this.missingDocuments() || this.missingLogos())) return 'Re-attach the missing files, or choose to continue without them.';
+    if (!this.intakeValid()) return 'Complete the required fields and correct any highlighted sources.';
+    return '';
+  });
   protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
   protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
+  protected readonly missingFiles = computed(() => this.missingDocuments() + this.missingLogos());
+  protected readonly missingFilesNote = computed(() => {
+    const count = this.missingFiles();
+    return count === 1
+      ? '1 file from last time is not kept here. Re-attach it, or carry on without it.'
+      : `${count} files from last time are not kept here. Re-attach them, or carry on without them.`;
+  });
   protected readonly sourceFields: Signal<MktgRunSourceField[]> = this.initSourceFields();
   protected readonly submitDisabled = computed(
     () =>
       !this.intakeValid() ||
+      this.waitingQuestions() ||
       this.phase() === 'running' ||
       !!this.navigation() ||
       this.documentsBusy() ||
@@ -534,13 +562,17 @@ export class MktgAgentRunComponent {
             // dependency resolution rides the same stream so the attachment
             // chips / gating always reflect the ACTIVE project's stored
             // documents (dec-agent-dependency-gating).
-            return combineLatest([this.projectService.getProject(context.slug, false), this.resolveDependenciesForGate(context.uid), history]).pipe(
-              map(([project, dependencies, lastIntake]) => ({ context, project, dependencies, lastIntake, fresh }))
-            );
+            return combineLatest([
+              this.projectService.getProject(context.slug, false),
+              this.resolveDependenciesForGate(context.uid),
+              history,
+              user?.sub ? this.readHasVersion(context.uid, fresh) : of(false),
+            ]).pipe(map(([project, dependencies, lastIntake, versionExists]) => ({ context, project, dependencies, lastIntake, versionExists, fresh })));
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(({ context, project, dependencies, lastIntake, fresh }) => {
+        .subscribe(({ context, project, dependencies, lastIntake, versionExists, fresh }) => {
+          this.hasVersion.set(versionExists ?? !!lastIntake);
           this.dependencyDocs.set(dependencies);
           if (fresh) {
             this.sourcesLoading.set(false);
@@ -669,8 +701,20 @@ export class MktgAgentRunComponent {
     this.priorLogoCount.set(0);
   }
 
+  protected onContinueWaiting(): void {
+    // Removing entry-only mode uses the same restoration path as a plain run URL.
+    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  protected onStartOverWaiting(): void {
+    this.waitingQuestions.set(false);
+    this.startedOverWaiting.set(true); // Do not clear, reserve or overwrite the waiting attempt.
+  }
+
   protected onSubmit(): void {
     if (this.submitDisabled()) {
+      this.intakeForm.markAllAsTouched();
+      this.errorText.set(this.submitReason());
       return;
     }
     this.startGeneration();
@@ -767,17 +811,43 @@ export class MktgAgentRunComponent {
       });
   }
 
+  /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
+  private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
+    return this.documentStore.listDocuments(project).pipe(
+      map((documents) =>
+        documents.groups.some((group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0))
+      ),
+      catchError(() => {
+        // Sources already loads last intake; the full form reads it only as a label fallback.
+        if (fresh) return of(null);
+        return this.runService.lastIntake(project, this.agent?.id ?? '').pipe(
+          map((intake) => !!intake),
+          catchError(() => of(false))
+        );
+      })
+    );
+  }
+
+  private intakeSourcesHint(): string {
+    const required = (this.intake?.fields ?? []).filter((field) => !field.optional).map((field) => field.question);
+    const intro = 'The agent reads these, searches the web and LFX for the rest, and may ask you a few questions.';
+    if (!required.length) return `${intro} All sources are optional.`;
+    const last = required.at(-1);
+    const names = required.length > 1 ? `${required.slice(0, -1).join(', ')} and ${last}` : last;
+    return `${intro} Only the ${names} ${required.length === 1 ? 'is' : 'are'} required.`;
+  }
+
   private initSourceFields(): Signal<MktgRunSourceField[]> {
     return computed(() => {
       const values = this.intakeValue();
       return (this.intake?.fields ?? []).map((field) => {
         const value = values[field.key] ?? '';
-        let origin = 'Suggested default';
+        let origin = 'Suggested';
         if (this.filledFromMemoryApplied()[field.key] && this.prefillIntact()[field.key]) {
           origin = this.fromPriorRun()[field.key] ?? 'Remembered on this device';
         }
         if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceOrigins()[field.key] ?? origin;
-        if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed for this run';
+        if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed just now';
         return { key: field.key, label: field.question, value, origin };
       });
     });
@@ -1138,7 +1208,7 @@ export class MktgAgentRunComponent {
     for (const field of this.intake.fields) {
       if (history && Object.hasOwn(history.answers, field.key)) {
         answers[field.key] = history.answers[field.key];
-        origins[field.key] = 'From the last run';
+        origins[field.key] = 'From last time';
       } else if (memory && Object.hasOwn(memory.answers, field.key)) {
         answers[field.key] = memory.answers[field.key];
         origins[field.key] = 'Saved in this visit';
@@ -1203,6 +1273,9 @@ export class MktgAgentRunComponent {
     this.consumedFreshProject = null;
     this.consumedFreshSubject = null;
     this.freshMode.set(fresh);
+    this.waitingQuestions.set(false);
+    this.startedOverWaiting.set(false);
+    this.hasVersion.set(false);
     this.generationSub?.unsubscribe();
     this.generationSub = null;
     this.discardPendingNavigation();
@@ -1246,7 +1319,10 @@ export class MktgAgentRunComponent {
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
     if (!context) return;
-    if (fresh) return; // No token consumption, attempt restore/resume or prepare on a fresh visit.
+    if (fresh) {
+      this.waitingQuestions.set(!!this.runAttempts.load(context.uid, this.agent.id)?.pendingQuestions);
+      return; // Offer recovery without consuming a token or starting/resuming a run.
+    }
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {

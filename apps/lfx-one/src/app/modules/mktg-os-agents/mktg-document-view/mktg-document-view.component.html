@@ -113,18 +113,28 @@
           <p class="text-xs text-gray-500">Started {{ run.startedAt | date: 'd MMM y, HH:mm' }}</p>
         }
         @if (state === 'failed') {
-          <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
-            {{
-              selectedRun()?.state === 'failed'
-                ? 'A previous run did not finish. Retry polls it again; no new generation is started.'
-                : 'The run could not be confirmed. Your intake is kept; open the intake form to continue.'
-            }}
-          </p>
           @if (runFailure()) {
-            <p role="alert" class="whitespace-pre-wrap text-sm text-gray-900" data-testid="mktg-document-view-failure-reply">{{ runFailure() }}</p>
+            <details class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2" data-testid="mktg-document-view-failure-details">
+              <summary class="flex min-w-0 cursor-pointer items-center gap-2 text-sm text-gray-600">
+                <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+                <span class="shrink-0 font-semibold">Details</span>
+                <span class="min-w-0 flex-1 truncate font-mono text-xs text-gray-500">{{ runFailure() }}</span>
+              </summary>
+              <p
+                class="mt-2 whitespace-pre-wrap break-words font-mono text-xs text-gray-600"
+                [textContent]="runFailure()"
+                data-testid="mktg-document-view-failure-reply"></p>
+            </details>
           }
-          @if (selectedRun()?.state === 'failed') {
-            <lfx-button label="Retry" [loading]="retrying()" [disabled]="retrying()" (onClick)="onRetryRun()" data-testid="mktg-document-view-progress-retry" />
+          <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
+            @if (unconfirmedFailure()) {
+              The run could not be confirmed. Your intake is kept; open the intake form to continue.
+            } @else {
+              Try again opens the run page with your sources kept, so you can start the {{ failureAssetLabel() }} over.
+            }
+          </p>
+          @if (errorText()) {
+            <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
           }
         } @else if (state === 'questions') {
           @if (pausedWithoutAnswers()) {
@@ -154,7 +164,25 @@
         @if (visibleRunActivity(); as activity) {
           <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
         }
-        @if (runAgentId() && !pausedWithoutAnswers() && (state === 'failed' || state === 'questions')) {
+        @if (state === 'failed') {
+          <div class="flex flex-wrap items-center justify-between gap-4 pt-4" data-testid="mktg-document-view-failure-actions">
+            @if (selectedRun()?.state === 'failed') {
+              <div class="flex-1 text-sm text-gray-500">
+                <lfx-button
+                  label="Check on it again"
+                  [text]="true"
+                  [loading]="retrying()"
+                  [disabled]="retrying()"
+                  (onClick)="onRetryRun()"
+                  data-testid="mktg-document-view-progress-retry" />
+                · only if you think it is still running; starts nothing new
+              </div>
+            }
+            @if (runAgentId()) {
+              <lfx-button class="ml-auto" label="Try again" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
+            }
+          </div>
+        } @else if (runAgentId() && !pausedWithoutAnswers() && state === 'questions') {
           <lfx-button
             label="Open the intake form"
             [text]="true"
@@ -179,7 +207,7 @@
     @if (restoreNotice()) {
       <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
     }
-    @if (errorText()) {
+    @if (errorText() && (runFailed() || runState() !== 'failed')) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
       @if (runFailed()) {
         <a
