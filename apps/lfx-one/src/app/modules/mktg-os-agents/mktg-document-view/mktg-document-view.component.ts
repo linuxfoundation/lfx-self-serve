@@ -1154,7 +1154,10 @@ export class MktgDocumentViewComponent {
         return this.unconfirmedFailure() ? 'The run could not be confirmed.' : `The ${this.failureAssetLabel()} wasn't finished`;
       if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
-      if (this.runState()) return 'Generating the asset.';
+      if (this.runState()) {
+        const type = this.runDocumentType();
+        return type ? `Writing the ${type.itemLabel}.` : 'Generating the asset.';
+      }
       return this.view() ? 'The asset is ready.' : '';
     });
   }

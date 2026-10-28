@@ -110,8 +110,13 @@
           }
         } @else {
           <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
-            <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
-            <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+            @if (runDocumentType()) {
+              <li>{{ state === 'storing' ? 'Written' : 'Writing…' }}</li>
+              <li>{{ state === 'storing' ? 'Saving…' : 'It will appear here when it is ready.' }}</li>
+            } @else {
+              <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
+              <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+            }
           </ol>
           @if (runRecorded()) {
             <p class="text-sm text-gray-500">You can leave this page. The run is recorded and will be checked when you return.</p>
