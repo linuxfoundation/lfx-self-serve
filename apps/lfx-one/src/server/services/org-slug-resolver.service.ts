@@ -22,6 +22,7 @@ import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgClaAdminService } from './org-cla-admin.service';
 import { OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
@@ -63,10 +64,12 @@ const OPERATION = 'resolve_org_segment';
 export class OrgSlugResolverService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly claAdmins: OrgClaAdminService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService, claAdmins?: OrgClaAdminService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
     this.claOnlyOrgs = claOnlyOrgs ?? new OrgClaOnlyOrgsService();
+    this.claAdmins = claAdmins ?? new OrgClaAdminService();
   }
 
   public async resolveSegment(req: Request, rawSegment: string, prefer?: string): Promise<OrgSegmentResolution> {
@@ -138,7 +141,8 @@ export class OrgSlugResolverService {
    * is the index document's access check, which may come to admit a CLA Manager (`viewer` is
    * `auditor or cla_admin`), so a returned row is not proof of Org Lens read. The read gate decides: a
    * 403 means the row is not a full-lens organization for this caller. When the read gate cannot
-   * answer (503), query-service's answer is kept, as before this check existed.
+   * answer (503), `cla_admin` decides instead: a returned row the caller is not `cla_admin` on was
+   * admitted through `auditor`, so query-service's answer is kept, as before this check existed.
    */
   private async opensFullLens(req: Request, uid: string): Promise<boolean> {
     try {
@@ -146,7 +150,7 @@ export class OrgSlugResolverService {
       return true;
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 403) return false;
-      if (error instanceof MicroserviceError && error.statusCode === 503) return true;
+      if (error instanceof MicroserviceError && error.statusCode === 503) return !(await this.claAdmins.holds(req, uid));
       throw error;
     }
   }
@@ -179,7 +183,9 @@ export class OrgSlugResolverService {
    * access check, so one page can hold zero or one readable row and still carry a cursor while
    * another readable same-slug organization sits on the next page — deciding on a single page could
    * turn a tie into a cached "unique" hit or a real match into a miss. The cursor is followed until
-   * two readable rows are in hand or it is exhausted, within a hard page cap.
+   * two readable rows are in hand or it is exhausted, within a hard page cap. A row counts as readable
+   * only when it opens the full lens (`opensFullLens`), so an organization the caller reaches as a CLA
+   * Manager alone never turns another organization's slug into a tie.
    */
   private async lookupBySlug(req: Request, slug: string): Promise<CachedResolution> {
     const rows: OrgResolveResponse[] = [];
@@ -187,10 +193,12 @@ export class OrgSlugResolverService {
 
     for (let page = 0; page < ORG_SLUG_RESOLVE_PAGE_CAP; page += 1) {
       const response = await this.query(req, [`slug:${slug}`], ORG_SLUG_RESOLVE_PAGE_SIZE, pageToken);
-      for (const resource of response?.resources ?? []) {
+      const returned = (response?.resources ?? []).flatMap((resource) => {
         const uid = extractUid(resource.id);
-        if (uid && resource.data) rows.push(toResolveResponse(uid, resource.data));
-      }
+        return uid && resource.data ? [toResolveResponse(uid, resource.data)] : [];
+      });
+      const fullLens = await Promise.all(returned.map((row) => this.opensFullLens(req, row.uid)));
+      rows.push(...returned.filter((_row, index) => fullLens[index]));
       if (rows.length >= 2) {
         logger.warning(req, OPERATION, 'Slug shared by several readable organizations', { slug, rows: rows.length, pages: page + 1 });
         return { outcome: 'ambiguous' };

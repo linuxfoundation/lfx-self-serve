@@ -17,8 +17,10 @@ const OPERATION = 'check_org_cla_admin';
  *
  * Answers `false` when the check fails or does not resolve. While the ACS `cla-manager` scopes remain
  * a qualification (`OrgClaManagerScopesService`), they decide that caller's outcome, so a failure here
- * must not turn into an outage, and is logged at debug: until the relation is deployed every check
- * fails. Once the scopes are removed this failure has to become a 503 instead.
+ * must not turn into an outage. `AccessCheckService` has already logged the failure at error, so this
+ * adds only a debug line. The relation must be deployed before this ships: without it every check
+ * fails, and every one of those failures is logged as an error. Once the scopes are removed this
+ * failure has to become a 503 instead.
  *
  * Memoized per request and organization, so the route gate and the address resolver share one check.
  */
