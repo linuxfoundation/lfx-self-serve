@@ -79,14 +79,36 @@ export function toGoogleAdsReadError(error: unknown, operation: string): unknown
 
 /**
  * `google-ads-api` rejects with a `GoogleAdsFailure`, which is not an `Error`, so it would otherwise
- * leave no `original_error` in the log. Its first message (or the value's string form) is kept for the
- * log only; it is never part of the response.
+ * leave no `original_error` in the log. Its summary (every error's code and message, then the request
+ * id) is kept for the log only and is never part of the response. The whole failure is also kept on
+ * {@link GoogleAdsReadError.googleAdsFailure}; this line is what `original_error` shows at a glance.
  */
 function asLoggableError(error: unknown): Error {
   if (error instanceof Error) {
     return error;
   }
   const errors = (error as { errors?: unknown } | null)?.errors;
-  const first = Array.isArray(errors) ? (errors[0] as { message?: unknown } | null)?.message : undefined;
-  return new Error(typeof first === 'string' && first !== '' ? first : String(error));
+  const summary = (Array.isArray(errors) ? errors : [])
+    .map((entry: unknown) => {
+      const code = googleAdsFailureCode({ errors: [entry] }) ?? 'UNKNOWN';
+      const message = (entry as { message?: unknown } | null)?.message;
+      return typeof message === 'string' && message !== '' ? `${code}: ${message}` : code;
+    })
+    .join('; ');
+  const requestId = (error as { request_id?: unknown } | null)?.request_id;
+  const requestSuffix = typeof requestId === 'string' && requestId !== '' ? ` (request_id=${requestId})` : '';
+  return new Error(summary === '' ? `${describeFailure(error)}${requestSuffix}` : `${summary}${requestSuffix}`);
+}
+
+/** A failure with no `errors` list, as JSON where it can be (never `[object Object]`), else its string form. */
+function describeFailure(error: unknown): string {
+  try {
+    const json = JSON.stringify(error);
+    if (typeof json === 'string') {
+      return json.length > 500 ? `${json.slice(0, 500)}…` : json;
+    }
+  } catch {
+    // A circular or otherwise unserializable value falls through to its string form.
+  }
+  return String(error);
 }

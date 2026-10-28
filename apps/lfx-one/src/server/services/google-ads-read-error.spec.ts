@@ -35,7 +35,7 @@ describe('toGoogleAdsReadError (#4526)', () => {
     expect(error.message).toBe(`${GOOGLE_ADS_READ_FAILED_MESSAGE} Google Ads error: OAUTH_TOKEN_REVOKED.`);
     expect(error.operation).toBe('campaign_monitor');
     expect(JSON.stringify(error.toResponse())).not.toContain('synthetic upstream detail');
-    expect(error.getLogContext()['original_error']).toBe('synthetic upstream detail for acme-foundation');
+    expect(error.getLogContext()['original_error']).toBe('OAUTH_TOKEN_REVOKED: synthetic upstream detail for acme-foundation');
   });
 
   // A GoogleAdsFailure is not an Error: kept whole on a log-only property, so the serializer logs its
@@ -61,6 +61,29 @@ describe('toGoogleAdsReadError (#4526)', () => {
     expect(logged).toContain('PROHIBITED_RESOURCE_TYPE_IN_SELECT_CLAUSE');
     expect(response).not.toContain('synthetic-request-id-0001');
     expect(response).not.toContain('synthetic_field');
+  });
+
+  it('summarizes every Google Ads error and the request id in original_error', () => {
+    const error = toGoogleAdsReadError(
+      {
+        errors: [
+          { error_code: { quota_error: 'RESOURCE_EXHAUSTED' }, message: 'first synthetic detail' },
+          { error_code: { authorization_error: 'USER_PERMISSION_DENIED' }, message: 'second synthetic detail' },
+        ],
+        request_id: 'synthetic-request-id-0002',
+      },
+      'campaign_monitor'
+    ) as MicroserviceError;
+
+    expect(error.getLogContext()['original_error']).toBe(
+      'RESOURCE_EXHAUSTED: first synthetic detail; USER_PERMISSION_DENIED: second synthetic detail (request_id=synthetic-request-id-0002)'
+    );
+  });
+
+  it('logs a failure with no errors list as JSON, never as [object Object]', () => {
+    const error = toGoogleAdsReadError({ status: 'UNAVAILABLE', detail: 'synthetic' }, 'campaign_monitor') as MicroserviceError;
+
+    expect(error.getLogContext()['original_error']).toBe('{"status":"UNAVAILABLE","detail":"synthetic"}');
   });
 
   it('falls back to a generic advisory for a plain error, logging its message', () => {
