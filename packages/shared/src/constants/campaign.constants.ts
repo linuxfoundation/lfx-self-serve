@@ -3967,7 +3967,7 @@ export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'vide
  * With the cutover dark the legacy creator (`campaign-proxy.service.ts`) serves the create, and it
  * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
  * Every field here would be dropped there while the create reports success, so the BFF refuses a
- * non-empty one by name instead (#3692). `geoTargets` postal-code ids and `proximityTargets` have
+ * non-empty one by name instead (#3692, and #3568 for the bidding plan and creative). `geoTargets` postal-code ids and `proximityTargets` have
  * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
  *
  * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
@@ -3986,7 +3986,20 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'callExtensions', label: 'call extensions' },
   { field: 'promotions', label: 'promotions' },
   { field: 'prices', label: 'price extensions' },
-] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string }[];
+  // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
+  // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
+  // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
+  // every field trims to nothing. A value campaign-service would never receive is not a request
+  // the legacy creator fails, so refusing it would be over-refusal.
+  { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
+  { field: 'cpcBid', label: 'max CPC bid', normalized: true },
+  { field: 'targetCpa', label: 'target CPA', normalized: true },
+  { field: 'targetRoas', label: 'target ROAS', normalized: true },
+  { field: 'conversionActions', label: 'conversion actions', normalized: true },
+  { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
+  { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
+  { field: 'displayCreative', label: 'Display creative', normalized: true },
+] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
  * Whether this application offers Video as a CREATABLE channel.
