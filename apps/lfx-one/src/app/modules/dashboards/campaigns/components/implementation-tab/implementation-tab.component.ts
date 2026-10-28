@@ -1130,6 +1130,12 @@ export class ImplementationTabComponent implements OnInit {
     return this.googleGeoSearchState().suggestions.map((s) => ({ ...s, disabled: added.has(s.id) }));
   });
   protected readonly googleGeoSearchFailed = computed(() => this.googleGeoSearchState().failed);
+  /**
+   * Whether a search is waiting on its debounce or its request. While it is, the picker suppresses
+   * its "No results found" message — the stale rows are already cleared, but nothing has answered —
+   * and the line under it says the search is running instead.
+   */
+  protected readonly googleGeoSearchPending = computed(() => this.googleGeoSearchState().pending);
   protected readonly googleGeoSearchTruncated = computed(() => this.googleGeoSearchState().truncated);
   /** What the picker's input points `aria-describedby` at: the failure line when a search failed, else the hint. */
   protected readonly googleGeoSearchDescribedBy = computed(() => (this.googleGeoSearchFailed() ? 'google-geo-search-failed' : 'google-postal-hint'));
@@ -6606,24 +6612,36 @@ export class ImplementationTabComponent implements OnInit {
    * off must not reach a 404 route.
    */
   private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
-    const empty: GoogleAdsGeoTargetSearchState = { suggestions: [], truncated: false, failed: false };
+    // A FRESH object every time, never one shared constant: `toSignal` drops an update equal by
+    // reference to the last, so a second blank completion would set no new suggestions and leave
+    // PrimeNG in its loading state with no request out.
+    const idle = (): GoogleAdsGeoTargetSearchState => ({ suggestions: [], truncated: false, failed: false, pending: false });
+    // The project and the picker's availability are read INSIDE the trigger, not at search time, so a
+    // foundation switch or the capability going away cancels a search mid-debounce and clears its
+    // answer, rather than finishing it for the previous project and showing that on the next open.
+    const trigger = computed(() => ({
+      query: this.googleGeoSearchQuery(),
+      projectSlug: this.activeFoundationSlug(),
+      available: this.googleGeoSearchAvailable(),
+    }));
     return toSignal(
-      toObservable(this.googleGeoSearchQuery).pipe(
-        switchMap((query) => {
-          const projectSlug = this.activeFoundationSlug();
-          if (query === '' || projectSlug === '' || !this.googleGeoSearchAvailable()) return of(empty);
+      toObservable(trigger).pipe(
+        switchMap(({ query, projectSlug, available }) => {
+          if (query === '' || projectSlug === '' || !available) return of(idle());
           return timer(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS).pipe(
             switchMap(() =>
               this.campaignService.searchGoogleAdsGeoTargets(projectSlug, query, { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT }).pipe(
-                map((result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false })),
-                catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true }))
+                map(
+                  (result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false, pending: false })
+                ),
+                catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true, pending: false }))
               )
             ),
-            startWith(empty)
+            startWith<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: false, pending: true })
           );
         })
       ),
-      { initialValue: empty }
+      { initialValue: idle() }
     );
   }
 

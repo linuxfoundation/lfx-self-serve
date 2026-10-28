@@ -468,6 +468,7 @@
                     placeholder="Search a postal code or place"
                     [delay]="0"
                     [forceSelection]="true"
+                    [showEmptyMessage]="!googleGeoSearchPending()"
                     [invalid]="googleGeoSearchFailed()"
                     [describedBy]="googleGeoSearchDescribedBy()"
                     styleClass="w-72"
@@ -520,6 +521,12 @@
                 <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
                   Search Google's location table by postal code or place name, then pick a result — its id is what the campaign targets.
                 </span>
+                <!-- Always mounted, so "Searching…" is announced as it appears rather than with the next change. -->
+                <span role="status" aria-live="polite" class="text-xs text-gray-500" data-testid="implementation-google-geo-search-status">
+                  @if (googleGeoSearchPending()) {
+                    Searching…
+                  }
+                </span>
                 @if (googleGeoSearchFailed()) {
                   <p id="google-geo-search-failed" role="alert" class="text-xs text-red-600" data-testid="implementation-google-geo-search-failed">
                     The location search did not come back. Try again in a moment.
@@ -535,19 +542,23 @@
                   refuses an id that names nothing only after the campaign is created.
                 </span>
               }
-              @if (googlePostalGeoDraftNotId()) {
+              <!--
+                The typed-id box's own lines, shown only while that box is: under the picker they would
+                describe text in a control that is no longer on screen.
+              -->
+              @if (!googleGeoSearchAvailable() && googlePostalGeoDraftNotId()) {
                 <p id="google-postal-not-id" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-id">
                   A geo target id is digits only — look the postal code up in Google's geo-targets table and enter its id.
                 </p>
-              } @else if (googlePostalGeoDraftNotCanonical()) {
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftNotCanonical()) {
                 <p id="google-postal-not-canonical" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-not-canonical">
                   Enter the id with no leading zeros — Google refuses any other spelling.
                 </p>
-              } @else if (googlePostalGeoDraftDuplicate()) {
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftDuplicate()) {
                 <p id="google-postal-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-postal-duplicate">
                   That postal-code target is already on the list.
                 </p>
-              } @else if (googlePostalGeoDraftLooksLikePostalCode()) {
+              } @else if (!googleGeoSearchAvailable() && googlePostalGeoDraftLooksLikePostalCode()) {
                 <!-- A warning, not an error: upstream accepts the entry, so the add stays allowed. -->
                 <p id="google-postal-looks-like-code" class="text-xs text-amber-700" data-testid="implementation-google-postal-looks-like-code">
                   This looks like a postal code, not a geo target id — postal-code ids in Google's table are {{ googlePostalGeoIdMinDigits }} digits or longer.

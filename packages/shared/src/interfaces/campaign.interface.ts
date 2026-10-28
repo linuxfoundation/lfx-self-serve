@@ -1964,12 +1964,14 @@ export interface GoogleAdsGeoTargetOption extends GoogleAdsGeoTargetSuggestion {
 
 /**
  * Where the location picker's search stands. `failed` is a search that did not come back — not an
- * empty answer, which is `suggestions: []` with `failed: false`.
+ * empty answer, which is `suggestions: []` with `failed: false`. `pending` is a search waiting out
+ * its debounce or its request: its rows are already cleared, but "nothing matched" is not yet true.
  */
 export interface GoogleAdsGeoTargetSearchState {
   suggestions: GoogleAdsGeoTargetSuggestion[];
   truncated: boolean;
   failed: boolean;
+  pending: boolean;
 }
 
 /** The optional narrowing a geo target search may carry beside its query text. */

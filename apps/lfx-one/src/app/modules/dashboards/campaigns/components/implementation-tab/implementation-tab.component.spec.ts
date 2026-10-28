@@ -4,6 +4,7 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import {
   CREATIVE_ASSET_MAX_BYTES,
@@ -54,6 +55,7 @@ import type {
   GoogleCreativeFieldSpec,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
+import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -6472,6 +6474,92 @@ describe('ImplementationTabComponent google location picker', () => {
     await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS);
     second.next({ suggestions: [ZIP], truncated: false });
     fixture.detectChanges();
+    expect(c['googleGeoSearchOptions']()).toEqual([{ ...ZIP, disabled: false }]);
+  });
+
+  /** Text left in the typed-id box must not leave its errors under the picker, which does not show it. */
+  it('hides the typed-id box errors once the picker replaces it', () => {
+    const c = seedPicker(null);
+    c['googlePostalGeoForm'].controls.postalId.setValue('SW1A 1AA');
+    fixture.detectChanges();
+    expect(find('implementation-google-postal-not-id')).not.toBeNull();
+
+    fixture.componentRef.setInput('googleGeoSearchEnabled', true);
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-not-id')).toBeNull();
+  });
+
+  /** A foundation switch mid-debounce cancels the search rather than finishing it for the old project. */
+  it('cancels a pending search when the foundation changes', async () => {
+    const c = seedPicker();
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS / 2);
+
+    TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-cncf', slug: 'cncf', name: 'cncf' } as ProjectContext, false);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS / 2 + 1);
+
+    // The search for the old project never went out; the one now running is for the new one.
+    expect(search).not.toHaveBeenCalledWith('tlf', expect.anything(), expect.anything());
+  });
+
+  /** The capability going away mid-debounce cancels the search and clears its state. */
+  it('cancels a pending search and clears it when the picker stops being offered', async () => {
+    const c = seedPicker();
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c['googleGeoSearchPending']()).toBe(true);
+
+    fixture.componentRef.setInput('googleGeoSearchEnabled', false);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS);
+
+    expect(search).not.toHaveBeenCalled();
+    expect(c['googleGeoSearchPending']()).toBe(false);
+  });
+
+  /** Each blank completion yields a NEW empty state, so PrimeNG gets suggestions back every time. */
+  it('answers every blank completion with a fresh empty state', async () => {
+    const c = seedPicker();
+    c['onGoogleGeoSearch']({ query: '   ' });
+    await afterDebounce();
+    const first = c['googleGeoSearchOptions']();
+
+    c['onGoogleGeoSearch']({ query: '  ' });
+    await afterDebounce();
+
+    expect(c['googleGeoSearchOptions']()).toEqual([]);
+    expect(c['googleGeoSearchOptions']()).not.toBe(first);
+  });
+
+  /**
+   * While a search is out its rows are cleared, but "No results found" is not yet true: the empty
+   * message is suppressed and "Searching…" shows instead, until the answer lands.
+   */
+  it('shows searching, not an empty-results message, while a later search is pending', async () => {
+    const later = new Subject<GoogleAdsGeoTargetSearchResult>();
+    search.mockReturnValueOnce(of({ suggestions: [AUSTIN], truncated: false })).mockReturnValueOnce(later);
+    const c = seedPicker();
+    const picker = () => fixture.debugElement.query(By.directive(AutocompleteComponent)).componentInstance as AutocompleteComponent;
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    await afterDebounce();
+    expect(picker().showEmptyMessage()).toBe(true);
+
+    c['onGoogleGeoSearch']({ query: 'Austin Texas' });
+    await afterDebounce();
+
+    expect(c['googleGeoSearchOptions']()).toEqual([]);
+    expect(picker().showEmptyMessage()).toBe(false);
+    expect(find('implementation-google-geo-search-status')?.textContent).toContain('Searching');
+
+    later.next({ suggestions: [ZIP], truncated: false });
+    fixture.detectChanges();
+
+    expect(picker().showEmptyMessage()).toBe(true);
+    expect(find('implementation-google-geo-search-status')?.textContent?.trim()).toBe('');
     expect(c['googleGeoSearchOptions']()).toEqual([{ ...ZIP, disabled: false }]);
   });
 
