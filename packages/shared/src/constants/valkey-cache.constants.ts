@@ -79,7 +79,8 @@ export const VALKEY_CACHE = {
    * 10s, + a 10s resolve fetch), and on a still-unresolved member falls through to `createMember`
    * (another 10s fetch); if that create races a concurrent request and CDP returns 409, it retries
    * `resolveMemberId` once more (a 10s fetch, token already cached by then) before
-   * `rejectIdentityForUser`'s own reject call (10s). Set with real margin above that ~60s total so
+   * `rejectIdentityForUser`'s own reject call (10s), which first waits behind the member's queued
+   * reconcile writes for at most `CDP_CONFIG.IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS` (15s, #4523). Set with real margin above that ~75s total so
    * the lock never expires (and gets silently re-acquired by a second request) while this request's
    * own upstream calls are still legitimately in flight. Also acts as the safety-net auto-release
    * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica

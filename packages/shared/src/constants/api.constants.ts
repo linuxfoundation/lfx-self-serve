@@ -158,6 +158,12 @@ export const CDP_CONFIG = {
   DEFAULT_PRODUCTION_URL: 'https://cm.lfx.dev/api',
   /** Hard cap enforced by the CDP packages list endpoint (400 above this). */
   MAX_PAGE_SIZE: 100,
+  /**
+   * Longest an identity removal waits behind the member's queued reconcile writes before it runs
+   * anyway (#4523). Removal sits inside the meeting-invite lock, so this keeps that region within
+   * `VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS`.
+   */
+  IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS: 15000,
   ENDPOINTS: {
     RESOLVE_MEMBER: '/v1/members/resolve',
     CREATE_MEMBER: '/v1/members',

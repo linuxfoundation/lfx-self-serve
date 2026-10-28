@@ -213,6 +213,34 @@ describe('CdpService.runMemberIdentityWrites', () => {
     expect(requestedUrls(fetchMock)[1]).toContain(`${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES('member-removal')}/identity-1`);
   });
 
+  // Removal runs inside the meeting-invite lock, so a stuck chain must not hold it past the lock TTL.
+  it('stops waiting for a stuck chain after the cap, yet keeps the slot until both settle', async () => {
+    vi.useFakeTimers();
+    try {
+      const started: string[] = [];
+      const stuck = deferredWrite(started, 'stuck');
+      const verify = vi.fn(async () => undefined);
+      fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: 'member-capped' })).mockResolvedValueOnce(jsonResponse({}));
+      new CdpService().runMemberIdentityWrites(undefined, 'member-capped', [stuck.write]);
+
+      const removal = new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1');
+      await vi.advanceTimersByTimeAsync(CDP_CONFIG.IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS - 1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await removal;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(loggerCalls.some(([, operation, message]) => operation === 'reject_cdp_identity' && String(message).startsWith('Stopped waiting'))).toBe(true);
+      expect(new CdpService().runMemberIdentityWrites(undefined, 'member-capped', [verify])).toBe(false);
+
+      stuck.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(new CdpService().runMemberIdentityWrites(undefined, 'member-capped', [verify])).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The removal holds the slot while its PATCH runs, so a reconcile can't write alongside it.
   it('skips a reconcile chain while a removal holds the member slot', async () => {
     let releasePatch!: (response: Response) => void;
