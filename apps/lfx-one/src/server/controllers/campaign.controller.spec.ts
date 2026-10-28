@@ -3537,6 +3537,14 @@ describe('CampaignController.createCampaign cutover', () => {
       callExtensions: [{ countryCode: 'US', phoneNumber: '+1 415 555 0100' }],
       promotions: [{ promotionTarget: 'Conference passes', discountPercent: 25 }],
       prices: [{ type: 'EVENTS', offerings: [{ header: 'Standard', description: 'Two days', amount: 499, currencyCode: 'USD' }] }],
+      biddingStrategy: 'MAXIMIZE_CONVERSIONS',
+      cpcBid: 2.5,
+      targetCpa: 40,
+      targetRoas: 3,
+      conversionActions: ['customers/1234567890/conversionActions/111'],
+      demandGenCreative: { headlines: ['Build with open source'] },
+      performanceMaxCreative: { businessName: 'Example Foundation' },
+      displayCreative: { headlines: ['Join us this spring'] },
     };
     const CASES = GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.map(({ field, label }) => [field, label] as const);
 
@@ -3571,6 +3579,40 @@ describe('CampaignController.createCampaign cutover', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(legacyCreate).toHaveBeenCalledTimes(2);
+    });
+
+    // The bidding plan and creative are judged by what the cutover's own normalizers would send
+    // (#3568), so a value campaign-service would never receive still creates on the legacy road.
+    it.each([
+      ['a blank bidding strategy', { biddingStrategy: '  ' }],
+      ['zero bid amounts, which upstream reads as unset', { cpcBid: 0, targetCpa: 0, targetRoas: 0 }],
+      ['non-numeric bid amounts the normalizer drops', { cpcBid: '2.5' }],
+      ['blank conversion actions', { conversionActions: ['  ', ''] }],
+      ['a creative whose every field is blank', { demandGenCreative: { headlines: ['  '], businessName: ' ' } }],
+      ['an empty creative object', { performanceMaxCreative: {} }],
+      ['a non-object creative the normalizer ignores', { displayCreative: 'nope' }],
+    ])('still serves %s on the legacy road', async (_label, overrides) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a creative left under a channel the request does not select', async () => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['search'], displayCreative: NON_EMPTY.displayCreative }), { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom().field).toBe('displayCreative');
     });
 
     it('refuses a malformed non-list value rather than dropping it', async () => {
@@ -9034,11 +9076,8 @@ describe('CampaignController.createCampaign Google stored images', () => {
     expect(sentCreative('displayCreative')['logoImages']).toEqual(['https://cdn.example.org/logo.png']);
   });
 
-  it.each([
-    ['the Google-assets flag is off', false, true],
-    ['the create cutover is dark', true, false],
-  ])('refuses a request carrying a Google imageAssetId when %s, naming the entry and creating nothing', async (_label, assets, cutover) => {
-    flagsWith(assets, cutover);
+  it('refuses a request carrying a Google imageAssetId when the Google-assets flag is off, naming the entry and creating nothing', async () => {
+    flagsWith(false, true);
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
@@ -9066,6 +9105,32 @@ describe('CampaignController.createCampaign Google stored images', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+
+  /**
+   * With the create cutover dark the legacy creator serves, and it reads no creative at all, so the
+   * refusal names the whole creative (#3568) rather than the stored image. "Supply an image URL
+   * instead" would be wrong advice there: a URL creative is dropped just the same.
+   */
+  it('refuses the whole creative, stored image and all, when the create cutover is dark', async () => {
+    flagsWith(true, false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(body('performance-max', 'performanceMaxCreative', { headlines: ['H1'], logoImages: [{ imageAssetId: ASSET }] }), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.validationErrors[0].field).toBe('performanceMaxCreative');
+    expect(error.validationErrors[0].message).toContain('Google Performance Max creative cannot be applied');
   });
 
   /** An over-long id is the same unbounded string an over-long URL is, and is bounded the same way. */

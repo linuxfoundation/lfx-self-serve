@@ -2352,6 +2352,32 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     expect(el('monitoring-restricted')).toBeNull();
   });
 
+  // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped
+  // connection no longer all read as the same generic "Failed to load campaign data".
+  it.each([
+    ['a 5xx, whose body is not read', failed, 'Failed to load campaign data (HTTP 500)'],
+    [
+      "a guard's 403, with the server's reason",
+      () => new HttpErrorResponse({ status: 403, error: { error: 'campaign_manager access required for this resource', code: 'MARKETING_ACCESS_REQUIRED' } }),
+      'campaign_manager access required for this resource (HTTP 403)',
+    ],
+    [
+      'an authored Google Ads advisory',
+      () =>
+        new HttpErrorResponse({
+          status: 502,
+          error: { error: 'Google Ads did not return the account data. Google Ads error: QUOTA_EXCEEDED.', code: 'SERVICE_ADVISORY' },
+        }),
+      'Google Ads did not return the account data. Google Ads error: QUOTA_EXCEEDED. (HTTP 502)',
+    ],
+  ] as const)('names the HTTP status under the Google error for %s', async (_case, error, detail) => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(error));
+    fixture.detectChanges();
+
+    expect(el('monitoring-error')?.textContent).toContain(detail);
+  });
+
   it.each([
     ['legacy (flag off)', flagOff],
     ['cutover (flag on)', flagOn],

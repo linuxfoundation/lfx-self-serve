@@ -56,6 +56,7 @@ import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
+import { GoogleAdsNotConfiguredError } from './google-ads-read-error';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
@@ -104,7 +105,7 @@ function getGadsClient(): GoogleAdsApi {
     const clientSecret = getEnv('GADS_CLIENT_SECRET');
     const developerToken = getEnv('GADS_DEVELOPER_TOKEN');
     if (!clientId || !clientSecret || !developerToken) {
-      throw new Error('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
+      throw new GoogleAdsNotConfiguredError('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
     }
     gadsClient = new GoogleAdsApi({
       client_id: clientId,
@@ -117,9 +118,16 @@ function getGadsClient(): GoogleAdsApi {
 
 export function getCustomer(): Customer {
   if (!gadsCustomer) {
+    const customerId = getEnv('GADS_CUSTOMER_ID');
+    const refreshToken = getEnv('GADS_REFRESH_TOKEN');
+    // Checked here, not left to the SDK: an empty customer id or refresh token fails as a Google Ads
+    // call, which would read as a Google failure rather than a server setting to fix (#4526).
+    if (!customerId || !refreshToken) {
+      throw new GoogleAdsNotConfiguredError('Google Ads customer not configured (GADS_CUSTOMER_ID, GADS_REFRESH_TOKEN)');
+    }
     gadsCustomer = getGadsClient().Customer({
-      customer_id: getEnv('GADS_CUSTOMER_ID'),
-      refresh_token: getEnv('GADS_REFRESH_TOKEN'),
+      customer_id: customerId,
+      refresh_token: refreshToken,
       login_customer_id: getEnv('GADS_LOGIN_CUSTOMER_ID') || undefined,
     });
   }
