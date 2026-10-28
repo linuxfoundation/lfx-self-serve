@@ -28,6 +28,7 @@ import {
   resolveMktgFamilyNextStep,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgRunRouteFor,
 } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -173,7 +174,16 @@ export class MktgDocumentsComponent {
               params: { project: this.projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null },
             },
           ];
-        return [run.runId, { label: 'Open', commands: [run.agentKey, run.documentId], params: { revision: null, generation: null, run: run.runId } }];
+        const commands =
+          type?.kind === 'living' && run.state !== 'failed' ? (mktgRunRouteFor(run.agentKey, this.kitRoot()) ?? []) : [run.agentKey, run.documentId];
+        return [
+          run.runId,
+          {
+            label: 'Open',
+            commands,
+            params: { project: this.projectSlug(), type: null, mode: null, questions: null, revision: null, generation: null, run: run.runId },
+          },
+        ];
       })
     )
   );

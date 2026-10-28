@@ -424,7 +424,9 @@ describe('MktgDocumentsComponent', () => {
       );
     } else {
       expect(startedLink?.textContent?.trim()).toBe('Open');
-      expect(startedLink?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
+      const target = new URL(startedLink?.getAttribute('href') ?? '', 'https://synthetic.example');
+      expect(target.searchParams.get('run')).toBe('b'.repeat(64));
+      expect(target.pathname).toBe(state === 'failed' ? '/brand-kit/living' : '/mktg-os-agents/' + BRAND_KIT.catalogAgentId);
       expect(query('mktg-documents-nav-brand-kit')?.getAttribute('href')).toContain('type=brand-kit');
     }
     if (state === 'failed') {
@@ -516,6 +518,14 @@ describe('MktgDocumentsComponent', () => {
     await fixture.whenStable();
     expect(query('mktg-documents-loading')).toBeNull();
     expect(query('mktg-documents-empty-living')?.textContent).toContain('No FAQ yet');
+  });
+
+  it.each(MKTG_DOCUMENT_TYPES.filter((entry) => entry.kind === 'run'))('keeps $agentKey Started-run links on its document', async (type) => {
+    const run = { ...startedRun(), agentKey: type.agentKey, documentId: 'run-synthetic' };
+    store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [run] }));
+    await render('/');
+    const link = query('mktg-documents-open-started-' + run.runId)?.getAttribute('href') ?? '';
+    expect(new URL(link, 'https://synthetic.example').pathname).toBe('/' + type.agentKey + '/' + run.documentId);
   });
 
   it('retains loaded documents on transient refresh failure, retries and removes completed progress', async () => {

@@ -23,6 +23,18 @@ describe('MktgRunActivityComponent form-only runs', () => {
     fixture.destroy();
   });
 
+  it('renders only the steps when its run-page owner supplies the heading and status', () => {
+    const fixture = TestBed.createComponent(MktgRunActivityComponent);
+    fixture.componentRef.setInput('title', 'Working on the asset');
+    fixture.componentRef.setInput('startedAt', Date.now());
+    fixture.componentRef.setInput('showHeader', false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('h2')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-elapsed"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-steps"]')).not.toBeNull();
+    fixture.destroy();
+  });
+
   it('reuses the phase header and expandable step list for a long research feed', () => {
     const fixture = TestBed.createComponent(MktgRunActivityComponent);
     fixture.componentRef.setInput('title', 'Working on Member 360');

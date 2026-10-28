@@ -151,6 +151,12 @@ export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
  */
 export const REDDIT_MAX_BUDGET_USD = 1_000_000_000;
 
+/**
+ * The Reddit budget the Implementation tab starts from. Not derived from the brief, so a brief switch
+ * on a live mount resets the field to this rather than keeping the previous brief's figure (#4589).
+ */
+export const DEFAULT_REDDIT_BUDGET_USD = 500;
+
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**
