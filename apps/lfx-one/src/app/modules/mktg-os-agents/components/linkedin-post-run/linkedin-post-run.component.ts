@@ -219,18 +219,43 @@ export class LinkedinPostRunComponent {
       .subscribe((response) => {
         this.loading.set(false);
         this.saved.set(response?.profile ?? null);
-        if (response) {
-          this.fillProfile();
-          const editProfile = this.route.snapshot.queryParamMap.get('profile') === 'edit';
-          this.editing.set(!response.profile || editProfile);
-          const pending = this.api.pending(this.intake(), this.context.activeContextUid());
-          if (pending) {
-            this.run.set(pending);
-            this.contentForm.controls.share_link.setValue(pending.answers?.[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
-            if (!editProfile) {
-              this.editing.set(false);
-              this.onRetryRun();
-            }
+        if (!response) return;
+        const params = this.route.snapshot.queryParamMap;
+        const editProfile = params.get('profile') === 'edit';
+        const profileDocument = params.get('profileDocument');
+        this.explicitProfileSave.set(editProfile && !!profileDocument);
+        if (this.explicitProfileSave() && !response.profile) {
+          this.setup.set(this.api.setupForDocument(this.context.activeContextUid(), profileDocument ?? ''));
+          if (!this.setup()) this.error.set("Your setup answers aren't kept in the browser — enter them again to draft");
+        } else if (!response.profile) {
+          this.setup.set(this.api.setupForDocument(this.context.activeContextUid()));
+        }
+        this.fillProfile();
+        this.editing.set(!response.profile || editProfile);
+        const token = params.get('questions');
+        const prepared = token && !editProfile ? this.attempts.consumeQuestions(token, this.context.activeContextUid(), this.intake().agentId) : null;
+        const latest =
+          !this.freshMode() && !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
+        this.pendingNotice.set(latest);
+        const pending =
+          prepared?.pending ??
+          (latest?.state === 'questions' && latest.questions?.length
+            ? this.attempts.load(this.context.activeContextUid(), this.intake().agentId, latest.documentId)
+            : null);
+        if (pending?.pendingQuestions) {
+          this.questionsPending = pending;
+          this.questions.set(pending.pendingQuestions.questions);
+          this.editing.set(false);
+        } else if (prepared?.pending.state === 'failed') {
+          let action = 'paste it again';
+          if (this.source() === 'file') action = 'choose the file again';
+          if (this.source() === 'url') action = 'enter the link again';
+          this.sourceReentry = `Your source isn't kept in the browser — ${action} to draft`;
+          this.error.set(this.sourceReentry);
+          if (!response.profile) {
+            this.setup.set(null);
+            this.profileForm.reset();
+            this.error.set(`${this.sourceReentry}. Your setup answers aren't kept in the browser — enter them again to draft`);
           }
         }
       });
@@ -393,9 +418,31 @@ export class LinkedinPostRunComponent {
       });
   }
 
-  protected onSaveVoice(): void {
-    const result = this.result();
-    if (!result?.profile_update_note || this.busy()) return;
+  protected onOpenPending(): void {
+    const pending = this.pendingNotice();
+    if (!pending || !this.writer() || this.busy()) return;
+    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', this.intake().agentId, pending.documentId], {
+      queryParams: {
+        project: this.context.activeContext()?.slug ?? null,
+        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+        profile: null,
+        profileDocument: null,
+      },
+      replaceUrl: true,
+    });
+  }
+
+  protected onOpenAccepted(): void {
+    const request = this.acceptedRequest();
+    if (request && !this.busy()) void this.returnToDocument(request, null); // Public server record needs no browser capability.
+  }
+
+  private async returnToDocument(request: MktgGenerateRequest, generation: string | null = this.attempts.prepare(request, true)): Promise<void> {
+    if (!request.documentId || generation === '') {
+      this.busy.set(false);
+      return;
+    }
+    const version = this.scopeVersion;
     this.busy.set(true);
     try {
       // Replace the entry before pushing its accepted document: Back must not restore mode=new.

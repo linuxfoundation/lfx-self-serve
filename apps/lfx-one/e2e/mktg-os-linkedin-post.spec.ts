@@ -16,15 +16,12 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
-  test('reloaded first-run failure offers Retry to empty setup without storing profile answers', async ({ page }, info) => {
-    await suppressCookieBanner(page);
-    await setupLinkedin(page);
-    let dead = false;
-    let polls = 0;
-    await page.route(`**${LINKEDIN_API}/result`, (route) => {
-      if (!dead) return json(route, { status: 'pending' });
-      polls++;
-      return json(route, { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not start. Retry.' } });
+  test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
+    await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
+    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
+    let generates = 0;
+    page.on('request', (request) => {
+      if (request.url().endsWith(`${LINKEDIN_API}/generate`)) generates++;
     });
     await openLinkedin(page);
     for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
@@ -32,78 +29,42 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
     await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic first-run source.');
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-generating')).toBeVisible();
-    const profilesPersisted = await page.evaluate(
-      (prefix) =>
-        Object.keys(localStorage)
-          .filter((key) => key.startsWith(prefix))
-          .some((key) => {
-            const pending = JSON.parse(localStorage.getItem(key) ?? '{}');
-            return 'setup' in pending || 'profile' in pending || 'setup' in (pending.retryInputs ?? {});
-          }),
-      MKTG_PENDING_DOCUMENT_STORAGE_PREFIX
-    );
-    expect(profilesPersisted).toBe(false);
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    dead = true;
-    await openLinkedin(page);
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    expect(polls).toBe(1);
-    await page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.goBack();
     await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText("Your setup answers aren't kept in the browser — enter them again to draft");
-    await expect(page.getByTestId('mktg-linkedin-profile-name').locator('input')).toHaveValue('');
-    await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-    expect(polls).toBe(1);
-    await page.screenshot({ path: info.outputPath('first-run-reload-empty-setup.png'), fullPage: true });
+    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
+      await expect(page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea')).toHaveValue(value);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is being written on its document page');
+    await expect(page.getByTestId('mktg-linkedin-open-pending').getByRole('button')).toHaveAccessibleName('Open the document');
+    expect(generates).toBe(1);
+    await page.screenshot({ path: info.outputPath('walk-L2b-prefilled-setup-pending-notice.png'), fullPage: true });
   });
-  test('a dead session fails within one poll and Retry sends the identical inputs to a new session', async ({ page }, info) => {
-    await suppressCookieBanner(page);
-    await setupLinkedin(page, { saved: true });
-    const submitted: unknown[] = [];
+
+  test('Back then Forward to consumed questions restores the waiting draft without another Generate', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true, questions: true }); // suppressCookieBanner is applied by the helper.
+    let generates = 0;
     page.on('request', (request) => {
-      if (new URL(request.url()).pathname === `${LINKEDIN_API}/generate`) submitted.push(request.postDataJSON());
-    });
-    let polls = 0;
-    await page.route(`**${LINKEDIN_API}/result`, (route) => {
-      polls++;
-      return json(route, {
-        status: 'failed',
-        failure: { eventType: 'runtime_error', reason: 'The agent could not start. Your inputs are kept — retry with a new run.' },
-      });
+      if (request.url().endsWith(`${LINKEDIN_API}/generate`)) generates++;
     });
     await openLinkedin(page);
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release notes kept for Retry.');
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic question source.');
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    await expect.poll(() => polls).toBe(1);
-    await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('Synthetic release notes kept for Retry.');
-    for (const action of ['cancel', 'save'] as const) {
-      await page.getByTestId('mktg-linkedin-edit-profile').click();
-      await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-      await page
-        .getByTestId(`mktg-linkedin-${action === 'cancel' ? 'cancel-edit' : 'save-profile'}`)
-        .getByRole('button')
-        .click();
-      await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-      await expect(page.getByTestId('mktg-linkedin-error')).toContainText(MKTG_RUN_FAILURE_REASON);
-      await expect(page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-      expect(submitted).toHaveLength(1);
-      expect(polls).toBe(1);
-    }
-    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('');
-    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('Supply pasted text');
-    expect(submitted).toHaveLength(1);
-    expect(polls).toBe(1);
-    await page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
-    await expect.poll(() => submitted.length).toBe(2);
-    expect(submitted[1]).toEqual(submitted[0]);
-    await expect.poll(() => polls, { timeout: LINKEDIN_RUN_TIMEOUT }).toBe(2);
-    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('The agent could not start', { timeout: LINKEDIN_RUN_TIMEOUT });
-    await page.screenshot({ path: info.outputPath('failed-session-retry.png'), fullPage: true });
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    const questionsUrl = page.url();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(questionsUrl);
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is waiting for your answers on its document page');
+    await page.screenshot({ path: info.outputPath('walk-L5c2-restored-questions.png'), fullPage: true });
+    await page.getByTestId('mktg-linkedin-open-pending').getByRole('button').click();
+    await expect(page).toHaveURL(/\/documents\/linkedin-post\/run-/);
+    await expect(page).not.toHaveURL(/questions=/);
+    await expect(page.getByTestId('mktg-document-view-live-state')).toContainText('Waiting for your answers.');
+    expect(generates).toBe(1);
+    await page.screenshot({ path: info.outputPath('walk-L5c2-navigation-only-document.png'), fullPage: true });
   });
 
   test('an accepted draft whose handoff cannot open offers Open without another Generate', async ({ page }, info) => {

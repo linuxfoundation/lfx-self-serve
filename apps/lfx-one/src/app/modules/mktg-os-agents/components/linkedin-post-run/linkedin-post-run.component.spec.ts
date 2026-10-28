@@ -98,6 +98,19 @@ describe('LinkedIn profile and post surface', () => {
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.generate);
   });
 
+  it('prefills first-run setup from creator/project live memory on return, not in a fresh visit', async () => {
+    const setup = { ...profile.about, ...profile.voice };
+    api.setupForDocument.mockReturnValueOnce(setup).mockReturnValue(null);
+    const first = await render();
+    expect(api.setupForDocument).toHaveBeenCalledWith('project-one');
+    expect(first.componentInstance['profileForm'].getRawValue()).toMatchObject(setup);
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).not.toBeNull();
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')).toBeNull();
+    first.destroy();
+    const fresh = await render();
+    expect(fresh.componentInstance['profileForm'].getRawValue()).toMatchObject({ name: 'Example author', role: '', focus_areas: '', primary_audience: '' });
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
 
   it('never navigates on plain load or reload with a pending accepted attempt present', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
@@ -259,6 +272,35 @@ describe('LinkedIn profile and post surface', () => {
     }
   );
 
+  it.each(['memory', 'no-text', 'none'] as const)('recovers a consumed questions URL from the existing attempt cache (%s)', async (mode) => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const pending = intakePending();
+    attempts.save(pending);
+    const token = attempts.prepare(pending.request, true);
+    expect(attempts.consumeQuestions(token, 'project-one', LINKEDIN_POST_INTAKE.agentId)).not.toBeNull();
+    if (mode === 'no-text') attempts.save({ ...pending, pendingQuestions: undefined });
+    if (mode === 'none') attempts.clear('project-one', LINKEDIN_POST_INTAKE.agentId, attempts.subject(), pending.request.documentId);
+    vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => (key === 'questions' ? token : null));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]') !== null).toBe(mode === 'memory');
+    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]') !== null).toBe(mode !== 'memory');
+    const notice = root.querySelector('[data-testid="mktg-linkedin-pending-notice"]');
+    if (mode === 'none') expect(notice).toBeNull();
+    else {
+      expect(notice?.textContent).toContain('Your draft is waiting for your answers on its document page');
+      expect(attempts.latestPending('project-one', LINKEDIN_POST_INTAKE.agentId)).not.toHaveProperty('attempt');
+      fixture.componentInstance['onOpenPending']();
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, pending.request.documentId]),
+        expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ questions: null, generation: null }) })
+      );
+    }
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
+  });
 
   it('consumes shared questions and returns on the same-session answers ACK without polling on the form', async () => {
     const intake = LINKEDIN_POST_INTAKE;
