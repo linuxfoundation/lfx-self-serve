@@ -475,6 +475,16 @@
         [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)"
         (toggleStandard)="onToggleStandardSuppression($event)" />
+      @if (suppressionFailed() && !suppressionLoading()) {
+        <button
+          type="button"
+          (click)="onRetrySuppression()"
+          class="inline-flex w-fit items-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-800 hover:bg-red-50"
+          data-testid="campaigns-audience-suppression-retry">
+          <i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>
+          Reload suppression lists
+        </button>
+      }
       @if (excludeIds().length > 0) {
         <div class="flex flex-wrap items-center gap-2 text-xs" data-testid="campaigns-audience-suppression-count">
           <button
@@ -502,6 +512,11 @@
             </span>
             @if (!count.exact && count.reason) {
               <span class="text-gray-500">— {{ count.reason }}</span>
+            }
+            @if (suppressionCountOmitsRegistrants()) {
+              <span class="text-gray-500" data-testid="campaigns-audience-suppression-count-omits-registrants"
+                >— not counting the current-registrants list, which is created when you attach or compose</span
+              >
             }
           }
           @if (suppressionCountError(); as message) {
@@ -542,6 +557,7 @@
           [attachedListId]="attachedListId()"
           [attachedMasterId]="attachedMasterId()"
           [attachedExclusionIds]="recordedExclusions()"
+          [standingExpansion]="standingExpansion()"
           [attachedIncludeIds]="attachedIncludeIds()"
           [pendingExclusionIds]="excludeIds()"
           (addList)="onAddListBrief($event)"

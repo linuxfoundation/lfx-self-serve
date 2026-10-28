@@ -13,6 +13,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
   AUDIENCE_BUILD_MODES,
+  AUDIENCE_EDITION_YEAR_PATTERN,
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
   AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY,
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
@@ -52,6 +53,7 @@ import type {
   AudiencePendingReuseAttach,
   AudiencePreviewCount,
   AudienceSignal,
+  AudienceStandingExpansion,
   AudienceStartOverAction,
   AudienceStepKey,
   AudienceSuppressionList,
@@ -313,7 +315,7 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly registrantsEdition = computed(() => {
     const name = this.qaEventName();
-    return /\b(19|20)\d{2}\b/.test(name) && name.length <= AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH ? name : '';
+    return AUDIENCE_EDITION_YEAR_PATTERN.test(name) && name.length <= AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH ? name : '';
   });
   /**
    * The edition the loaded suppression rows were requested for. The registrants row describes this
@@ -325,9 +327,18 @@ export class AudienceBuilderTabComponent {
    * Whether a compose-partial's suppression is the project's shared standard list: that one is
    * reused by every email, so the banner must never call it an orphan to delete.
    */
-  protected readonly partialSuppressionShared = computed(
-    () => this.composePartial()?.suppression?.name?.startsWith(AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX) ?? false
-  );
+  protected readonly partialSuppressionShared = computed(() => {
+    const suppression = this.composePartial()?.suppression;
+    if (!suppression) {
+      return false;
+    }
+    // By id when the standing list is known; the name prefix (campaign-service's
+    // `StandardSuppressionName`) only as a fallback for a portal whose standing list is not loaded.
+    const standingId = this.standardList()?.listId;
+    return (
+      (standingId !== undefined && suppression.listId === standingId) || (suppression.name?.startsWith(AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX) ?? false)
+    );
+  });
   /** Capabilities have answered; until then the tab is locked but says it is checking. */
   protected readonly capabilitiesKnown = computed(() => this.capabilities() !== null || this.capabilitiesFailed());
   protected readonly hasDiscovered = signal(false);
@@ -858,6 +869,12 @@ export class AudienceBuilderTabComponent {
       : 'No suppression list resolves in this HubSpot portal, and every send must keep at least one. Ask a HubSpot admin to create the hygiene lists.';
   });
 
+  /**
+   * The exact count cannot include a ticked current-registrants list that does not exist yet: it
+   * has no id until an attach or compose creates it. The count is labelled so.
+   */
+  protected readonly suppressionCountOmitsRegistrants = computed(() => this.registrantsToCreate() !== '');
+
   /** The suppression count, only while it still describes the ticked exclusions. */
   protected readonly suppressionCount = computed(() => {
     const result = this.suppressionCountResult();
@@ -1024,7 +1041,21 @@ export class AudienceBuilderTabComponent {
    * The suppression lists the send applies, for QA: what was recorded once the audience is
    * attached, otherwise what Exclude currently ticks.
    */
-  protected readonly qaSendSuppressionIds = computed<readonly string[]>(() => (this.attachedListId() ? this.attachedExclusions() : this.excludeIds()));
+  protected readonly qaSendSuppressionIds = computed<readonly string[]>(() => {
+    const listId = this.attachedListId();
+    if (listId === null) {
+      return this.excludeIds();
+    }
+    // The ids the attach RECORDED, standing list included as itself: expanding it into today's
+    // standard rows (as `attachedExclusions` does for matching) would QA a different suppression
+    // than the one the send applies. A recorded compose has its exclusions inside the master.
+    const attached = this.attachResult();
+    if (attached === null || attached.master.listId !== listId) {
+      return [];
+    }
+    const includes = new Set(this.attachedIncludeIds());
+    return [...new Set(attached.suppressionListIds)].filter((id) => !includes.has(id));
+  });
 
   /**
    * The exclusions behind the current attachment, so a prior send can be matched on its FULL
@@ -1068,6 +1099,15 @@ export class AudienceBuilderTabComponent {
     }
     const standingId = composed.suppression?.listId;
     return [...new Set(composed.suppressionListIds.flatMap((id) => (id === standingId ? this.recordedStandardIds() : [id])))];
+  });
+
+  /**
+   * How the standing list reads in the standard rows, for step 4's "same lists" match: the recorded
+   * exclusions are expanded this way, so a past send's own standing-list id must be too.
+   */
+  protected readonly standingExpansion = computed<AudienceStandingExpansion | null>(() => {
+    const listId = this.attachResult()?.standardSuppression?.listId ?? this.composeResult()?.suppression?.listId ?? this.standardList()?.listId;
+    return listId ? { listId, rowIds: this.recordedStandardIds() } : null;
   });
 
   /** The recorded audience's exclusions, whichever write recorded it, for matching a prior send. */
@@ -2088,6 +2128,17 @@ export class AudienceBuilderTabComponent {
     });
   }
 
+  /**
+   * Re-reads the suppression rows after a failed load, keeping the run, the ticks and any compose
+   * lock. A failed reload after a compose otherwise left attach blocked with no way back short of
+   * reloading the page: rediscovery of the same URL is refused once a compose ran.
+   */
+  protected onRetrySuppression(): void {
+    if (this.suppressionFailed() && !this.suppressionLoading()) {
+      this.reloadSuppressionRows();
+    }
+  }
+
   /** Runs the Discover or draft the operator confirmed starting over for. */
   protected onConfirmStartOver(): void {
     const action = this.pendingStartOver();
@@ -2123,6 +2174,10 @@ export class AudienceBuilderTabComponent {
 
   protected onSetMode(mode: AudienceBuildMode): void {
     this.mode.set(mode);
+    // The Build and Reuse panels both bind eventUrlControl, and an edit in one never writes back to
+    // the other (Reactive Forms skips the view that made the change, and the hidden panel stays
+    // mounted). Re-writing the value updates every bound input, so the panel shown is current.
+    this.eventUrlControl.setValue(this.eventUrlControl.value, { emitEvent: false });
   }
 
   /** Arrow, Home and End keys move between the mode tabs, as the WAI-ARIA tabs pattern expects. */
@@ -2440,6 +2495,7 @@ export class AudienceBuilderTabComponent {
     const dispatchScope = this.audienceScope();
     const registrantsCreated = this.registrantsToCreate() !== '';
     const dispatchContext = this.writeDispatchContext();
+    const sentExclusions = this.sentExcludeIds();
     this.composeBriefId.set(dispatchBriefId);
     this.composeScope.set(dispatchScope);
     this.looseComposedMaster.set(null);
@@ -2453,7 +2509,7 @@ export class AudienceBuilderTabComponent {
     this.campaignService
       .composeAudienceMaster(this.projectSlug(), {
         listIds: [...this.inclusion().keys()],
-        excludeListIds: this.sentExcludeIds(),
+        excludeListIds: sentExclusions,
         currentRegistrantsEvent: this.registrantsEvent() || undefined,
         eventUrl: this.eventUrlControl.value.trim() || undefined,
         brandShort: event?.brandShort,
@@ -2490,6 +2546,9 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.composeDispatch.set(dispatchContext);
+          if (registrantsCreated) {
+            this.adoptCreatedRegistrantsId(result.suppressionListIds, sentExclusions, result.suppression?.listId);
+          }
           this.composeResult.set(result);
           // This compose recorded after any earlier attach; see `attachedListId`.
           this.lastWriteWasAttach.set(false);
@@ -2769,6 +2828,7 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration) {
             return;
           }
+          this.dropVanishedRegistrants(lists);
           this.suppressionLists.set(lists);
           this.standardList.set(standardList ?? null);
           this.recordedStandardIds.set(lists.filter((list) => list.category === 'standard' && list.listId !== '').map((list) => list.listId));
@@ -2841,6 +2901,44 @@ export class AudienceBuilderTabComponent {
     const next = new Map(current);
     filled.forEach((list) => next.set(list.key, list.listId));
     this.suppression.set(next);
+  }
+
+  /**
+   * Takes the id of a current-registrants list a write just created from the write's own response,
+   * so the selection matches the recorded audience without waiting on the reload -- a failed reload
+   * otherwise left the row's id empty and the saved audience reading as stale. The created list is
+   * the one returned id that was neither sent nor the standing list.
+   */
+  private adoptCreatedRegistrantsId(returned: readonly string[] | undefined, sent: readonly string[], standingId: string | undefined): void {
+    const created = (returned ?? []).filter((id) => !sent.includes(id) && id !== standingId);
+    const row = this.suppressionLists().find((list) => list.category === 'current_registrants' && list.willCreate && list.listId === '');
+    if (created.length !== 1 || row === undefined) {
+      return;
+    }
+    const id = created[0];
+    this.suppressionLists.update((lists) => lists.map((list) => (list.key === row.key ? { ...list, listId: id, willCreate: undefined } : list)));
+    if (this.suppression().has(row.key)) {
+      this.suppression.set(new Map(this.suppression()).set(row.key, id));
+    }
+  }
+
+  /**
+   * A ticked current-registrants row the new rows no longer carry (the edition lost its year, or
+   * changed) is unticked. Kept, its old id went up as a plain exclusion the picker no longer showed,
+   * and without the edition upstream's checks on it.
+   */
+  private dropVanishedRegistrants(lists: readonly AudienceSuppressionList[]): void {
+    const keys = new Set(lists.map((list) => list.key));
+    const vanished = this.suppressionLists().filter(
+      (list) => list.category === 'current_registrants' && !keys.has(list.key) && this.suppression().has(list.key)
+    );
+    if (vanished.length === 0) {
+      return;
+    }
+    const next = new Map(this.suppression());
+    vanished.forEach((list) => next.delete(list.key));
+    this.suppression.set(next);
+    this.invalidatePreview();
   }
 
   /** After an attach or compose created the registrants list, reload the rows so it shows its id and link. */
@@ -2987,6 +3085,9 @@ export class AudienceBuilderTabComponent {
           }
           this.attachingId.set(null);
           this.attachDispatch.set(dispatchContext);
+          if (registrantsCreated) {
+            this.adoptCreatedRegistrantsId(result.suppressionListIds, sentExclusions, result.standardSuppression?.listId);
+          }
           this.attachResult.set(result);
           this.lastWriteWasAttach.set(true);
           this.refreshCreatedSuppressionRows(registrantsCreated || (!!result.standardSuppression && !dispatchContext.standingExisted));
@@ -3311,9 +3412,9 @@ export class AudienceBuilderTabComponent {
 /** Appends the year of the event's first date to a name that has none ("… Japan" → "… Japan 2026"). */
 function withEventYear(name: string, dates: readonly string[]): string {
   const trimmed = name.trim();
-  if (trimmed === '' || /\b(19|20)\d{2}\b/.test(trimmed)) {
+  if (trimmed === '' || AUDIENCE_EDITION_YEAR_PATTERN.test(trimmed)) {
     return trimmed;
   }
-  const year = dates.map((d) => /\b(19|20)\d{2}\b/.exec(d)?.[0]).find(Boolean);
+  const year = dates.map((d) => AUDIENCE_EDITION_YEAR_PATTERN.exec(d)?.[0]).find(Boolean);
   return year ? `${trimmed} ${year}` : trimmed;
 }
