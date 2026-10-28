@@ -293,7 +293,7 @@ describe('Family export slot', () => {
     expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
       'section',
       'lfx-mktg-framework-print',
-      'lfx-brand-kit-view',
+      'lfx-mktg-brand-kit-print',
       'lfx-mktg-boilerplates-print',
       'lfx-mktg-faq-print',
     ]);
@@ -307,6 +307,9 @@ describe('Family export slot', () => {
     expect(cover?.querySelector('.flex-1')).toBeNull();
     expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
     expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+    expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('02 Brand kit · Project One');
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());

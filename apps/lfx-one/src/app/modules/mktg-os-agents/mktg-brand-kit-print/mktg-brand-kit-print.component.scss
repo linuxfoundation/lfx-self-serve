@@ -1,0 +1,92 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* Physical type/spacing fits both portrait paper sizes; there is no plate height,
+   aspect ratio, container scaling, transform or overflow clipping. */
+.kit-chapter {
+  display: flex;
+  flex-direction: column;
+  gap: 12pt;
+  break-before: page;
+}
+
+.kit-block,
+tr,
+figure {
+  break-inside: avoid;
+}
+
+h2,
+h3,
+thead {
+  break-after: avoid;
+}
+
+h2 {
+  margin-top: 10pt;
+  font-size: 22pt;
+  font-weight: 500;
+}
+
+h3 {
+  font-size: 11pt;
+  font-weight: 600;
+}
+
+ul {
+  list-style: disc;
+  padding-left: 14pt;
+}
+
+table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+
+thead {
+  display: table-header-group;
+}
+
+th,
+td {
+  border-bottom: 0.5pt solid var(--mfp-tint);
+  padding: 6pt 4pt;
+  text-align: left;
+  vertical-align: top;
+}
+
+.kit-logo {
+  display: block;
+  width: auto;
+  max-width: min(60mm, 100%);
+  max-height: 28mm;
+  object-fit: contain;
+}
+
+.kit-colourway {
+  padding: 6pt;
+  border: 0.5pt solid var(--mfp-ink);
+}
+
+.kit-swatch {
+  display: inline-block;
+  width: 14pt;
+  height: 14pt;
+  margin-right: 4pt;
+  border: 0.5pt solid var(--mfp-ink);
+  vertical-align: middle;
+}
+
+.kit-specimen {
+  overflow-wrap: break-word;
+  word-break: normal;
+  font-family: var(--mfp-font);
+}
+
+.kit-usage-sample {
+  margin-top: 6pt;
+  padding: 8pt;
+  border-left: 3pt solid;
+}

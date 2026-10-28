@@ -200,7 +200,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     });
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
-    const print = page.getByTestId(key === 'brand-kit' ? 'brand-kit-book' : 'mktg-framework-print');
+    const print = page.getByTestId(key === 'brand-kit' ? 'mktg-brand-kit-print' : 'mktg-framework-print');
     await expect(print).toBeHidden();
     await page
       .getByTestId(prefix + '-download-pdf')
@@ -210,15 +210,19 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await page.emulateMedia({ media: 'print' });
     // Media emulation does not paginate or apply @page margins. Measure against
     // a paper-sized initial containing block, not the app shell's offset wrapper.
-    const paperViewport = key === 'brand-kit' ? { width: 11 * 96, height: 8.5 * 96 } : { width: 8.5 * 96, height: 11 * 96 };
+    const paperViewport = { width: 8.5 * 96, height: 11 * 96 };
     await page.setViewportSize(paperViewport);
     await expect(print).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revisions')).toBeHidden();
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paperViewport.width });
-    if (key === 'brand-kit') await expect(print.locator('[data-testid^="brand-kit-page-"]')).toHaveCount(16);
-    else await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+    if (key === 'brand-kit') {
+      await expect(print.locator('.kit-chapter')).toHaveCount(5);
+      await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
+      await expect(print).toHaveCSS('page', 'mktg-framework');
+      await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
+    } else await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
     if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
     await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
   });

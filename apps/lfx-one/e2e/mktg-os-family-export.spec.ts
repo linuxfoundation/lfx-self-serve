@@ -147,7 +147,7 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
   await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
   const printDocument = page.getByTestId('family-export-print-document');
-  for (const selector of ['lfx-mktg-framework-print', 'lfx-brand-kit-view', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+  for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-brand-kit-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
     await expect(printDocument.locator(selector)).toHaveCount(1);
   }
   await expect(page.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
@@ -180,8 +180,9 @@ test('Download PDF prints all four approved assets with one family cover and con
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
   }
   await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
-  await expect(page.getByTestId('brand-kit-page-cover')).toBeHidden();
-  await expect(page.getByTestId('brand-kit-page-contents')).toBeHidden();
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
+  await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toContainText('02.5 Voice in brief');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));

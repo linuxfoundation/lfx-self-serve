@@ -1,0 +1,272 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<div
+  class="lfx-framework-print lfx-brand-kit-portrait flex flex-col gap-[14pt] bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
+  [style.--mfp-font]="brand().fontStack"
+  [style.--mfp-dark]="brand().dark"
+  [style.--mfp-accent]="brand().accent"
+  [style.--mfp-tint]="brand().tint"
+  [style.--mfp-ink]="brand().ink"
+  data-testid="mktg-brand-kit-print">
+  <section class="kit-chapter" aria-label="Logo system" data-testid="kit-print-logo">
+    <header class="break-inside-avoid break-after-avoid">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <h2>{{ number() }}.1 Logo system</h2>
+      <p class="text-[8pt]">{{ v.versionLabel }}</p>
+      <p>{{ v.logo.system }}</p>
+    </header>
+    <div class="kit-block grid grid-cols-3 gap-[10pt]" data-testid="kit-print-lockups">
+      <figure>
+        @if (v.logos.primary?.src; as src) {
+          <img class="kit-logo" [src]="src" alt="Primary horizontal lockup" />
+        } @else {
+          <p>No primary SVG supplied.</p>
+        }
+        <figcaption>Primary horizontal lockup</figcaption>
+      </figure>
+      <figure>
+        @if (v.logos.stacked?.src; as src) {
+          <img class="kit-logo" [src]="src" alt="Stacked lockup" />
+        } @else {
+          <p>No stacked SVG supplied.</p>
+        }
+        <figcaption>Stacked lockup</figcaption>
+      </figure>
+      <figure>
+        @if (v.symbol?.src; as src) {
+          <img class="kit-logo" [src]="src" alt="Symbol" />
+        } @else {
+          <p>No symbol SVG supplied.</p>
+        }
+        <figcaption>Symbol</figcaption>
+      </figure>
+    </div>
+    <div class="kit-block">
+      <h3>Colourways</h3>
+      <table data-testid="kit-print-colorways">
+        <thead>
+          <tr>
+            <th>Variant</th>
+            <th>Ground × logo</th>
+            <th>Sample</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of v.colorways; track $index) {
+            <tr>
+              <td>{{ row.name }}</td>
+              <td>{{ v.logo.colorways[$index]?.ground }} × {{ v.logo.colorways[$index]?.logo }}</td>
+              <td>
+                <div class="kit-colourway" [style.background-color]="row.ground">
+                  @if (row.logo?.src; as src) {
+                    <img class="kit-logo" [src]="src" [alt]="row.name" [style.filter]="row.logoFilter || null" />
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="kit-block">
+      <h3>Clear space and minimum size</h3>
+      <p>{{ v.logo.clear_space }}</p>
+      <p>Screen: {{ v.logo.minimum_size.screen_px }} px · Print: {{ v.logo.minimum_size.print_mm }} mm · Symbol: {{ v.logo.minimum_size.symbol_px }} px</p>
+      <p>{{ v.logo.minimum_size.rule }}</p>
+    </div>
+    <div class="kit-block">
+      <h3>Symbol in shape</h3>
+      <p>{{ v.logo.symbol }}</p>
+    </div>
+    <div class="kit-block">
+      <h3>Partnership lockups</h3>
+      <ul>
+        @for (rule of v.logo.partnership; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </div>
+    <div class="kit-block">
+      <h3>Watch-outs</h3>
+      <ul>
+        @for (rule of v.logo.watchouts; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="kit-chapter" aria-label="Colour" data-testid="kit-print-colour">
+    <header class="break-inside-avoid break-after-avoid">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <h2>{{ number() }}.2 Colour</h2>
+      <p>{{ v.color.summary }}</p>
+    </header>
+    <table data-testid="kit-print-palette">
+      <thead>
+        <tr>
+          <th>Swatch</th>
+          <th>Name / HEX / RGB</th>
+          <th>Role</th>
+          <th>Found in</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of v.palette; track $index) {
+          <tr>
+            <td><span class="kit-swatch" [style.background-color]="row.hex"></span></td>
+            <td>{{ row.name }}<br />{{ row.hex }}<br />{{ row.rgb }}</td>
+            <td>{{ row.role }}</td>
+            <td>{{ row.source }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    <div class="kit-block">
+      <h3>Proportion</h3>
+      <div class="flex h-[18pt] border border-black/15" aria-hidden="true">
+        @for (row of v.proportion; track $index) {
+          <span [style.width.%]="row.share" [style.background-color]="row.hex"></span>
+        }
+      </div>
+      <ul>
+        @for (row of v.proportion; track $index) {
+          <li>{{ row.name }} ({{ row.hex }}): {{ row.share }}%</li>
+        }
+      </ul>
+    </div>
+    <div class="kit-block">
+      <h3>Contrast</h3>
+      <p>{{ v.color.contrast.rule }}</p>
+    </div>
+    <table data-testid="kit-print-contrast">
+      <thead>
+        <tr>
+          <th>Foreground</th>
+          <th>Background</th>
+          <th>Ratio</th>
+          <th>Grade</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of v.contrast; track $index) {
+          <tr>
+            <td><span class="kit-swatch" [style.background-color]="row.foregroundHex"></span>{{ row.foreground }} {{ row.foregroundHex }}</td>
+            <td><span class="kit-swatch" [style.background-color]="row.backgroundHex"></span>{{ row.background }} {{ row.backgroundHex }}</td>
+            <td>{{ row.ratio }}</td>
+            <td>{{ row.grade }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </section>
+
+  <section class="kit-chapter" aria-label="Typography" data-testid="kit-print-type">
+    <header class="break-inside-avoid break-after-avoid">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <h2>{{ number() }}.3 Typography</h2>
+      <p>{{ v.type.summary }}</p>
+    </header>
+    <div class="kit-block">
+      <h3>{{ v.type.family }}</h3>
+      <p>
+        Source: {{ v.type.source }} · {{ v.type.google_fonts ? 'Google Fonts' : 'Not served by Google Fonts' }} · Fallback:
+        {{ v.type.fallback || 'sans-serif' }}
+      </p>
+      @if (v.type.note) {
+        <p>{{ v.type.note }}</p>
+      }
+      <p>
+        Weights:
+        @for (weight of v.weights; track weight.weight; let last = $last) {
+          {{ weight.label }}{{ last ? '' : ' · ' }}
+        }
+      </p>
+    </div>
+    @for (row of specimens(); track row.step) {
+      <div class="kit-block" data-testid="kit-print-specimen">
+        <h3>{{ row.label }}</h3>
+        <p class="text-[8pt]">{{ row.weight }} · {{ row.size }}/{{ row.line_height }} px · {{ row.caps ? 'Caps' : 'Sentence case' }}</p>
+        <p
+          class="kit-specimen"
+          [style.font-size]="row.printSize"
+          [style.font-weight]="row.weight"
+          [style.line-height]="row.printLeading"
+          [style.text-transform]="row.transform">
+          {{ v.projectName }}
+        </p>
+      </div>
+    }
+    <div class="kit-block">
+      <h3>Type rules</h3>
+      <ul>
+        @for (rule of v.type.rules; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="kit-chapter" aria-label="Visual" data-testid="kit-print-visual">
+    <header class="break-inside-avoid break-after-avoid">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <h2>{{ number() }}.4 Visual</h2>
+    </header>
+    <div class="kit-block">
+      <h3>Iconography · {{ v.visual.icons.recommended }}</h3>
+      <ul>
+        @for (rule of v.visual.icons.rules; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </div>
+    <div class="kit-block">
+      <h3>Imagery</h3>
+      <p>{{ v.visual.imagery.rule }}</p>
+      <ul>
+        @for (rule of v.visual.imagery.avoid; track $index) {
+          <li>Avoid: {{ rule }}</li>
+        }
+      </ul>
+    </div>
+    <div class="kit-block">
+      <h3>Graphic elements and usage</h3>
+      <p>{{ v.usage.summary }}</p>
+    </div>
+    @for (example of v.usage.examples; track $index) {
+      <div class="kit-block" data-testid="kit-print-usage">
+        <h3>{{ example.name }}</h3>
+        <p>{{ example.format }} · Ground: {{ example.ground }}</p>
+        <div class="kit-usage-sample" [style.border-color]="brand().accent">
+          <strong>{{ v.projectName }}</strong>
+          <p>{{ v.voice.line }}</p>
+        </div>
+      </div>
+    }
+  </section>
+
+  <section class="kit-chapter" aria-label="Voice in brief" data-testid="kit-print-voice">
+    <header class="break-inside-avoid break-after-avoid">
+      <ng-container *ngTemplateOutlet="runningHead" />
+      <h2>{{ number() }}.5 Voice in brief</h2>
+    </header>
+    <div class="kit-block">
+      <h3>{{ v.voice.umbrella }}</h3>
+      <p>{{ v.voice.line }}</p>
+      <p>{{ v.voice.source }}</p>
+      @if (v.voice.note) {
+        <p>{{ v.voice.note }}</p>
+      }
+    </div>
+    @for (attribute of v.voice.attributes; track $index) {
+      <div class="kit-block">
+        <h3>{{ attribute.name }}</h3>
+        <p>{{ attribute.line }}</p>
+      </div>
+    }
+  </section>
+</div>
+
+<ng-template #runningHead><lfx-mktg-print-running-head [brand]="brand()" [label]="head()" [versionLabel]="v.versionLabel" /></ng-template>

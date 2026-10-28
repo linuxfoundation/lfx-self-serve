@@ -251,13 +251,12 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
-    it('keeps the book in its print-only wrapper — never on screen — and wraps every text block', () => {
+    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
-      // The book is inside it, and nowhere else on the page.
-      expect(wrapper?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('brand-kit-book'))).toBe(true);
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
+      expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
       expect(query('brand-kit-view-toolbar')).toBeNull();
       expect(query('brand-kit-web-view')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
@@ -493,9 +492,9 @@ describe('BrandKitWebViewComponent', () => {
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and the print-only book, and never prints', async () => {
+    it('renders the page and hidden portrait chapters, and never prints on the server', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
 
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();
