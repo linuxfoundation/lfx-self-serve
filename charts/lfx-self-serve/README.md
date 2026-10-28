@@ -223,8 +223,9 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The other seven flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._INSIGHTS`,
-`..._KEYWORD_ACTIONS` and `..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
+The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._INSIGHTS`,
+`..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`) and `..._MONITOR`
+-- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
 matters to an operator deciding whether an override is needed:
 
@@ -235,7 +236,7 @@ matters to an operator deciding whether an override is needed:
 - `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
-  are about the create pipeline only; each of these seven carries its own note in `values.yaml`.
+  are about the create pipeline only; each of the flags outside the enable order carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
