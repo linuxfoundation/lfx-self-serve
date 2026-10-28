@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -57,14 +57,26 @@ export class ImpersonationDialogComponent {
     initialValue: this.recentImpersonations() as ImpersonationSuggestion[],
   });
 
+  // The person picked from the list. The field shows their name, which is not what the start request sends, so the
+  // pick is kept here and its `targetUser` (the username) is what gets submitted for as long as the field still
+  // shows that name. The username and email are listed under the field for context.
+  protected readonly picked = signal<ImpersonationSuggestion | null>(null);
+  private pickedLabel = '';
+
   public constructor() {
     // Closing mid-request would drop the loading UI while the change still goes through and reloads the page.
     lockDynamicDialogWhile(this.loading);
+
+    // Typing over or clearing the shown name abandons the pick: the box then holds what the admin typed.
+    this.targetUserForm.controls.targetUser.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (this.picked() && value !== this.pickedLabel) {
+        this.picked.set(null);
+      }
+    });
   }
 
   public submit(): void {
-    const value = this.targetUserForm.controls.targetUser.value;
-    const target = typeof value === 'string' ? value.trim() : '';
+    const target = this.resolveTarget();
     if (!target) return;
 
     this.loading.set(true);
@@ -105,6 +117,11 @@ export class ImpersonationDialogComponent {
    * fragment would impersonate whoever happens to hold it as a username.
    */
   protected onEnter(): void {
+    if (this.picked()) {
+      this.submit();
+      return;
+    }
+
     const value = this.targetUserForm.controls.targetUser.value;
     const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
     const suggestions = this.suggestions();
@@ -132,7 +149,10 @@ export class ImpersonationDialogComponent {
     const entry = event.value as ImpersonationSuggestion | null;
     if (!entry || typeof entry !== 'object') return;
 
-    this.targetUserForm.controls.targetUser.setValue(entry.targetUser);
+    // Name first, falling back to what is known, so the box never shows a blank for a person with no name on record.
+    this.pickedLabel = entry.name || entry.username || entry.email;
+    this.picked.set(entry);
+    this.targetUserForm.controls.targetUser.setValue(this.pickedLabel);
     this.error.set('');
   }
 
@@ -176,6 +196,16 @@ export class ImpersonationDialogComponent {
         return [...recents, ...found];
       })
     );
+  }
+
+  private resolveTarget(): string {
+    const picked = this.picked();
+    if (picked) {
+      return picked.targetUser;
+    }
+
+    const value = this.targetUserForm.controls.targetUser.value;
+    return typeof value === 'string' ? value.trim() : '';
   }
 
   private withoutOwnIdentities(recents: RecentImpersonation[]): RecentImpersonation[] {

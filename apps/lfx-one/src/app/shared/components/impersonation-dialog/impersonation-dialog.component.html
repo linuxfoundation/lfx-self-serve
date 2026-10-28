@@ -59,6 +59,12 @@
         </p>
       </ng-template>
     </lfx-autocomplete>
+    @if (picked(); as person) {
+      <p class="text-xs text-gray-500" data-testid="impersonation-picked-details">
+        Username <span class="font-medium text-gray-700" data-testid="impersonation-picked-username">{{ person.username }}</span> · Email
+        <span class="font-medium text-gray-700" data-testid="impersonation-picked-email">{{ person.email }}</span>
+      </p>
+    }
   </div>
   @if (error()) {
     <p class="text-sm text-red-600" role="alert" data-testid="impersonation-error">{{ error() }}</p>

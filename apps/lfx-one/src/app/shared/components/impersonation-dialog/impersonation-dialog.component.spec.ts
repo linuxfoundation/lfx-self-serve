@@ -172,14 +172,75 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).not.toHaveBeenCalled();
     });
 
-    it('puts a picked person’s username in the field and submits it', () => {
-      const entry: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' };
+    const jane: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' };
+
+    function pick(entry: ImpersonationSuggestion): void {
       dialog().onSuggestionSelected({ value: entry } as unknown as AutoCompleteSelectEvent);
+    }
+
+    function details(): string | undefined {
+      return fixture.nativeElement.querySelector('[data-testid="impersonation-picked-details"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    }
+
+    it('shows a picked person’s name in the field, not their username', () => {
+      pick(jane);
+
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('Jane Doe');
+    });
+
+    it('falls back to the username, then the email, when the person has no name', () => {
+      pick({ ...jane, name: undefined });
       expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
 
+      pick({ ...jane, name: undefined, username: '' });
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('jane.doe@example.com');
+    });
+
+    it('lists the picked person’s username and email under the field', async () => {
+      expect(details()).toBeUndefined();
+
+      pick(jane);
+      await fixture.whenStable();
+
+      expect(details()).toBe('Username jdoe · Email jane.doe@example.com');
+    });
+
+    it('submits the picked person’s username while the field shows their name', () => {
+      pick(jane);
       startImpersonation.mockReturnValueOnce(NEVER);
+
       dialog().submit();
+
       expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('submits on Enter once a person is picked', () => {
+      pick(jane);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('drops the pick and its details, and submits the typed text, once the name is edited', async () => {
+      pick(jane);
+      dialog().targetUserForm.controls.targetUser.setValue('someone.else');
+      await fixture.whenStable();
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().submit();
+
+      expect(details()).toBeUndefined();
+      expect(startImpersonation).toHaveBeenCalledWith('someone.else', false);
+    });
+
+    it('drops the pick when the field is cleared', async () => {
+      pick(jane);
+      dialog().targetUserForm.controls.targetUser.setValue('');
+      await fixture.whenStable();
+
+      expect(details()).toBeUndefined();
     });
 
     it('clears an earlier error when a person is picked', async () => {
