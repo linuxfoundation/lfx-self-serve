@@ -3648,6 +3648,28 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect('conversionPixelId' in submitReddit(f)).toBe(false);
   });
 
+  /**
+   * A brief switch on a LIVE mount: the parent clears the draft and hands over the next brief, and
+   * the component re-seeds in place. The pixel typed on the first brief must not ride along.
+   */
+  it('drops a typed pixel when a different brief is handed over', async () => {
+    const mounted = await mountWithPixel(null, true);
+    const f = mounted.fixture;
+    typeRedditPixel(f, 't2_synthpixel');
+    expect(mounted.latest()?.redditConversionPixelId).toBe('t2_synthpixel');
+
+    const next = brief();
+    f.componentRef.setInput('draft', null);
+    f.componentRef.setInput('briefData', { ...next, eventDetails: { ...next.eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } });
+    f.detectChanges();
+    await f.whenStable();
+
+    expect(mounted.latest()?.eventSlug).toBe('oss-na-2026');
+    expect(mounted.latest()?.redditConversionPixelId).toBe('');
+    expect(redditPixelInput(f)?.value ?? '').toBe('');
+    expect('conversionPixelId' in submitReddit(f)).toBe(false);
+  });
+
   it('renders the pixel through the shared lfx-input-text wrapper, tied to its hint', async () => {
     const f = (await mountWithPixel(null, true)).fixture;
     at(f).selectedPlatforms.set(['reddit-ads']);

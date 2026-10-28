@@ -6499,6 +6499,11 @@ export class ImplementationTabComponent implements OnInit {
     this.results.set([]);
     this.platformResults.set([]);
     this.errors.set([]);
+    // Cleared here because nothing else clears it: the group is standalone, and `applyDraft` only
+    // patches it when the draft holds a pixel. Without this, a brief switch on a live mount carries
+    // the previous brief's pixel into the new brief's draft and create (#3484). Inside `seeding`,
+    // so the reset does not emit a draft of its own.
+    this.redditConversionPixelForm.reset();
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,
