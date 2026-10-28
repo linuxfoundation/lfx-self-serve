@@ -24,7 +24,7 @@ The Documents section lets you browse and manage documents associated with your 
 
 Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists documents from all sources for that context: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts.
 
-Use the tabs above the list to narrow it by source: **All**, **Project**, **Groups**, **Meetings**, or **Mailing Lists**. Use the search box to find a document by name, or by the group or meeting it belongs to.
+Use the tabs above the list to narrow it by source: **All**, **Project**, **Groups**, **Meetings**, or **Mailing Lists**. Use the search box to find a document by name, or by the group or meeting it belongs to (meeting attachments are found by file name).
 
 The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Organization lens, it opens that lens's home page instead.
 

@@ -29,7 +29,7 @@ Use the tabs above the list to filter by source:
 - **Meetings** — meeting attachments, recordings, transcripts, and summaries
 - **Mailing Lists** — artifacts from the project's mailing lists
 
-Each tab shows how many documents it would list for your current search. Tabs with no matches show no count. Use the search box to find documents by name, or by the group or meeting they belong to. From the top level, search looks inside every folder, so you can find a document without knowing where it is stored. Inside a folder, search narrows that folder's contents.
+Each tab shows how many documents it would list for your current search. Tabs with no matches show no count. Use the search box to find documents by name, or by the group or meeting they belong to. Meeting attachments are matched by file name only, so search for the file name rather than the meeting title. From the top level, search looks inside every folder, so you can find a document without knowing where it is stored. Inside a folder, search narrows that folder's contents.
 
 ## Open folders
 
