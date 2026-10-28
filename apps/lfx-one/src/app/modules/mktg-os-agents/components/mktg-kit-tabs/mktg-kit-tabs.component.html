@@ -4,16 +4,28 @@
 <nav class="flex min-w-0 max-w-full gap-1 overflow-x-auto border-b border-gray-200" aria-label="Marketing kit sections" data-testid="mktg-kit-tabs">
   <!-- Empty Kit path must match exactly or it is active on every tab; named pages use subset matching. -->
   @for (tab of tabs; track tab.path) {
-    <a
-      [routerLink]="tab.path ? [basePath(), tab.path] : [basePath()]"
-      [queryParams]="projectQueryParams()"
-      routerLinkActive="!border-blue-600 !text-blue-700"
-      [routerLinkActiveOptions]="tab.path ? subsetMatch : exactMatch"
-      #active="routerLinkActive"
-      [attr.aria-current]="active.isActive ? 'page' : null"
-      class="shrink-0 whitespace-nowrap border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-900 focus-visible:outline-blue-600"
-      [attr.data-testid]="'mktg-kit-tab-' + (tab.path || 'kit')"
-      >{{ tab.label }}</a
-    >
+    @if (tab.soon) {
+      <span
+        aria-disabled="true"
+        title="Coming soon"
+        class="inline-flex shrink-0 cursor-default items-center gap-[6px] whitespace-nowrap border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-400"
+        [attr.data-testid]="'mktg-kit-tab-' + tab.path">
+        {{ tab.label }}
+        <!-- Exact pill dimensions from the board; the app uses a 14px rem base. -->
+        <span class="rounded-full bg-gray-100 px-[7px] py-[1px] text-[10.5px] font-semibold text-gray-500" data-testid="mktg-kit-tab-soon">Soon</span>
+      </span>
+    } @else {
+      <a
+        [routerLink]="tab.path ? [basePath(), tab.path] : [basePath()]"
+        [queryParams]="projectQueryParams()"
+        routerLinkActive="!border-blue-600 !text-blue-700"
+        [routerLinkActiveOptions]="tab.path ? subsetMatch : exactMatch"
+        #active="routerLinkActive"
+        [attr.aria-current]="active.isActive ? 'page' : null"
+        class="shrink-0 whitespace-nowrap border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-900 focus-visible:outline-blue-600"
+        [attr.data-testid]="'mktg-kit-tab-' + (tab.path || 'kit')"
+        >{{ tab.label }}</a
+      >
+    }
   }
 </nav>
