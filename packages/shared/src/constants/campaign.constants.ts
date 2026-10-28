@@ -3001,6 +3001,12 @@ export const TWITTER_MAX_TWEET_WEIGHTED_CHARS = 280;
 export const TWITTER_TCO_URL_WEIGHT = 23;
 
 /**
+ * campaign-service's bound on the RAW size of the composed tweet (`maxTweetRawBytes`, 8 KiB), far
+ * above any real tweet. Checked before the weighted count, so the BFF never weighs an absurd body.
+ */
+export const TWITTER_MAX_TWEET_RAW_BYTES = 8 * 1024;
+
+/**
  * Upper bound on an X daily budget (`maxBudgetUsd`, `internal/platform/twitter/client.go`), in the
  * ad ACCOUNT's currency. Refused by the client before any request, so a larger value is a dead job
  * rather than a refused request — the same reasoning as `MICROSOFT_MAX_BUDGET`. The floor is this

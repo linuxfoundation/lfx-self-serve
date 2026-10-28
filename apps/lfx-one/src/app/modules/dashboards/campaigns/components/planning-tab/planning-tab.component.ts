@@ -155,6 +155,13 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly utmFieldId = computed(() => `planning-hubspot-utm-value-${this.deliveryType()}`);
 
+  /**
+   * Whether Refine can change anything. An X-only brief has nothing generated: the generator writes
+   * no X copy and no keywords for it, so a refine would skip every stage and still report the brief
+   * refined. Any other selected platform gets copy or keywords regenerated.
+   */
+  protected readonly refineApplies = computed(() => [...this.selectedPlatforms()].some((p) => p !== 'twitter-ads'));
+
   /** Whether this planner is planning an email rather than paid ads. */
   protected readonly isEmail = computed(() => this.deliveryType() === 'email');
 

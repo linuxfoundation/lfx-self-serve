@@ -1190,14 +1190,21 @@
           needing the same fix again for the next one.
         -->
         @if (!isEmail()) {
-          <lfx-button
-            label="Refine Brief"
-            icon="fa-light fa-wand-magic-sparkles"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="enterRefineMode()"
-            ariaLabel="Provide feedback to regenerate the brief"
-            data-testid="planning-refine-brief-btn" />
+          <!-- Not offered for an X-only brief: nothing in it is generated (see `refineApplies`). -->
+          @if (refineApplies()) {
+            <lfx-button
+              label="Refine Brief"
+              icon="fa-light fa-wand-magic-sparkles"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="enterRefineMode()"
+              ariaLabel="Provide feedback to regenerate the brief"
+              data-testid="planning-refine-brief-btn" />
+          } @else {
+            <span class="self-center text-xs text-gray-500" data-testid="planning-refine-x-only">
+              X-only briefs have no generated copy to refine. Write the tweet on the Implement tab.
+            </span>
+          }
           <lfx-button
             label="Edit Brief"
             icon="fa-light fa-pen-to-square"

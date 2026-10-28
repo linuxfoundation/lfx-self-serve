@@ -1310,6 +1310,17 @@ describe('PlanningTabComponent delivery-type mode', () => {
       expect(tile().disabled).toBe(true);
     });
 
+    it('does not offer Refine for an X-only selection, which has nothing generated to refine', async () => {
+      await build('paid-marketing');
+      const c = fixture.componentInstance as unknown as { refineApplies(): boolean; selectedPlatforms: { set(v: Set<string>): void } };
+
+      expect(c.refineApplies()).toBe(true);
+      c.selectedPlatforms.set(new Set(['twitter-ads']));
+      expect(c.refineApplies()).toBe(false);
+      c.selectedPlatforms.set(new Set(['twitter-ads', 'microsoft-ads']));
+      expect(c.refineApplies()).toBe(true);
+    });
+
     it('lets a selected X be cleared after the capability is withdrawn, and not chosen again', async () => {
       await build('paid-marketing');
       fixture.componentRef.setInput('twitterCreateEnabled', true);

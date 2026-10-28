@@ -72,6 +72,19 @@ describe('twitterTweetTextError', () => {
     expect(twitterTweetTextError('a'.repeat(257), true)).not.toBeNull();
   });
 
+  it('refuses copy over the 8 KiB raw bound before weighing it', () => {
+    expect(twitterTweetTextError('a'.repeat(8 * 1024 + 1), true)).toContain('longer than X can take');
+  });
+
+  it('trims a run of unbalanced closing brackets in linear time', () => {
+    const run = `https://a.example${')'.repeat(200_000)}`;
+    const started = Date.now();
+    expect(twitterWeightedLength(run)).toBe(TWITTER_TCO_URL_WEIGHT + 200_000);
+    expect(Date.now() - started).toBeLessThan(2000);
+    // A balanced bracket stays part of the link.
+    expect(twitterWeightedLength('https://en.example.org/wiki/X_(Twitter)')).toBe(TWITTER_TCO_URL_WEIGHT);
+  });
+
   it('judges the trimmed copy, as campaign-service does', () => {
     expect(twitterComposedTweetLength('  hello  ')).toBe(5 + 1 + TWITTER_TCO_URL_WEIGHT);
   });

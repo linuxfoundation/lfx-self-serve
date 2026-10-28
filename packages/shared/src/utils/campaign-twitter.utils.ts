@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TWITTER_MAX_TWEET_WEIGHTED_CHARS, TWITTER_TCO_URL_WEIGHT } from '../constants/campaign.constants';
+import { TWITTER_MAX_TWEET_RAW_BYTES, TWITTER_MAX_TWEET_WEIGHTED_CHARS, TWITTER_TCO_URL_WEIGHT } from '../constants/campaign.constants';
 
 /**
  * X tweet length, the client-side mirror of campaign-service's `weightedTweetLen` and
@@ -71,6 +71,11 @@ export function twitterComposedTweetLength(tweetText: string): number {
 export function twitterTweetTextError(tweetText: string, lenient = false): string | null {
   if (tweetText.trim() === '') return 'Enter the tweet text.';
   const trimmed = tweetText.trim();
+  // campaign-service's raw bound (`maxTweetRawBytes`), checked FIRST so the weighing below never
+  // runs over an absurd caller-supplied string: no tweet within 280 weighted characters is this big.
+  if (new TextEncoder().encode(trimmed).length > TWITTER_MAX_TWEET_RAW_BYTES) {
+    return `The tweet text is longer than X can take. Keep it within ${TWITTER_MAX_TWEET_WEIGHTED_CHARS} characters.`;
+  }
   const carriesLink = new RegExp(TWEET_URL_RUN.source, 'iu').test(trimmed);
   const length = lenient && carriesLink ? twitterWeightedLength(trimmed) : twitterComposedTweetLength(tweetText);
   if (length > TWITTER_MAX_TWEET_WEIGHTED_CHARS) {
@@ -79,22 +84,27 @@ export function twitterTweetTextError(tweetText: string, lenient = false): strin
   return null;
 }
 
+/**
+ * `trimTweetURLPunct`: strip trailing sentence punctuation, and a closing bracket only while it is
+ * unbalanced. Linear: the bracket counts are taken once and adjusted as characters come off, so a
+ * run ending in many `)` costs one pass rather than a recount per character.
+ */
 function trimTrailingPunct(run: string): string {
-  let out = run;
-  for (;;) {
-    const lastChar = out.at(-1);
-    if (lastChar === undefined) return out;
-    const unbalanced =
-      (lastChar === ')' && count(out, '(') < count(out, ')')) ||
-      (lastChar === ']' && count(out, '[') < count(out, ']')) ||
-      (lastChar === '}' && count(out, '{') < count(out, '}'));
-    if (!TWEET_URL_TRAILING_PUNCT.includes(lastChar) && !unbalanced) return out;
-    out = out.slice(0, -1);
+  const counts: Record<string, number> = { '(': 0, ')': 0, '[': 0, ']': 0, '{': 0, '}': 0 };
+  for (const char of run) {
+    if (char in counts) counts[char]++;
   }
-}
-
-function count(text: string, char: string): number {
-  return text.split(char).length - 1;
+  const opener: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+  let end = run.length;
+  while (end > 0) {
+    const lastChar = run[end - 1];
+    const open = opener[lastChar];
+    const unbalanced = open !== undefined && counts[open] < counts[lastChar];
+    if (!TWEET_URL_TRAILING_PUNCT.includes(lastChar) && !unbalanced) break;
+    if (lastChar in counts) counts[lastChar]--;
+    end--;
+  }
+  return run.slice(0, end);
 }
 
 /** Per code point, with every emoji cluster `emojiClusterLength` finds counting 2 (`weightedRunLen`). */
