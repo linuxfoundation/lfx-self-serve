@@ -4902,7 +4902,8 @@ export class CampaignController {
    * - `startDate` / `endDate`: real `YYYY-MM-DD` dates, untrimmed as Go reads them, the end strictly
    *   after the start. That the start is in the future is left to campaign-service, for the
    *   clock-boundary reason Meta's past-start check is.
-   * - `tweetText`: non-blank, and within X's weighted cap once the destination link is appended.
+   * - `tweetText`: non-blank, and within X's weighted cap once the destination link is appended
+   *   (copy that carries a link of its own is judged on its own weight, see `twitterTweetTextError`).
    * - `imageAssetId`: when present, a non-blank string; whether it names an asset is upstream's call.
    *
    * A missing `twitterConfig` with `twitter-ads` selected is NOT refused here: `hasPlatformConfig`
@@ -4935,7 +4936,9 @@ export class CampaignController {
           'the X end date must be after its start date, and X will refuse this flight. Set an end date at least one day after the start date and create again.',
       };
     }
-    const tweetError = typeof raw.tweetText === 'string' ? twitterTweetTextError(raw.tweetText) : 'Enter the tweet text.';
+    // Lenient: copy carrying its own link may not get the destination appended upstream, and only
+    // campaign-service knows the tagged link it compares, so that case is left to it.
+    const tweetError = typeof raw.tweetText === 'string' ? twitterTweetTextError(raw.tweetText, true) : 'Enter the tweet text.';
     if (tweetError !== null) return { field: 'twitterConfig.tweetText', message: tweetError };
     if ('imageAssetId' in raw && (typeof raw.imageAssetId !== 'string' || raw.imageAssetId.trim() === '')) {
       return {

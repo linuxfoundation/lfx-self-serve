@@ -8,9 +8,8 @@ import { TWITTER_MAX_TWEET_WEIGHTED_CHARS, TWITTER_TCO_URL_WEIGHT } from '../con
  * `composeTweetText` (`internal/platform/twitter/client.go`).
  *
  * campaign-service stays the authority — it refuses an over-long composed tweet before anything is
- * created — but these let the Implement tab and the BFF say why before submitting. The mirror is
- * deliberately close rather than exact in one place, an emoji sequence, which is counted as 2 per
- * grapheme here as it is there.
+ * created — but these let the Implement tab and the BFF say why before submitting. Emoji clusters
+ * follow `emojiClusterLen` rule for rule.
  */
 
 /** Any http(s) run, as `tweetURLRe` finds it: up to whitespace, `<`, `>` or CJK punctuation. */
@@ -59,12 +58,23 @@ export function twitterComposedTweetLength(tweetText: string): number {
   return twitterWeightedLength(trimmed) + 1 + TWITTER_TCO_URL_WEIGHT;
 }
 
-/** Why `tweetText` cannot be sent, or `null` when it can. */
-export function twitterTweetTextError(tweetText: string): string | null {
+/**
+ * Why `tweetText` cannot be sent, or `null` when it can.
+ *
+ * `lenient` is for a caller that cannot know the destination: campaign-service does NOT append the
+ * link when the copy already carries it as a link of its own (`textCarriesURL`), and only the
+ * service knows the UTM-tagged destination it would compare. So with `lenient`, copy that contains
+ * any link is judged on its own weight, never refused for a link that may not be appended — the BFF
+ * must not refuse what the service accepts. The Implement tab stays strict: an operator cannot type
+ * the tagged destination, so the link is always appended there.
+ */
+export function twitterTweetTextError(tweetText: string, lenient = false): string | null {
   if (tweetText.trim() === '') return 'Enter the tweet text.';
-  const length = twitterComposedTweetLength(tweetText);
+  const trimmed = tweetText.trim();
+  const carriesLink = new RegExp(TWEET_URL_RUN.source, 'iu').test(trimmed);
+  const length = lenient && carriesLink ? twitterWeightedLength(trimmed) : twitterComposedTweetLength(tweetText);
   if (length > TWITTER_MAX_TWEET_WEIGHTED_CHARS) {
-    return `The tweet is ${length} characters with the registration link, over X's ${TWITTER_MAX_TWEET_WEIGHTED_CHARS}. Shorten the text.`;
+    return `The tweet is ${length} characters${lenient && carriesLink ? '' : ' with the registration link'}, over X's ${TWITTER_MAX_TWEET_WEIGHTED_CHARS}. Shorten the text.`;
   }
   return null;
 }
@@ -87,25 +97,51 @@ function count(text: string, char: string): number {
   return text.split(char).length - 1;
 }
 
+/** Per code point, with every emoji cluster `emojiClusterLength` finds counting 2 (`weightedRunLen`). */
 function weightedRunLength(text: string): number {
+  const points = Array.from(text, (char) => char.codePointAt(0) ?? 0);
   let total = 0;
-  for (const grapheme of graphemes(text)) {
-    if (/\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(grapheme)) {
+  for (let i = 0; i < points.length; ) {
+    const size = emojiClusterLength(points, i);
+    if (size > 0) {
       total += 2;
+      i += size;
       continue;
     }
-    for (const char of grapheme) {
-      total += codePointWeight(char.codePointAt(0) ?? 0);
-    }
+    total += codePointWeight(points[i]);
+    i++;
   }
   return total;
 }
 
-function graphemes(text: string): string[] {
-  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
-    return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), (s) => s.segment);
+/**
+ * How many code points from `start` form one emoji, or 0 when none starts there — `emojiClusterLen`
+ * rule for rule. A code point outside the emoji plane is an emoji only when the next one asks for it
+ * (U+FE0F, an enclosing keycap or a skin tone), so a bare `©` stays its weight of 1; a regional
+ * indicator pairs with exactly one more; and a cluster absorbs U+FE0F, keycaps, skin tones, tags and
+ * zero-width-joined code points, ending before U+FE0E, which asks for text presentation.
+ */
+function emojiClusterLength(points: readonly number[], start: number): number {
+  if (start >= points.length) return 0;
+  const first = points[start];
+  const next = points[start + 1];
+  const inPlane = first >= 0x1f000 && first <= 0x1fffd;
+  const requested = next !== undefined && (next === 0xfe0f || next === 0x20e3 || (next >= 0x1f3fb && next <= 0x1f3ff));
+  if (!inPlane && !requested) return 0;
+  const isRegional = (point: number | undefined): boolean => point !== undefined && point >= 0x1f1e6 && point <= 0x1f1ff;
+  if (isRegional(first)) return isRegional(next) ? 2 : 1;
+  let i = start + 1;
+  while (i < points.length) {
+    const point = points[i];
+    if (point === 0xfe0f || point === 0x20e3 || (point >= 0x1f3fb && point <= 0x1f3ff) || (point >= 0xe0020 && point <= 0xe007f)) {
+      i++;
+    } else if (point === 0x200d && i + 1 < points.length) {
+      i += 2;
+    } else {
+      break;
+    }
   }
-  return Array.from(text);
+  return i - start;
 }
 
 function codePointWeight(codePoint: number): number {

@@ -516,15 +516,19 @@ export class CampaignService {
   }
 
   /**
+   * Whether X creation is open on this deployment, with no brief — the Plan picker's answer before
+   * one exists. `project` is not read by the answer, which is deployment-wide; it is what lets the
+   * campaign-manager guard authorise a project-scoped caller, which refuses an unscoped request.
+   */
+  public getTwitterCreateCapability(projectSlug: string): Observable<TwitterCreateCapability> {
+    return this.http.get<TwitterCreateCapability>('/api/campaigns/twitter/create-capability', { params: { project: projectSlug } });
+  }
+
+  /**
    * Which X ad account an X create will use, and the accounts the connection's credential reaches
    * (LFXV2-3319). 404 while X creation is off on the server, and a 403 for a non-root caller: with
    * no X connection of its own, the project is answered from the LF's shared credential.
    */
-  /** Whether X creation is open on this deployment, with no brief — the Plan picker's answer before one exists. */
-  public getTwitterCreateCapability(): Observable<TwitterCreateCapability> {
-    return this.http.get<TwitterCreateCapability>('/api/campaigns/twitter/create-capability');
-  }
-
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
   }

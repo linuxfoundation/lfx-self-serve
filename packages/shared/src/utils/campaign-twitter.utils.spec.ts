@@ -30,6 +30,25 @@ describe('twitterWeightedLength', () => {
     expect(twitterWeightedLength('🎉')).toBe(2);
     expect(twitterWeightedLength('👍🏽')).toBe(2);
   });
+
+  it('follows emojiClusterLen for code points outside the emoji plane', () => {
+    // A bare © asks for no emoji presentation, so it weighs 1 as any Latin-1 character does.
+    expect(twitterWeightedLength('©')).toBe(1);
+    expect(twitterWeightedLength('©️')).toBe(2);
+    // A keycap is one emoji: digit, U+FE0F, U+20E3.
+    expect(twitterWeightedLength('1️⃣')).toBe(2);
+    // A flag is exactly one pair of regional indicators.
+    expect(twitterWeightedLength('🇺🇸🇩🇪')).toBe(4);
+    // A zero-width-joined family is one emoji.
+    expect(twitterWeightedLength('👨‍👩‍👧')).toBe(2);
+    // U+FE0E asks for TEXT presentation, so it ends the cluster and is charged on its own.
+    expect(twitterWeightedLength('🖥︎')).toBe(4);
+  });
+
+  it('accepts 255 ASCII characters and a ©, or 254 and a keycap, at exactly the cap', () => {
+    expect(twitterTweetTextError(`${'a'.repeat(255)}©`)).toBeNull();
+    expect(twitterTweetTextError(`${'a'.repeat(254)}1️⃣`)).toBeNull();
+  });
 });
 
 describe('twitterTweetTextError', () => {
@@ -43,6 +62,14 @@ describe('twitterTweetTextError', () => {
     expect(twitterTweetTextError('a'.repeat(room))).toBeNull();
     expect(twitterComposedTweetLength('a'.repeat(room))).toBe(TWITTER_MAX_TWEET_WEIGHTED_CHARS);
     expect(twitterTweetTextError('a'.repeat(room + 1))).toBe("The tweet is 281 characters with the registration link, over X's 280. Shorten the text.");
+  });
+
+  it('judges copy carrying its own link on its own weight when lenient, since the service may not append one', () => {
+    const copy = `${'a'.repeat(250)} https://events.example.org/kc`;
+    expect(twitterTweetTextError(copy)).not.toBeNull();
+    expect(twitterTweetTextError(copy, true)).toBeNull();
+    // Lenient changes nothing for copy with no link of its own.
+    expect(twitterTweetTextError('a'.repeat(257), true)).not.toBeNull();
   });
 
   it('judges the trimmed copy, as campaign-service does', () => {

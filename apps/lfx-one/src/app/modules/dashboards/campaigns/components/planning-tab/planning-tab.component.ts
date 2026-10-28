@@ -143,22 +143,6 @@ export class PlanningTabComponent implements OnInit {
   public readonly twitterCreateEnabled = input<boolean | null>(null);
 
   /**
-   * The deployment's own X answer, read once in the browser with no brief
-   * (`GET /api/campaigns/twitter/create-capability`). The parent's per-brief answer is only there
-   * once a brief is saved, so without this a fresh Plan page kept X "Coming soon" even with X
-   * creation on. The parent's answer wins whenever it has one; a failed read is `null`, unanswered.
-   */
-  private readonly deploymentTwitterCreateEnabled = toSignal(
-    isPlatformBrowser(this.platformId)
-      ? this.campaignService.getTwitterCreateCapability().pipe(
-          map((capability) => capability?.enabled === true),
-          catchError(() => of(null))
-        )
-      : of(null),
-    { initialValue: null }
-  );
-
-  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -676,6 +660,28 @@ export class PlanningTabComponent implements OnInit {
    * injection context, and field initialisers have one.
    */
   private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
+
+  /**
+   * The deployment's own X answer, read in the browser with no brief
+   * (`GET /api/campaigns/twitter/create-capability`), once per foundation: the route sits behind the
+   * campaign-manager guard, which needs the project to authorise a project-scoped caller. The parent's
+   * per-brief answer is only there once a brief is saved, so without this a fresh Plan page kept X
+   * "Coming soon" even with X creation on. The parent's answer wins whenever it has one; a failed or
+   * refused read is `null`, unanswered.
+   */
+  private readonly deploymentTwitterCreateEnabled = toSignal(
+    this.activeFoundationSlug$.pipe(
+      switchMap((slug) =>
+        isPlatformBrowser(this.platformId) && slug !== ''
+          ? this.campaignService.getTwitterCreateCapability(slug).pipe(
+              map((capability): boolean | null => capability?.enabled === true),
+              catchError(() => of(null))
+            )
+          : of(null)
+      )
+    ),
+    { initialValue: null }
+  );
 
   // Part of the restore lookup key, not just a parameter passed to it. Switching Paid <-> Email
   // with a url already entered has to re-ask, because the answer genuinely differs per surface:
