@@ -401,19 +401,27 @@ source counts require reattachment or an explicit choice to continue without the
 never a false kept-file claim. No uploaded content is added to browser persistence.
 The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
 
-The run route owns intake, the research/writing feed and questions, not the
-result or a feedback form. Direct no-answers intakes open the document route
-before their first POST. Questions runs transfer their owned attempt after the
-accepted answers ACK. Without questions, the first finalize/checking step (or
-an earlier receipt-less ready result) transfers the same attempt. A partial
-Guild stream cannot distinguish writing from another research/questions round;
-model starts or completions alone never authorize a handoff. The producer can
-label no-questions writing retroactively once an unambiguous finalize confirms
-it. An agent-emitted writing marker would allow an earlier writing-start
-handoff; it is a follow-up in marketing-os-agents' [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md), not a contract change here.
-There is no unused no-feed submitted-ACK fallback.
-The asset page resumes the same attempt without a second POST and owns writing
-until the exact stored revision lands. Catalog/intakes own membership/routing.
+The run route owns living-asset intake, the research/writing feed and questions,
+not the result or a feedback form. Direct no-answers runs, questions runs and
+restored accepted attempts stay there through checking and receipt-less readiness.
+Only the private attempt's exact stored-revision receipt lands with `revision=`;
+recorded terminal failures open the document page's failed run card. Navigation
+recovery retries only its saved destination, never Generate or answers.
+A partial Guild stream cannot distinguish writing from another research/questions
+round; model starts or completions alone never authorize a landing. The producer
+can label no-questions writing retroactively once an unambiguous finalize confirms
+it. Agent writing markers remain a contract follow-up in marketing-os-agents'
+[self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md).
+
+`MktgRunProgressComponent` owns living-document public detail/body reads and their
+single bounded availability budget. The document view consumes its read cycles;
+one-off receivers keep their existing poll and supply snapshots to the same
+presentation. A living run-page `?run=` reader uses that public progress unless
+this browser holds the matching private attempt. Public landing opens the current
+document without selecting or claiming an exact revision: completed runs leave
+`runs[]` without a public completion receipt. Public questions show the browser
+ownership limitation; the questions output/block is the extension point for a
+future answer-from-any-device flow. Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
 own changes; the existing asset-store current pointer remains authoritative.

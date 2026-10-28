@@ -56,6 +56,7 @@ import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-inta
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
+import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 
 /**
  * A fixture agent for the shell's OWN logic — the LFX prefill sources, a
@@ -226,7 +227,7 @@ describe('MktgAgentRunComponent', () => {
             resume: vi.fn(() => NEVER),
           },
         },
-        { provide: MktgDocumentStoreService, useValue: { listDocuments } },
+        { provide: MktgDocumentStoreService, useValue: { listDocuments, getDocument: vi.fn(() => NEVER) } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged, documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
@@ -1303,6 +1304,79 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submittedDocuments']()[0]?.tag).toBe(tag);
     }
     expect(generate).not.toHaveBeenCalled();
+  });
+
+  describe('public run receiver', () => {
+    const runId = 'c'.repeat(64);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.agentKey === 'foundation-message');
+    if (!type?.catalogAgentId) throw new Error('Missing living receiver fixture');
+    const intake = MKTG_AGENT_INTAKES[type.catalogAgentId];
+    const record = (state: 'writing' | 'questions') => ({
+      project: PROJECT_1.uid,
+      type,
+      documentId: 'living',
+      revisions: [],
+      approvedCurrent: null,
+      runs: [{ runId, project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', state, startedAt: '2026-10-28T10:00:00Z' }],
+    });
+
+    it.each(['writing', 'questions'] as const)('opens public %s progress without starting or resuming a private run', async (state) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record(state)));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+      expect(reader.runId()).toBe(runId);
+      expect(reader.project()).toBe(PROJECT_1.uid);
+      expect(component['publicReceiver']()).toBe(true);
+      if (state === 'questions') expect(host().textContent).toContain('browser that started this run');
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('replaces public completion with the current document, or failed card (failed=%s)', async (failed) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      if (failed) reader.failed.emit();
+      else reader.landed.emit();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledWith(
+        ['..', 'documents', type.agentKey, 'living'],
+        expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ revision: null, generation: null, run: failed ? runId : null }) })
+      );
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('continues only this browser’s matching questions attempt (matching=%s)', async (matching) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = {
+        runId: matching ? runId : 'd'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: intake.agentId, sessionId: 'synthetic-owned', ownerToken: 'synthetic-proof' },
+      };
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        state: 'questions',
+        updatedAt: new Date().toISOString(),
+        attempt,
+        pendingQuestions: {
+          attempt,
+          questionsId: 'synthetic-block',
+          questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: '', basis: [] }],
+        },
+      });
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['publicReceiver']()).toBe(!matching);
+      expect(component['phase']()).toBe(matching ? 'questions' : 'form');
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
   });
 
   describe('intake-only asset handoff', () => {
