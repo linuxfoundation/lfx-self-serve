@@ -1287,6 +1287,22 @@ describe('PlanningTabComponent delivery-type mode', () => {
       expect(tile().disabled).toBe(disabled);
     });
 
+    it('reads the deployment answer for the active foundation, sending its slug', async () => {
+      const read = vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of({ enabled: true }));
+      await build('paid-marketing');
+
+      expect(read).toHaveBeenCalledWith('foundation-a');
+    });
+
+    it('does not read the deployment answer with no foundation selected, and keeps X disabled', async () => {
+      const read = vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of({ enabled: true }));
+      TestBed.inject(ProjectContextService).clearFoundation(false);
+      await build('paid-marketing');
+
+      expect(read).not.toHaveBeenCalled();
+      expect(tile().disabled).toBe(true);
+    });
+
     it('keeps X disabled when the deployment read fails and the parent has no answer', async () => {
       vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(throwError(() => new Error('down')));
       await build('paid-marketing');
