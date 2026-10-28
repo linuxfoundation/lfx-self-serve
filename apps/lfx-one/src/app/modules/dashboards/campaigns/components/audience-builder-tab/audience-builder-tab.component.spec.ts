@@ -3751,4 +3751,79 @@ describe('AudienceBuilderTabComponent', () => {
       expect(tab.attachedMasterId(), 'a failed reload made the recorded attach read as stale').toBe('101');
     });
   });
+
+  describe('final campaign-service contract (cs#396)', () => {
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+    }
+
+    const refusal = (message: string): HttpErrorResponse => new HttpErrorResponse({ status: 400, error: { error: message, code: 'BAD_REQUEST' } });
+
+    it("shows upstream's 400 for a compose and lets the operator fix it and compose again", async () => {
+      await discover();
+      const message = 'the master would carry 2,601 filter conditions (51 lists x 51); the limit is 2,500';
+      composeAudienceMaster.mockReturnValue(throwError(() => refusal(message)));
+
+      click('campaigns-audience-compose');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]')?.textContent?.trim()).toBe(message);
+      expect(
+        host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled,
+        'a 400 created nothing, so compose must not stay locked'
+      ).toBe(false);
+    });
+
+    it('keeps compose locked after a failure that may have created something', async () => {
+      await discover();
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } })));
+
+      click('campaigns-audience-compose');
+
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
+    });
+
+    it("shows upstream's overlap 400 for an attach", async () => {
+      await discover('brief-1');
+      const message = 'list 300 (LFX Standard Suppressions - tlf) is in both the send and its suppressions';
+      attachExistingAudience.mockReturnValue(throwError(() => refusal(message)));
+
+      click('campaigns-audience-use-direct');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')?.textContent?.trim()).toBe(message);
+    });
+
+    it('never tells the operator to delete a suppression list from a compose partial', async () => {
+      await discover();
+      const partial: AudienceComposeMasterPartial = {
+        error: 'Master list create failed',
+        suppression: { listId: '99', name: 'Legacy suppression', hubspotUrl: 'https://app.hubspot.com/l/99' },
+      };
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+
+      click('campaigns-audience-compose');
+
+      const text = host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent ?? '';
+      expect(text).toContain('Legacy suppression');
+      expect(text.toLowerCase()).not.toContain('orphaned');
+      expect(text).not.toMatch(/\bDelete it\b/);
+    });
+
+    it('shows only the master for the recording partial, with no suppression line', async () => {
+      await discover('brief-1');
+      const partial: AudienceComposeMasterPartial = {
+        error: 'Lists created but not attached.',
+        master: { listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/l/900' },
+      };
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+
+      click('campaigns-audience-compose');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-partial-suppression-link"]')).toBeNull();
+    });
+  });
 });

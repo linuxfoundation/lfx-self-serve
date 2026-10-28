@@ -865,9 +865,9 @@ export class AudienceBuilderProxyService {
         reason: error instanceof Error ? error.message : String(error),
         master_list_id: wire?.master?.list_id,
       });
-      // The suppression is never passed: the partial's suppression arm is the ORPHAN banner ("delete
-      // it or reuse it"), and on a 2xx the suppression belongs to the master that exists. Deleting
-      // it would silently drop the master's exclusions.
+      // The suppression is never passed: on a 2xx it is the project's standing standard list, which
+      // the master that exists excludes and every other audience in the project shares, so the
+      // partial banner must not present it as this compose's leftover.
       if (wire?.recorded === true) {
         // Upstream reported the attach, so the master is not "unattached"; only the reply is
         // unreadable. No list is passed, so the client does not offer to attach it again.

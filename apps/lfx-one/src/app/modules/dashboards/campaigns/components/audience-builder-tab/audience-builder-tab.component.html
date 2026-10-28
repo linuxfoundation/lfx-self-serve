@@ -1021,9 +1021,10 @@
           </button>
         }
 
-        <!-- Partial state, and deliberately no Retry: compose is not idempotent, so a second click
-             after the suppression list already exists leaves a duplicate behind. The link is the
-             way forward — finish or clean up in HubSpot, then compose again knowingly. -->
+        <!-- Partial state, and deliberately no Retry: compose is not idempotent, so a second click can
+             create a second master. The link or name is the way forward — check HubSpot, then compose
+             again knowingly. A current campaign-service reports only the master here (unconfirmed by
+             name, or created but not recorded); a suppression list in the body is legacy. -->
         @if (composePartial(); as partial) {
           <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-compose-partial">
             <div class="flex items-center gap-2">
@@ -1041,7 +1042,8 @@
                 @if (partialSuppressionShared()) {
                   This is the project's shared standard suppression list. Other emails use it, so keep it:
                 } @else {
-                  A combined suppression list was already created and is now orphaned. Delete it or reuse it before composing again:
+                  A suppression list exists in HubSpot from this compose. Check it there before composing again, and do not delete it without checking whether
+                  other emails exclude it:
                 }
                 @if (suppression.hubspotUrl) {
                   <a

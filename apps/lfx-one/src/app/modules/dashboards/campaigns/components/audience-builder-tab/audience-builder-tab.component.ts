@@ -1062,8 +1062,8 @@ export class AudienceBuilderTabComponent {
    * Matching on the master id alone kept "Use for this email" disabled after the step-3 ticks
    * changed: the button read "Used for this email" while the brief still held the OLD exclusions,
    * and there was no way to record the new ones. An attach records its exclusions, so it is matched
-   * on both halves. A compose records a combined suppression LIST rather than the ticked ids, so
-   * its exclusions cannot be compared to the ticks and it is matched on the master alone.
+   * on both halves. A compose is matched on both halves too when its result carries
+   * `suppressionListIds`, and on the master alone when an older upstream omits them.
    */
   protected readonly attachedMasterId = computed<string | null>(() => {
     const listId = this.attachedListId();
@@ -2125,11 +2125,14 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * Creates the Combined Suppression list and the master list in HubSpot.
+   * Creates the master list in HubSpot, which excludes the selected suppressions directly (the
+   * standard ones through the project's standing list, created on first use).
    *
-   * There is deliberately no retry affordance on failure: compose is not idempotent, so a second
-   * click after a partial failure leaves a duplicate suppression list behind. A partial result is
-   * surfaced with a link into HubSpot so the operator can finish or clean up by hand.
+   * There is deliberately no retry affordance after a create may have happened: compose is not
+   * idempotent, so a second click can leave a second master behind. A partial result is surfaced
+   * with a link or name into HubSpot so the operator can finish by hand. A 400 is the exception:
+   * campaign-service refuses those (an include/suppression overlap, too many filter conditions, a
+   * year-less edition) before creating or growing anything, so the operator may fix and retry.
    */
   protected onComposeMaster(): void {
     if (!this.canCompose()) {
@@ -2246,6 +2249,12 @@ export class AudienceBuilderTabComponent {
             }
           } else {
             this.composeError.set(serverAuthoredMessage(httpErr, 'Failed to compose the master list'));
+            if (httpErr.status === 400) {
+              // Refused before anything was created or grown, so the latch is released: the
+              // operator can fix the selection the message names and compose again.
+              this.composeAttempted.set(false);
+              this.composedEventUrl.set('');
+            }
           }
           this.composing.set(false);
         },
