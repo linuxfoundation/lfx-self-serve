@@ -296,6 +296,15 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-revisions')?.querySelectorAll('th[scope="col"]')).toHaveLength(4);
   });
 
+  it.each([false, true])('keeps ctrl/meta clicks native on document action links (empty=%s)', async (empty) => {
+    await render(empty ? '/?type=boilerplates' : '/?type=brand-kit');
+    const link = query(empty ? 'mktg-documents-run-agent-boilerplates' : 'mktg-documents-view-latest')?.querySelector('a');
+    expect(link?.getAttribute('href')).toBeTruthy();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
+    link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+    link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it('shows a legacy current revision without a date, counts one revision in the singular, and folds a status into its row', async () => {
     store.getDocument.mockReturnValue(
       of({ ...detail, revisions: [revision(1, { latest: true, origin: 'legacy', createdAt: null, status: 'Draft — pre-filled from your documents' })] })

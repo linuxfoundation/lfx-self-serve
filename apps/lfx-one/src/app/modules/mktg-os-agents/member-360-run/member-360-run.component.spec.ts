@@ -130,15 +130,15 @@ describe('Member360RunComponent', () => {
     expect(error?.parentElement?.getAttribute('aria-live')).toBe('polite');
     expect(run.generate).not.toHaveBeenCalled();
   });
-  it('asks for No comparison when no previous report exists, without requiring an optional tracker', async () => {
+  it('creates the first run with No comparison and without requiring an optional tracker', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await render();
+    expect(fixture.componentInstance.form.controls.compare.value).toBe(false);
     expect(button().disabled).toBe(false);
     button().click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain(
-      'There is no previous run to compare with. Choose No comparison to create Member 360.'
-    );
-    expect(run.generate).not.toHaveBeenCalled();
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(navigate).toHaveBeenCalledOnce();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
   it('keeps fixed context parents for a shared URL without copying revision, tab or stale project', async () => {

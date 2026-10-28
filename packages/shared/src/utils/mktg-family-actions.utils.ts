@@ -184,7 +184,7 @@ export function resolveMktgFamilyNextStep(view: MktgKitFamilyView, ctx: MktgFami
   } else if ((header.kind === 'review' || header.kind === 'blocked') && target?.state === 'draft' && asset) {
     const dependants = rows
       .slice(rows.indexOf(target) + 1)
-      .filter((row) => row.state !== 'coming-soon')
+      .filter((row) => row.state !== 'coming-soon' && !row.document)
       .map((row) => row.asset.runName ?? row.asset.label.toLowerCase());
     const names = dependants.length > 1 ? `${dependants.slice(0, -1).join(', ')} and the ${dependants.at(-1)}` : dependants[0];
     sentence = `The ${asset} is drafted; approve it${names ? ` so ${names} can be created` : ''}.`;

@@ -144,6 +144,38 @@ describe('Family export slot', () => {
     expect(print.print).not.toHaveBeenCalled();
   });
 
+  it('focuses an already printable PDF on request without a reason line', async () => {
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    expect(focus).toHaveBeenCalledOnce();
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')).toBeNull();
+  });
+  it('expires a focus request when lookup settles without a printable asset and explains the PDF requirement', async () => {
+    const pending = new Subject<MktgFamilyExportLastResponse>();
+    api.last.mockReturnValue(pending);
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    fixture.componentInstance.focusDownload();
+    await fixture.whenStable();
+    pending.next({ ...lookup(), currentMembers: [familyExportMember({ agentKey: 'boilerplates' })] });
+    await fixture.whenStable();
+    expect(fixture.componentInstance['focusRequested']()).toBe(false);
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')?.textContent).toBe(
+      'PDF is available once the messaging framework or the brand kit is approved.'
+    );
+    pending.next(lookup());
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-pdf-reason"]')).toBeNull();
+    expect(focus).not.toHaveBeenCalled();
+  });
   it('shows failures and allows another export without leaving a spinner', async () => {
     const { fixture, root, button } = await setup();
     button('slides')?.click();

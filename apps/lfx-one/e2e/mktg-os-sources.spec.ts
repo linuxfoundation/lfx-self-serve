@@ -186,7 +186,7 @@ test.describe('Marketing OS new run Sources', () => {
       await expect.poll(() => new URL(page.url()).searchParams.has('mode')).toBe(false);
       const questions = page.getByTestId('mktg-run-questions');
       await expect(questions).toContainText('Which synthetic goal should guide this run?');
-      await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+      await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
       await withDesktopSourcesSetup(page, async () => {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(questions).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

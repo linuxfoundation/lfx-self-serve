@@ -153,10 +153,16 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
   const create = page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true });
   await expect(create).toBeEnabled();
+  await expect(page.getByTestId('member-360-compare')).toContainText('No comparison');
+  await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    await json(route, { sessionId: 'synthetic-first-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
+  });
+  await stubMember360Progress(page, () => member360Progress('writing'));
   await create.click();
-  await expect(page.getByTestId('member-360-error')).toContainText('There is no previous run to compare with. Choose No comparison');
-  await expect(create).toBeEnabled();
-  await page.screenshot({ path: info.outputPath('form-empty-history.png'), fullPage: true });
+  await expect(page).toHaveURL(new RegExp(`/documents/member-360/${MEMBER_360_DOCUMENT_ID}`));
+  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('first-run-no-comparison.png'), fullPage: true });
 });
 
 test('Generate lands on the document and stays generating until the run is stored', async ({ page }, info) => {

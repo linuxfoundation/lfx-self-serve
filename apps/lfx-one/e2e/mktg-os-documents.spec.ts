@@ -43,7 +43,12 @@ test.describe('Marketing OS current revisions', () => {
       await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
       await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
-      if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
+      if (state === 'failed') {
+        const details = page.getByTestId('mktg-document-view-failure-details');
+        await expect(details).not.toHaveAttribute('open');
+        await details.locator('summary').click();
+        await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
+      }
     });
   }
 
@@ -94,8 +99,11 @@ test.describe('Marketing OS current revisions', () => {
       return fulfillDocumentJson(route, {}, 500);
     });
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${startedDocumentRun().runId}`);
+    const details = page.getByTestId('mktg-document-view-failure-details');
+    await expect(details).not.toHaveAttribute('open');
+    await details.locator('summary').click();
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
-    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button').click();
+    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button', { name: 'Check on it again', exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-run-steps')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();

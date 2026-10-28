@@ -7,7 +7,7 @@ import { mktgKitRootPath, mktgRunRouteFor, mktgSentenceCaseLabel } from './mktg-
 describe('Marketing kit route roots', () => {
   it.each([
     ['Messaging framework', 'messaging framework'],
-    ['Brand Kit', 'brand Kit'],
+    ['Brand Kit', 'Brand Kit'],
     ['FAQ', 'FAQ'],
     ['ICP & target markets', 'ICP & target markets'],
     ['LinkedIn post', 'LinkedIn post'],
