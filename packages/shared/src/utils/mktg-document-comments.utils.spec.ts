@@ -79,6 +79,38 @@ describe('comment field paths', () => {
     expect(isMktgDocumentCommentAnchor('brand-kit', kit, { kind: 'field', key: 'kit.font' })).toBe(false);
   });
 
+  it('targets only stored FAQ answers, including null, never question/source fields or missing indexes', () => {
+    const source = {
+      faq: [
+        [
+          'About',
+          [
+            ['What is it?', 'An open toolkit.', 'Website'],
+            ['What does it cost?', null, null],
+          ],
+        ],
+      ],
+    };
+    expect(mktgDocumentCommentAnchorKind('faq')).toBe('field');
+    for (const key of ['faq[0][1][0][1]', 'faq[0][1][1][1]']) {
+      expect(isMktgDocumentCommentAnchor('faq', source, { kind: 'field', key })).toBe(true);
+    }
+    for (const key of [
+      'faq',
+      'faq[0][0]',
+      'faq[0][1][1]',
+      'faq[0][1][1][0]',
+      'faq[0][1][1][2]',
+      'faq[0][1][2][1]',
+      'faq[1][1][0][1]',
+      'faq[00][1][1][1]',
+      'faq.constructor',
+    ]) {
+      expect(isMktgDocumentCommentAnchor('faq', source, { kind: 'field', key })).toBe(false);
+    }
+    expect(isMktgDocumentCommentAnchor('faq', source, { kind: 'passage', key: 'faq[0][1][1][1]' })).toBe(false);
+  });
+
   it('allows only the boilerplates contract fields', () => {
     const source = { bp: Array.from({ length: 4 }, () => ({ t: 'Synthetic copy', max: 15 })) };
     for (const key of ['bp', 'bp[0]', 'bp[3].t']) expect(isMktgDocumentCommentAnchor('boilerplates', source, { kind: 'field', key })).toBe(true);
@@ -103,6 +135,22 @@ describe('comment field labels', () => {
       'Boilerplate text · Length 2 · 25 words'
     );
   });
+  it('labels FAQ answers from their stored group and question, with an honest missing-context fallback', () => {
+    const source = {
+      faq: [
+        [
+          'About',
+          [
+            ['What is it?', 'An open toolkit.', 'Website'],
+            ['What does it cost?', null, null],
+          ],
+        ],
+      ],
+    };
+    expect(describeMktgDocumentCommentField('faq', 'faq[0][1][1][1]', source)).toBe('About · Q2: What does it cost? · Answer');
+    expect(describeMktgDocumentCommentField('faq', 'faq[2][1][3][1]')).toBe('Group 3 · Q4 · Answer');
+    expect(describeMktgDocumentCommentField('faq', 'faq[0][0]', source)).toBe('faq[0][0]');
+  });
   it('keeps missing-context indexes meaningful and unknown-agent fields honest', () => {
     expect(describeMktgDocumentCommentField('foundation-message', 'mf.goals[1].vp')).toBe('Value proposition · Goal column 2');
     expect(describeMktgDocumentCommentField('brand-kit', 'kit.font')).toBe('kit.font');
@@ -116,10 +164,13 @@ describe('comment send limits', () => {
       expect(MKTG_DOCUMENT_COMMENT_ID_REGEX.test(id)).toBe(false);
     }
   });
-  it('keeps the separate upstream 30/30/20 caps and rejects empty batches', () => {
+  it('keeps each upstream cap and rejects empty batches', () => {
     const comments = Array.from({ length: 30 }, () => ({ text: 'Shorten this field.' }));
     expect(validateMktgDocumentCommentBatch('foundation-message', comments)).toEqual([]);
     expect(validateMktgDocumentCommentBatch('brand-kit', comments)).toEqual([]);
+    expect(validateMktgDocumentCommentBatch('faq', comments)).toEqual([]);
+    expect(validateMktgDocumentCommentBatch('faq', [...comments, comments[0]])).toHaveLength(1);
+    expect(validateMktgDocumentCommentBatch('faq', [])).toHaveLength(1);
     expect(validateMktgDocumentCommentBatch('boilerplates', comments)).toHaveLength(1);
     expect(validateMktgDocumentCommentBatch('boilerplates', comments.slice(0, 20))).toEqual([]);
     expect(validateMktgDocumentCommentBatch('foundation-message', [...comments, comments[0]])).toHaveLength(1);

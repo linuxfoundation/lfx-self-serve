@@ -61,6 +61,7 @@ describe('MembersTiersComponent', () => {
   let getMembersTiers: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsMembersTiers | Error = TIERS): Promise<void> {
     getMembersTiers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -79,7 +80,10 @@ describe('MembersTiersComponent', () => {
 
     fixture = TestBed.createComponent(MembersTiersComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -113,6 +117,7 @@ describe('MembersTiersComponent', () => {
     vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   afterEach(() => {
@@ -125,6 +130,7 @@ describe('MembersTiersComponent', () => {
     expect(getMembersTiers).toHaveBeenCalledTimes(1);
     expect(getMembersTiers).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('members-tiers-loading')).toBeNull();
   });
 
@@ -237,12 +243,13 @@ describe('MembersTiersComponent', () => {
     expect(query('members-tiers-table')).not.toBeNull();
   });
 
-  it('shows the empty state for a foundation with no tier rows', async () => {
+  it('settles empty, with no body, for a foundation with no tier rows', async () => {
     await render({ rows: [], foundationRevenue: [] });
 
-    expect(query('members-tiers-empty')).not.toBeNull();
+    expect(query('members-tiers-controls')).toBeNull();
     expect(query('members-tiers-table')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -251,6 +258,7 @@ describe('MembersTiersComponent', () => {
     expect(query('members-tiers-error')).not.toBeNull();
     expect(query('members-tiers-loading')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
 
     await pickRange('COMPLETED_YEAR');
     expect(lifecycle).toEqual(['reading', 'settled']);

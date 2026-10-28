@@ -28,21 +28,7 @@
       data-testid="members-churn-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-churn-loading" aria-hidden="true" />
-  } @else if (!view().yearMeasured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-column"
-      title="Churn not measured for this period"
-      subtitle="Churn appears here once memberships for the selected period are measured."
-      data-testid="members-churn-unmeasured" />
-  } @else if (!view().hasChurn) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-check"
-      title="No churn this period"
-      subtitle="No members have lapsed or downgraded in the selected period."
-      data-testid="members-churn-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-churn-hero">
       <div class="flex flex-col gap-2">
         <div class="flex items-baseline gap-2">

@@ -7,7 +7,7 @@ import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { DOCUMENT_PROJECT, setupDocuments } from './mktg-os-documents.helper';
-import { draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
+import { columnAssetRevisionResponse, draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
 
 /** Only the authenticated shell uses harness state. Domain traffic is entirely synthetic. */
 export async function openFamilyExports(
@@ -23,6 +23,7 @@ export async function openFamilyExports(
     holdList?: boolean;
     holdPrint?: boolean;
     approvedFamily?: boolean;
+    allAssets?: boolean;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -79,6 +80,29 @@ export async function openFamilyExports(
     if (options.holdPrint) await printGate;
     return route.fulfill({ json: response });
   });
+  const members = options.allAssets
+    ? MKTG_DOCUMENT_TYPES.filter((entry) => Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)).map((entry) =>
+        familyExportMember({ agentKey: entry.agentKey as keyof typeof MKTG_FAMILY_EXPORT_KINDS })
+      )
+    : [member];
+  if (options.allAssets) {
+    for (const current of members) {
+      const asset = columnAssetRevisionResponse(current.agentKey);
+      const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
+      await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, async (route) => {
+        if (options.holdPrint) await printGate;
+        return route.fulfill({
+          json: {
+            ...asset,
+            project: DOCUMENT_PROJECT.uid,
+            revision,
+            revisions: [revision],
+            approvedCurrent: { revisionId: revision.id, number: revision.number },
+          },
+        });
+      });
+    }
+  }
   let record = options.existing ? familyExportRecord({ project: DOCUMENT_PROJECT.uid }) : null;
   let ready = options.result !== 'pending';
   let started = familyExportStarted(DOCUMENT_PROJECT.uid);
@@ -91,8 +115,8 @@ export async function openFamilyExports(
         status: options.lookupStatus ?? 200,
         json: {
           last: record,
-          currentMembers: options.empty ? [] : [member],
-          skippedMembers: ['brand-kit', 'boilerplates', 'faq'],
+          currentMembers: options.empty ? [] : members,
+          skippedMembers: options.allAssets ? [] : ['brand-kit', 'boilerplates', 'faq'],
           stale: options.stale ?? false,
         },
       });
