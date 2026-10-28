@@ -73,6 +73,58 @@ describe('MktgRunProgressComponent', () => {
     }
   });
 
+  it.each(MKTG_DOCUMENT_TYPES.filter((entry) => entry.kind === 'run'))(
+    'renders $agentKey once from measured progress, with its creator feed in place of generic steps',
+    async (oneOff) => {
+      await setup();
+      fixture.componentRef.setInput('runPage', false);
+      fixture.componentRef.setInput('agentKey', oneOff.agentKey);
+      fixture.componentRef.setInput('documentId', 'run-synthetic');
+      const response = new Subject<MktgDocumentDetailResponse>();
+      read.mockReturnValue(response);
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('h2')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity"]')).toBeNull();
+      const record = {
+        ...run,
+        agentKey: oneOff.agentKey,
+        documentId: 'run-synthetic',
+        activity: [
+          { id: 'synthetic-step', kind: 'checking' as const, label: 'Checking synthetic sources', status: 'running' as const, startedAt: run.startedAt },
+        ],
+      };
+      const measured = { ...detail([record]), type: oneOff, documentId: record.documentId };
+      response.next(measured);
+      response.complete();
+      await fixture.whenStable();
+      const heading = fixture.nativeElement.querySelector('h2');
+      const noun = oneOff.itemLabel.toLowerCase().endsWith('post') ? 'post' : 'report';
+      expect(heading?.textContent).toBe(`${oneOff.agentName} is working on your ${noun}.`);
+      expect(fixture.nativeElement.querySelectorAll('h2')).toHaveLength(1);
+      expect(text()).toContain('Checking synthetic sources');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).toBeNull();
+      const feed = fixture.nativeElement.querySelector('lfx-mktg-run-activity');
+      read.mockReturnValue(of(measured));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('h2')).toBe(heading);
+      expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBe(feed);
+    }
+  );
+
+  it.each([undefined, []])('keeps generic one-off progress when the served feed has no steps (%s)', async (activity) => {
+    await setup();
+    const oneOff = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
+    if (!oneOff) throw new Error('Missing synthetic one-off type');
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('agentKey', oneOff.agentKey);
+    read.mockReturnValue(of({ ...detail([{ ...run, agentKey: oneOff.agentKey, activity }]), type: oneOff }));
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBeNull();
+    expect(text()).toContain('It will appear here when it is ready.');
+  });
+
   it('keeps the document observer headless without rendering any live card or status', async () => {
     await setup();
     fixture.componentRef.setInput('runPage', false);

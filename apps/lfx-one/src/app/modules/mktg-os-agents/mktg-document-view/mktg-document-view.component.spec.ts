@@ -1440,8 +1440,9 @@ describe('MktgDocumentViewComponent', () => {
     const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [progress] };
     store.getDocument.mockReturnValue(of(response));
     await render(`/documents/${type.agentKey}/${documentId}`);
-    expect(query('mktg-document-view-live-state')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
-    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
+    const noun = type.itemLabel.toLowerCase().endsWith('post') ? 'post' : 'report';
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing…');
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('It will appear here when it is ready.');
     store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...progress, state: 'storing' }] }));
