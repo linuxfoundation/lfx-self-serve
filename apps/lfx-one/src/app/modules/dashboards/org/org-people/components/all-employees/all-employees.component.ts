@@ -44,6 +44,7 @@ import {
   ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
+  ORG_ALL_FOUNDATIONS_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_METRIC_LABEL,
   ORG_CODE_MEASURE_OPTIONS,
@@ -51,6 +52,7 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
+  ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -127,7 +129,17 @@ export class AllEmployeesComponent {
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
   protected readonly rangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
+  protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
+  protected readonly statSkeletonLabels: readonly string[] = [
+    'Employees Active in Open Source',
+    'In Governance',
+    ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
+    'Event Attendees',
+    'Trainees',
+  ];
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
@@ -214,20 +226,12 @@ export class AllEmployeesComponent {
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
-  protected readonly codeStatLabel = computed(() => ORG_ALL_EMPLOYEE_CODE_STAT_LABEL[this.selectedFilters().metric]);
   // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; say so.
   protected readonly codeStatNote = computed(() => (this.selectedEmployment() === 'current' ? ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE : null));
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
   );
-  protected readonly statSkeletonLabels: Signal<string[]> = computed(() => [
-    'Employees Active in Open Source',
-    'In Governance',
-    this.codeStatLabel(),
-    'Event Attendees',
-    'Trainees',
-  ]);
 
   // Every view's rows are reconciled across both rosters, so the table waits for both.
   protected readonly isLoading = computed(() => this.loadingState() || this.formerLoadingState());
@@ -509,7 +513,7 @@ export class AllEmployeesComponent {
       if (engaged.has(f.foundationId)) foundations.set(f.foundationId, f.foundationName);
     }
     const options = [...foundations].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
-    return [{ label: 'All Foundations', value: '' }, ...options];
+    return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...options];
   }
 
   /** Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them. */

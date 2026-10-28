@@ -887,12 +887,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(nonLf.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-non-lf', 2]]);
     });
 
+    // The code tile counts Code Contributors under every option (lfx-self-serve#4160): the reviewer has no commit but counts.
     it.each([
-      [{ commitScope: 'all', metric: 'commits' }, 10, 1],
-      [{ commitScope: 'merged', metric: 'commits' }, 4, 1],
-      [{ commitScope: 'all', metric: 'code' }, 25, 2],
-      [{ commitScope: 'merged', metric: 'code' }, 25, 2],
-    ] as const)('shows the count %o picks, with the code tile counting people who have one', async (picked, expected, codeContributors) => {
+      [{ commitScope: 'all', metric: 'commits' }, 10],
+      [{ commitScope: 'merged', metric: 'commits' }, 4],
+      [{ commitScope: 'all', metric: 'code' }, 25],
+      [{ commitScope: 'merged', metric: 'code' }, 25],
+    ] as const)('shows the count %o picks, with the code tile counting every code contributor', async (picked, expected) => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'coder', 'Coder', 'coder@company.example', 10, { merged: 4, code: 25 });
       // Reviews only: no commit at all, but code contributions.
       addRangeRow(ACCOUNT, 'person-reviewer', '365d', false, 'reviewer', 'Reviewer', 'reviewer@company.example', 0, { merged: 0, code: 6 });
@@ -900,7 +901,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       const response = await service.getAllEmployees(ACCOUNT, '365d', { ...FILTERS, ...picked });
 
       expect(response.rows.find((row) => row.personKey === personKey)?.commitsCount).toBe(expected);
-      expect(response.stats.codeContributors).toBe(codeContributors);
+      expect(response.rows.find((row) => row.personKey === 'person-reviewer')?.commitsCount).toBe(picked.metric === 'code' ? 6 : 0);
+      expect(response.stats.codeContributors).toBe(2);
     });
 
     it('caches per range and project scope, one entry serving every commit scope and metric', async () => {
