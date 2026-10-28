@@ -114,6 +114,7 @@ import {
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
@@ -160,6 +161,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignGoogleImageAssetBlock,
   CampaignLinkedInImageAssetBlock,
   CampaignMetaImageAssetBlock,
   CampaignProximityTarget,
@@ -176,6 +178,7 @@ import type {
   CampaignStructuredSnippet,
   CampaignStructuredSnippetDraft,
   CampaignType,
+  CreativeAssetLibraryState,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
   GoogleAdsGeoTargetOption,
@@ -188,6 +191,10 @@ import type {
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
+  GoogleCreativeHeldImage,
+  GoogleCreativeImageRef,
+  GoogleCreativeImageShape,
+  GoogleCreativeImageSlotView,
   GoogleCreativeSection,
   LinkedInAccount,
   LinkedInCreativeVariant,
@@ -201,6 +208,7 @@ import type {
   RedditCallToAction,
   RedditObjective,
   RedditVideoGoal,
+  StoredCreativeAsset,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
@@ -210,12 +218,17 @@ import {
   describeCampaignDispatchFailure,
   googleAdsToUpperCode,
   googleCallExtensionRefusal,
+  googleCreativeImageDrift,
+  googleCreativeImageFit,
+  googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  storedCreativeAssetLabel,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
+import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -264,6 +277,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     SlicePipe,
     CampaignBiddingControlComponent,
     CreativeSlotGridComponent,
+    GoogleCreativeImageLibraryComponent,
   ],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
@@ -390,6 +404,19 @@ export class ImplementationTabComponent implements OnInit {
    * thing, and the two could drift.
    */
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
+
+  /**
+   * Whether the Google image slots may offer the brief's stored-image LIBRARY
+   * (`CampaignListResult.googleAssetUploadEnabled`) — upload into it, or pick a stored image that
+   * fits. Read only together with `googleCreativeAvailable()`, as `metaAssetUploadEnabled` is with
+   * its sibling; the pasted image URLs stay offered whatever this answers. `null` (unknown)
+   * withholds the controls, and a stored image already held then blocks Create instead of being
+   * dropped (`googleImageAssetBlock`).
+   */
+  public readonly googleAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see googleAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly googleAssetUploadAvailable = computed<boolean>(() => this.googleCreativeAvailable() && this.googleAssetUploadEnabled() === true);
 
   /**
    * Whether a Reddit post AUTHORED here will actually be created. `null` (unknown) withholds the
@@ -1001,6 +1028,22 @@ export class ImplementationTabComponent implements OnInit {
     ['meta-image-file-hint', 'meta-image-file-status', ...(this.metaImageUploadStatus() === 'error' ? ['meta-image-file-error'] : [])].join(' ')
   );
   private metaImageUploadSub: Subscription | null = null;
+  /**
+   * The stored images held in the Google image slots, keyed `<request key>.<control>`, each with
+   * the brief it was stored for. Sent as `{ imageAssetId }` entries after the slot's pasted URLs
+   * (see `googleImageRefsFor`). The upload state beside it mirrors the Meta image's, with the slot
+   * the upload is for: ONE Google upload runs at a time across every slot, because
+   * `CampaignService` keeps one per owner, so a pick in a second slot replaces the first.
+   */
+  protected readonly googleHeldImages = signal<Record<string, GoogleCreativeHeldImage[]>>({});
+  protected readonly googleImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  /** The slot the running or failed upload is for, or `''`. */
+  private readonly googleImageUploadSlot = signal('');
+  private readonly googleImageUploadPendingName = signal('');
+  private readonly googleImageUploadPendingBriefId = signal('');
+  private readonly googleImageUploadFailedBriefId = signal('');
+  private readonly googleImageUploadError = signal('');
+  private googleImageUploadSub: Subscription | null = null;
   /**
    * The LinkedIn ad image, set on EVERY variant at create (see `linkedInVariantsForCreate`): an
    * upload made for this brief, and nothing else, since LinkedIn takes no image URL. The upload
@@ -2404,6 +2447,21 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * The brief's stored images, read while a Google image slot offers the library. Re-read on every
+   * `creativeLibraryRevision` bump, so an upload here or in the Reddit and Meta sections is
+   * offered as soon as it is stored.
+   */
+  protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
+  /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
+  protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /**
+   * Why Create is blocked for a stored Google image the request cannot carry, or that
+   * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
+   */
+  protected readonly googleImageAssetBlock: Signal<CampaignGoogleImageAssetBlock | null> = this.initGoogleImageAssetBlock();
+  protected readonly googleImageAssetBlockMessage = computed(() => this.googleImageAssetBlock()?.message ?? '');
+
+  /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have.
    */
@@ -2587,6 +2645,7 @@ export class ImplementationTabComponent implements OnInit {
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
     if (this.metaImageAssetBlock() !== null) return false;
+    if (this.googleImageAssetBlock() !== null) return false;
     if (this.linkedInImageAssetBlock() !== null) return false;
     // Retained audience segments this caller may not (or may not yet be known to) send: held, never
     // dropped. Unlike the extensions they change who the campaign is aimed at, so the create waits.
@@ -2633,6 +2692,9 @@ export class ImplementationTabComponent implements OnInit {
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
+    // And Google's, for an upload into an image slot of a section still on screen — an upload for a
+    // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
+    if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach()) return false;
     if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
@@ -2667,6 +2729,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
+  /**
+   * The creative channels whose creative this request would carry, BEFORE the capability gate —
+   * the sections' own channel rule, read by `googleImageAssetBlock` too, so a stored image held in
+   * a section the capability is withholding blocks Create rather than vanishing with it.
+   */
+  private readonly googleCreativeChannelsInReach: Signal<GoogleCreativeChannel[]> = this.initGoogleCreativeChannelsInReach();
 
   /**
    * Every creative field that currently has something to say, keyed `groupName.control`.
@@ -3235,6 +3303,96 @@ export class ImplementationTabComponent implements OnInit {
   /** Forget the uploaded LinkedIn image (the stored asset stays upstream, unused). */
   protected onLinkedInImageAssetRemove(): void {
     this.clearLinkedInImageAsset();
+    this.emitDraft();
+  }
+
+  /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
+  protected onGoogleImagePick(slotKey: string, assetId: string): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!briefId) return;
+    this.holdGoogleImage(slotKey, { id: assetId, name: '', briefId });
+    this.emitDraft();
+  }
+
+  /** Take a held image out of a Google image slot. The stored asset stays in the library. */
+  protected onGoogleImageRemove(slotKey: string, assetId: string): void {
+    this.googleHeldImages.update((held) => ({ ...held, [slotKey]: (held[slotKey] ?? []).filter((image) => image.id !== assetId) }));
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen file into the brief's library and hold it in the slot it was chosen for —
+   * `onMetaImageFileChange`'s sibling, step for step.
+   */
+  protected onGoogleImageUpload(slotKey: string, file: File): void {
+    this.clearGoogleImageUpload();
+
+    // A file refused before upload is still one the operator chose for this slot, so the refusal
+    // is recorded against the open brief — it blocks Create (`uploadFailed`) and survives a tab
+    // switch until they remove it or choose again — rather than leaving the slot without it unsaid.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const refuse = (message: string): void => {
+      this.failGoogleImageUpload(message, briefId, slotKey);
+      this.emitDraft();
+    };
+    if (!isCreativeAssetMimeType(file.type)) {
+      refuse(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    // Google's own cap, tighter than the library's: an image stored at 6 MB would be refused at
+    // dispatch, so it is refused before it is uploaded.
+    if (file.size > GOOGLE_CREATIVE_IMAGE_MAX_BYTES) {
+      refuse(`Google takes images of up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB. Choose a smaller file.`);
+      return;
+    }
+    // `activeFoundationSlug`, the same source the library read keys on, so an upload lands in the
+    // library the slot then reads.
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug) {
+      refuse('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followGoogleImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'google'), briefId, file.name, slotKey);
+    this.emitDraft();
+  }
+
+  protected onGoogleImageUploadCancel(): void {
+    this.clearGoogleImageUpload();
+    this.emitDraft();
+  }
+
+  /**
+   * The block's Remove: drops only what the block names. Images stored for another brief, a failed
+   * upload, or the images that are missing or do not fit are cleared on their own; when the block
+   * is about the capability, every held image the request would carry is, with any upload still
+   * running. Pasted URLs are never touched — the request can carry them either way.
+   */
+  protected onGoogleImageBlockRemove(): void {
+    const block = this.googleImageAssetBlock();
+    if (block === null) return;
+    const briefId = this.briefPersistence().briefId ?? '';
+    const library = this.googleCreativeLibrary();
+    const inReach = new Set<string>(this.googleCreativeChannelsInReach().map((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel]));
+    if (block.kind === 'uploadFailed') {
+      this.clearGoogleImageUpload();
+      this.emitDraft();
+      return;
+    }
+    const drop = (slotKey: string, image: GoogleCreativeHeldImage): boolean => {
+      if (!inReach.has(slotKey.split('.')[0])) return false;
+      if (block.kind === 'otherBrief') return image.briefId !== briefId;
+      // With no brief id every held image in reach is the block's subject.
+      if (block.kind === 'unsaved' && !briefId) return true;
+      if (block.kind === 'missing' || block.kind === 'misfit') {
+        return this.googleHeldImageIssue(image, slotKey, library, briefId) === block.kind;
+      }
+      return image.briefId === briefId;
+    };
+    this.googleHeldImages.update((held) =>
+      Object.fromEntries(Object.entries(held).map(([slotKey, images]) => [slotKey, images.filter((image) => !drop(slotKey, image))]))
+    );
+    if (block.kind !== 'otherBrief' && block.kind !== 'missing' && block.kind !== 'misfit') this.clearGoogleImageUpload();
     this.emitDraft();
   }
 
@@ -4698,6 +4856,205 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInImageUploadFailedBriefId.set(briefId);
   }
 
+  /** `followMetaImageUpload`'s sibling, holding the stored image in `slotKey` once it lands. */
+  private followGoogleImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string, slotKey: string): void {
+    this.googleImageUploadStatus.set('uploading');
+    this.googleImageUploadError.set('');
+    this.googleImageUploadSlot.set(slotKey);
+    this.googleImageUploadPendingName.set(fileName);
+    this.googleImageUploadPendingBriefId.set(briefId);
+    this.googleImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('google', upload$);
+        this.googleImageUploadPendingName.set('');
+        this.googleImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failGoogleImageUpload('The brief changed during the upload. Choose the image again.', briefId, slotKey);
+          this.emitDraft();
+          return;
+        }
+        this.holdGoogleImage(slotKey, { id: asset.id, name: fileName, briefId });
+        this.googleImageUploadStatus.set('idle');
+        this.googleImageUploadSlot.set('');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('google', upload$);
+        this.googleImageUploadPendingName.set('');
+        this.googleImageUploadPendingBriefId.set('');
+        this.failGoogleImageUpload(this.creativeAssetUploadErrorMessage(err), briefId, slotKey);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeGoogleImageUpload(fileName: string, uploadBriefId: string, slotKey: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.googleImageUploadPendingName.set(fileName);
+      this.googleImageUploadPendingBriefId.set(briefId);
+      this.googleImageUploadSlot.set(slotKey);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('google', briefId) : null;
+    if (!upload$) {
+      this.failGoogleImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId, slotKey);
+      return;
+    }
+    this.followGoogleImageUpload(upload$, briefId, fileName, slotKey);
+  }
+
+  /** Whether the running Google upload is for a slot in a channel the request would carry. */
+  private googleImageUploadInReach(): boolean {
+    const groupName = this.googleImageUploadSlot().split('.')[0];
+    return this.googleCreativeChannelsInReach().some((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel] === groupName);
+  }
+
+  /** Forget the Google upload — running, parked or failed. Held images are untouched. */
+  private clearGoogleImageUpload(): void {
+    this.googleImageUploadSub?.unsubscribe();
+    this.googleImageUploadSub = null;
+    if (this.googleImageUploadStatus() === 'uploading' || this.googleImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('google');
+    }
+    this.googleImageUploadPendingName.set('');
+    this.googleImageUploadPendingBriefId.set('');
+    this.googleImageUploadStatus.set('idle');
+    this.googleImageUploadError.set('');
+    this.googleImageUploadFailedBriefId.set('');
+    this.googleImageUploadSlot.set('');
+  }
+
+  private failGoogleImageUpload(message: string, briefId: string, slotKey: string): void {
+    this.googleImageUploadStatus.set('error');
+    this.googleImageUploadError.set(message);
+    this.googleImageUploadFailedBriefId.set(briefId);
+    this.googleImageUploadSlot.set(slotKey);
+  }
+
+  /**
+   * Hold an image in a slot, once. An identical upload answers with the asset already stored
+   * (campaign-service dedupes on checksum), so the same id can come back for a file already held.
+   */
+  private holdGoogleImage(slotKey: string, image: GoogleCreativeHeldImage): void {
+    this.googleHeldImages.update((held) => {
+      const current = held[slotKey] ?? [];
+      return current.some((existing) => existing.id === image.id) ? held : { ...held, [slotKey]: [...current, image] };
+    });
+  }
+
+  /**
+   * The `{ imageAssetId }` entries a slot sends after its pasted URLs: its held images stored for
+   * the open brief, and only while the library capability is an explicit yes. Anything held but not
+   * sent here is `googleImageAssetBlock`'s to name — never dropped without a word.
+   */
+  private googleImageRefsFor(slotKey: string): GoogleCreativeImageRef[] {
+    if (!this.googleAssetUploadAvailable()) return [];
+    const briefId = this.briefPersistence().briefId ?? '';
+    return (this.googleHeldImages()[slotKey] ?? []).filter((image) => image.briefId === briefId).map((image) => ({ imageAssetId: image.id }));
+  }
+
+  /**
+   * What is wrong with one held image, or `null`. `missing` and `misfit` are judged only on a
+   * library that was READ: a failed or pending read is not evidence that an image was deleted, and
+   * campaign-service still refuses a missing or misshapen asset by name before anything is created.
+   * An image whose dimensions were never recorded is let through for the same reason.
+   */
+  private googleHeldImageIssue(
+    image: GoogleCreativeHeldImage,
+    slotKey: string,
+    library: CreativeAssetLibraryState,
+    briefId: string
+  ): 'otherBrief' | 'missing' | 'misfit' | null {
+    if (image.briefId !== briefId) return 'otherBrief';
+    if (library.status !== 'ready') return null;
+    const asset = library.assets.find((stored) => stored.id === image.id);
+    if (!asset) return 'missing';
+    const shape = this.googleImageShape(slotKey);
+    return shape && googleCreativeImageFit(asset, shape) === 'misfit' ? 'misfit' : null;
+  }
+
+  /** The catalogued shape of the slot `<request key>.<control>` names, or `null` for no image slot. */
+  private googleImageShape(slotKey: string): GoogleCreativeImageShape | null {
+    const [groupName, control] = slotKey.split('.');
+    const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+    if (!channel) return null;
+    const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    return fields.find((field) => field.control === control)?.image ?? null;
+  }
+
+  /** The line under a held image saying why it cannot be sent, or `''`. */
+  private googleHeldImageProblem(
+    image: GoogleCreativeHeldImage,
+    slotKey: string,
+    library: CreativeAssetLibraryState,
+    briefId: string,
+    asset: StoredCreativeAsset | undefined
+  ): string {
+    switch (this.googleHeldImageIssue(image, slotKey, library, briefId)) {
+      case 'otherBrief':
+        return 'Stored for a different brief.';
+      case 'missing':
+        return "No longer in the brief's library.";
+      case 'misfit': {
+        const shape = this.googleImageShape(slotKey);
+        if (!asset || !shape) return '';
+        const what =
+          asset.width && asset.height
+            ? `${asset.width}x${asset.height}, ${Math.ceil(asset.byteSize / 1024)} KB,`
+            : `At ${Math.ceil(asset.byteSize / 1024)} KB it`;
+        return `${what} does not fit. This slot needs ${googleCreativeImageRequirement(shape)}.`;
+      }
+      default:
+        return '';
+    }
+  }
+
+  /** Why a slot's picker offers nothing, or `''` when it offers something. */
+  private googleImageOptionsNote(library: CreativeAssetLibraryState, optionCount: number, canAdd: boolean): string {
+    if (!canAdd) return 'This slot is full.';
+    if (optionCount > 0) return '';
+    switch (library.status) {
+      case 'loading':
+        return "Loading the brief's images…";
+      case 'error':
+        return "Couldn't load the brief's images. You can still upload one.";
+      case 'ready':
+        return library.assets.length === 0 ? 'No images are stored for this brief yet.' : 'No stored image fits this slot yet.';
+      default:
+        return '';
+    }
+  }
+
+  /** A held image's label: the file it was uploaded from, else the library's description of it. */
+  private googleHeldImageLabel(image: GoogleCreativeHeldImage, asset: StoredCreativeAsset | undefined): string {
+    if (image.name) return image.name;
+    return asset ? storedCreativeAssetLabel(asset) : `Stored image ${image.id.slice(0, 8)}`;
+  }
+
+  /**
+   * A draft's held images, kept only where they are the shape this writes. The draft is persisted
+   * JSON, so an entry can be anything; one with no id would be sent as an empty ref upstream refuses.
+   */
+  private restoreGoogleHeldImages(saved: unknown): Record<string, GoogleCreativeHeldImage[]> {
+    if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    const out: Record<string, GoogleCreativeHeldImage[]> = {};
+    for (const [slotKey, images] of Object.entries(saved as Record<string, unknown>)) {
+      if (!Array.isArray(images)) continue;
+      out[slotKey] = images
+        .filter((image): image is GoogleCreativeHeldImage => !!image && typeof image === 'object' && typeof image.id === 'string' && image.id !== '')
+        .map((image) => ({
+          id: image.id,
+          name: typeof image.name === 'string' ? image.name : '',
+          briefId: typeof image.briefId === 'string' ? image.briefId : '',
+        }));
+    }
+    return out;
+  }
+
   /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
@@ -4851,6 +5208,16 @@ export class ImplementationTabComponent implements OnInit {
     // form controls rather than signals and belong with the patch above; the two do not interact.
     if (draft.googleCreatives !== undefined) {
       this.restoreGoogleCreatives(draft.googleCreatives);
+    }
+    // The stored images held in the Google image slots, on the Meta image's terms.
+    if (draft.googleImageAssets !== undefined) {
+      this.googleHeldImages.set(this.restoreGoogleHeldImages(draft.googleImageAssets));
+    }
+    if (draft.googleImageUploadFailedMessage && draft.googleImageUploadFailedBriefId) {
+      this.failGoogleImageUpload(draft.googleImageUploadFailedMessage, draft.googleImageUploadFailedBriefId, draft.googleImageUploadFailedSlot ?? '');
+    }
+    if (draft.googleImageUploadPendingName) {
+      this.resumeGoogleImageUpload(draft.googleImageUploadPendingName, draft.googleImageUploadPendingBriefId ?? '', draft.googleImageUploadPendingSlot ?? '');
     }
     // Copied rather than referenced, so the restored form does not share an array with the draft
     // the parent still holds — the same rule `metaGeoTargets` follows below.
@@ -5108,6 +5475,16 @@ export class ImplementationTabComponent implements OnInit {
       // draft field, and a user who tries Display, types a headline, then switches to Performance
       // Max must not lose the Display copy the moment they look away.
       googleCreatives: this.googleCreativeSnapshot(),
+      // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
+      googleImageAssets: Object.fromEntries(
+        Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
+      ),
+      googleImageUploadPendingName: this.googleImageUploadPendingName(),
+      googleImageUploadPendingBriefId: this.googleImageUploadPendingBriefId(),
+      googleImageUploadPendingSlot: this.googleImageUploadPendingName() ? this.googleImageUploadSlot() : '',
+      googleImageUploadFailedMessage: this.googleImageUploadFailedBriefId() ? this.googleImageUploadError() : '',
+      googleImageUploadFailedBriefId: this.googleImageUploadFailedBriefId(),
+      googleImageUploadFailedSlot: this.googleImageUploadFailedBriefId() ? this.googleImageUploadSlot() : '',
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
       googlePostalGeoTargets: [...this.googlePostalGeoTargets()],
@@ -5623,12 +6000,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleCreativeSections(): Signal<GoogleCreativeSection[]> {
     return computed(() => {
-      void this.campaignFormRevision();
-      if (!this.showGoogleSection()) return [];
       if (!this.googleCreativeAvailable()) return [];
-      const selected = this.selectedGoogleChannels();
-      const reachesGoogle = selected.includes('search') ? selected.filter((channel) => channel !== 'demand-gen') : selected;
-      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => reachesGoogle.includes(channel)).map((channel) => ({
+      return this.googleCreativeChannelsInReach().map((channel) => ({
         channel,
         label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
         groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
@@ -5636,6 +6009,204 @@ export class ImplementationTabComponent implements OnInit {
         // assembled when the section resolves instead of on every change-detection pass.
         fields: GOOGLE_CREATIVE_FIELD_SPECS[channel].map((field) => ({ ...field, guidance: this.creativeFieldGuidance(field) })),
       }));
+    });
+  }
+
+  /** The channel half of {@link initGoogleCreativeSections}: Google picked, and Demand Gen dropped beside Search. */
+  private initGoogleCreativeChannelsInReach(): Signal<GoogleCreativeChannel[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection()) return [];
+      const selected = this.selectedGoogleChannels();
+      const reachesGoogle = selected.includes('search') ? selected.filter((channel) => channel !== 'demand-gen') : selected;
+      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => reachesGoogle.includes(channel));
+    });
+  }
+
+  /**
+   * One library read per request identity, `switchMap` dropping an answer the operator has moved
+   * past — the slot grid's pattern (`CreativeSlotGridComponent.initState`).
+   *
+   * Read only while a Google image slot is on screen with the library offered; otherwise `idle`,
+   * which nothing reads as "empty". A failure is `error`, never an empty `ready` list: an empty
+   * library would tell every held image it had been deleted.
+   */
+  private initGoogleCreativeLibrary(): Signal<CreativeAssetLibraryState> {
+    const idle: CreativeAssetLibraryState = { status: 'idle', assets: [] };
+    const request = computed(
+      () => ({
+        projectSlug: this.activeFoundationSlug(),
+        briefId: this.briefPersistence().briefId ?? '',
+        revision: this.creativeLibraryRevision(),
+        wanted: this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0,
+      }),
+      {
+        equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,
+      }
+    );
+    return toSignal(
+      toObservable(request).pipe(
+        switchMap((target) => {
+          if (!target.wanted || target.projectSlug === '' || target.briefId === '') return of(idle);
+          return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
+            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets })),
+            catchError(() => of<CreativeAssetLibraryState>({ status: 'error', assets: [] })),
+            startWith<CreativeAssetLibraryState>({ status: 'loading', assets: [] })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  /**
+   * Each rendered image slot's library controls.
+   *
+   * The picker offers only stored images that FIT the slot (`googleCreativeImageFit`), best fit
+   * first — closest ratio, then larger area, as campaign-service's classifier ranks — and never one
+   * already held there. An image with no recorded dimensions is not offered: nothing here can say
+   * it fits. `canAdd` counts the slot's pasted URLs with its held images against the catalogued
+   * `max`, which for a marketing shape is the channel's combined cap, the permissive direction the
+   * catalogue already takes.
+   */
+  private initGoogleImageSlots(): Signal<Record<string, GoogleCreativeImageSlotView>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const views: Record<string, GoogleCreativeImageSlotView> = {};
+      if (!this.googleAssetUploadAvailable()) return views;
+      const library = this.googleCreativeLibrary();
+      const briefId = this.briefPersistence().briefId ?? '';
+      const heldBySlot = this.googleHeldImages();
+      const uploadSlot = this.googleImageUploadSlot();
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const key = `${section.groupName}.${field.control}`;
+          const held = heldBySlot[key] ?? [];
+          const heldIds = new Set(held.map((image) => image.id));
+          const options = library.assets
+            .filter((asset) => !heldIds.has(asset.id) && googleCreativeImageFit(asset, shape) === 'fits')
+            .sort(
+              (a, b) =>
+                googleCreativeImageDrift(a, shape) - googleCreativeImageDrift(b, shape) || (b.width ?? 0) * (b.height ?? 0) - (a.width ?? 0) * (a.height ?? 0)
+            )
+            .map((asset) => ({ label: storedCreativeAssetLabel(asset), value: asset.id }));
+          const count = this.splitCreativeLines(raw[field.control]).length + held.length;
+          const canAdd = field.max === undefined || count < field.max;
+          views[key] = {
+            key,
+            label: field.label,
+            requirement: googleCreativeImageRequirement(shape),
+            held: held.map((image) => {
+              const asset = library.assets.find((stored) => stored.id === image.id);
+              return {
+                id: image.id,
+                label: this.googleHeldImageLabel(image, asset),
+                problem: this.googleHeldImageProblem(image, key, library, briefId, asset),
+              };
+            }),
+            options,
+            optionsNote: this.googleImageOptionsNote(library, options.length, canAdd),
+            canAdd,
+            uploading: this.googleImageUploadStatus() === 'uploading' && uploadSlot === key,
+            error: this.googleImageUploadStatus() === 'error' && uploadSlot === key ? this.googleImageUploadError() : '',
+          };
+        }
+      }
+      return views;
+    });
+  }
+
+  /**
+   * `initMetaImageAssetBlock`'s sibling, over every stored image held in a slot the request would
+   * carry, plus two kinds of its own so campaign-service never has to refuse what this tab can see
+   * first: an image no longer in the brief's library (`missing`), and one whose recorded size does
+   * not meet its slot (`misfit`).
+   *
+   * Only slots in a channel the request would carry count. An image held in a section the
+   * operator un-ticked is not sent, exactly as that section's pasted URLs are not, and is kept for
+   * if they tick it again. The capability withholding a section is a different case — the
+   * operator did not take the image away — so the capability kinds read past that gate.
+   */
+  private initGoogleImageAssetBlock(): Signal<CampaignGoogleImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showGoogleSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      const inReach = new Set<string>(this.googleCreativeChannelsInReach().map((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel]));
+      const held = Object.entries(this.googleHeldImages())
+        .filter(([slotKey]) => inReach.has(slotKey.split('.')[0]))
+        .flatMap(([slotKey, images]) => images.map((image) => ({ slotKey, image })));
+      if (briefId && held.some(({ image }) => image.briefId !== briefId)) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'A Google image held in a slot was uploaded for a different brief, so it cannot be sent with this one. Remove it, then pick or upload an image for this brief.',
+        };
+      }
+      // A failure blocks only while its slot is one the request would carry, as a held image does:
+      // a failed upload in a section the operator un-ticked must not hold up the rest.
+      if (
+        this.googleImageUploadStatus() === 'error' &&
+        briefId &&
+        this.googleImageUploadFailedBriefId() === briefId &&
+        inReach.has(this.googleImageUploadSlot().split('.')[0])
+      ) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Google image upload did not complete: ${this.googleImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      // No brief id — a save in flight, or a re-save that failed and cleared it — means no held image
+      // can be matched to the brief, so none would be sent. Held, never dropped: Create waits.
+      if (!briefId && held.length > 0) {
+        return {
+          kind: 'unsaved',
+          message: "The Google images held in this campaign can't be sent until the brief is saved. Save the brief, or remove the images.",
+        };
+      }
+      const forThisBrief = held.filter(({ image }) => image.briefId === (briefId ?? ''));
+      const uploadingInReach = this.googleImageUploadStatus() === 'uploading' && inReach.has(this.googleImageUploadSlot().split('.')[0]);
+      const withheld = (forThisBrief.length > 0 || uploadingInReach) && !this.googleAssetUploadAvailable();
+      if (withheld) {
+        if (this.googleCreativeEnabled() === false || this.googleAssetUploadEnabled() === false) {
+          return {
+            kind: 'unsupported',
+            message:
+              'Stored Google images are not available on this deployment, so the held images cannot be sent. Remove them to create the campaign without them.',
+          };
+        }
+        if (this.createCapabilityRead() === 'pending') {
+          return { kind: 'pending', message: 'Checking Google stored-image support…' };
+        }
+        if (!briefId) {
+          return {
+            kind: 'unsaved',
+            message: "Google stored-image support can't be checked until this brief is saved. Save the brief, or remove the images.",
+          };
+        }
+        return {
+          kind: 'failed',
+          message: 'Could not confirm that stored Google images are supported, so the held images cannot be sent yet. Retry the check, or remove them.',
+        };
+      }
+      const library = this.googleCreativeLibrary();
+      for (const kind of ['missing', 'misfit'] as const) {
+        const hit = forThisBrief.find(({ slotKey, image }) => this.googleHeldImageIssue(image, slotKey, library, briefId ?? '') === kind);
+        if (!hit) continue;
+        return kind === 'missing'
+          ? {
+              kind,
+              message: "A Google image held in a slot is no longer in the brief's library, so it cannot be sent. Remove it, then pick or upload another.",
+            }
+          : {
+              kind,
+              message:
+                "A Google image held in a slot does not meet that slot's size or aspect ratio, and Google would refuse it. Remove it, then pick or upload one that fits.",
+            };
+      }
+      return null;
     });
   }
 
@@ -6407,7 +6978,7 @@ export class ImplementationTabComponent implements OnInit {
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
-  private googleCreativeShortfall(channel: GoogleCreativeChannel, creative: Record<string, string | string[]>): string | null {
+  private googleCreativeShortfall(channel: GoogleCreativeChannel, creative: Record<string, string | GoogleCreativeImageRef[]>): string | null {
     // Widened to the interface, as every other reader of the catalogue does: the constant's
     // `as const` gives each entry a literal type carrying only the keys that entry happens to set,
     // so `field.min` and `field.requiredOnce` are not readable across the union without this.
@@ -6419,8 +6990,15 @@ export class ImplementationTabComponent implements OnInit {
         if (field.requiredOnce === true && value === undefined) return `needs a ${field.label.toLowerCase()}.`;
         continue;
       }
-      if (field.min === undefined) continue;
       const count = Array.isArray(value) ? value.length : 0;
+      // The cap on an IMAGE slot is checked here, over pasted URLs AND held images together, because
+      // the per-control validator sees only the textarea: a picked image followed by five pasted
+      // URLs would otherwise reach upstream as six. `max` on a marketing shape is the channel's
+      // combined cap, so a single field over it is over the combined cap too — never tighter.
+      if (field.image && field.max !== undefined && count > field.max) {
+        return `has ${count} entries in ${field.label} (pasted URLs and stored images together) — ${count - field.max} over the cap of ${field.max}.`;
+      }
+      if (field.min === undefined) continue;
       if (count < field.min) {
         const entries = field.min === 1 ? 'entry' : 'entries';
         return `needs at least ${field.min} ${entries} in ${field.label} — ${count} given.`;
@@ -7068,22 +7646,31 @@ export class ImplementationTabComponent implements OnInit {
    * creative on the wire that the operator was never shown. Reading the rendered set makes "we
    * send only what could be seen" true by construction instead of by two gates agreeing.
    */
-  private googleCreativePayload(): Record<string, Record<string, string | string[]>> {
-    const payload: Record<string, Record<string, string | string[]>> = {};
+  private googleCreativePayload(): Record<string, Record<string, string | GoogleCreativeImageRef[]>> {
+    const payload: Record<string, Record<string, string | GoogleCreativeImageRef[]>> = {};
     for (const { channel } of this.googleCreativeSections()) {
-      const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue();
-      const creative: Record<string, string | string[]> = {};
-      for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
+      const groupName = GOOGLE_CREATIVE_REQUEST_KEYS[channel];
+      const raw = this.campaignForm.controls[groupName].getRawValue() as Record<string, string | null | undefined>;
+      const creative: Record<string, string | GoogleCreativeImageRef[]> = {};
+      // Widened for `image`, which only the image entries of the `as const` catalogue carry.
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      for (const field of fields) {
         const value = raw[field.control] ?? '';
         if (field.kind === 'list') {
-          const lines = this.splitCreativeLines(value);
-          if (lines.length > 0) creative[field.control] = lines;
+          // An image slot's stored images ride AFTER its pasted URLs, in the same array — the wire
+          // shape campaign-service decodes (`googleAdsImageRef`) — so the minimums and the empty
+          // check below count them like any other entry.
+          const entries: GoogleCreativeImageRef[] = [
+            ...this.splitCreativeLines(value),
+            ...(field.image ? this.googleImageRefsFor(`${groupName}.${field.control}`) : []),
+          ];
+          if (entries.length > 0) creative[field.control] = entries;
           continue;
         }
         const trimmed = value.trim();
         if (trimmed !== '') creative[field.control] = trimmed;
       }
-      if (Object.keys(creative).length > 0) payload[GOOGLE_CREATIVE_REQUEST_KEYS[channel]] = creative;
+      if (Object.keys(creative).length > 0) payload[groupName] = creative;
     }
     return payload;
   }

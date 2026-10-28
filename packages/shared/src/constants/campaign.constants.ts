@@ -3508,11 +3508,10 @@ export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
   'lf_newsletter_opt_in',
 ] as const;
 
-/** The Audience tab's three modes, in the legacy builder's order. */
+/** The Audience tab's two modes: build a new list, or use lists that already exist. */
 export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
-  { mode: 'event', label: 'Event Audience' },
-  { mode: 'custom', label: 'Custom Audience' },
-  { mode: 'reuse', label: 'Reuse or Discover Existing Audience' },
+  { mode: 'build', label: 'Build a new audience' },
+  { mode: 'reuse', label: 'Use existing lists' },
 ] as const;
 
 /** Operators the custom-audience builder offers for an extra property filter, in display order. */
@@ -3647,8 +3646,42 @@ export const HUBSPOT_APP_HOST_PATTERN = /^app(?:-[a-z0-9]+)?\.hubspot\.com$/;
  */
 export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
+/** The most list ids campaign-service's preview-count unions in one request (a 400 past it). */
+export const AUDIENCE_PREVIEW_MAX_LIST_IDS = 50;
+
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
+
+/** The longest current-registrants edition name campaign-service accepts (its `MaxLength`). */
+export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
+
+/**
+ * An edition's year: a 19xx/20xx run of exactly four digits bounded by NON-digits, campaign-service's
+ * `RegistrantsEditionOK` rule. A word boundary missed "Summit2026", hiding its registrants row and
+ * appending a second year to the name. No `g` flag, so `test`/`exec` carry no state between calls.
+ */
+export const AUDIENCE_EDITION_YEAR_PATTERN = /(?<!\d)(?:19|20)\d{2}(?!\d)/;
+
+/**
+ * The longest explicit custom list name campaign-service accepts: HubSpot's list-search limit. A
+ * longer one is a 400, never cut, so the builder and the BFF hold to it too.
+ */
+export const AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH = 200;
+
+/** The BFF's refusal for a `currentRegistrantsEvent` that is not a string or is too long. */
+export const AUDIENCE_REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH} characters when provided`;
+
+/**
+ * The name prefix of the project's standing standard suppression list, which every email in the
+ * project reuses: the UI must never call it an orphan to delete.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX = 'LFX Standard Suppressions - ';
+
+/**
+ * The review step's key for the standard suppression rows shown as one chip. The grid treats them
+ * as one entry, so removing one from the review removes the group, never a single standard row.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_GROUP_KEY = 'group:standard';
 
 /**
  * Resource bounds on the Google creative and bidding strings the create route normalises.
@@ -3912,6 +3945,11 @@ export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/
  *   not a per-array allowance; logos are capped per array and never count toward the marketing
  *   total. Stating the combined cap on each field is the permissive direction — the upstream
  *   preflight still enforces the real sum.
+ * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
+ *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
+ *   the BFF forwards an asset ref only in a field that has one.
  *
  * Ordering is the order a section renders in: the ad's words first, then its images, because the
  * copy is what an operator writes and the images are what they paste links to.
@@ -3933,11 +3971,32 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 20,
       hint: 'One image URL per line. At least one marketing or square marketing image is required. The cap of 20 is shared across all four marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 20 },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'tallPortraitImages', label: 'Tall portrait images (9:16)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required. A Demand Gen ad with no logo is refused.' },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'tallPortraitImages',
+      label: 'Tall portrait images (9:16)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 },
+    },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required. A Demand Gen ad with no logo is refused.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
   ],
   'performance-max': [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 3, max: 15, width: 30 },
@@ -3987,11 +4046,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       min: 1,
       max: 20,
       hint: 'One image URL per line. Required here, unlike on Demand Gen. The cap of 20 is shared across all three marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', min: 1, max: 20, hint: 'Also required.' },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required.' },
-    { control: 'landscapeLogoImages', label: 'Landscape logo images (4:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 20,
+      hint: 'Also required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
+    {
+      control: 'landscapeLogoImages',
+      label: 'Landscape logo images (4:1)',
+      kind: 'list',
+      max: 5,
+      image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 },
+    },
     {
       control: 'youtubeVideoIds',
       label: 'YouTube video IDs',
@@ -4019,12 +4101,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 15,
       hint: 'One image URL per line. Google requires each marketing array when the other is absent. The cap of 15 is shared across both.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 15 },
-    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5 },
-    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 15,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5, image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 } },
+    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
+ * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
+ * documents ±1%). Measured as `ShapeRule.ratioDrift` measures it: `|got - want| / want`.
+ */
+export const GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE = 0.01;
+
+/**
+ * The most bytes one Google creative image may carry — campaign-service's `googleads.MaxImageBytes`
+ * (5 MiB), which every Google slot states and both the fetch and the stored-asset paths enforce
+ * before anything is created. Tighter than {@link CREATIVE_ASSET_MAX_BYTES}, the library's own
+ * upload cap: an image the library accepts for Reddit or Meta can still be too large for Google.
+ */
+export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
