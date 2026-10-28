@@ -42,6 +42,7 @@ describe('TrainingCoursesComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` every read after it.
   async function render(
@@ -70,7 +71,10 @@ describe('TrainingCoursesComponent', () => {
     fixture = TestBed.createComponent(TrainingCoursesComponent);
     fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -89,6 +93,7 @@ describe('TrainingCoursesComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     counts = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, renders the page, and settles', async () => {
@@ -101,6 +106,7 @@ describe('TrainingCoursesComponent', () => {
     expect(query(`training-courses-row-${COURSE_KEY}-revenue`)?.textContent?.trim()).toBe('$45K');
     expect(query('training-courses-count')?.textContent?.trim()).toBe('1 course');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('emits the in-scope total for the sub-nav badge, not the filtered count', async () => {
@@ -218,10 +224,11 @@ describe('TrainingCoursesComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { trnType: null, trnSearch: null, trnPage: 2 } }));
   });
 
-  it('shows the no-enrollment state when the period has no course with enrollments', async () => {
+  it('settles empty, with no body, when the period has no course with enrollments', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
-    expect(query('training-courses-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('training-courses-controls')).toBeNull();
     expect(query('training-courses-table')).toBeNull();
     expect(query('training-courses-search')).toBeNull();
   });
@@ -235,7 +242,8 @@ describe('TrainingCoursesComponent', () => {
     expect(cell?.textContent?.trim()).toBe('No course matches this filter.');
     expect(cell?.closest('[data-testid="training-courses-table"]')).not.toBeNull();
     expect(query('training-courses-controls')).not.toBeNull();
-    expect(query('training-courses-empty')).toBeNull();
+    // A filter miss is not an empty period, so the shell must not take the section over.
+    expect(verdicts).toEqual([false]);
   });
 
   it('names the search in the no-match row when a search matches nothing', async () => {
@@ -261,9 +269,9 @@ describe('TrainingCoursesComponent', () => {
     await settle();
 
     expect(query('training-courses-error')).not.toBeNull();
-    expect(query('training-courses-empty')).toBeNull();
     expect(counts).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -274,6 +282,5 @@ describe('TrainingCoursesComponent', () => {
     expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(query('training-courses-count')?.textContent?.trim()).toBe('—');
-    expect(query('training-courses-empty')).toBeNull();
   });
 });

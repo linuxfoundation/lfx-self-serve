@@ -4,6 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet, ViewportScroller } from '@angular/common';
 import {
   afterNextRender,
+  type Signal,
   Component,
   computed,
   contentChildren,
@@ -31,16 +32,32 @@ import {
   Scroll,
   UrlTree,
 } from '@angular/router';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
-import { buildHealthMetricsL2SectionId, buildHealthMetricsL2SectionViews, isHealthMetricsL2SectionKey } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsL2BlankView,
+  buildHealthMetricsL2EmptyCopy,
+  buildHealthMetricsL2SectionId,
+  buildHealthMetricsL2SectionViews,
+  isHealthMetricsL2SectionKey,
+  toHealthMetricsOverviewPastYear,
+} from '@lfx-one/shared/utils';
 import { debounceTime, filter, Subject } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
+import { HealthMetricsBlankCardComponent } from '../health-metrics-blank-card/health-metrics-blank-card.component';
 import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
-import type { HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsL2Blank,
+  HealthMetricsL2BlankView,
+  HealthMetricsL2EmptyCopy,
+  HealthMetricsL2Section,
+  HealthMetricsL2SectionView,
+  HealthMetricsL2SubNavItem,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Level 2 tab shell — anchored sections the page scrolls, beside a sticky section nav on their right that
@@ -48,12 +65,16 @@ import type { HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL
  * through a keyed `lfxHealthMetricsL2Section` template and reports its reads back through
  * `sectionReading` / `sectionSettled`, so a fragment deep link lands once the page stops reflowing.
  *
+ * Each settle also says whether the read found nothing for the period. A section whose reads all did shows the
+ * design's compact empty state in place of its body, controls and all; when every read did, one blank card
+ * replaces the whole tab. The bodies stay mounted underneath, so a period with data brings them back.
+ *
  * Every in-section pill, search and pager writes the query string, and the app-wide router scrolls
  * each such navigation to the top; the shell keeps the reader's place instead.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
-  imports: [HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
+  imports: [EmptyStateComponent, HealthMetricsBlankCardComponent, HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
   templateUrl: './health-metrics-l2-shell.component.html',
 })
 export class HealthMetricsL2ShellComponent implements OnInit {
@@ -79,6 +100,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public readonly navLabel = input.required<string>();
   /** Prefixes every `data-testid`, so each tab keeps its own test ids. */
   public readonly testIdPrefix = input.required<string>();
+  /** The card that replaces the tab once every data section settles empty for the period. */
+  public readonly blank = input.required<HealthMetricsL2Blank>();
 
   private readonly startSentinel = viewChild<ElementRef<HTMLElement>>('startSentinel');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
@@ -94,6 +117,18 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // Ids resolved once per input rather than per render — the template only reads fields.
   protected readonly sectionViews = computed<HealthMetricsL2SectionView[]>(() => buildHealthMetricsL2SectionViews(this.sections(), this.idPrefix()));
   protected readonly bodyByKey = computed(() => new Map<string, TemplateRef<unknown>>(this.bodies().map((body) => [body.key(), body.template])));
+
+  /** Read key → whether its last settle found nothing for the period; `null` gives no verdict. Absent while reading. */
+  private readonly readEmpty = signal<ReadonlyMap<string, boolean | null>>(new Map());
+  private readonly pastYear = computed(() => toHealthMetricsOverviewPastYear(this.chrome.selectedRange()));
+  /** Section key → its empty state, for each section whose every read settled empty. */
+  protected readonly emptySections: Signal<ReadonlyMap<string, HealthMetricsL2EmptyCopy>> = this.initEmptySections();
+  protected readonly blankView: Signal<HealthMetricsL2BlankView | null> = this.initBlankView();
+  /** An empty section's badge would count nothing, so it drops along with the section's own counts. */
+  protected readonly visibleSubNavItems = computed<HealthMetricsL2SubNavItem[]>(() => {
+    const empty = this.emptySections();
+    return this.subNavItems().map((item) => (empty.has(item.key) ? { ...item, count: null, note: '' } : item));
+  });
 
   /**
    * The data sections that have not reported yet. Whichever settles first must not release the
@@ -181,6 +216,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public sectionReading(key: string, sectionKey = key): void {
     this.unsettledSections.add(key);
     this.readSections.set(key, sectionKey);
+    // The section shows its own skeleton again until this read reports what it found.
+    this.updateReadEmpty(key, undefined);
     this.holdSectionHeight(sectionKey);
 
     const pending = this.pendingSection();
@@ -189,10 +226,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
 
   /**
    * A read landing changes the page's height, so a waiting deep link re-scrolls here, a paint later
-   * than the emission. The key is released only once every data section has settled.
+   * than the emission. The key is released only once every data section has settled. `isEmpty` says
+   * whether the read found nothing for the period: `false` for data or a failed read, `null` for no verdict.
    */
-  public sectionSettled(key: string, sectionKey = key): void {
+  public sectionSettled(key: string, isEmpty: boolean | null = false, sectionKey = key): void {
     this.unsettledSections.delete(key);
+    this.readSections.set(key, sectionKey);
+    this.updateReadEmpty(key, isEmpty);
     afterNextRender(
       () => {
         // Released once every read in the section has painted, so neither a sibling still loading nor a
@@ -211,6 +251,41 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public scrollToSection(key: string): void {
     this.clearPendingSection();
     this.scrollTo(key);
+  }
+
+  private updateReadEmpty(key: string, isEmpty: boolean | null | undefined): void {
+    this.readEmpty.update((current) => {
+      const next = new Map(current);
+      if (isEmpty === undefined) next.delete(key);
+      else next.set(key, isEmpty);
+      return next;
+    });
+  }
+
+  private initEmptySections(): Signal<ReadonlyMap<string, HealthMetricsL2EmptyCopy>> {
+    return computed(() => {
+      const readEmpty = this.readEmpty();
+      const pastYear = this.pastYear();
+      const empty = new Map<string, HealthMetricsL2EmptyCopy>();
+      for (const section of this.sections()) {
+        const reads = [...readEmpty.keys()].filter((key) => (this.readSections.get(key) ?? key) === section.key);
+        const pending = [...this.readSections.entries()].some(([key, sectionKey]) => sectionKey === section.key && !readEmpty.has(key));
+        if (reads.length > 0 && !pending && reads.every((key) => readEmpty.get(key) === true)) {
+          empty.set(section.key, buildHealthMetricsL2EmptyCopy(section.empty, pastYear));
+        }
+      }
+      return empty;
+    });
+  }
+
+  /** Every data read has reported, none found data, and at least one found nothing; a no-verdict read is left out. */
+  private initBlankView(): Signal<HealthMetricsL2BlankView | null> {
+    return computed(() => {
+      const readEmpty = this.readEmpty();
+      const verdicts = this.dataSections().map((key) => readEmpty.get(key));
+      if (verdicts.some((verdict) => verdict === undefined || verdict === false) || !verdicts.includes(true)) return null;
+      return buildHealthMetricsL2BlankView(this.blank(), this.pastYear());
+    });
   }
 
   private scrollTo(key: string): void {

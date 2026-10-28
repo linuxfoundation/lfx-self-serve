@@ -75,6 +75,7 @@ describe('MembersChurnComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let selectedRange: ReturnType<typeof signal<string>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `departures` answers the first departures read; `followUp` (a value or a stream) every one after it.
   async function render(
@@ -104,7 +105,10 @@ describe('MembersChurnComponent', () => {
 
     fixture = TestBed.createComponent(MembersChurnComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -129,6 +133,7 @@ describe('MembersChurnComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     selectedRange = signal<string>('YTD');
     lifecycle = [];
+    verdicts = [];
   });
 
   afterEach(() => {
@@ -151,6 +156,7 @@ describe('MembersChurnComponent', () => {
     expect(query('members-churn-side-dues-lost')?.classList).toContain('text-red-600');
     expect(text('members-churn-side-logo')).toBe('10% (12 of 120)');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('switches to logo churn without a re-read and writes the mode to the URL', async () => {
@@ -298,9 +304,9 @@ describe('MembersChurnComponent', () => {
     await render(throwError(() => new Error('gateway timeout')));
 
     expect(query('members-churn-error')).not.toBeNull();
-    expect(query('members-churn-empty')).toBeNull();
     expect(text('members-churn-meta')).toBe('—');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('shows the departures error in place of the table, without a count note', async () => {
@@ -319,15 +325,18 @@ describe('MembersChurnComponent', () => {
     expect(query('members-churn-hero')).not.toBeNull();
   });
 
-  it('shows a year the views have not measured apart from one that lost nothing', async () => {
+  // Both settle empty for the shell, but only the measured year earns a figure in the meta line.
+  it('settles empty, with no body, for a year never measured or one that lost nothing', async () => {
     await render({ years: [churnYear(2025)], tiers: [] });
-    expect(query('members-churn-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('members-churn-hero')).toBeNull();
     expect(text('members-churn-meta')).toBe('—');
 
     TestBed.resetTestingModule();
     await render({ years: [churnYear(2026, { lostCount: 0 })], tiers: [] }, { rows: [], totalRecords: 0 });
-    expect(query('members-churn-empty')).not.toBeNull();
-    expect(query('members-churn-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([true, true]);
+    expect(query('members-churn-hero')).toBeNull();
+    expect(text('members-churn-meta')).not.toBe('—');
   });
 
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {

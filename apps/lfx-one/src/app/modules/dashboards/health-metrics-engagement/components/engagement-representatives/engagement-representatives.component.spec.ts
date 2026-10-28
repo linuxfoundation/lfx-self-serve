@@ -54,6 +54,7 @@ describe('EngagementRepresentativesComponent', () => {
   let fixture: ComponentFixture<EngagementRepresentativesComponent>;
   let getEngagementRepresentatives: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
   let queryParamMap: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   async function render(
@@ -80,6 +81,7 @@ describe('EngagementRepresentativesComponent', () => {
 
     fixture = TestBed.createComponent(EngagementRepresentativesComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -93,6 +95,7 @@ describe('EngagementRepresentativesComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   afterEach(() => {
@@ -116,6 +119,7 @@ describe('EngagementRepresentativesComponent', () => {
     expect(row.textContent).toContain('Technical Steering Committee');
     expect(row.textContent).toContain('2 / 6');
     expect(row.textContent).toContain('Aug 14, 2026');
+    expect(verdicts).toEqual([false]);
   });
 
   // The design has no Organization column: the org and tier ride under the name, and the role, title
@@ -220,15 +224,19 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
       '49 representatives · 12 never attended'
     );
+    // The period re-settles too, since whether it has any representative moves the section's height.
+    expect(verdicts).toEqual([false, false]);
   });
 
   // A view that reports no scope count has not measured zero representatives, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
+  it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: null }), (value) => emitted.push(value));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('—');
     expect(emitted).toEqual([null, null]);
+    // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
+    expect(verdicts).toEqual([false]);
   });
 
   // The caption counts the period's invited population, so a row invited in another period is not
@@ -364,12 +372,13 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).toBeNull();
   });
 
-  // A zero-row read gets the empty-scope copy; the "no match" copy would blame the filter.
-  it('renders the empty-scope state for a scope with no representatives rows', async () => {
+  // A zero-row read settles empty for the shell; the "no match" copy would blame the filter.
+  it('settles empty, with no body, for a scope with no representatives rows', async () => {
     await render(response({ rows: [], counts: null }));
 
-    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
-    expect(empty?.textContent).toContain('No representatives recorded for this scope');
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).toBeNull();
   });
 
   it('keeps the no-match state for a search that filters a measured scope down to nothing', async () => {
@@ -401,7 +410,7 @@ describe('EngagementRepresentativesComponent', () => {
     await render(new Error('snowflake down'), (value) => emitted.push(value));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(emitted).toEqual([null, null]);
   });
 
@@ -469,6 +478,7 @@ describe('EngagementRepresentativesComponent', () => {
     // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
     // the section loading forever with nothing left to resolve it.
     expect(fixture.componentInstance['loading']()).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
   });
 });

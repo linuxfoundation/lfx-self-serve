@@ -4239,23 +4239,6 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
-  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_training_presence');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
-
-      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
-
-      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   /** `GET /api/analytics/training-enrollment` — every period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
   public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_training_enrollment');

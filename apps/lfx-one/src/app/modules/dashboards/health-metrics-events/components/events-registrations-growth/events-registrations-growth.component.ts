@@ -46,8 +46,8 @@ export class EventsRegistrationsGrowthComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the years settle — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
   /** The cross-link to the forecast; the L2 shell owns scrolling, so a repeat click still lands. */
@@ -133,10 +133,12 @@ export class EventsRegistrationsGrowthComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
-              // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              // Held until a foundation is seen, so an unread section cannot release the shell's deep link. A metric
+              // with no years keeps the section's own empty state; a read with none for the metric shown is empty.
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && buildHealthMetricsEventsRegistrationsGrowthView(response, this.metric()).rows.length === 0);
             })
           )
         )

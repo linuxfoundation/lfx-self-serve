@@ -56,6 +56,7 @@ describe('MembersBridgeComponent', () => {
   let getMembersBridge: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
   let picked: string[];
 
   async function render(payload: HealthMetricsMembersBridge | Error = BRIDGE): Promise<void> {
@@ -75,7 +76,10 @@ describe('MembersBridgeComponent', () => {
 
     fixture = TestBed.createComponent(MembersBridgeComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
@@ -110,6 +114,7 @@ describe('MembersBridgeComponent', () => {
     vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
     picked = [];
   });
 
@@ -123,6 +128,7 @@ describe('MembersBridgeComponent', () => {
     expect(getMembersBridge).toHaveBeenCalledTimes(1);
     expect(getMembersBridge).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('members-bridge-loading')).toBeNull();
   });
 
@@ -200,11 +206,13 @@ describe('MembersBridgeComponent', () => {
     expect(query('members-bridge-year-unmeasured')).not.toBeNull();
   });
 
-  it('shows the empty state for a foundation with no bridge rows', async () => {
+  it('settles empty, with no body, for a foundation with no bridge rows', async () => {
     await render({ steps: [] });
 
-    expect(query('members-bridge-empty')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
+    expect(query('members-bridge-heading')).toBeNull();
+    expect(query('members-bridge-chart')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -212,6 +220,7 @@ describe('MembersBridgeComponent', () => {
 
     expect(query('members-bridge-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
 
     await pickRange('COMPLETED_YEAR');
     expect(lifecycle).toEqual(['reading', 'settled']);

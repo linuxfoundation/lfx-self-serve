@@ -33,21 +33,26 @@ export class EventsAtAGlanceComponent {
 
   /** Fires as the read starts, so the L2 shell knows this section's height is about to move. */
   public readonly reading = output<void>();
-  /** Fires once the read lands and on every period change — this section's height moves either way. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the read lands and on every period change — this section's height moves either way — `true`
+   * when the period was never measured.
+   */
+  public readonly settled = output<boolean>();
 
   protected readonly footnote = HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE;
 
   protected readonly view: Signal<HealthMetricsEventsAtAGlanceView> = computed(() =>
     buildHealthMetricsEventsAtAGlanceView(this.glance(), this.chrome.selectedRange())
   );
+  /** The period was never measured; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => this.status() === 'ready' && !this.view().measured);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
       // A period change re-projects the loaded read, so it re-settles like a landed read.
       combineLatest([toObservable(this.status), toObservable(this.chrome.selectedRange)])
         .pipe(takeUntilDestroyed())
-        .subscribe(([status]) => (status === 'loading' ? this.reading.emit() : this.settled.emit()));
+        .subscribe(([status]) => (status === 'loading' ? this.reading.emit() : this.settled.emit(status === 'ready' && !this.view().measured)));
     }
   }
 }

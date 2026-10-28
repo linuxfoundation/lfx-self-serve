@@ -40,6 +40,7 @@ function glance(): HealthMetricsEventsAtAGlance {
 describe('EventsAtAGlanceComponent', () => {
   let fixture: ComponentFixture<EventsAtAGlanceComponent>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(status: HealthMetricsEventsAtAGlanceStatus = 'ready'): Promise<void> {
     await TestBed.configureTestingModule({
@@ -56,7 +57,10 @@ describe('EventsAtAGlanceComponent', () => {
     fixture.componentRef.setInput('glance', glance());
     fixture.componentRef.setInput('status', status);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -76,6 +80,7 @@ describe('EventsAtAGlanceComponent', () => {
 
   beforeEach(() => {
     lifecycle = [];
+    verdicts = [];
   });
 
   it('renders the period control line, headline and side stats from the view', async () => {
@@ -86,6 +91,7 @@ describe('EventsAtAGlanceComponent', () => {
     expect(text('events-at-a-glance-headline-delta')).toBe('−12%');
     expect(text('events-at-a-glance-side-show-up-rate-value')).toBe('75%');
     expect(text('events-at-a-glance-side-show-up-rate-delta')).toBe('+2.2 pp');
+    expect(verdicts).toEqual([false]);
   });
 
   it('compares against the same point last year, with no warning icon on a steep fall', async () => {
@@ -126,14 +132,15 @@ describe('EventsAtAGlanceComponent', () => {
     expect(lifecycle).toEqual(['settled', 'settled']);
   });
 
-  it('shows the unmeasured state for a period the read does not carry', async () => {
+  it('settles empty, with no body, for a period the read does not carry', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(query('events-at-a-glance-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-at-a-glance-headline')).toBeNull();
+    expect(query('events-at-a-glance-tiles')).toBeNull();
   });
 
   it('holds the skeleton and reports a read in flight while loading, then settles when it lands', async () => {
@@ -155,5 +162,6 @@ describe('EventsAtAGlanceComponent', () => {
     expect(query('events-at-a-glance-error')).not.toBeNull();
     expect(query('events-at-a-glance-headline')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
+    expect(verdicts).toEqual([false]);
   });
 });

@@ -30,10 +30,9 @@ import type {
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsOverviewBalanceView,
-  HealthMetricsOverviewBlankCopy,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
   HealthMetricsOverviewBoardSort,
@@ -93,7 +92,7 @@ export function buildHealthMetricsOverviewEmptyCopy(copy: HealthMetricsOverviewE
 }
 
 /** The whole-foundation empty state for the period. */
-export function buildHealthMetricsOverviewBlankCopy(pastYear: number | null): HealthMetricsOverviewBlankCopy {
+export function buildHealthMetricsBlankCopy(pastYear: number | null): HealthMetricsBlankCopy {
   const copy = pastYear === null ? HEALTH_METRICS_OVERVIEW_BLANK_COPY.ytd : HEALTH_METRICS_OVERVIEW_BLANK_COPY.past;
   const fill = withYear(pastYear);
   return { title: fill(copy.title), lead: fill(copy.lead), reasons: copy.reasons.map(fill) };

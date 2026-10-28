@@ -68,8 +68,8 @@ export class MembersBoardAttendanceComponent {
 
   /** The sub-nav note, always from the board cohort; empty while a new foundation or period reads, or after a failed read. */
   public readonly noteChange = output<string>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -121,6 +121,8 @@ export class MembersBoardAttendanceComponent {
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED || this.responseScope() !== this.scope())
   );
   protected readonly noMeetings = computed(() => this.totalRecords() === 0 && this.trend().length === 0);
+  /** No meeting was recorded in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noMeetings());
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.summary().latestTone));
   protected readonly chartLabel = computed(
     () => `Attendance at the latest ${this.trend().length} ${this.meetingNoun()}s, oldest first. The following table lists the same values.`
@@ -224,7 +226,7 @@ export class MembersBoardAttendanceComponent {
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersBoardNote(response.cohorts.board) : '');
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.totalRecords === 0 && response.trend.length === 0);
             })
           )
         )

@@ -4,9 +4,18 @@
 <!-- The design's `.hm-row`: a single stacked column of anchored sections with the section nav on its right, reversed
      in the row so the nav still comes first in reading order. Pixel sizes follow the design; the 14px root makes the
      rem scale undershoot them. -->
-<div class="flex flex-row-reverse items-start gap-[32px]" [attr.data-testid]="'health-metrics-' + testIdPrefix() + '-page'">
+@if (blankView(); as blank) {
+  <!-- Every section settled with nothing for the period, so one card stands in for the sub-nav and all of them. -->
+  <lfx-health-metrics-blank-card [tiles]="[blank.tile]" [copy]="blank.copy" [testId]="testIdPrefix() + '-blank'" />
+}
+<!-- Kept mounted under the blank card, so the sections keep reporting and a period with data brings them back. -->
+<div
+  class="flex-row-reverse items-start gap-[32px]"
+  [class.flex]="!blankView()"
+  [class.hidden]="!!blankView()"
+  [attr.data-testid]="'health-metrics-' + testIdPrefix() + '-page'">
   <lfx-health-metrics-l2-sub-nav
-    [items]="subNavItems()"
+    [items]="visibleSubNavItems()"
     [activeKey]="activeSection()"
     [topPx]="subNavTopPx()"
     [ariaLabel]="navLabel()"
@@ -21,6 +30,7 @@
     <div #startSentinel class="absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);
+      @let empty = emptySections().get(section.key);
       <section
         [id]="section.id"
         class="flex flex-col gap-[16px] rounded-[12px] border border-gray-200 bg-white p-[20px] lg:scroll-mt-[var(--l2-sticky-top)]"
@@ -39,15 +49,26 @@
           <p class="m-0 text-[12px] leading-normal text-gray-400">{{ section.description }}</p>
         </div>
 
+        @if (empty) {
+          <lfx-empty-state
+            variant="compact"
+            [icon]="empty.icon"
+            [title]="empty.title"
+            [subtitle]="empty.text"
+            [attr.data-testid]="testIdPrefix() + '-section-empty-' + section.key" />
+        }
         @if (body) {
-          <ng-container [ngTemplateOutlet]="body" />
+          <!-- An empty section's body stays mounted, hidden with its controls, so it can report again. -->
+          <div class="flex-col gap-[16px]" [class.flex]="!empty" [class.hidden]="!!empty">
+            <ng-container [ngTemplateOutlet]="body" />
+          </div>
         } @else {
           <!-- A section the tab projects no body for is still anchored, so its link resolves. -->
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 
         <!-- A footnote explains a body, so it waits until there is one. -->
-        @if (body && section.footnote.length) {
+        @if (body && !empty && section.footnote.length) {
           <lfx-health-metrics-footnote
             [parts]="section.footnote"
             [caution]="section.footnoteCaution"

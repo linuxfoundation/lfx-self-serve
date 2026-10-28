@@ -12,7 +12,7 @@ import { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-tr
 import {
   buildHealthMetricsOverviewAddPastMeetingUrl,
   buildHealthMetricsOverviewBalanceView,
-  buildHealthMetricsOverviewBlankCopy,
+  buildHealthMetricsBlankCopy,
   buildHealthMetricsOverviewBoardView,
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
@@ -97,10 +97,10 @@ describe('buildHealthMetricsOverviewEmptyCopy', () => {
   });
 });
 
-describe('buildHealthMetricsOverviewBlankCopy', () => {
+describe('buildHealthMetricsBlankCopy', () => {
   it('words the blank Overview for YTD or for a past year', () => {
-    expect(buildHealthMetricsOverviewBlankCopy(null)).toMatchObject({ title: 'No health data yet' });
-    expect(buildHealthMetricsOverviewBlankCopy(2024)).toEqual({
+    expect(buildHealthMetricsBlankCopy(null)).toMatchObject({ title: 'No health data yet' });
+    expect(buildHealthMetricsBlankCopy(2024)).toEqual({
       title: 'No health data for 2024',
       lead: 'Nothing was recorded for the foundation in 2024.',
       reasons: [

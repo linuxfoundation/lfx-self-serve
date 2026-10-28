@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
@@ -20,7 +21,7 @@ import type {
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -29,6 +30,7 @@ import type { HealthMetricsFootnotePart, HealthMetricsL2Range } from '../interfa
 export const HEALTH_METRICS_EVENTS_SECTIONS = [
   {
     key: 'forecast',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registration forecast',
     heading: 'Registration forecast',
     description:
@@ -39,6 +41,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'past',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Past events',
     heading: 'Past events',
     description:
@@ -48,6 +51,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'kpi',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'At a glance',
     heading: 'Events at a glance',
     description: 'Reach across every event this period.',
@@ -56,6 +60,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'reg',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
@@ -64,6 +69,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'rev',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Revenue',
     heading: 'Event revenue',
     description:
@@ -74,6 +80,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'spon',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Sponsorship',
     heading: 'Sponsorship',
     description: 'What companies paid to sponsor events, and what they bought.',
@@ -83,6 +90,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'spk',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Speakers & proposals',
     heading: 'Speakers & proposals',
     description:
@@ -92,6 +100,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Organizations',
     heading: 'Organizations at events',
     description:
@@ -101,13 +110,27 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'geo',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
     description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
     footnote: [],
     footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_EVENTS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-ticket',
+  noun: 'event',
+  lead: 'Event results appear once the foundation has events on the calendar.',
+  reasons: [
+    'No event has been scheduled for the foundation yet',
+    'Events run under another foundation are counted there',
+    'Your LF Events contact can help plan one',
+  ],
+  pastActivity: 'event activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';

@@ -15,12 +15,20 @@ import { HealthMetricsChromeService } from '../../health-metrics-gate/health-met
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from './health-metrics-l2-shell.component';
 
-import type { HealthMetricsL2Section, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2Blank, HealthMetricsL2Section, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 // Two data sections and a trailing one the host projects no body for — the shape a tab has while
 // one section's data is still blocked.
 const SECTIONS: HealthMetricsL2Section[] = [
-  { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: [{ text: 'Alpha caution' }], footnoteCaution: true },
+  {
+    key: 'alpha',
+    label: 'Alpha',
+    heading: 'Alpha heading',
+    description: 'Alpha copy',
+    footnote: [{ text: 'Alpha caution' }],
+    footnoteCaution: true,
+    empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
+  },
   {
     key: 'beta',
     label: 'Beta',
@@ -29,18 +37,34 @@ const SECTIONS: HealthMetricsL2Section[] = [
     footnote: [{ text: 'Beta note' }],
     footnoteCaution: false,
     headingBadge: 'Provisional',
+    empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
   },
-  { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: [{ text: 'Gamma note' }], footnoteCaution: false },
+  {
+    key: 'gamma',
+    label: 'Gamma',
+    heading: 'Gamma heading',
+    description: 'Gamma copy',
+    footnote: [{ text: 'Gamma note' }],
+    footnoteCaution: false,
+    empty: { icon: 'fa-light fa-ticket', source: 'once the foundation has an event on the calendar' },
+  },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
-const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
+const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: 3, note: '' }));
+const BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-ticket',
+  noun: 'event',
+  lead: 'Event results appear once the foundation has events on the calendar.',
+  reasons: ['No event has been scheduled', 'Events run under another foundation are counted there'],
+  pastActivity: 'event activity',
+};
 
 // Stands in for a tab's section body: the shell only reacts to what the tab relays from these.
 @Component({ selector: 'lfx-test-section', template: '<p>Section body</p>' })
 class TestSectionComponent {
   public readonly sectionPicked = output<string>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Composes the shell the way a tab does, relaying each section's reads to it. Set through
@@ -52,13 +76,14 @@ const HOST_TEMPLATE = `
     idPrefix="sec-test-"
     [dataSections]="dataSections"
     [subNavItems]="items"
+    [blank]="blank"
     navLabel="Test sections"
     testIdPrefix="test">
     <ng-template lfxHealthMetricsL2Section="alpha">
-      <lfx-test-section (sectionPicked)="shell.scrollToSection($event)" (reading)="shell.sectionReading('alpha')" (settled)="shell.sectionSettled('alpha')" />
+      <lfx-test-section (sectionPicked)="shell.scrollToSection($event)" (reading)="shell.sectionReading('alpha')" (settled)="shell.sectionSettled('alpha', $event)" />
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="beta">
-      <lfx-test-section (reading)="shell.sectionReading('beta')" (settled)="shell.sectionSettled('beta')" />
+      <lfx-test-section (reading)="shell.sectionReading('beta')" (settled)="shell.sectionSettled('beta', $event)" />
     </ng-template>
   </lfx-health-metrics-l2-shell>
 `;
@@ -72,6 +97,7 @@ class TestHostComponent {
   // Writable so a test can build a tab whose sections are all placeholders.
   public dataSections: readonly string[] = DATA_SECTIONS;
   protected readonly items = ITEMS;
+  protected readonly blank = BLANK;
 }
 
 // Captures every observer the component builds so a test can fire entries at it directly; the real
@@ -175,8 +201,8 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   /** Every data section settling, which is what releases a held deep link. */
   function allSettle(): void {
-    child('alpha').settled.emit();
-    child('beta').settled.emit();
+    child('alpha').settled.emit(false);
+    child('beta').settled.emit(false);
   }
 
   function scrollIntoView(): ReturnType<typeof vi.fn> {
@@ -508,7 +534,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     await resetup('gamma');
 
     scrollIntoView().mockClear();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
 
     // Scrolling in the emitting turn would read the offsets from before the rows were laid out.
     expect(scrollIntoView()).not.toHaveBeenCalled();
@@ -525,7 +551,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
     stubEndSentinelTop(window.innerHeight * 3);
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     const sentinel = fixture.nativeElement.querySelector('[data-testid="test-scroll-end-sentinel"]');
@@ -537,7 +563,7 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     fixture.nativeElement.querySelector('[data-testid="test-sub-nav-beta"]').click();
     fixture.detectChanges();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     // The deep link resolving late would otherwise drag the page back off the section just picked.
@@ -553,7 +579,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     const intent = type === 'keydown' ? new KeyboardEvent(type, { key: 'PageDown', bubbles: true }) : new Event(type, { bubbles: true });
     headingOf('alpha').dispatchEvent(intent);
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     // A read that fails and later succeeds would otherwise drag the page back to the linked anchor.
@@ -568,7 +594,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     scrollIntoView().mockClear();
     headingOf('alpha').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -584,7 +610,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     heading.addEventListener('keydown', (event: Event) => event.preventDefault(), { once: true });
     heading.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -614,7 +640,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     target.remove();
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -628,7 +654,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView().mockClear();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).not.toHaveBeenCalled();
@@ -644,7 +670,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView().mockClear();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -662,7 +688,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView().mockClear();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -676,18 +702,18 @@ describe('HealthMetricsL2ShellComponent', () => {
     fragment.next('gamma');
     scrollIntoView().mockClear();
 
-    child(first).settled.emit();
+    child(first).settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
 
-    child(last).settled.emit();
+    child(last).settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
 
     // Every data section has settled, so the key is released: a further settle does not re-scroll.
-    child(first).settled.emit();
+    child(first).settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
@@ -703,7 +729,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('beta');
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
@@ -721,7 +747,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
     target.remove();
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).not.toHaveBeenCalled();
@@ -761,7 +787,7 @@ describe('HealthMetricsL2ShellComponent', () => {
   // The listeners are registered per arm: registering them once at construction left a link armed
   // after the first settle with nothing but the TTL protecting it.
   it('cancels a deep link armed after an earlier read has already settled', async () => {
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     // A filter change starts a fresh read, which is what lets the next fragment arm again.
@@ -773,7 +799,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     scrollIntoView().mockClear();
     headingOf('alpha').dispatchEvent(new Event('wheel', { bubbles: true }));
 
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).not.toHaveBeenCalled();
@@ -812,7 +838,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
 
     child('beta').reading.emit();
-    child('beta').settled.emit();
+    child('beta').settled.emit(false);
     await flush();
 
     // The anchors are stable by now, so the next filter change must not re-scroll to the fragment.
@@ -834,13 +860,13 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(1);
 
-    child(key).settled.emit();
+    child(key).settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
 
     // The key is released now, so a later settle is not another yank back to the anchor.
-    child(key).settled.emit();
+    child(key).settled.emit(false);
     await flush();
 
     expect(scrollIntoView()).toHaveBeenCalledTimes(2);
@@ -853,7 +879,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     child('alpha').reading.emit();
     expect(section.style.minHeight).toBe('480px');
 
-    child('alpha').settled.emit();
+    child('alpha').settled.emit(false);
     await flush();
     expect(section.style.minHeight).toBe('');
   });
@@ -863,7 +889,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
 
     child('alpha').reading.emit();
-    child('alpha').settled.emit();
+    child('alpha').settled.emit(false);
     child('alpha').reading.emit();
     await flush();
 
@@ -881,9 +907,96 @@ describe('HealthMetricsL2ShellComponent', () => {
     await flush();
     expect(section.style.minHeight).toBe('480px');
 
-    shell.sectionSettled('alpha-bridge', 'alpha');
+    shell.sectionSettled('alpha-bridge', false, 'alpha');
     await flush();
     expect(section.style.minHeight).toBe('');
+  });
+
+  describe('empty sections', () => {
+    function query(testId: string): HTMLElement | null {
+      return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    }
+
+    function shell(): HealthMetricsL2ShellComponent {
+      return fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
+    }
+
+    it('swaps a section that settled empty for the compact empty state, hiding its body, footnote and badge', async () => {
+      child('alpha').settled.emit(true);
+      child('beta').settled.emit(false);
+      await flush();
+
+      expect(query('test-section-empty-alpha')?.textContent).toContain('Nothing recorded yet');
+      expect(query('test-section-empty-alpha')?.textContent).toContain('This fills in once the foundation has an event on the calendar.');
+      expect(query('test-section-alpha')?.querySelector('lfx-test-section')?.parentElement?.className).toContain('hidden');
+      expect(query('test-footnote-alpha')).toBeNull();
+      expect(query('test-sub-nav-alpha')?.textContent).not.toContain('3');
+      expect(query('test-section-empty-beta')).toBeNull();
+      expect(query('test-blank')).toBeNull();
+    });
+
+    it('brings the body back while the section reads again', async () => {
+      child('alpha').settled.emit(true);
+      await flush();
+      child('alpha').reading.emit();
+      await flush();
+
+      expect(query('test-section-empty-alpha')).toBeNull();
+    });
+
+    it('replaces the tab with its blank card once every data section settles empty, worded for the period', async () => {
+      child('alpha').settled.emit(true);
+      child('beta').settled.emit(true);
+      await flush();
+
+      expect(query('test-blank')?.querySelector('h2')?.textContent).toBe('No event data yet');
+      expect(query('test-blank-lead')?.textContent).toBe(BLANK.lead);
+      expect(query('health-metrics-test-page')?.className).toContain('hidden');
+
+      chrome.selectedRange.set('COMPLETED_YEAR');
+      await flush();
+
+      const year = new Date().getFullYear() - 1;
+      expect(query('test-blank')?.querySelector('h2')?.textContent).toBe(`No event data for ${year}`);
+      expect(query('test-blank-lead')?.textContent).toBe(`No event activity was recorded for the foundation in ${year}.`);
+      expect(query('test-section-empty-alpha')?.textContent).toContain(`Nothing in ${year}`);
+    });
+
+    it('leaves out a section with no verdict, but needs at least one empty one', async () => {
+      child('alpha').settled.emit(null);
+      child('beta').settled.emit(true);
+      await flush();
+
+      expect(query('test-blank')).not.toBeNull();
+      expect(query('test-section-empty-alpha')).toBeNull();
+
+      child('beta').settled.emit(null);
+      await flush();
+
+      expect(query('test-blank')).toBeNull();
+    });
+
+    it('keeps the tab while any data section is unsettled or has data', async () => {
+      child('alpha').settled.emit(true);
+      await flush();
+      expect(query('test-blank')).toBeNull();
+
+      child('beta').settled.emit(false);
+      await flush();
+      expect(query('test-blank')).toBeNull();
+    });
+
+    it('empties a section only once every read rendering in it has settled empty', async () => {
+      shell().sectionReading('alpha');
+      shell().sectionReading('alpha-bridge', 'alpha');
+      shell().sectionSettled('alpha', true);
+      await flush();
+      expect(query('test-section-empty-alpha')).toBeNull();
+
+      shell().sectionSettled('alpha-bridge', true, 'alpha');
+      await flush();
+      expect(query('test-section-empty-alpha')).not.toBeNull();
+    });
   });
 
   describe('scroll position across query-only navigations', () => {

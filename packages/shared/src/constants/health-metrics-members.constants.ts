@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import { lfxColors } from './colors.constants';
 import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
@@ -10,7 +11,7 @@ import {
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsEngagementAttendanceRule } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsFootnotePart } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
@@ -49,6 +50,7 @@ import type {
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
     key: 'tiers',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Membership & revenue',
     heading: 'Membership & revenue by tier',
     description:
@@ -58,6 +60,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'list',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'All members',
     heading: 'All members',
     description:
@@ -77,6 +80,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'risk',
+    empty: { icon: 'fa-light fa-file-invoice-dollar', source: HEALTH_METRICS_L2_EMPTY_SOURCES.invoice },
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
     description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',
@@ -89,6 +93,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'renewals',
+    empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
@@ -102,6 +107,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'board',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Board & voting attendance',
     heading: 'Board & voting-member attendance',
     description:
@@ -111,6 +117,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'nps',
+    empty: { icon: 'fa-light fa-clipboard-list', source: HEALTH_METRICS_L2_EMPTY_SOURCES.survey },
     label: 'Satisfaction (NPS)',
     heading: 'Satisfaction (NPS)',
     description:
@@ -120,6 +127,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   },
   {
     key: 'churn',
+    empty: { icon: 'fa-light fa-arrow-trend-down', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Membership churn',
     heading: 'Membership churn',
     description:
@@ -127,7 +135,16 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     footnote: [],
     footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_MEMBERS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-building',
+  noun: 'member',
+  lead: 'Member details appear once organizations hold an active membership with the foundation.',
+  reasons: ['The foundation may be newly launched', 'Memberships may not be linked to it yet', 'Your Program Manager can check membership records'],
+  pastActivity: 'membership',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
