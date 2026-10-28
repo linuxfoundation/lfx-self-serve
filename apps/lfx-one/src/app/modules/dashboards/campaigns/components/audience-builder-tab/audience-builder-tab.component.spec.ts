@@ -3554,6 +3554,18 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list').toBeNull();
       });
 
+      it('still withdraws the carried opt-ins when a same-page re-draft lookup fails', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        stream.next({ type: 'error', data: 'portal unreachable' });
+        fixture.detectChanges();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-ins-failed"]')).not.toBeNull();
+
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list after a failed lookup').toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 

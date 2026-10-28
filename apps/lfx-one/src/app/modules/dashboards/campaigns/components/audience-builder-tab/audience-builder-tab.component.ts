@@ -3691,10 +3691,14 @@ export class AudienceBuilderTabComponent {
     // withdraws them (`reconcileOptInOwnership`).
     this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'loading', added: carried });
     let result: AudienceDiscoveryResult | null = null;
-    // Settled on `done` or on completion, whichever comes first: the stream may end either way.
+    // A failed lookup keeps the opt-ins it carries owned: emptied, removing the kept draft list
+    // later would leave them alone in Include. The failed panel never renders `added`.
+    const fail = (): void => this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed', added: this.optIns().added });
+    // Settled on `done` or on completion, whichever comes first: the stream may end either way. A
+    // stream that errors after its `discovered` event still settles on the result it delivered.
     const settle = (): void => {
       if (!current() || this.optIns().status !== 'loading') return;
-      if (result === null) this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
+      if (result === null) fail();
       else this.applyOptIns(result, this.optIns().added);
     };
     this.optInSubscription = this.campaignService
@@ -3708,12 +3712,10 @@ export class AudienceBuilderTabComponent {
           } else if (event.type === 'done') {
             settle();
           } else if (event.type === 'error' || event.type === 'shutdown') {
-            this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
+            settle();
           }
         },
-        error: () => {
-          if (current() && this.optIns().status === 'loading') this.optIns.set({ ...AUDIENCE_OPT_IN_LOOKUP_EMPTY, status: 'failed' });
-        },
+        error: settle,
         complete: settle,
       });
   }
