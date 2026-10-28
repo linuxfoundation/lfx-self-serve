@@ -58,7 +58,7 @@ On the meeting's join page, after the meeting has ended, if the organizer enable
 
 ## Where can I find meeting materials?
 
-On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). You need to be **signed in** to see materials, for any meeting.
+On the meeting's join page, in the **Meeting Materials** panel — organizers can attach files (Primary Materials) and links (Supporting Materials). You need to be **signed in** and have access to the meeting: for a public meeting with no join restriction, any signed-in user; for a private or restricted meeting, only invited guests and organizers. You can also see them on the meeting's card in the Meetings list. See [Meeting Materials](../meeting-materials/).
 
 ## Where do I find the Zoom host key?
 

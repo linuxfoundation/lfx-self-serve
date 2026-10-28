@@ -37,14 +37,7 @@ Organizers control who is invited from the **Invite guests** step of the meeting
 
 ## Manage meeting materials
 
-On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones. On a meeting card in the list, the same drawer opens from **Edit materials**.
-
-On a recurring meeting, materials can apply to **one occurrence** or to **all occurrences**:
-
-- Under **Applies to**, choose **This occurrence** (the date you are managing) or **All occurrences** before you add files or links. New materials default to all occurrences.
-- Each existing item shows a **This occurrence** or **All occurrences** label. Use **Limit to this occurrence** or **Apply to all occurrences** to change it, then **Save Changes**.
-- Materials for one occurrence appear only on that date's card and page, and only registrants of that date are notified of them. Materials for all occurrences appear on every date.
-- You can scope materials only to an upcoming occurrence that has not been cancelled. If an occurrence is rescheduled, its materials move with it.
+Organizers add files and links from the **Agenda & resources** section of the meeting editor, or later with **Edit materials** on a meeting card and **Manage** on the join page. On a recurring meeting, materials can apply to one occurrence or to every occurrence. See [Meeting Materials](../meeting-materials/) for the full steps, file limits, and who can see them.
 
 ## Delete a meeting
 
@@ -68,6 +61,7 @@ Meetings are scoped to a project (or foundation). Use the lens switcher to chang
 
 ## Related
 
+- [Meeting Materials](../meeting-materials/) — add and organize files and links
 - [Manage Participants](../manage-participants/) — invite guests, add groups, resend invitations, and remove people
 - [Host Controls and the Host Key](../host-controls/) — find the Zoom host key and make a guest a meeting host
 - [Schedule a Meeting](../schedule-meeting/) — create a new meeting
