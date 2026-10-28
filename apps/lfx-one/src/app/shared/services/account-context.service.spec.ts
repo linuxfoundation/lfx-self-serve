@@ -14,6 +14,7 @@ import { AccountContextService } from './account-context.service';
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 // Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
@@ -529,6 +530,8 @@ describe('AccountContextService — All Organizations roll-up', () => {
   let routerEvents: Subject<unknown>;
   /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
   let liveRows: OrgLensAccountContextResponse[];
+  /** M3 CLA-only access: not part of a roll-up, but a real address the demotion may keep. */
+  let claOnlyOrgUids: WritableSignal<Set<string>>;
   let grants: {
     writerSet: WritableSignal<Set<string>>;
     auditorSet: WritableSignal<Set<string>>;
@@ -548,6 +551,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
     currentNavigation = null;
     routerEvents = new Subject<unknown>();
     liveRows = [];
+    claOnlyOrgUids = signal(new Set<string>());
     httpGet = vi.fn().mockReturnValue(of(null));
     grants = {
       writerSet: signal(new Set<string>()),
@@ -572,6 +576,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
+        { provide: OrgClaOnlyAccessService, useValue: { claOnlyOrgUids, enabled: signal(false) } },
         { provide: UrlSerializer, useClass: DefaultUrlSerializer },
         {
           provide: Router,
@@ -942,6 +947,43 @@ describe('AccountContextService — All Organizations roll-up', () => {
       // The re-seed that used to clear it.
       service.initializeUserOrganizations([seedA, seedB]);
       expect(service.selectedAccount().uid).toBe(UID_A);
+    });
+
+    /**
+     * Copilot on PR #4415. `orgUrlSegment(current)` proves the current selection is *addressable*,
+     * not that this caller holds it. A stale concrete selection of A, with the settled grants
+     * naming only B and no persona seeds, was therefore pinned and persisted as the demotion
+     * target — over the one organization they do have.
+     */
+    it('falls back to a held organization, not a stale addressable selection', () => {
+      // On A from an earlier navigation; the grants now name only B, and there are no seeds.
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      grants.inheritedWriterSet.set(new Set([UID_B]));
+      service.initializeUserOrganizations([]);
+
+      const next = service.demoteAddressedRollUp();
+
+      expect(next?.uid).toBe(UID_B);
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
+    });
+
+    // A CLA-only organization is not part of a roll-up but is a real address (M3: the EasyCLA tab),
+    // so the caller stays on it rather than being bounced to the not-found dead end.
+    it('keeps a CLA-only organization the caller is already addressing', () => {
+      claOnlyOrgUids.set(new Set([UID_A]));
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp()?.uid).toBe(UID_A);
+    });
+
+    // A staff viewer reaches every organization with no grant of their own.
+    it('keeps the current organization for a staff viewer', () => {
+      grants.isStaff.set(true);
+      service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
+      service.initializeUserOrganizations([]);
+
+      expect(service.demoteAddressedRollUp()?.uid).toBe(UID_A);
     });
 
     it('answers null when there is nothing addressable to fall back to', () => {

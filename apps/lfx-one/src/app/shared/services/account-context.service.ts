@@ -420,10 +420,20 @@ export class AccountContextService {
    */
   public demoteAddressedRollUp(): Account | null {
     const current = this.selectedAccount();
-    // The current selection counts only when it is a CONCRETE organization. `orgUrlSegment` is
-    // truthy for the roll-up itself (it answers the sentinel), so reusing it would leave the caller
-    // on the very combined-view address this is trying to leave, with `canonicalizeAddress` a no-op.
-    const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) ? current : null;
+    // The current selection counts only when it is a CONCRETE organization the caller still holds.
+    //
+    // Concrete, because `orgUrlSegment` is truthy for the roll-up itself (it answers the sentinel),
+    // so reusing it would leave the caller on the very combined-view address this is trying to
+    // leave, with `canonicalizeAddress` a no-op.
+    //
+    // Held, because addressable is not the same as entitled: a stale selection of A, with the
+    // settled grants naming only B, would otherwise be pinned AND persisted as the demotion target
+    // — an organization this caller does not have, in the cookie, over the one they do. The server
+    // still fails closed, so the pages would simply be empty rather than wrong (#4415, Copilot).
+    //
+    // Only reached from `orgPathParamGuard` once the grants have settled — `admitWhilePending`
+    // admits every unsettled visit — so the held set is authoritative here, not a lower bound.
+    const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) && this.canAddressOrganization(current.uid) ? current : null;
     const next = concrete ?? this.rollUpFallbackOrganization();
     if (!next || !orgUrlSegment(next)) {
       return null;
@@ -678,6 +688,34 @@ export class AccountContextService {
 
     this.applyDemotionFallback(fallback);
     this.repointAddressAfterDemotion(fallback);
+  }
+
+  /**
+   * Whether this caller may be left addressing `uid`.
+   *
+   * Deliberately wider than `rollUpOrganizationCount`, which counts only what the roll-up would
+   * *combine*: this asks what the caller can reach at all, so it mirrors `hasOrgSelectorAccess`'s
+   * sources rather than the roll-up's. A CLA-only organization is not part of a roll-up but is a
+   * real address (M3: the EasyCLA tab), and a staff viewer reaches every organization with no grant
+   * of their own — gating either on the roll-up's narrower set would send them to `/org/not-found`
+   * from a page they were legitimately on.
+   */
+  private canAddressOrganization(uid: string | null | undefined): boolean {
+    if (!uid) {
+      return false;
+    }
+    if (this.orgRoleGrantsService.isStaff() || this.orgClaOnlyAccess.claOnlyOrgUids().has(uid)) {
+      return true;
+    }
+    if (this.userOrganizations().some((account) => account.uid === uid)) {
+      return true;
+    }
+    return [
+      this.orgRoleGrantsService.writerSet(),
+      this.orgRoleGrantsService.auditorSet(),
+      this.orgRoleGrantsService.inheritedWriterSet(),
+      this.orgRoleGrantsService.inheritedAuditorSet(),
+    ].some((set) => set.has(uid));
   }
 
   /**

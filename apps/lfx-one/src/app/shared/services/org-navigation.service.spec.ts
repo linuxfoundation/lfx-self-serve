@@ -493,6 +493,10 @@ describe('OrgNavigationService default selection', () => {
   // not it appears on the first page, it stays selected and the address is not touched.
   it('leaves an addressed selection alone', () => {
     isAdoptedFromAddress.mockReturnValue(true);
+    // The premise of this spec: the URL names B. Left at the mock's default (`false`) when this was
+    // written, because nothing read it then — an address-pinned selection on an *unaddressed* URL
+    // is a different case, and now has its own specs above.
+    isOnAddressedPage.mockReturnValue(true);
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
 
     bootstrapWith([item(UID_A, 'Acme')]);
@@ -712,11 +716,34 @@ describe('OrgNavigationService default selection', () => {
       expect(navigateToSelectedOrg).not.toHaveBeenCalled();
     });
 
-    // Unchanged for every other address-pinned selection: the resolver already wrote the address.
-    it('does not write an address for a concrete address-pinned organization', async () => {
+    /**
+     * Copilot on PR #4415. This spec used to assert the opposite, and so locked in the defect: on
+     * `/org/people` with an `all` cookie, if the grants settle to one organization before org-items
+     * answers, the demotion pins its concrete fallback as an address selection — but
+     * `repointAddressAfterDemotion` only corrects a `/org/all/…` address, and a legacy one names no
+     * organization to correct. Gating the write on `isRollUp()` then skipped it, leaving the page
+     * rendering one organization under an address that does not identify it.
+     *
+     * `isOnAddressedPage()` is the real condition, and it already excludes a resolver adoption.
+     */
+    it('writes the address for a concrete pin the URL does not name', async () => {
       isAdoptedFromAddress.mockReturnValue(true);
       isRollUp.mockReturnValue(false);
       isOnAddressedPage.mockReturnValue(false);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      // Still only the address: the demotion's pin owns the selection.
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    // Unchanged for a resolver adoption: the address already names the organization.
+    it('does not write an address for a concrete organization the URL already names', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(false);
+      isOnAddressedPage.mockReturnValue(true);
 
       bootstrapWith(rows());
       await settle();
