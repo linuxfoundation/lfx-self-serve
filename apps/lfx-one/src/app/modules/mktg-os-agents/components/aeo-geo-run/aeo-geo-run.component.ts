@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -47,6 +48,7 @@ import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-que
     DecimalPipe,
     ReactiveFormsModule,
     RouterLink,
+    ButtonComponent,
     InputTextComponent,
     MessageComponent,
     MktgRunActivityComponent,
@@ -74,6 +76,7 @@ export class AeoGeoRunComponent {
   protected readonly loading = signal(true);
   protected readonly writer = signal(false);
   protected readonly busy = signal(false);
+  protected readonly submitted = signal(false);
   protected readonly error = signal('');
   protected readonly documentLink = signal<string[] | null>(null);
   protected readonly previousError = signal('');
@@ -110,9 +113,10 @@ export class AeoGeoRunComponent {
   protected readonly answers = this.initAnswers();
   protected readonly validation = computed(() => validateAeoGeoIntakeAnswers(this.answers()));
   protected readonly domainName = this.initDomainName();
-  protected readonly domainError = computed(() => (this.answers().domain.trim() && !this.domainName() ? AEO_GEO_INTAKE_ERRORS.domain : ''));
+  protected readonly domainError = computed(() =>
+    (this.submitted() || this.answers().domain.trim()) && !this.domainName() ? AEO_GEO_INTAKE_ERRORS.domain : ''
+  );
   protected readonly pagesError = this.initPagesError();
-  protected readonly submitDisabled = computed(() => this.loading() || !this.writer() || !this.documentType() || this.busy() || !this.validation().valid);
   private readonly context$ = toObservable(
     computed(() => ({ context: this.projectContext.activeContext(), sub: this.user.user()?.sub, reload: this.reload() }))
   );
@@ -135,6 +139,7 @@ export class AeoGeoRunComponent {
           this.writer.set(false);
           this.loading.set(true);
           this.form.reset();
+          this.submitted.set(false);
           this.prefill.set('');
           this.visiblePages.set(3);
           this.runs.set([]);
@@ -213,9 +218,26 @@ export class AeoGeoRunComponent {
     const context = this.projectContext.activeContext();
     const project = context?.uid;
     const type = this.documentType();
-    if (!context || !project || !type || this.submitDisabled()) {
+    if (this.busy()) return;
+    if (!context || !project) {
+      this.error.set('Select a valid project before running an audit.');
       return;
     }
+    if (this.loading()) {
+      this.error.set('The project is still loading. Try again in a moment.');
+      return;
+    }
+    if (!this.writer()) {
+      this.error.set('You need write access to this project to run an AEO/GEO audit.');
+      return;
+    }
+    if (!type) {
+      this.error.set('This audit has no registered document type.');
+      return;
+    }
+    this.error.set('');
+    this.submitted.set(true);
+    if (!this.validation().valid) return;
     const stale = this.pending.loadActive(project, this.intake().agentId);
     if (stale) this.pending.clear(stale.projectUid, stale.documentId);
     this.busy.set(true);

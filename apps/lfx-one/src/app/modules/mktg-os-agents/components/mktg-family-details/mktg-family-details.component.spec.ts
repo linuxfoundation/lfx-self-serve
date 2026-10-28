@@ -73,13 +73,34 @@ describe('Family-only source details', () => {
     fixture.componentRef.setInput('projectUid', 'synthetic');
     return fixture;
   }
-  it('reads the latest stored revision and renders real read/failed source copy plus the static approval explainer', async () => {
+  it('collapses sources and Sign-off to honest summary lines with accessible Show and Hide', async () => {
     const fixture = create();
     await fixture.whenStable();
     expect(getRevision).toHaveBeenCalledWith('synthetic', 'foundation-message', 'living', revisionId);
-    expect(fixture.nativeElement.textContent).toContain('Sources read on the last run: project.example.');
-    expect(fixture.nativeElement.textContent).toContain('README: Timed out');
-    expect(fixture.nativeElement.textContent).toContain('Any project writer approves an asset in October.');
+    const root: HTMLElement = fixture.nativeElement;
+    const sourceToggle = root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sources-toggle"] button');
+    const signOffToggle = root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sign-off-toggle"] button');
+    const list = root.querySelector('#mktg-family-sources-list');
+    expect(root.querySelector('h2')?.textContent?.replace(/\s+/g, ' ')).toContain('Where it comes from · 1 source read · 1 source failed');
+    expect(list?.classList.contains('hidden')).toBe(true);
+    expect(sourceToggle?.getAttribute('aria-controls')).toBe(list?.id);
+    expect(sourceToggle?.getAttribute('aria-expanded')).toBe('false');
+    sourceToggle?.click();
+    signOffToggle?.click();
+    await fixture.whenStable();
+    expect(sourceToggle?.textContent).toContain('Hide');
+    expect(sourceToggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(list?.classList.contains('hidden')).toBe(false);
+    expect(list?.textContent).toContain('Sources read on the last run: project.example.');
+    expect(list?.textContent).toContain('README: Timed out');
+    expect(root.querySelector('#mktg-family-sign-off-text')?.classList.contains('hidden')).toBe(false);
+    expect(root.textContent).toContain('roadmap: two-role sign-off arrives in November');
+    expect(root.textContent).toContain('Any project writer approves an asset in October.');
+    sourceToggle?.click();
+    signOffToggle?.click();
+    await fixture.whenStable();
+    expect(list?.classList.contains('hidden')).toBe(true);
+    expect(root.querySelector('#mktg-family-sign-off-text')?.classList.contains('hidden')).toBe(true);
   });
   it('omits sources with no document or no report, never faking a source list', async () => {
     getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));

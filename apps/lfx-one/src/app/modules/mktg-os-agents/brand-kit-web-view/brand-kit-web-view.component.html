@@ -23,25 +23,19 @@
         <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="brand-kit-web-view-mode">{{ modeLabel() }}</span>
       }
     }
-    <div class="grow"></div>
-    <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <ng-content select="[asset-actions]" />
-      <span
-        [pTooltip]="pdfTooltip()"
-        tooltipPosition="bottom"
-        tooltipEvent="both"
-        [attr.aria-label]="pdfTooltip() || null"
-        [attr.tabindex]="pdfTooltip() ? 0 : null">
-        <lfx-button
-          label="Download PDF"
-          icon="fa-light fa-file-pdf"
-          [outlined]="true"
-          size="small"
-          [disabled]="!printView()"
-          ariaLabel="Download the approved current brand kit as a PDF"
-          data-testid="brand-kit-web-view-download-pdf"
-          (onClick)="onDownloadPdf()" />
-      </span>
+    @if (showMetadata()) {
+      <div class="grow"></div>
+      <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
+        <ng-content select="[asset-actions]" />
+        <ng-container [ngTemplateOutlet]="titleActions" />
+      </div>
+    }
+  </div>
+
+  <ng-template #titleActions>
+    @if (viewingDraft()) {
+      <p class="text-sm text-gray-500" data-testid="brand-kit-web-view-approval-required">Export is available once this version is approved</p>
+    } @else {
       <!-- The kit as a deck: the panel below the header shows the export. -->
       <span
         [pTooltip]="slidesExport.disabledReason()"
@@ -53,32 +47,34 @@
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
           [outlined]="true"
-          size="small"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the brand kit to Google Slides"
           data-testid="brand-kit-web-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      <lfx-button
-        label="Report"
-        icon="fa-light fa-clipboard-list"
-        [text]="true"
-        size="small"
-        [badge]="gapCount() > 0 ? gapCount().toString() : undefined"
-        ariaLabel="Open the run's report: sources read, failed and gaps"
-        data-testid="brand-kit-web-view-report"
-        (onClick)="onGoToTab('sources')" />
-    </div>
-  </div>
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current brand kit as a PDF"
+          data-testid="brand-kit-web-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
+    }
+  </ng-template>
 
   @if (!exportTarget()) {
     @if (approvedLoading()) {
       <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
     } @else if (approvedError()) {
       <lfx-message severity="error" [text]="approvedError()" />
-    } @else {
-      <p class="text-xs text-gray-500" data-testid="brand-kit-web-view-approval-required">{{ approvalRequiredNote }}</p>
     }
   }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
@@ -163,13 +159,6 @@
                   <span class="text-xs text-gray-400">{{ chapter.number }}</span>
                 </div>
                 <p class="grow text-sm text-gray-800">{{ chapter.summary }}</p>
-                <button
-                  type="button"
-                  class="self-start text-xs font-medium text-blue-600 hover:text-blue-800"
-                  [attr.data-testid]="'brand-kit-web-view-open-' + chapter.id"
-                  (click)="onGoToTab(chapter.id)">
-                  Open {{ chapter.title }}
-                </button>
               </article>
             }
           </div>
