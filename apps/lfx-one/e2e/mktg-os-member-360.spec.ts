@@ -30,7 +30,9 @@ test('Kit → Member family → run has fixed linked parents and browser Back', 
   await page.getByTestId('mktg-breadcrumb-link-0').click();
   await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
   await page.getByTestId('mktg-kit-family-link-member-sponsor').click();
-  await page.getByTestId('mktg-family-run').getByRole('button').click();
+  const familyRun = page.getByTestId('mktg-family-run').getByRole('link');
+  await expect(familyRun).toHaveAccessibleName('Run next agent: Member 360');
+  await familyRun.click();
   await expect(page.getByTestId('member-360-run-page')).toBeVisible();
   await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/member-sponsor\?project=sample-foundation$/);
   await page.goBack();
@@ -330,7 +332,7 @@ test('ranking sorts, filters, expands evidence and copies team actions', async (
   await rows.getByRole('button', { name: SYNTHETIC_ORG_NAME }).click();
   await expect(page.getByTestId('member-360-row-detail')).toContainText('No speaking activity');
   await expect(page.getByTestId('member-360-row-detail')).toContainText('LFX Platform connector');
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (_text: string) => undefined } }));
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => undefined } }));
   await page.getByRole('button', { name: 'Copy Member Success list' }).click();
   await expect(page.getByTestId('member-360-notice')).toContainText('Member Success list copied.');
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });

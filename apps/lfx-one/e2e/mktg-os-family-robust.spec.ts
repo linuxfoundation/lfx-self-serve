@@ -26,7 +26,7 @@ test.describe('Marketing family responsive structure', () => {
           MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.length ?? 0
         );
         const eligible = (MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets ?? []).filter((asset) => {
-          const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === asset.agentKey && entry.kind === 'living');
+          const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === asset.agentKey);
           return (
             !!type?.catalogAgentId &&
             !!MKTG_AGENT_INTAKES[type.catalogAgentId] &&
@@ -37,7 +37,9 @@ test.describe('Marketing family responsive structure', () => {
         for (const asset of eligible) {
           const action = page.getByTestId(`mktg-family-asset-${asset.id}`).getByTestId(`mktg-family-run-${asset.id}`).getByRole('link');
           await expect(action).toBeVisible();
-          await expect(action).toHaveAttribute('href', /mode=new/);
+          const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === asset.agentKey);
+          const href = new URL((await action.getAttribute('href')) ?? '', page.url());
+          expect(href.searchParams.get('mode')).toBe(type?.kind === 'living' ? 'new' : null);
         }
         const title = await page.getByTestId('mktg-family-title').boundingBox();
         const intro = await page.getByTestId('mktg-family-intro').boundingBox();
@@ -66,7 +68,7 @@ test.describe('Marketing family responsive structure', () => {
           await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
           const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === familyId);
           const runnable = MKTG_AGENTS.find((agent) => family?.agentIds.includes(agent.id) && agent.status === 'active');
-          const runButton = page.getByTestId('mktg-family-run').getByRole('button');
+          const runButton = page.getByTestId('mktg-family-run').getByRole(runnable ? 'link' : 'button');
           const run = await page.getByTestId('mktg-family-run').boundingBox();
           expect(run).not.toBeNull();
           if (runnable) {
@@ -74,7 +76,8 @@ test.describe('Marketing family responsive structure', () => {
             const asset = family?.assets.find((row) =>
               MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === runnable.id)
             );
-            await expect(runButton).toHaveAccessibleName('Run ' + (asset?.runName ?? asset?.label ?? runnable.name));
+            await expect(runButton).toHaveAccessibleName('Run next agent: ' + (asset?.label ?? runnable.name));
+            await expect(page.getByTestId('mktg-family-run-next')).toContainText('Next: ' + (asset?.label ?? runnable.name));
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {
             await expect(runButton).toBeDisabled();
