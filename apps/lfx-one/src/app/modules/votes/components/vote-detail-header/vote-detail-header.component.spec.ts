@@ -3,6 +3,8 @@
 
 import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_DETAIL_TABS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
@@ -93,35 +95,75 @@ describe('VoteDetailHeaderComponent', () => {
   });
 
   describe('actions', () => {
+    // Managers reach results from the Results tab, so only voters get View results (#4447).
     it.each([
-      ['creator', PollStatus.ACTIVE, true, true, true],
-      ['creator', PollStatus.ACTIVE, false, true, false],
-      ['creator', PollStatus.ENDED, false, false, false],
-      ['voter', PollStatus.ACTIVE, true, false, true],
-      ['voter', PollStatus.ACTIVE, false, false, false],
-      ['voter', PollStatus.ENDED, false, false, false],
-    ] as const)('%s on a %s vote (awaiting: %s) → reminder %s, cast %s', (audience, status, canCastVote, reminder, cast) => {
+      ['creator', PollStatus.ACTIVE, true, true, true, false],
+      ['creator', PollStatus.ACTIVE, false, true, false, false],
+      ['creator', PollStatus.ENDED, false, false, false, false],
+      ['voter', PollStatus.ACTIVE, true, false, true, true],
+      ['voter', PollStatus.ACTIVE, false, false, false, true],
+      ['voter', PollStatus.ENDED, false, false, false, true],
+    ] as const)('%s on a %s vote (awaiting: %s) → reminder %s, cast %s, view results %s', (audience, status, canCastVote, reminder, cast, viewResults) => {
       render({ vote: makeVote({ status }), audience, canCastVote });
 
       expect(exists('vote-detail-header-send-reminder')).toBe(reminder);
       expect(exists('vote-detail-header-cast-vote')).toBe(cast);
-      expect(exists('vote-detail-header-view-results')).toBe(true);
+      expect(exists('vote-detail-header-view-results')).toBe(viewResults);
     });
 
-    it('emits each action', () => {
+    it('makes Send reminder the primary action for a manager on an open vote (#4447)', () => {
+      render({ audience: 'creator' });
+      const reminder = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-send-reminder"]')).componentInstance as ButtonComponent;
+
+      expect(reminder.outlined()).toBe(false);
+      expect(reminder.severity()).toBeUndefined();
+    });
+
+    it('demotes Cast vote to secondary when a manager is also an invited voter, keeping one primary action (#4447)', () => {
+      render({ audience: 'creator', canCastVote: true });
+      const button = (id: string): ButtonComponent =>
+        fixture.debugElement.query(By.css(`[data-testid="vote-detail-header-${id}"]`)).componentInstance as ButtonComponent;
+
+      expect(button('send-reminder').outlined()).toBe(false);
+      expect(button('send-reminder').severity()).toBeUndefined();
+      expect(button('cast-vote').outlined()).toBe(true);
+      expect(button('cast-vote').severity()).toBe('secondary');
+    });
+
+    it('keeps Cast vote primary for a voter', () => {
+      render({ audience: 'voter', canCastVote: true });
+      const cast = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-cast-vote"]')).componentInstance as ButtonComponent;
+
+      expect(cast.outlined()).toBe(false);
+      expect(cast.severity()).toBeUndefined();
+    });
+
+    it('emits each manager action', () => {
       render({ audience: 'creator', canCastVote: true });
       const emitted: string[] = [];
       fixture.componentInstance.sendReminder.subscribe(() => emitted.push('reminder'));
       fixture.componentInstance.castVote.subscribe(() => emitted.push('cast'));
-      fixture.componentInstance.viewResults.subscribe(() => emitted.push('results'));
       fixture.componentInstance.back.subscribe(() => emitted.push('back'));
 
-      for (const id of ['send-reminder', 'cast-vote', 'view-results']) {
+      for (const id of ['send-reminder', 'cast-vote']) {
         fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-${id}"] button`).click();
       }
       fixture.nativeElement.querySelector('[data-testid="vote-detail-header-back"]').click();
 
-      expect(emitted).toEqual(['reminder', 'cast', 'results', 'back']);
+      expect(emitted).toEqual(['reminder', 'cast', 'back']);
+    });
+
+    it('emits each voter action', () => {
+      render({ audience: 'voter', canCastVote: true });
+      const emitted: string[] = [];
+      fixture.componentInstance.castVote.subscribe(() => emitted.push('cast'));
+      fixture.componentInstance.viewResults.subscribe(() => emitted.push('results'));
+
+      for (const id of ['cast-vote', 'view-results']) {
+        fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-${id}"] button`).click();
+      }
+
+      expect(emitted).toEqual(['cast', 'results']);
     });
   });
 

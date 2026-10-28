@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -11,6 +11,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TagComponent } from '@components/tag/tag.component';
 import {
   VOTE_DETAIL_DEFAULT_TAB,
+  VOTE_DETAIL_SUMMARY_CARD_ACTIONS,
   VOTE_DETAIL_TABS,
   VOTE_DETAIL_VALID_TABS,
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
@@ -30,6 +31,7 @@ import {
   Vote,
   VoteCommentAnonymityReason,
   VoteDetailState,
+  VoteDetailSummaryCardAction,
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStats,
@@ -99,7 +101,6 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
 @Component({
   selector: 'lfx-vote-detail',
   imports: [
-    NgClass,
     NgTemplateOutlet,
     ButtonComponent,
     CardComponent,
@@ -330,6 +331,22 @@ export class VoteDetailComponent {
 
   protected onViewResults(): void {
     this.switchTab('results');
+  }
+
+  /** Routes a summary card click; clicks while results load or after they fail are ignored, as the cards' figures are not real yet. */
+  protected onSummaryCardClick(action: string): void {
+    if (this.loadingVoteResults() || this.voteResultsError()) return;
+    switch (action as VoteDetailSummaryCardAction) {
+      case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES:
+        this.switchTab('voters');
+        return;
+      case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.COMMENTS:
+        this.switchTab('comments');
+        return;
+      case VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED:
+        this.onSendReminder();
+        return;
+    }
   }
 
   protected goBack(): void {
@@ -646,29 +663,26 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Manager-only summary — voters get no stats. */
+  /** Manager-only summary — voters get no stats. A card is clickable (#4447) only while its target is reachable. */
   private initSummaryCards(): Signal<StatCardItem[]> {
     return computed(() => {
       const stats = this.participationStats();
       const loaded = !!this.voteResults();
       const held = this.resultsHeld();
+      const disabled = this.voteResultsError();
       const dash = '—';
       // A held payload has no abstention count; leave it out rather than show a false 0 (#3916).
       const abstained = held ? 0 : stats.abstainedVoters;
+      const commentsReachable = this.commentPromptCount() > 0 && !held;
       return [
         {
-          value: loaded ? stats.totalResponses : dash,
-          label: 'Responses',
-          subLine: loaded ? this.responsesSubLine(stats.eligibleVoters, abstained) : undefined,
+          value: loaded ? `${stats.totalResponses} / ${stats.eligibleVoters}` : dash,
+          label: 'Responded',
+          subLine: loaded ? this.respondedSubLine(stats.participationRate, abstained) : undefined,
           icon: 'fa-light fa-users',
           iconContainerClass: 'bg-blue-100 text-blue-600',
-        },
-        {
-          value: loaded ? `${stats.participationRate}%` : dash,
-          label: 'Participation',
-          subLine: loaded ? `${stats.totalResponses} of ${stats.eligibleVoters} invited voters responded` : undefined,
-          icon: 'fa-light fa-chart-simple',
-          iconContainerClass: 'bg-emerald-100 text-emerald-600',
+          disabled,
+          ...(this.showVotersTab() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES }),
         },
         {
           value: loaded && !held ? this.commentCount() : dash,
@@ -676,12 +690,16 @@ export class VoteDetailComponent {
           subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
+          disabled,
+          ...(commentsReachable && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.COMMENTS }),
         },
         {
           value: loaded ? this.notVotedCount() : dash,
           ...this.notVotedCardText(),
           icon: 'fa-light fa-clock',
           iconContainerClass: 'bg-amber-100 text-amber-600',
+          disabled,
+          ...(this.isActive() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED }),
         },
       ];
     });
@@ -714,8 +732,8 @@ export class VoteDetailComponent {
     return { label: 'Not voted yet', subLine: 'Voting not open yet' };
   }
 
-  private responsesSubLine(eligibleVoters: number, abstained: number): string {
-    const base = `of ${eligibleVoters} invited`;
+  private respondedSubLine(participationRate: number, abstained: number): string {
+    const base = `${participationRate}% participation`;
     if (abstained === 0) return base;
     return `${base} · ${abstained} ${abstained === 1 ? 'abstention' : 'abstentions'}`;
   }

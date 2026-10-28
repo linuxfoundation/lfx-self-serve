@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { VOTE_DETAIL_SUMMARY_CARD_ACTIONS } from '../constants/vote.constants';
 import type {
   IndexedVoteResponseStatus,
   IndividualVoteStatus,
@@ -1333,6 +1334,9 @@ export type VoteCommentAnonymityReason = 'pseudo_anonymous' | 'voter_view';
 
 /** Tabs on the vote detail page (#3913); Overview is the default and is omitted from the `?tab=` query param. */
 export type VoteDetailTab = 'overview' | 'results' | 'comments' | 'voters';
+
+/** Action key of a clickable summary card on the vote detail page (#4447). */
+export type VoteDetailSummaryCardAction = (typeof VOTE_DETAIL_SUMMARY_CARD_ACTIONS)[keyof typeof VOTE_DETAIL_SUMMARY_CARD_ACTIONS];
 
 /** One pill in the vote detail page's tab strip. */
 export interface VoteDetailTabOption {
