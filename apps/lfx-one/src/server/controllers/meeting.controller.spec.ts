@@ -701,6 +701,21 @@ describe('MeetingController', () => {
       expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['a string', 'reg-0,reg-1'],
+      ['an object with a length', { length: 2, 0: 'reg-0', 1: 'reg-1' }],
+    ])('rejects %s body without counting it as registrants', async (_label, body) => {
+      const req = buildReq({ body });
+
+      await controller.deleteMeetingRegistrants(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'delete_meeting_registrants', expect.objectContaining({ registrant_count: 0 }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids', message: 'Array of registrant UIDs is required' })] })
+      );
+      expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
     it('processes a batch of exactly the maximum', async () => {
       await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX) }), buildRes(), next);
 
