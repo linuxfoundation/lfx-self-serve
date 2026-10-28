@@ -12,6 +12,8 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 import { MessageComponent } from '@components/message/message.component';
+import { ConfirmationService, ConfirmEventType } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   AEO_GEO_INTAKE,
@@ -89,7 +91,9 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // each audit hands off to a separate immutable report in the Document view.
 @Component({
   selector: 'lfx-mktg-agent-run',
+  providers: [ConfirmationService],
   imports: [
+    ConfirmDialogModule,
     LinkedinPostRunComponent,
     NgClass,
     MktgBreadcrumbComponent,
@@ -124,6 +128,7 @@ export class MktgAgentRunComponent {
   private readonly runService = inject(MktgAgentRunService);
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
+  private readonly confirmation = inject(ConfirmationService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
@@ -207,6 +212,10 @@ export class MktgAgentRunComponent {
   protected readonly phase = signal<MktgRunPhase>('form');
   protected readonly waitingQuestions = signal(false);
   protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
+  private readonly existingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
+  private discardConfirmed = false;
+  private discardedRunId: string | null = null;
+  private discardEpoch = 0;
   protected readonly startedOverWaiting = signal(false);
   protected readonly hasAcknowledgement = signal(false);
   private readonly hasVersion = signal(false);
@@ -515,6 +524,10 @@ export class MktgAgentRunComponent {
   protected readonly trailingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => group.afterDocuments);
 
   public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.discardEpoch++;
+      this.confirmation.close();
+    });
     // One empty row per list field from the start, so the form never shows a list with no box.
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
@@ -723,9 +736,11 @@ export class MktgAgentRunComponent {
   }
 
   protected onStartOverWaiting(): void {
-    this.waitingQuestions.set(false);
-    this.waitingRun.set(null);
-    this.startedOverWaiting.set(true); // Do not clear, reserve or overwrite the waiting attempt.
+    this.confirmDiscard(() => {
+      this.waitingQuestions.set(false);
+      this.waitingRun.set(null);
+      this.startedOverWaiting.set(true); // Sources first; no POST or draft mutation until explicit Create.
+    });
   }
 
   protected onSubmit(): void {
@@ -734,7 +749,66 @@ export class MktgAgentRunComponent {
       this.errorText.set(this.submitReason());
       return;
     }
-    this.startGeneration();
+    this.confirmDiscard(() => this.startGeneration());
+  }
+
+  private confirmDiscard(action: () => void): void {
+    const project = this.projectContext.activeContextUid();
+    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
+    const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
+    const runId = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? draft?.attempt?.runId ?? draft?.pendingQuestions?.attempt.runId ?? null;
+    if ((this.discardConfirmed && this.discardedRunId === runId) || (!this.hasWaitingNotice() && !this.existingRun() && !activeDraft)) {
+      action();
+      return;
+    }
+    this.confirmation.confirm({
+      header: `Discard the ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} run?`,
+      message: 'Its questions and progress will be lost.',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Keep it',
+      rejectButtonProps: { text: true },
+      ...this.confirmActions(
+        () => {
+          this.discardConfirmed = true;
+          this.discardedRunId = runId;
+          action();
+        },
+        () => this.keepExistingRun()
+      ),
+    });
+  }
+
+  private confirmActions(accept: () => void, reject: (reason: ConfirmEventType) => void) {
+    const epoch = this.discardEpoch;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    let settled = false;
+    const current = () =>
+      !settled &&
+      !this.destroyRef.destroyed &&
+      epoch === this.discardEpoch &&
+      project === this.projectContext.activeContextUid() &&
+      subject === this.userService.user()?.sub;
+    return {
+      accept: () => {
+        if (current()) {
+          settled = true;
+          accept();
+        }
+      },
+      reject: (reason: ConfirmEventType) => {
+        if (current()) {
+          settled = true;
+          reject(reason);
+        }
+      },
+    };
+  }
+
+  private keepExistingRun(): void {
+    this.startedOverWaiting.set(false);
+    this.readWaitingDraft(this.projectContext.activeContextUid());
+    if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
   protected onRetryRun(): void {
@@ -833,7 +907,7 @@ export class MktgAgentRunComponent {
   private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
     return this.documentStore.listDocuments(project).pipe(
       tap((documents) => {
-        if (!fresh || documents.progressUnavailable || this.startedOverWaiting() || this.runAttempts.load(project, this.agent?.id ?? '')) return;
+        if (documents.progressUnavailable) return;
         const run = documents.runs?.find(
           (entry) =>
             entry.project === project &&
@@ -841,6 +915,8 @@ export class MktgAgentRunComponent {
             entry.documentId === MKTG_LIVING_DOCUMENT_ID &&
             (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
         );
+        this.existingRun.set(run ?? null);
+        if (!fresh || this.startedOverWaiting() || this.runAttempts.load(project, this.agent?.id ?? '')) return;
         if (run) this.waitingRun.set(run);
       }),
       map((documents) =>
@@ -1313,6 +1389,11 @@ export class MktgAgentRunComponent {
     this.freshMode.set(fresh);
     this.waitingQuestions.set(false);
     this.waitingRun.set(null);
+    this.existingRun.set(null);
+    this.discardConfirmed = false;
+    this.discardedRunId = null;
+    this.discardEpoch++;
+    this.confirmation.close();
     this.startedOverWaiting.set(false);
     this.hasAcknowledgement.set(false);
     this.hasVersion.set(false);
@@ -1586,7 +1667,7 @@ export class MktgAgentRunComponent {
             agentId: agent.id,
             projectUid,
             intake,
-            ...(this.freshMode() && { newRun: true }),
+            ...((this.freshMode() || this.discardConfirmed) && { newRun: true }),
             answers: attached,
             documents: this.submittedDocuments(),
             logoFiles: this.submittedLogoFiles(),

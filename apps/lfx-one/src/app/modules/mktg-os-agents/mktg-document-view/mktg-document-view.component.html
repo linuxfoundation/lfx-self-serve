@@ -131,6 +131,11 @@
 
     @if (!runFailed() && runState(); as state) {
       <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
+        @if (state !== 'failed' && view()?.revision) {
+          <p class="text-sm text-gray-500" data-testid="mktg-document-view-current-during-run">
+            Writing a new version — the current one stays below until it lands.
+          </p>
+        }
         <h2 class="text-lg font-semibold text-gray-900">{{ liveState() }}</h2>
         @if (selectedRun(); as run) {
           <p class="text-xs text-gray-500">Started {{ run.startedAt | date: 'd MMM y, HH:mm' }}</p>

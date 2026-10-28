@@ -56,14 +56,16 @@
                 · Started {{ run.startedAt | date: 'd MMM, HH:mm' }}
               </span>
             </div>
-            <a
-              [routerLink]="[run.agentKey, run.documentId]"
-              [queryParams]="{ revision: null, generation: null, run: run.runId }"
-              queryParamsHandling="merge"
-              class="text-[12.25px] font-medium text-blue-700 no-underline hover:text-blue-800"
-              [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
-              >Open</a
-            >
+            @if (runTargets()[run.runId]; as target) {
+              <a
+                [routerLink]="target.commands"
+                [queryParams]="target.params"
+                queryParamsHandling="merge"
+                class="text-[12.25px] font-medium text-blue-700 no-underline hover:text-blue-800"
+                [attr.data-testid]="'mktg-documents-open-started-' + run.runId"
+                >{{ target.label }}</a
+              >
+            }
           </div>
         }
       </section>
@@ -87,7 +89,7 @@
           <div class="px-3 pt-3 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-nav-family">{{ family.name }}</div>
           @for (item of family.items; track item.type.agentKey) {
             <a
-              [routerLink]="item.badge === 'Needs answers' && item.type.catalogAgentId ? ['..', item.type.catalogAgentId] : []"
+              [routerLink]="item.badge === 'Needs answers' && item.type.catalogAgentId ? [kitRoot(), item.type.catalogAgentId] : []"
               [queryParams]="
                 item.badge === 'Needs answers' && item.type.catalogAgentId
                   ? { project: projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null }
@@ -282,7 +284,7 @@
                   {{
                     documents()?.progressUnavailable
                       ? 'Run progress is unavailable. Refresh to check whether a document is being written.'
-                      : 'A recorded run is listed above: use its Open link to follow progress, answer its questions or retry it.'
+                      : 'A recorded run is listed above: use its Started runs link to follow progress, answer its questions or retry it.'
                   }}
                 </p>
               </div>
@@ -330,7 +332,7 @@
                 {{
                   documents()?.progressUnavailable
                     ? 'Run progress is unavailable. Refresh to check the last known runs.'
-                    : 'A recorded run is listed above: use its Open link to follow progress, answer its questions or retry it.'
+                    : 'A recorded run is listed above: use its Started runs link to follow progress, answer its questions or retry it.'
                 }}
               </p>
             } @else {

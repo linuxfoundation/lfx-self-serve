@@ -48,7 +48,7 @@ import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.uti
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { BehaviorSubject, concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -141,6 +141,8 @@ describe('MktgAgentRunComponent', () => {
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
   let readFile: ReturnType<typeof vi.fn>;
+  let confirmationService: ConfirmationService;
+  const discardPrompt = () => vi.mocked(confirmationService.confirm).mock.calls.at(-1)?.[0];
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
     agentId: SHELL_AGENT.id,
@@ -215,7 +217,14 @@ describe('MktgAgentRunComponent', () => {
         { provide: UserService, useValue: { user: userSignal } },
         {
           provide: MktgAgentRunService,
-          useValue: { loadRun, lastIntake, generate, answerQuestions, acknowledgementVersion: signal(0), resume: vi.fn(() => NEVER) },
+          useValue: {
+            loadRun,
+            lastIntake,
+            generate,
+            answerQuestions,
+            acknowledgementVersion: signal(0),
+            resume: vi.fn(() => NEVER),
+          },
         },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged, documentsChanged$: NEVER } },
@@ -232,6 +241,8 @@ describe('MktgAgentRunComponent', () => {
     if (!vi.isMockFunction(Router.prototype.navigate)) vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fixture = TestBed.createComponent(MktgAgentRunComponent);
     component = fixture.componentInstance;
+    confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    vi.spyOn(confirmationService, 'confirm');
     await fixture.whenStable();
   };
 
@@ -817,6 +828,7 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
       query('mktg-run-waiting-start-over')?.click();
+      discardPrompt()?.accept?.();
       await fixture.whenStable();
       expect(query('mktg-run-sources')).not.toBeNull();
       expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
@@ -897,6 +909,76 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
+    const activeConflict = () => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+      if (!type) throw new Error('Missing synthetic asset');
+      return { activeRunId: 'b'.repeat(64), agentKey: type.agentKey, documentId: 'living' };
+    };
+
+    it('confirms Sources-first discard, keeps the notice on Keep it, and does not ask twice before one explicit Create', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      const conflict = activeConflict();
+      lastIntake.mockReturnValue(of(history));
+      listDocuments.mockReturnValue(
+        of({ groups: [], runs: [{ project: PROJECT_1.uid, agentKey: conflict.agentKey, documentId: 'living', runId: conflict.activeRunId, state: 'writing' }] })
+      );
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      query('mktg-run-waiting-start-over')?.click();
+      expect(discardPrompt()).toMatchObject({
+        header: 'Discard the messaging framework run?',
+        message: 'Its questions and progress will be lost.',
+        acceptLabel: 'Discard and start over',
+        rejectLabel: 'Keep it',
+        rejectButtonProps: { text: true },
+      });
+      discardPrompt()?.reject?.(ConfirmEventType.REJECT);
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-open')).not.toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      query('mktg-run-waiting-start-over')?.click();
+      discardPrompt()?.accept?.();
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-notice')).toBeNull();
+      expect(query('mktg-run-sources')).not.toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      component['onSubmit']();
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(confirmationService.confirm).toHaveBeenCalledTimes(2);
+      expect(generate).toHaveBeenCalledOnce();
+    });
+
+    it('guards a full-form Create with a known active server run and invalidates a late consent after project change', async () => {
+      await configure('browser', agentId);
+      const conflict = activeConflict();
+      listDocuments.mockReturnValue(
+        of({ groups: [], runs: [{ project: PROJECT_1.uid, agentKey: conflict.agentKey, documentId: 'living', runId: conflict.activeRunId, state: 'writing' }] })
+      );
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].patchValue(history.answers);
+      await fixture.whenStable();
+      component['onSubmit']();
+      const dialog = discardPrompt();
+      expect(dialog?.header).toBe('Discard the messaging framework run?');
+      expect(generate).not.toHaveBeenCalled();
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      dialog?.accept?.();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('does not open a discard dialog when no active record or accepted browser draft exists', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      lastIntake.mockReturnValue(of(history));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      expect(confirmationService.confirm).not.toHaveBeenCalled();
+      expect(generate).toHaveBeenCalledOnce();
+    });
+
     it.each(['continue', 'start-over'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
       await configure('browser', agentId, { mode: 'new' });
       const attempts = TestBed.inject(MktgRunAttemptService);
@@ -922,14 +1004,15 @@ describe('MktgAgentRunComponent', () => {
         expect(component['phase']()).toBe('questions');
         expect(component['questionsPending']()).toEqual(pending);
         expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
-        expect(query('mktg-run-questions-return-note')?.textContent).toContain('Documents › Started runs › Open.');
+        expect(query('mktg-run-questions-return-note')?.textContent).toContain('Documents › Started runs › Answer the questions.');
       } else {
         query('mktg-run-waiting-start-over')?.click();
+        discardPrompt()?.accept?.();
         await fixture.whenStable();
         expect(query('mktg-run-waiting-continue')).toBeNull();
         expect(query('mktg-run-sources')).not.toBeNull();
         expect(component['phase']()).toBe('form');
-        expect(query('mktg-run-waiting-notice')?.textContent).toContain('the waiting one stays listed under Documents › Started runs.');
+        expect(query('mktg-run-waiting-notice')).toBeNull();
         expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
       }
       expect(generate).not.toHaveBeenCalled();

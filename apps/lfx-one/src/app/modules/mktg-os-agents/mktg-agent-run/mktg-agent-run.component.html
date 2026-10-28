@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<p-confirmdialog defaultFocus="reject" />
+
 @if (agent && intake && intake.oneOffDocument) {
   @switch (intake.agentId) {
     @case (linkedinIntake.agentId) {
@@ -32,7 +34,7 @@
 
       <!-- Body -->
       <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
-        @if (hasWaitingNotice() || startedOverWaiting()) {
+        @if (hasWaitingNotice()) {
           <section class="m-6 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="mktg-run-waiting-notice">
             @if (hasWaitingNotice()) {
               <p class="text-sm font-medium text-gray-900">{{ waitingRunMessage() }}</p>
@@ -51,7 +53,6 @@
                 </button>
               </div>
             }
-            <p class="text-xs text-gray-600">Starting over begins a new run; the waiting one stays listed under Documents › Started runs.</p>
           </section>
         }
         @if (errorText()) {
@@ -473,7 +474,7 @@
             @case ('questions') {
               <div data-testid="mktg-agent-run-questions">
                 <p class="px-6 pt-4 text-xs text-gray-500" data-testid="mktg-run-questions-return-note">
-                  Stay on this page to answer. If you leave, come back through Documents › Started runs › Open.
+                  Stay on this page to answer. If you leave, come back through Documents › Started runs › Answer the questions.
                 </p>
                 <lfx-mktg-run-questions
                   [questions]="pendingQuestions()"

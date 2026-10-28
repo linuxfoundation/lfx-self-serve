@@ -5,7 +5,7 @@ import { DatePipe, I18nPluralPipe, isPlatformBrowser, NgClass } from '@angular/c
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
@@ -20,8 +20,16 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, describeMktgRevisionAuthor, resolveMktgKit, resolveMktgFamilyNextStep, mktgKitAssetLabel } from '@lfx-one/shared/utils';
+import {
+  describeMktgRevision,
+  describeMktgRevisionAuthor,
+  resolveMktgKit,
+  resolveMktgFamilyNextStep,
+  mktgKitAssetLabel,
+  mktgKitRootPath,
+} from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -76,6 +84,8 @@ export class MktgDocumentsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly attempts = inject(MktgRunAttemptService);
   private readonly injector = inject(Injector);
   private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
@@ -104,6 +114,7 @@ export class MktgDocumentsComponent {
   // === Computed ===
   protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly kitRoot = computed(() => mktgKitRootPath(this.router.url));
   protected readonly selectedType: Signal<MktgDocumentType> = this.initSelectedType();
   protected readonly showAll = computed(() => !MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === this.selectedParam()));
   protected readonly allDocuments = computed(() =>
@@ -143,6 +154,23 @@ export class MktgDocumentsComponent {
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
+  protected readonly runTargets = computed(() =>
+    Object.fromEntries(
+      this.runs().map((run) => {
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === run.agentKey);
+        if (type?.catalogAgentId && this.waitingForAnswers(type, run.state))
+          return [
+            run.runId,
+            {
+              label: 'Answer the questions',
+              commands: [this.kitRoot(), type.catalogAgentId],
+              params: { project: this.projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null },
+            },
+          ];
+        return [run.runId, { label: 'Open', commands: [run.agentKey, run.documentId], params: { revision: null, generation: null, run: run.runId } }];
+      })
+    )
+  );
 
   protected readonly emptyAction = this.initEmptyAction();
 
@@ -440,8 +468,15 @@ export class MktgDocumentsComponent {
     return 'The document could not be updated or loaded. Reload to check its state, then try again.';
   }
 
+  /** The row action and type badge use one policy; private questions can precede the next server projection. */
+  private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
+    if (type.agentKey === 'member-360' || !type.catalogAgentId) return false;
+    return state === 'questions' || !!this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions;
+  }
+
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
+    if (this.waitingForAnswers(type, active?.state)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
     if (active) {
       if (active.state === 'questions') return { badge: type.agentKey === 'member-360' ? 'Paused' : 'Needs answers', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };

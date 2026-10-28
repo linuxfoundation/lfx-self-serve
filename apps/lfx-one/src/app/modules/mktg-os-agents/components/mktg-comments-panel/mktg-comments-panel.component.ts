@@ -48,6 +48,9 @@ export class MktgCommentsPanelComponent {
   protected readonly openCount = computed(
     () => this.comments.threads().filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId).length
   );
+  protected readonly showSend = computed(
+    () => !this.comments.loaded() || this.comments.loading() || !!this.comments.loadError() || this.openCount() > 0 || this.retrySend() || this.runPending()
+  );
   protected readonly sendLabel = this.initSendLabel();
   protected readonly disabledReason = this.initDisabledReason();
   protected readonly maySend = this.initMaySend();

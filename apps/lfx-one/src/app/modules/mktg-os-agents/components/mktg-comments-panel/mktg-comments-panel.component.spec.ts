@@ -35,8 +35,8 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
-    expect(send()).toBeNull();
-    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')).toBeNull();
+    expect(send()?.disabled).toBe(true);
+    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')?.textContent).toContain('Loading');
     const live = el.querySelector('[data-testid="mktg-comments-run-message"]');
     expect(live?.getAttribute('aria-live')).toBe('polite');
     expect(live?.textContent).toBe('');
@@ -64,9 +64,13 @@ describe('MktgCommentsPanelComponent', () => {
     fixture.detectChanges();
     expect(el.querySelector('[data-testid="mktg-comments-feed"]')).not.toBeNull();
     stream.next({ type: 'activity', activity: [] });
+    threads.set([mktgCommentFixture({ status: 'sent' })]);
+    fixture.detectChanges();
+    expect(send()).not.toBeNull();
     pending = true;
     stream.error(new HttpErrorResponse({ status: 503, error: { code: 'MKTG_REDRAFT_START_UNCERTAIN' } }));
     fixture.detectChanges();
+    expect(send()?.textContent).toContain('Retry the same redraft');
     expect(el.textContent).toContain('Try the same send again');
     expect(el.textContent).toContain('hold expires');
     el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-release"] button')?.click();
