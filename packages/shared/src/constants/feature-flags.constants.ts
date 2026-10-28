@@ -221,6 +221,18 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
 /**
+ * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
+ * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
+ * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
+ * the existing page whatever this reads.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
+ * state and the browser picks the page. It gates no endpoint: both pages read the same `/api/meetings` surface.
+ */
+export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
+/** How long the meetings entry waits for LaunchDarkly before falling back to the existing meetings page. */
+export const MEETINGS_REDESIGN_READY_TIMEOUT_MS = 5000;
+/**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
  *
