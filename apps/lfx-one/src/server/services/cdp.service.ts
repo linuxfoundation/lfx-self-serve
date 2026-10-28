@@ -364,10 +364,12 @@ export class CdpService {
     email?: string
   ): Promise<{ memberId: string | null; identities: CdpIdentity[] }> {
     const startTime = logger.startOperation(req, 'get_cdp_identities_for_user', { sub });
+    // Set once resolve succeeds, so a 404 on the identities read keeps it and reconcile can still write.
+    let memberId: string | null = null;
 
     try {
       const emails = email ? [email] : undefined;
-      const memberId = await this.resolveMember(req, [sub], emails);
+      memberId = await this.resolveMember(req, [sub], emails);
 
       logger.debug(req, 'get_cdp_identities_for_user', 'Resolved CDP member', { member_id: memberId });
 
@@ -407,7 +409,7 @@ export class CdpService {
       // Return empty array on 404 (user has no CDP profile)
       if (error instanceof MicroserviceError && error.statusCode === 404) {
         logger.warning(req, 'get_cdp_identities_for_user', 'No CDP profile found for user', { sub });
-        return { memberId: null, identities: [] };
+        return { memberId, identities: [] };
       }
 
       logger.error(req, 'get_cdp_identities_for_user', startTime, error, { sub });

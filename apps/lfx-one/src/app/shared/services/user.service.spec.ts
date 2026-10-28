@@ -101,6 +101,23 @@ describe('UserService', () => {
       }
     });
 
+    it('shares a response carrying synthetic auth0: ids with current subscribers only', () => {
+      const shell = vi.fn();
+      const tab = vi.fn();
+      const synthetic = [{ id: 'cdp-1' }, { id: 'auth0:github|1' }] as EnrichedIdentity[];
+      service.getIdentities().subscribe(shell);
+      service.getIdentities().subscribe(tab);
+      respond(synthetic);
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      // A later visit must see the real CDP id, so removal does not skip CDP rejection.
+      service.getIdentities().subscribe();
+
+      expect(shell).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(tab).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(identitiesRequests()).toBe(2);
+    });
+
     it('fetches once more after refreshUserIdentities(), for every consumer together', () => {
       service.getIdentities().subscribe();
       respond();

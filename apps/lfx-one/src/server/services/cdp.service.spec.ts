@@ -210,8 +210,15 @@ describe('CdpService.getMemberIdentitiesForUser', () => {
     expect(requestedUrls(fetchMock)[1]).toContain(CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(MEMBER_ID));
   });
 
-  it('reports no member and no identities when CDP has no profile', async () => {
+  // A 404 on the identities read must not drop a member that already resolved, or reconcile skips its writes.
+  it('keeps the resolved member id when only the identities read 404s', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: MEMBER_ID })).mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404));
+
+    await expect(new CdpService().getMemberIdentitiesForUser(undefined, LFID)).resolves.toEqual({ memberId: MEMBER_ID, identities: [] });
+  });
+
+  it('reports no member when resolving the member itself 404s', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404)).mockResolvedValueOnce(jsonResponse({ message: 'Not found' }, 404));
 
     await expect(new CdpService().getMemberIdentitiesForUser(undefined, LFID)).resolves.toEqual({ memberId: null, identities: [] });
   });

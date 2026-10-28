@@ -590,12 +590,23 @@ export class UserService {
    */
   public getIdentities(): Observable<EnrichedIdentity[]> {
     if (!this.userIdentities$) {
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer request.
+        if (this.userIdentities$ === identities$) {
+          this.userIdentities$ = null;
+        }
+      };
       const identities$: Observable<EnrichedIdentity[]> = this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(
-        // Never cache a failure — the next caller re-fetches. Guarded so a stale error can't drop a newer request.
-        catchError((error: unknown) => {
-          if (this.userIdentities$ === identities$) {
-            this.userIdentities$ = null;
+        // Synthetic `auth0:` rows get real CDP ids once the server's background create lands, and removal
+        // skips CDP for the synthetic id — so share them with current subscribers only, never later ones.
+        tap((identities) => {
+          if (identities.some((identity) => identity.id.startsWith('auth0:'))) {
+            dropIfCurrent();
           }
+        }),
+        // Never cache a failure — the next caller re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
           return throwError(() => error);
         }),
         shareReplay({ bufferSize: 1, refCount: false })
