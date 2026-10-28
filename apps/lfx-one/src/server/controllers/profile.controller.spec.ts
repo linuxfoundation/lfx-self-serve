@@ -776,6 +776,38 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });
 
+  // #4523: the CDP reject can wait behind the member's queued reconcile writes, so it must not run
+  // while the meeting-invite lock (and its TTL) is held.
+  it('runs the CDP reject only after the meeting-invite lock is released', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    let lockHeld = false;
+    withMeetingInviteLockMock.mockImplementationOnce(async (_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => {
+      lockHeld = true;
+      try {
+        return await fn();
+      } finally {
+        lockHeld = false;
+      }
+    });
+    const lockHeldDuringReject: boolean[] = [];
+    cdpSvc.rejectIdentityForUser.mockImplementationOnce(async () => {
+      lockHeldDuringReject.push(lockHeld);
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ email: 'alt@example.com' }, { params: { identityId: 'cdp-alt' }, path: '/api/profile/identities/cdp-alt' }),
+      res,
+      next
+    );
+
+    expect(lockHeldDuringReject).toEqual([false]);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
     withMeetingInviteLockMock.mockRejectedValueOnce(Object.assign(new Error('conflicting request'), { statusCode: 409, code: 'LOCK_CONTENTION' }));

@@ -266,19 +266,11 @@ export class CdpService {
 
   /**
    * Reject an identity for a user by resolving their member ID first. Runs in the member's write
-   * queue: after any reconcile chain on this pod (waiting at most IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS,
-   * since callers hold the meeting-invite lock), and holding the slot so no new chain can start.
+   * queue: after any reconcile chain on this pod, and holding the slot so none can overlap it.
    */
   public async rejectIdentityForUser(req: Request | undefined, sub: string, identityId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
-    await CdpService.runSerialForMember(memberId, () => this.rejectIdentity(req, memberId, identityId, sub), {
-      ms: CDP_CONFIG.IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS,
-      onCapped: () =>
-        logger.warning(req, 'reject_cdp_identity', 'Stopped waiting for pending identity writes; rejecting anyway', {
-          member_id: memberId,
-          max_wait_ms: CDP_CONFIG.IDENTITY_REMOVAL_MAX_QUEUE_WAIT_MS,
-        }),
-    });
+    await CdpService.runSerialForMember(memberId, () => this.rejectIdentity(req, memberId, identityId, sub));
   }
 
   /**
@@ -991,15 +983,15 @@ export class CdpService {
   /**
    * Queue `task` behind the member's pending identity writes on this pod. The slot is taken
    * synchronously, before the task runs, and released once nothing newer is queued. The returned
-   * promise carries the task's own outcome; the stored tail never rejects. With `maxWait`, the task
-   * stops waiting after that long and runs anyway; the slot is still held until both have settled.
+   * promise carries the task's own outcome; the stored tail never rejects.
    */
-  private static runSerialForMember<T>(memberId: string, task: () => Promise<T>, maxWait?: { ms: number; onCapped: () => void }): Promise<T> {
+  private static runSerialForMember<T>(memberId: string, task: () => Promise<T>): Promise<T> {
     const queue = CdpService.memberIdentityWritesInFlight;
-    const previous = queue.get(memberId) ?? Promise.resolve();
-    const ready = maxWait ? CdpService.settledOrAfter(previous, maxWait.ms, maxWait.onCapped) : previous;
-    const result = ready.then(task);
-    const tail = Promise.all([previous, result.catch(() => undefined)]).then(() => undefined);
+    const result = (queue.get(memberId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    );
     queue.set(memberId, tail);
     void tail.then(() => {
       if (queue.get(memberId) === tail) {
@@ -1007,20 +999,6 @@ export class CdpService {
       }
     });
     return result;
-  }
-
-  /** Resolves when `pending` settles or after `ms`, whichever comes first; `onTimeout` runs only in the latter case. */
-  private static settledOrAfter(pending: Promise<void>, ms: number, onTimeout: () => void): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        onTimeout();
-        resolve();
-      }, ms);
-      void pending.then(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
   }
 
   /**

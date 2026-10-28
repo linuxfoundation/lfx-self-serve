@@ -1480,7 +1480,9 @@ export class ProfileController {
       // guard above and the decision to take the lock below must never drift apart.
       const isEmailIdentity = typeof email === 'string' && !!email;
 
-      const finishRejectIdentity = async (): Promise<void> => {
+      // Everything the lock protects: the meeting-invite guard, the Auth0 unlink, and the primary-email
+      // read that decides whether CDP is touched. Returns 'responded' once it has sent an error response.
+      const guardAndUnlink = async (): Promise<'responded' | 'reject_in_cdp' | 'unlink_only'> => {
         if (isEmailIdentity) {
           const v1Token = req.apiGatewayToken;
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
@@ -1495,7 +1497,7 @@ export class ProfileController {
                 ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
                 : 'Could not confirm your meeting-invitation email. Please try again.',
             });
-            return;
+            return 'responded';
           }
         }
 
@@ -1528,21 +1530,23 @@ export class ProfileController {
                 error: 'profile_auth_not_configured',
                 message: 'Removing this identity is not available in this environment.',
               });
-              return;
+              return 'responded';
             }
             res.status(403).json({
               error: 'management_token_required',
               message: 'Profile authorization required to remove this identity',
               authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
             });
-            return;
+            return 'responded';
           }
         }
 
         // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
         if (identityId.startsWith('auth0:')) {
           logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
-        } else if (
+          return 'unlink_only';
+        }
+        if (
           isEmailIdentity &&
           (provider === 'email' || provider === 'google') &&
           emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)
@@ -1550,20 +1554,27 @@ export class ProfileController {
           // Only email/Google rows can represent the account's primary address (applyPrimaryEmail).
           // Removing that login only unlinks it; LinkedIn rows must still be rejected in CDP (#4123).
           logger.debug(req, 'reject_identity', 'Primary email address — unlink only, skipping CDP rejection', { identity_id: identityId });
-        } else {
-          await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+          return 'unlink_only';
         }
-
-        logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
-        res.json({ success: true });
+        return 'reject_in_cdp';
       };
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
-      if (isEmailIdentity) {
-        await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
-      } else {
-        await finishRejectIdentity();
+      const outcome = isEmailIdentity
+        ? await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, guardAndUnlink)
+        : await guardAndUnlink();
+      if (outcome === 'responded') {
+        return;
       }
+
+      // The CDP write runs after the lock is released: meeting-invite resolution never reads CDP, and the
+      // reject waits behind the member's queued reconcile writes (#4523), which must not eat the lock's TTL.
+      if (outcome === 'reject_in_cdp') {
+        await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+      }
+
+      logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
