@@ -2870,7 +2870,7 @@
               <p id="microsoft-image-file-status" class="text-xs text-gray-700" data-testid="implementation-microsoft-image-status">
                 {{ microsoftImageUploadStatusMessage() }}
               </p>
-              @if (microsoftImageUploadStatus() === 'uploading') {
+              @if (microsoftImageUploadStatus() === 'uploading' || microsoftImageChecking()) {
                 <div>
                   <lfx-button
                     label="Cancel upload"

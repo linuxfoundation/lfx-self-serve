@@ -4851,7 +4851,9 @@ export class ImplementationTabComponent implements OnInit {
   private async readImageSize(file: Blob): Promise<{ width: number; height: number } | null> {
     if (typeof createImageBitmap !== 'function') return null;
     try {
-      const bitmap = await createImageBitmap(file);
+      // `imageOrientation: 'none'`: the ENCODED frame's size, which is what campaign-service's header
+      // check reads. The default applies a JPEG's EXIF rotation and would swap width and height.
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'none' });
       const size = { width: bitmap.width, height: bitmap.height };
       bitmap.close();
       return size;

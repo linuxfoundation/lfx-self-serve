@@ -11292,6 +11292,14 @@ describe('ImplementationTabComponent microsoft image extension', () => {
       expect(uploadCreativeAsset).toHaveBeenCalled();
     });
 
+    it('reads the encoded frame, not the EXIF-rotated one', async () => {
+      stubSize(400, 200);
+      const f = (await mount(true)).fixture;
+      await choose(f, png());
+
+      expect(createImageBitmap).toHaveBeenCalledWith(expect.any(File), { imageOrientation: 'none' });
+    });
+
     it('leaves an image whose size cannot be read to campaign-service, and uploads it', async () => {
       vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('cannot decode')));
       const f = (await mount(true)).fixture;
@@ -11346,7 +11354,7 @@ describe('ImplementationTabComponent microsoft image extension', () => {
       expect(q(f, 'implementation-microsoft-image-status')?.textContent).toContain('Checking image');
       expect(at(f).canSubmit()).toBe(false);
 
-      (f.componentInstance as unknown as { onMicrosoftImageAssetRemove(): void }).onMicrosoftImageAssetRemove();
+      click(f, 'implementation-microsoft-image-cancel');
       resolveSize({ width: 400, height: 200, close: vi.fn() });
       await new Promise((resolve) => setTimeout(resolve));
       f.detectChanges();
