@@ -15,6 +15,7 @@ import {
   EnrichedPastMeetingParticipant,
   GuestInviteScope,
   Meeting,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -26,6 +27,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
+  buildMeetingOrganizerKeys,
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
@@ -33,6 +35,7 @@ import {
   isMeetingInviteResponsesEnabled,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
+  resolveMeetingGuestRole,
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
 } from '@lfx-one/shared/utils';
@@ -112,6 +115,9 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
   // Each guest's host-toggle accessible name, by uid, so the template reads a lookup instead of building a string per render.
   protected readonly hostToggleLabels: Signal<Map<string, string>> = this.initHostToggleLabels();
+  // Whether each guest is a listed organizer or just a Meeting Host, by uid. An organizer is a host already, so
+  // the two never overlap: the badge, the toggle and the role filter all read this instead of the raw host flag.
+  protected readonly guestRoles: Signal<Map<string, MeetingGuestRole>> = this.initGuestRoles();
   // Rows the server hasn't confirmed yet — their uid is a placeholder, so there is nothing to update.
   protected readonly unconfirmedGuestUids: Signal<Set<string>> = computed(
     () =>
@@ -183,6 +189,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly organizerFilterOptions = [
     { label: 'All Roles', value: 'all' },
     { label: 'Organizers', value: 'organizer' },
+    { label: 'Hosts', value: 'host' },
   ];
 
   // Past-meeting attendance / invitation options (mirror the past-meeting-details filters)
@@ -756,7 +763,8 @@ export class MeetingRegistrantsDisplayComponent {
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
       const group = this.groupFilter();
-      const organizerOnly = this.organizerFilter() === 'organizer';
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
 
       return registrants
         .map((registrant) => ({
@@ -792,9 +800,10 @@ export class MeetingRegistrantsDisplayComponent {
           // Group (Committee) filter
           const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-          const matchesOrganizer = !organizerOnly || !!registrant.host;
+          // Role filter: `host` is hosts who are not organizers, as an organizer is a host already.
+          const matchesRole = roleFilter === 'all' || roles.get(registrant.uid) === roleFilter;
 
-          return matchesSearch && matchesRsvp && matchesGroup && matchesOrganizer;
+          return matchesSearch && matchesRsvp && matchesGroup && matchesRole;
         });
     });
   }
@@ -807,7 +816,18 @@ export class MeetingRegistrantsDisplayComponent {
         invitation: this.invitationFilter(),
         group: this.groupFilter(),
       });
-      return this.organizerFilter() === 'organizer' ? filtered.filter((participant) => participant.host) : filtered;
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
+      return roleFilter === 'all' ? filtered : filtered.filter((participant) => roles.get(participant.uid) === roleFilter);
+    });
+  }
+
+  private initGuestRoles(): Signal<Map<string, MeetingGuestRole>> {
+    return computed(() => {
+      const organizerKeys = buildMeetingOrganizerKeys((this.meeting() as Meeting).organizers);
+      const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
+
+      return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
     });
   }
 }

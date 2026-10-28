@@ -229,7 +229,7 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
   const registrant = (uid: string, host: boolean, type = 'direct') =>
     ({ uid, meeting_id: 'meeting-1', email: `${uid}@acme-motors.example`, first_name: uid, last_name: 'Tester', host, type }) as unknown as MeetingRegistrant;
 
-  async function mount(options: { past?: boolean; registrants?: MeetingRegistrant[]; participants?: PastMeetingParticipant[] }) {
+  async function mount(options: { past?: boolean; registrants?: MeetingRegistrant[]; participants?: PastMeetingParticipant[]; organizers?: string[] }) {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -249,7 +249,8 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     await TestBed.compileComponents();
 
     const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
-    fixture.componentRef.setInput('meeting', options.past ? PAST_MEETING : { id: 'meeting-1' });
+    const meeting = options.past ? PAST_MEETING : { id: 'meeting-1' };
+    fixture.componentRef.setInput('meeting', { ...meeting, organizers: options.organizers ?? [] });
     fixture.componentRef.setInput('pastMeeting', !!options.past);
     if (!options.past) {
       fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
@@ -260,43 +261,90 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     return fixture.componentInstance;
   }
 
-  it('lists everyone while the organizer filter is on "all"', async () => {
-    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)] });
+  // An organizer is a host already, so the role filter treats the two as separate groups: `organizer` is the
+  // meeting's listed organizers, and `host` is host-flagged guests who are not one of them.
+  const ORGANIZER_EMAIL = 'ada@acme-motors.example';
+
+  it('lists everyone while the role filter is on "all"', async () => {
+    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)], organizers: [ORGANIZER_EMAIL] });
 
     expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada', 'grace']);
   });
 
-  it('keeps only organizers when the organizer filter is set', async () => {
-    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)] });
+  it('keeps only listed organizers when the role filter is Organizers', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
 
     component.organizerFilterControl.setValue('organizer');
 
     expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
   });
 
-  it('applies the organizer filter to both the member and guest sections', async () => {
+  it('keeps only hosts who are not organizers when the role filter is Hosts', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    component.organizerFilterControl.setValue('host');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['grace']);
+  });
+
+  it('matches an organizer by username as well as email, ignoring case', async () => {
+    const named = { ...registrant('ada', false), username: 'Ada-Tester' } as MeetingRegistrant;
+    const component = await mount({ registrants: [named, registrant('grace', false)], organizers: ['ada-tester'] });
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+  });
+
+  it('labels a listed organizer as an organizer even when their host flag is off', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', false), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    const roles = component['guestRoles']();
+
+    expect(roles.get('ada')).toBe('organizer');
+    expect(roles.get('grace')).toBe('host');
+    expect(roles.get('linus')).toBeNull();
+  });
+
+  it('applies the role filter to both the member and guest sections', async () => {
     const component = await mount({
       registrants: [registrant('ada', true, 'committee'), registrant('grace', false, 'committee'), registrant('linus', true), registrant('ken', false)],
+      organizers: [ORGANIZER_EMAIL],
     });
 
     component.organizerFilterControl.setValue('organizer');
-
     expect(component.committeeFilteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+    expect(component.directFilteredRegistrants().map((r) => r.uid)).toEqual([]);
+
+    component.organizerFilterControl.setValue('host');
+    expect(component.committeeFilteredRegistrants().map((r) => r.uid)).toEqual([]);
     expect(component.directFilteredRegistrants().map((r) => r.uid)).toEqual(['linus']);
   });
 
-  it('keeps only organizers among past participants', async () => {
+  it('splits organizers from hosts among past participants', async () => {
     const participants = [
       { ...participant('ada@acme-motors.example'), host: true },
-      { ...participant('grace@acme-motors.example'), host: false },
+      { ...participant('grace@acme-motors.example'), host: true },
+      { ...participant('linus@acme-motors.example'), host: false },
     ] as PastMeetingParticipant[];
-    const component = await mount({ past: true, participants });
+    const component = await mount({ past: true, participants, organizers: [ORGANIZER_EMAIL] });
 
-    expect(component.filteredPastParticipants()).toHaveLength(2);
+    expect(component.filteredPastParticipants()).toHaveLength(3);
 
     component.organizerFilterControl.setValue('organizer');
-
     expect(component.filteredPastParticipants().map((p) => p.email)).toEqual(['ada@acme-motors.example']);
+
+    component.organizerFilterControl.setValue('host');
+    expect(component.filteredPastParticipants().map((p) => p.email)).toEqual(['grace@acme-motors.example']);
   });
 
   it('starts with both sections expanded and collapses each independently', async () => {

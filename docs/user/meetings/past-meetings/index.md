@@ -44,7 +44,7 @@ The page also shows the meeting's **Agenda** and its **Resources**, which are th
 
 The **Participants** table lists everyone who was invited or attended. For each person, it shows:
 
-- **Name**, with an **Organizer** tag on guests an organizer marked as a Meeting Host. The tag marks hosts. It doesn't mean the person can manage the meeting
+- **Name**, with an **Organizer** tag on people listed as the meeting's organizers, and a **Host** tag on guests an organizer marked as a Meeting Host. An organizer is a host already, so they only show **Organizer**. A **Host** tag doesn't mean the person can manage the meeting
 - **Email**, **Organization**, and **Title**
 - **Voting Status**, when the meeting was linked to a group that uses voting
 - **Attendance**: **Attended** or **Absent**
@@ -54,6 +54,7 @@ Use the filters above the table to narrow the list:
 
 - By invitation: **All**, **Invited**, or **Uninvited**
 - By attendance: **All**, **Attended**, or **Absent**
+- By role: **All Roles**, **Organizers**, or **Hosts** (hosts who aren't organizers)
 - **Voting Reps**, when the meeting was linked to a group that uses voting
 
 The table is split into pages once it has more than 10 rows.

@@ -139,13 +139,16 @@
         <div class="flex flex-col min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
-            @if (registrant.host) {
+            @if (guestRoles().get(registrant.uid) === 'organizer') {
               <lfx-badge
                 value="Organizer"
                 severity="info"
                 size="small"
                 styleClass="inline-flex items-center flex-shrink-0"
                 data-testid="registrant-organizer-badge">
+              </lfx-badge>
+            } @else if (guestRoles().get(registrant.uid) === 'host') {
+              <lfx-badge value="Host" severity="secondary" size="small" styleClass="inline-flex items-center flex-shrink-0" data-testid="registrant-host-badge">
               </lfx-badge>
             }
             @if (registrant.linkedin_profile) {
@@ -194,7 +197,7 @@
           </button>
         }
 
-        @if (!pastMeeting() && showAddRegistrant() && !unconfirmedGuestUids().has(registrant.uid)) {
+        @if (!pastMeeting() && showAddRegistrant() && !unconfirmedGuestUids().has(registrant.uid) && guestRoles().get(registrant.uid) !== 'organizer') {
           <button
             type="button"
             class="flex-shrink-0 rounded-md p-2 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
@@ -340,13 +343,21 @@
                 <div class="flex items-center gap-1 text-xs">
                   <i class="fa-light fa-user text-blue-500" pTooltip="Participant"></i>
                   <span class="text-sm text-gray-900 truncate">{{ participant.first_name }} {{ participant.last_name }}</span>
-                  @if (participant.host) {
+                  @if (guestRoles().get(participant.uid) === 'organizer') {
                     <lfx-badge
                       value="Organizer"
                       severity="info"
                       size="small"
                       styleClass="inline-flex items-center flex-shrink-0"
                       data-testid="participant-organizer-badge">
+                    </lfx-badge>
+                  } @else if (guestRoles().get(participant.uid) === 'host') {
+                    <lfx-badge
+                      value="Host"
+                      severity="secondary"
+                      size="small"
+                      styleClass="inline-flex items-center flex-shrink-0"
+                      data-testid="participant-host-badge">
                     </lfx-badge>
                   }
                 </div>
