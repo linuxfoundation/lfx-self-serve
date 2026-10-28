@@ -2865,3 +2865,42 @@ describe('ProjectService — getProjectIdBySlug', () => {
     await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
   });
 });
+
+// #4507: uid -> slug over the metadata subject, so a campaign_manager without `viewer` can name a project by uid.
+describe('ProjectService — getProjectSlugByUid', () => {
+  let service: ProjectService;
+  const uid = '00000000-0000-4000-8000-000000000001';
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a slug reply on the get_slug subject', async () => {
+    natsRequest.mockResolvedValue({ data: ' synthetic-project ' });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBe('synthetic-project');
+    expect(natsRequest).toHaveBeenCalledWith('lfx.projects-api.get_slug', expect.anything(), expect.anything());
+  });
+
+  it('answers null for the not_found error body, never a slug', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBeNull();
+  });
+
+  it.each([
+    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' }), 'Project uid lookup failed: internal'],
+    ['an empty reply', '', 'Project uid lookup failed: empty reply'],
+  ])('throws on %s instead of reporting the project as missing', async (_label, data, message) => {
+    natsRequest.mockResolvedValue({ data });
+
+    await expect(service.getProjectSlugByUid(req, uid)).rejects.toThrow(message);
+  });
+
+  it('throws on a timeout instead of reporting the project as missing', async () => {
+    natsRequest.mockRejectedValue(new Error('timeout'));
+
+    await expect(service.getProjectSlugByUid(req, uid)).rejects.toThrow('timeout');
+  });
+});

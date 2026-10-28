@@ -20,15 +20,17 @@ const PROJECT_SLUG = 'acme-foundation';
 const PROJECT_UID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 const UNKNOWN_UID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
 
-const { getPersonas, checkProjectWriter, checkRootCampaignManager, checkSingleAccess, getProjectIdBySlug, getProjectById, proxyRequest } = vi.hoisted(() => ({
-  getPersonas: vi.fn(),
-  checkProjectWriter: vi.fn(),
-  checkRootCampaignManager: vi.fn(),
-  checkSingleAccess: vi.fn(),
-  getProjectIdBySlug: vi.fn(),
-  getProjectById: vi.fn(),
-  proxyRequest: vi.fn(),
-}));
+const { getPersonas, checkProjectWriter, checkRootCampaignManager, checkSingleAccess, getProjectIdBySlug, getProjectSlugByUid, proxyRequest } = vi.hoisted(
+  () => ({
+    getPersonas: vi.fn(),
+    checkProjectWriter: vi.fn(),
+    checkRootCampaignManager: vi.fn(),
+    checkSingleAccess: vi.fn(),
+    getProjectIdBySlug: vi.fn(),
+    getProjectSlugByUid: vi.fn(),
+    proxyRequest: vi.fn(),
+  })
+);
 
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: { getPersonas, checkProjectWriter, checkRootCampaignManager, checkRootMarketingAuditor: vi.fn() },
@@ -41,7 +43,7 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../services/project.service', () => ({
   ProjectService: class {
     public getProjectIdBySlug = getProjectIdBySlug;
-    public getProjectById = getProjectById;
+    public getProjectSlugByUid = getProjectSlugByUid;
   },
 }));
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -107,12 +109,7 @@ beforeEach(() => {
   getProjectIdBySlug.mockImplementation(async (_req: unknown, slug: string) =>
     slug === PROJECT_SLUG ? { uid: PROJECT_UID, slug, exists: true } : { uid: '', slug, exists: false }
   );
-  getProjectById.mockImplementation(async (_req: unknown, uid: string) => {
-    if (uid === PROJECT_UID) {
-      return { uid: PROJECT_UID, slug: PROJECT_SLUG };
-    }
-    throw new MicroserviceError('Project not found', 404, 'NOT_FOUND', { operation: 'get_project_by_id' });
-  });
+  getProjectSlugByUid.mockImplementation(async (_req: unknown, uid: string) => (uid === PROJECT_UID ? PROJECT_SLUG : null));
   checkSingleAccess.mockResolvedValue(false);
   proxyRequest.mockImplementation(async (_req: unknown, _service: string, _path: string, _method: string, query: { parent?: string }) => ({
     resources: query.parent === `project:${PROJECT_SLUG}` ? [{ data: approvedBrief }] : [],
@@ -183,12 +180,25 @@ describe('GET /api/campaigns/briefs addressed by slug or uid', () => {
 
     await listBriefs(PROJECT_SLUG);
 
-    expect(getProjectById).not.toHaveBeenCalled();
+    expect(getProjectSlugByUid).not.toHaveBeenCalled();
+  });
+
+  // A campaign_manager grant does not imply `viewer` on the project. The uid must resolve without
+  // reading the project as the caller, so such a caller is admitted by uid exactly as by slug.
+  it('admits a campaign manager without viewer by uid, resolving the uid over the metadata lookup only', async () => {
+    checkSingleAccess.mockImplementation(async (_req: unknown, check: { access: string }) => check.access === 'campaign_manager');
+
+    const byUid = await listBriefs(PROJECT_UID);
+
+    expect(byUid.status).toBe(200);
+    expect((await byUid.json()).briefs).toHaveLength(1);
+    expect(getProjectSlugByUid).toHaveBeenCalledWith(expect.anything(), PROJECT_UID);
+    expect(checkSingleAccess).toHaveBeenCalledTimes(1);
   });
 
   it('fails the request when the uid lookup itself fails, instead of guessing', async () => {
     checkSingleAccess.mockResolvedValue(true);
-    getProjectById.mockRejectedValue(new MicroserviceError('Upstream unavailable', 503, 'SERVICE_UNAVAILABLE', { operation: 'get_project_by_id' }));
+    getProjectSlugByUid.mockRejectedValue(new MicroserviceError('Upstream unavailable', 503, 'SERVICE_UNAVAILABLE', { operation: 'get_project_slug_by_uid' }));
 
     const response = await listBriefs(PROJECT_UID);
 

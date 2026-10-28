@@ -4002,6 +4002,30 @@ export class ProjectService {
   }
 
   /**
+   * Resolves a project uid to its slug over NATS (`lfx.projects-api.get_slug`), or `null` when no project
+   * has that uid. The lookup is project metadata the service answers without a user permission check, so
+   * a caller authorized on a project by a marketing grant can name it by uid without also holding
+   * `viewer` on it (#4507). Unlike {@link getProjectIdBySlug}, a timeout or any other failure throws:
+   * the caller is about to authorize on the answer, so "couldn't check" must not read as "no project".
+   */
+  public async getProjectSlugByUid(req: Request, uid: string): Promise<string | null> {
+    const codec = this.natsService.getCodec();
+    const response = await this.natsService.request(NatsSubjects.PROJECT_GET_SLUG, codec.encode(uid), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    const reply = codec.decode(response.data).trim();
+
+    // A miss is answered with the service's JSON error envelope, {"error":"not_found",...}.
+    const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+    if (replyError === 'not_found') {
+      logger.debug(req, 'get_project_slug_by_uid', 'Project uid not found via NATS', { uid });
+      return null;
+    }
+    if (replyError !== null || !reply) {
+      throw new Error(`Project uid lookup failed: ${replyError ?? 'empty reply'}`);
+    }
+    return reply;
+  }
+
+  /**
    * Resolves a project slug to its uid over NATS. By default a timeout or 503 is reported as a missing
    * project (`exists: false`); pass `unavailableAsMissing: false` to have it throw instead, for a
    * caller that must tell "couldn't check" apart from "no such project".
