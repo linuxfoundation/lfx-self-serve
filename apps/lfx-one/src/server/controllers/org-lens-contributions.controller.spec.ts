@@ -155,7 +155,7 @@ describe('OrgLensContributionsController range', () => {
     expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '365d' });
   });
 
-  it.each(['30d', '90d', '365d', 'all'])('passes range=%s through', async (range) => {
+  it.each(['30d', '90d', '365d', '730d', 'all'])('passes range=%s through', async (range) => {
     await controller.getContributions(buildReq({ range }), buildRes(), vi.fn());
 
     expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: range });
