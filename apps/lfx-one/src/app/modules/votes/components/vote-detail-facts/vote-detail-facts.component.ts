@@ -8,7 +8,7 @@ import { CardComponent } from '@components/card/card.component';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { formatVoteDeadline, getUserTimezone, getVoteVisibilityRules, normalizePollStatus } from '@lfx-one/shared/utils';
-import { PopoverModule } from 'primeng/popover';
+import { Popover, PopoverModule } from 'primeng/popover';
 
 /**
  * Side cards of the vote detail page (#3913): "Vote details" (created date and comments — every other fact lives in the
@@ -34,6 +34,8 @@ export class VoteDetailFactsComponent {
 
   // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+  /** Capture the actual clicked element, independent of the button wrapper's DOM structure. */
+  private visibilityTrigger: HTMLElement | null = null;
 
   // === Computed Signals ===
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ENDED);
@@ -50,6 +52,19 @@ export class VoteDetailFactsComponent {
   protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
   /** The audience-specific first rule; the popover lists every rule including this one. */
   protected readonly visibilityHeadline: Signal<string> = computed(() => this.visibilityRules()[0] ?? '');
+
+  // === Protected Methods ===
+  protected toggleVisibilityRules(event: MouseEvent, popover: Popover): void {
+    this.visibilityTrigger = event.currentTarget as HTMLElement | null;
+    popover.toggle(event);
+  }
+
+  protected closeVisibilityRules(popover: Popover): void {
+    popover.hide();
+    if (isPlatformBrowser(this.platformId)) {
+      this.visibilityTrigger?.focus();
+    }
+  }
 
   // === Private Initializers ===
   private initVisibilityRules(): Signal<string[]> {

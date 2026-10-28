@@ -34,7 +34,7 @@ describe('VoteDetailFactsComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [VoteDetailFactsComponent],
-      providers: [{ provide: PLATFORM_ID, useValue: 'server' }, provideNoopAnimations()],
+      providers: [{ provide: PLATFORM_ID, useValue: 'browser' }, provideNoopAnimations()],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteDetailFactsComponent);
   });
@@ -121,14 +121,24 @@ describe('VoteDetailFactsComponent', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('labels the visibility dialog, focuses its rules and returns focus on Escape', async () => {
+  it.each(['button', 'nested content'] as const)('labels the visibility dialog, focuses its rules and returns focus on Escape (%s)', async (clickTarget) => {
     render(makeVote());
     const trigger = fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-visibility-more"] button') as HTMLButtonElement;
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
     expect(trigger.getAttribute('aria-controls')).toBe('vote-detail-facts-visibility-rules');
 
     trigger.focus();
-    trigger.click();
+    if (clickTarget === 'nested content') {
+      const nested = document.createElement('span');
+      trigger.appendChild(nested);
+      nested.click();
+
+      // A second button must not change which element receives focus on Escape.
+      const otherButton = document.createElement('button');
+      trigger.closest('lfx-button')!.before(otherButton);
+    } else {
+      trigger.click();
+    }
     fixture.detectChanges();
     await fixture.whenStable();
 
