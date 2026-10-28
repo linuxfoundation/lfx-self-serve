@@ -8,7 +8,7 @@ last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This page applies to everyone who is signed in. Contributors, maintainers, board members, and executive directors can all find their groups and join or leave them where a group allows it. Creating and managing groups takes a **maintainer**, **board-member**, or **executive-director** role, or manager access to the specific group.
+This page applies to everyone who is signed in. Contributors, maintainers, board members, and executive directors can all find their groups and join or leave them where a group allows it. Creating a group takes write access to the selected foundation or project (executive directors always have it). Managing an existing group takes manager access to that group.
 
 In LFX Self Serve, committees are called **Groups**: Technical Steering Committees (TSCs), boards, working groups, and other formal groups that govern a project. The Groups pages and these articles use "group"; the section is still filed under Committees in the help center.
 
@@ -37,7 +37,7 @@ If your inventory is empty, there is no filter panel or reset action; invitation
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Groups** from the left navigation. What you see depends on your lens:
+Go to **app.lfx.dev** and select **Groups** from the left navigation. What you see depends on your lens (the Org lens also has a Groups page, at `/org/groups`, for groups your organization's employees take part in):
 
 | Lens           | Route                | What it lists                                                                 |
 | -------------- | -------------------- | ----------------------------------------------------------------------------- |
@@ -51,7 +51,7 @@ Go to **app.lfx.dev** and select **Groups** from the left navigation. What you s
 
 - **Group**: A formal body with defined membership and a governance role within a project or foundation.
 - **Group type**: The category you pick in the first step of the wizard, such as a TSC or a working group. You can change it later from the Settings tab.
-- **Join mode**: How people get in. **Open** lets anyone join directly. **Invite Only** requires an invitation from a member or admin. **Apply & Review** lets people apply, and a manager approves or rejects. **Closed** means only admins add members.
+- **Join mode**: How people get in. **Open** lets anyone join directly. **Invite Only** requires an invitation from a member or admin. **Apply & Review** lets people apply, and a manager approves or rejects. The group itself shows this mode as **Apply to Join**. **Closed** means only admins add members.
 - **Visibility**: A group is **Public** or **Private**. A separate **Member Visibility** setting decides whether non-managers can see the roster (**Hidden** or **Basic Profile**).
 - **Group page tabs**: Overview, About, Members, Votes, Meetings, Surveys, Documents, and Settings. Which of them you see depends on your access. See [Group Overview and About](group-overview-and-about/) and [Manage Groups](manage-committees/).
 - **Membership badge**: The tag beside a group's name that says where you stand: Manager, Auditor, your member role, Application Pending, or Not a Member.

@@ -22,11 +22,11 @@ People who can see the member list see the group's **Chairs** with their roles, 
 
 ### Engagement summary
 
-When engagement metrics are turned on for your account and you have access to them, an engagement summary appears below the counts. It's behind the `wg-engagement-metrics` feature flag, so you may not see it yet. The same flag adds **Meetings** and **Engagement** columns to the Members tab.
+When engagement metrics are turned on for your account and you have access to them, an engagement summary appears below the counts. It isn't available to everyone yet, so you may not see it. When it's on, it also adds **Meetings** and **Engagement** columns to the Members tab.
 
 ### Next Meeting and Past Meeting
 
-Two cards show the group's next upcoming meeting and its most recent one, each with **View All** to open the Meetings tab. Visitors see them only when the group's calendar is public.
+Two cards show the group's next upcoming meeting and its most recent one, each with **View All** to open the Meetings tab. Visitors see the cards only when the group's calendar is public, and without **View All**.
 
 ### My Pending Actions
 
@@ -34,11 +34,11 @@ Members see open votes and surveys they still need to respond to, with **View Al
 
 ### Weekly brief
 
-Members with access to engagement data may also see an AI-written weekly brief card. It's behind the `wg-weekly-brief` feature flag, so it isn't available to everyone yet.
+Members with access to engagement data may also see an AI-written weekly brief card. It isn't available to everyone yet.
 
 ### Recent Activity
 
-A feed of recent events in the group. Visitors see meeting and document events only. Visitors who aren't members also see a prompt to join.
+A feed of recent events in the group. Visitors see document events, plus meeting events when the group's calendar is public. Visitors who aren't members also see a prompt to join.
 
 ## About
 

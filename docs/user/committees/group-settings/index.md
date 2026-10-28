@@ -37,7 +37,7 @@ A "Settings saved" message confirms the update.
 
 - **Open — anyone can join**: people select **Join Group**.
 - **Invite Only — members send invites**: members who aren't managers can see **Invite Someone** on the Members tab.
-- **Apply & Review**: people apply, and managers approve or reject on the Members tab.
+- **Apply & Review** (shown on the group as **Apply to Join**): people apply, and managers approve or reject on the Members tab.
 - **Closed — admin adds members**: only admins add people.
 
 See [Join, Apply to, and Leave a Group](../join-and-leave-a-group/) for what people see in each mode.

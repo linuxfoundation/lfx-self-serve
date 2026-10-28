@@ -10,7 +10,7 @@ intercom_collection: Committees
 
 ## Who can create a group?
 
-Users with a **maintainer**, **board-member**, or **executive-director** persona can create groups, from the **Foundation** or **Project** lens. **Create Group** isn't shown in the **Me** lens. Contributors can view groups and join or leave them where the join mode allows. See [Create a Group](../create-committee/).
+You need write access to the selected foundation or project (executive directors always have it), and you create groups from the **Foundation** or **Project** lens. **Create Group** isn't shown in the **Me** lens. Contributors can view groups and join or leave them where the join mode allows. See [Create a Group](../create-committee/).
 
 ## How do I join a group?
 

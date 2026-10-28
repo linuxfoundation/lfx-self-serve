@@ -8,11 +8,11 @@ last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** roles. You create a group with a four-step wizard: **Group Type**, **Basic Information**, **Settings**, and **Add Members**.
+This article applies to users with write access to the selected foundation or project. You create a group with a four-step wizard: **Group Type**, **Basic Information**, **Settings**, and **Add Members**.
 
 ## Before you begin
 
-Switch to the **Foundation** or **Project** lens that should own the group. **Create Group** is offered at the top of the Groups page in those lenses only; it is not shown in the **Me** lens. If you don't see the button, your current role can't create groups in that context.
+Switch to the **Foundation** or **Project** lens that should own the group. **Create Group** is offered at the top of the Groups page in those lenses only; it is not shown in the **Me** lens. If you don't see the button, you don't have write access to the selected foundation or project.
 
 ## Steps
 
@@ -23,19 +23,19 @@ Switch to the **Foundation** or **Project** lens that should own the group. **Cr
 
 ### Step 1: Group Type
 
-Choose the type that best describes the group, such as Technical Steering Committee, Working Group, Special Interest Group, Board, Maintainers, or Other. The type organizes and identifies the group within the project. You can change it later in [Group Settings](../group-settings/). The step bar labels this step **Category**.
+Choose the type that best describes the group, such as Technical Steering Committee, Working Group, Special Interest Group, or Other. The list depends on your role; maintainers see a shorter list than executive directors (for example, Board and Maintainers aren't offered). The type organizes and identifies the group within the project. You can change it later in [Group Settings](../group-settings/). The step bar labels this step **Category**.
 
 ### Step 2: Basic Information
 
 - **Group Name** (required)
 - **Parent Group** (optional): pick another group to make this one a sub-group. Leave it empty for a top-level group.
 - **Description**
-- **Group Website**: a full URL such as `https://example.com`
+- **Group Website**: a full URL such as `https://example.com`. This is the same field as **Repository / Website** in Step 3.
 
 ### Step 3: Settings
 
 - **Member Profile Visibility**: **Hidden** or **Basic Profile**. This controls whether people who aren't managers or auditors can see the member list.
-- **How Can People Join the Group?** (join mode): **Open — anyone can join**, **Invite Only — members send invites**, **Apply & Review**, or **Closed — admin adds members**.
+- **How Can People Join the Group?** (join mode): **Open — anyone can join**, **Invite Only — members send invites**, **Apply & Review** (shown on the group as **Apply to Join**), or **Closed — admin adds members**.
 - **Connected Channels**: a **Chat Channel** link (Slack, Discord, or another chat URL) and a **Repository / Website** link. The platform is detected from the URL. Associated mailing lists are added after the group exists, from the group's **Settings** tab.
 - **Group Features**, each a toggle:
   - **Business Email Required**: members must have a business email address.
@@ -64,7 +64,7 @@ The group appears on the Groups page for its foundation or project. Open it to s
 
 ## Permissions
 
-Only users with maintainer, board-member, or executive-director personas can create groups. The create page itself is also protected: if you open it without write access, you can't use it.
+Creating a group needs write access to the selected foundation or project. The create page itself is also protected: if you open it without write access, you can't use it.
 
 ## Related
 

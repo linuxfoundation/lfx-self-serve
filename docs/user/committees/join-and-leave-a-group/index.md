@@ -19,7 +19,7 @@ How you become a member of a group depends on the group's **join mode**. This ar
 | **Invite Only**    | You need an invitation from a member or admin | Accept an invitation when you receive one |
 | **Closed**         | Only admins can add members                   | Select **Contact Admin**                  |
 
-The header of a group you aren't in shows only the button that fits its join mode. Invite Only groups show no join button.
+Managers pick **Apply & Review** in Settings, and the group itself shows that mode as **Apply to Join**. The header of a group you aren't in shows only the button that fits its join mode. Invite Only groups show no join button.
 
 ## Join an open group
 

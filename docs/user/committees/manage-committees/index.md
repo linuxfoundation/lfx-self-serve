@@ -8,7 +8,7 @@ last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** roles, and to anyone with manager access to a specific group. Use the Groups section to view a group's details, update it, and manage its members.
+This article applies to managers of a group, and to users with write access to the selected foundation or project. Use the Groups section to view a group's details, update it, and manage its members.
 
 ## View all groups
 
@@ -39,7 +39,7 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 ## Edit a group
 
 1. Open the group.
-2. Select **Edit Group** in the header. The button appears for managers. The edit page (route: `/groups/:id/edit`) is the same four-step wizard used to create a group, filled in with the group's current values.
+2. Select **Edit Group** in the header. The button appears for managers who also have write access to the group's project or foundation; other managers can use the **Settings** tab instead. The edit page (route: `/groups/:id/edit`) is the same four-step wizard used to create a group, filled in with the group's current values.
 3. Move between steps freely; in edit mode the steps are not locked in order. See [Create a Group](../create-committee/) for what each step contains.
 4. On the last step, select **Update Group** to save your changes together with any staged member changes.
 
