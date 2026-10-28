@@ -213,7 +213,10 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, lastIntake, generate, answerQuestions, resume: vi.fn(() => NEVER) } },
+        {
+          provide: MktgAgentRunService,
+          useValue: { loadRun, lastIntake, generate, answerQuestions, acknowledgementVersion: signal(0), resume: vi.fn(() => NEVER) },
+        },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged, documentsChanged$: NEVER } },
         provideMktgSlidesExportStub(slidesExport),
@@ -343,6 +346,9 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       component['onSubmit']();
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-starting-note')?.textContent?.trim()).toBe('Starting the agent — stay on this page for a few seconds.');
+      expect(query('mktg-agent-run-leave-note')).toBeNull();
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
       progress.next({ type: 'submitted' });
       expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
@@ -360,6 +366,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['freshMode']()).toBe(true);
       expect(query('mktg-run-sources')).toBeNull();
       expect(query('mktg-agent-run-leave-note')?.textContent).toContain('You can leave this page — the agent keeps working.');
+      expect(query('mktg-agent-run-starting-note')).toBeNull();
       expect(query('mktg-agent-run-live')?.querySelector('lfx-button')).toBeNull();
       const feed = query('mktg-run-activity');
       const leaveNote = query('mktg-agent-run-leave-note');
@@ -779,6 +786,114 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
       oldResponse.next(history);
       expect(component['intakeForm'].get('website_url')?.value).toBe('https://other-subject.example');
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('opens an accepted writing draft from fresh mode and keeps it intact on Start over', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+      if (!type) throw new Error('Missing synthetic asset type');
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      attempts.save({
+        request: { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: history.answers },
+        state: 'writing',
+        attempt: { runId: 'b'.repeat(64), priorVersion: 0, session: { agentId, sessionId: 'synthetic-writing', ownerToken: 'synthetic-proof' } },
+        updatedAt: new Date().toISOString(),
+      });
+      const saved = attempts.load(PROJECT_1.uid, agentId);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-notice')?.textContent).toContain(`This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`);
+      const open = query('mktg-run-waiting-open')?.querySelector('a');
+      const url = new URL(open?.getAttribute('href') ?? '', 'https://synthetic.example');
+      expect(url.pathname).toBe(`/mktg-os-agents/documents/${type.agentKey}/living`);
+      expect(url.searchParams.get('run')).toBe('b'.repeat(64));
+      expect(url.searchParams.get('project')).toBe(PROJECT_1.slug);
+      expect(open?.classList.contains('p-button-text')).toBe(false);
+      expect(query('mktg-run-waiting-continue')).toBeNull();
+      expect(query('mktg-run-sources')).toBeNull();
+      expect(component['showIntakeForm']()).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+      query('mktg-run-waiting-start-over')?.click();
+      await fixture.whenStable();
+      expect(query('mktg-run-sources')).not.toBeNull();
+      expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
+    });
+
+    it.each(['writing', 'storing', 'questions'] as const)(
+      'offers a public %s run from another browser through the existing one-shot summary read',
+      async (state) => {
+        await configure('browser', agentId, { mode: 'new' });
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+        if (!type) throw new Error('Missing synthetic asset type');
+        listDocuments.mockReturnValue(
+          of({ groups: [], runs: [{ project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', runId: 'c'.repeat(64), state }] })
+        );
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(query('mktg-run-waiting-notice')?.textContent).toContain(
+          state === 'questions' ? 'This run is waiting for your answers.' : `This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`
+        );
+        expect(query('mktg-run-waiting-open')?.querySelector('a')?.getAttribute('href')).toContain(`run=${'c'.repeat(64)}`);
+        expect(query('mktg-run-waiting-continue')).toBeNull();
+        expect(TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, agentId)).toBeNull();
+        expect(listDocuments).toHaveBeenCalledExactlyOnceWith(PROJECT_1.uid);
+        expect(component['submitDisabled']()).toBe(true);
+        expect(generate).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['empty', 'error', 'unavailable', 'failed', 'other-project', 'other-asset'] as const)(
+      'keeps fresh Sources without a notice on %s discovery',
+      async (state) => {
+        await configure('browser', agentId, { mode: 'new' });
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+        if (!type) throw new Error('Missing synthetic asset type');
+        if (state === 'error') listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        else
+          listDocuments.mockReturnValue(
+            of({
+              groups: [],
+              progressUnavailable: state === 'unavailable',
+              runs:
+                state === 'empty'
+                  ? []
+                  : [
+                      {
+                        project: state === 'other-project' ? PROJECT_2.uid : PROJECT_1.uid,
+                        agentKey: state === 'other-asset' ? 'synthetic-other-asset' : type.agentKey,
+                        documentId: 'living',
+                        runId: 'c'.repeat(64),
+                        state: state === 'failed' ? 'failed' : 'writing',
+                      },
+                    ],
+            })
+          );
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        expect(query('mktg-run-waiting-notice')).toBeNull();
+        expect(query('mktg-run-sources')).not.toBeNull();
+        expect(generate).not.toHaveBeenCalled();
+      }
+    );
+
+    it('updates a returned fresh page when its service-held ACK lands after that page mounted', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-notice')).toBeNull();
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: history.answers },
+        state: 'writing',
+        attempt: { runId: 'b'.repeat(64), priorVersion: 0, session: { agentId, sessionId: 'synthetic-late-ack', ownerToken: 'synthetic-proof' } },
+        updatedAt: new Date().toISOString(),
+      });
+      TestBed.inject(MktgAgentRunService).acknowledgementVersion.update((version) => version + 1);
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-open')?.querySelector('a')?.getAttribute('href')).toContain(`run=${'b'.repeat(64)}`);
+      expect(query('mktg-run-sources')).toBeNull();
       expect(generate).not.toHaveBeenCalled();
     });
 
