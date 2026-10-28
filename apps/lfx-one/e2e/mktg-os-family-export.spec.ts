@@ -135,8 +135,8 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prints the existing family document under its body class, never a slide view', async ({ page }, info) => {
-  await openFamilyExports(page);
+test('Download PDF prints all four approved assets with one family cover and contents', async ({ page }, info) => {
+  await openFamilyExports(page, { allAssets: true });
   await page.evaluate(() => {
     window.print = () => {
       document.body.dataset['familyPrintClass'] = document.body.className;
@@ -144,11 +144,24 @@ test('Download PDF prints the existing family document under its body class, nev
   });
   await page.getByTestId('family-export-pdf').getByRole('button').click();
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
-  await expect(page.getByTestId('family-export-print-document').locator('lfx-mktg-framework-print')).toHaveCount(1);
-  await expect(page.getByTestId('family-export-print-document')).toBeHidden();
   await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
   await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
-  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.');
+  const printDocument = page.getByTestId('family-export-print-document');
+  for (const selector of ['lfx-mktg-framework-print', 'lfx-brand-kit-view', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+    await expect(printDocument.locator(selector)).toHaveCount(1);
+  }
+  await expect(page.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
+  await expect(page.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
+  await expect(page.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  await expect(printDocument).toBeHidden();
+  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.getByTestId('family-export-print-cover')).toBeVisible();
+  await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
+  await expect(page.getByTestId('brand-kit-page-cover')).toBeHidden();
+  await expect(page.getByTestId('brand-kit-page-contents')).toBeHidden();
+  await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });

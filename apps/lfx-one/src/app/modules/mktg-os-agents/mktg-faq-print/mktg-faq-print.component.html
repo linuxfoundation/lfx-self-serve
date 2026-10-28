@@ -1,0 +1,34 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<section
+  class="lfx-framework-print lfx-faq-print bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] break-before-page [overflow-wrap:anywhere]"
+  [style.--mfp-font]="v.brand.fontStack"
+  [style.--mfp-dark]="v.brand.dark"
+  [style.--mfp-accent]="v.brand.accent"
+  [style.--mfp-tint]="v.brand.tint"
+  [style.--mfp-ink]="v.brand.ink"
+  aria-label="FAQ"
+  data-testid="mktg-faq-print">
+  @for (group of v.groups; track group.path; let firstGroup = $first) {
+    @for (row of group.questions; track row.path; let firstQuestion = $first) {
+      <!-- Keep the document/group headings WITH their first pair, not just with each other. -->
+      <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-faq-print-pair">
+        @if (firstGroup && firstQuestion) {
+          <h2 class="mb-[8pt] flex items-baseline gap-[10pt] text-[22pt] font-medium break-after-avoid">
+            <span class="text-[11pt] font-semibold text-[color:var(--mfp-accent)]">04</span>FAQ
+          </h2>
+        }
+        @if (firstQuestion) {
+          <h3 class="border-b border-black/10 pb-[6pt] text-[14pt] font-medium break-after-avoid" data-testid="mktg-faq-print-group">{{ group.name }}</h3>
+        }
+        <h4 class="text-[11pt] font-semibold break-after-avoid">{{ row.question }}</h4>
+        <p class="whitespace-pre-line">{{ row.answered ? row.answer : 'Needs an answer' }}</p>
+        @if (row.source) {
+          <p class="text-[7.5pt] opacity-70" data-testid="mktg-faq-print-source">Source: {{ row.source }}</p>
+        }
+      </article>
+    }
+  }
+</section>

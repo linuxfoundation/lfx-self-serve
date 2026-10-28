@@ -4,7 +4,7 @@
 import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
 import type { MktgDocumentType, MktgStoredRevision } from './mktg-document-store.interface';
 import type { BrandKitBookView } from './brand-kit.interface';
-import type { FoundationMessagePrintView } from './mktg-print.interface';
+import type { BoilerplatesPrintView, FaqPrintView, FoundationMessagePrintView, MktgPrintBrand } from './mktg-print.interface';
 import type {
   MktgSlidesExportDeckRecord,
   MktgSlidesExportEnvelope,
@@ -84,6 +84,11 @@ export interface MktgFamilyExportRunUpdate {
 export interface MktgFamilyPrintView {
   framework: FoundationMessagePrintView | null;
   kit: BrandKitBookView | null;
+  boilerplates: BoilerplatesPrintView | null;
+  faq: FaqPrintView | null;
+  brand: MktgPrintBrand;
+  projectName: string;
+  printedAt: string;
   fontFamily: string | null;
   weights: readonly number[];
 }
