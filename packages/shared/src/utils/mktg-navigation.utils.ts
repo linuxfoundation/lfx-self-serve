@@ -13,6 +13,7 @@ export function mktgKitRootPath(url: string): string {
 
 /** Sentence labels preserve acronyms and mixed-case names such as FAQ, ICP and LinkedIn. */
 export function mktgSentenceCaseLabel(label: string): string {
+  if (/[A-Z]/.test(label.slice(1))) return label;
   return label.replace(/^[A-Z][a-z]+\b/, (word) => word.charAt(0).toLowerCase() + word.slice(1));
 }
 

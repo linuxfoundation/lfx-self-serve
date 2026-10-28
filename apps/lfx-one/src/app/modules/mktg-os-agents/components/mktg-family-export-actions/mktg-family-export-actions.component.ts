@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -29,7 +29,7 @@ import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
 import { BrandKitViewComponent } from '../../brand-kit-view/brand-kit-view.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
 
@@ -78,17 +78,23 @@ export class MktgFamilyExportActionsComponent {
   protected readonly skipped = this.initSkipped();
 
   public constructor() {
-    effect(() => {
-      if (!isPlatformBrowser(this.platformId) || !this.focusRequested() || !this.canPrint()) return;
-      this.focusRequested.set(false);
-      afterNextRender(
-        () => {
-          if (this.canPrint()) this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus();
-        },
-        { injector: this.injector }
-      );
-    });
-    if (isPlatformBrowser(this.platformId)) this.initLookup();
+    if (isPlatformBrowser(this.platformId)) {
+      combineLatest([toObservable(this.focusRequested), toObservable(this.checking), toObservable(this.canPrint)])
+        .pipe(takeUntilDestroyed())
+        .subscribe(([requested]) => {
+          if (!requested || !this.focusRequested()) return;
+          if (this.canPrint()) {
+            afterNextRender(
+              () => {
+                if (this.canPrint()) this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus();
+              },
+              { injector: this.injector }
+            );
+            this.focusRequested.set(false);
+          } else if (!this.checking()) this.focusRequested.set(false);
+        });
+      this.initLookup();
+    }
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
       this.pdf?.unsubscribe();

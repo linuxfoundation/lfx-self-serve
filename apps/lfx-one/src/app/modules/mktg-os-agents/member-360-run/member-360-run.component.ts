@@ -126,6 +126,7 @@ export class Member360RunComponent {
         )
         .subscribe((history) => {
           this.history.set(history);
+          if (!this.latest() && !this.historyError()) this.form.controls.compare.setValue(false, { emitEvent: false });
           this.historyLoading.set(false);
           this.form.controls.compare.enable({ emitEvent: false });
         });

@@ -48,6 +48,17 @@ describe('Marketing kit home', () => {
       },
     });
   });
+  it('keeps ctrl/meta clicks native on the Next step link', async () => {
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const link = root.querySelector<HTMLAnchorElement>('[data-testid="mktg-kit-next-step-action"] a');
+    expect(link?.getAttribute('href')).toContain('foundation-setup');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
+    link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+    link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();

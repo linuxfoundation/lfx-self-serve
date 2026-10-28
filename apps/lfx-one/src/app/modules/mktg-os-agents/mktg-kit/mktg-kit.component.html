@@ -83,7 +83,12 @@
           <p class="text-[15.75px] font-semibold leading-[1.4] text-gray-900">{{ step.sentence }}</p>
           <p class="text-[12.25px] text-gray-500">{{ step.hint }}</p>
         </div>
-        <lfx-button [label]="step.header.label" [routerLink]="step.commands" [queryParams]="step.queryParams" data-testid="mktg-kit-next-step-action" />
+        <lfx-button
+          [label]="step.header.label"
+          [routerLink]="step.commands"
+          [queryParams]="step.queryParams"
+          (onClick)="$event.stopPropagation()"
+          data-testid="mktg-kit-next-step-action" />
       </section>
     }
     <!-- Main board: 1280/1440px windows leave ~876/1036px hosts; thresholds reserve ~60px headroom. -->

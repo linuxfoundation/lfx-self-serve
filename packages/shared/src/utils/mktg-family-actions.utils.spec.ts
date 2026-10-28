@@ -240,6 +240,14 @@ describe('One rule for every family action', () => {
     expect(step?.sentence).toBe('The messaging framework is drafted; approve it so boilerplates, FAQ and the brand kit can be created.');
     expect(step?.hint).toBe('Opens the framework document in Positioning & brand.');
   });
+  it.each([true, false])('mentions only missing dependants, never drafts already created (all drafted=%s)', (allDrafted) => {
+    const view = built(family());
+    for (const row of view.rows) if (row.document) row.state = 'draft';
+    if (!allDrafted) view.rows[2].document = null;
+    expect(resolveMktgFamilyNextStep(view, context)?.sentence).toBe(
+      allDrafted ? 'The messaging framework is drafted; approve it.' : 'The messaging framework is drafted; approve it so FAQ can be created.'
+    );
+  });
   it('presents review and rebuild and hides steps when none are actionable', () => {
     const view = built(family());
     view.rows[0].state = 'draft';

@@ -257,9 +257,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${revisionId}`)).flush(result);
       await settle();
       http.match((candidate) => candidate.url.endsWith('/slides-export/last')).forEach((read) => read.flush({ last: null, latestRevision: null }));
-      // The suite's listDocuments spy answers the Documents summary; flush only if a real request slipped through.
-      http.match((candidate) => candidate.url.endsWith('/documents')).forEach((read) => read.flush({ project: project.uid, groups: [] }));
-      await settle();
+
       expect(router.url).toContain(`revision=${revisionId}`);
       expect(query(fixture.selector)).not.toBeNull();
       expect(query('mktg-document-view-unsupported-asset')).toBeNull();

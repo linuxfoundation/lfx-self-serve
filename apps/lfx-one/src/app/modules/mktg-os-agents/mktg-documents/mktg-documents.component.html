@@ -203,7 +203,8 @@
                     label="Open"
                     [routerLink]="[living.type.agentKey, living.document.documentId]"
                     [queryParams]="{ project: projectSlug() ?? '' }"
-                    data-testid="mktg-documents-view-latest" />
+                    data-testid="mktg-documents-view-latest"
+                    (onClick)="$event.stopPropagation()" />
                 </div>
               </div>
 
@@ -298,7 +299,8 @@
                     [label]="action.header.label"
                     [routerLink]="action.commands"
                     [queryParams]="action.queryParams"
-                    [attr.data-testid]="'mktg-documents-run-agent-' + living.type.agentKey" />
+                    [attr.data-testid]="'mktg-documents-run-agent-' + living.type.agentKey"
+                    (onClick)="$event.stopPropagation()" />
                 }
               </div>
             }
