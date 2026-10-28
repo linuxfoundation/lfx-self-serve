@@ -461,18 +461,18 @@ export class AudienceCustomBuilderComponent {
     }
   }
 
-  /**
-   * The container's run reset (a new project or event). Everything belongs to the old context, so
-   * the builder starts over -- but a create caught in flight is recorded as unconfirmed, exactly as
-   * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
-   * is how a duplicate gets created later.
-   */
   /** Writes the name without emitting (it is not a criterion), keeping `nameValue` in step. */
   private setName(name: string): void {
     this.nameControl.setValue(name, { emitEvent: false });
     this.nameValue.set(name);
   }
 
+  /**
+   * The container's run reset (a new project or event). Everything belongs to the old context, so
+   * the builder starts over -- but a create caught in flight is recorded as unconfirmed, exactly as
+   * the tab does for a stranded compose: its reply is about to be discarded, and losing it silently
+   * is how a duplicate gets created later.
+   */
   private onContextReset(): void {
     const stranded = this.creating() ? this.nameControl.value.trim() || this.preview()?.name || 'the custom list' : null;
     this.onStartOver();
