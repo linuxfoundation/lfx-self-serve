@@ -18,6 +18,7 @@ import {
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
@@ -5774,15 +5775,20 @@ describe('ImplementationTabComponent google geo targets', () => {
     expect(c['googleGeoTargets']()).toEqual([code]);
   });
 
-  it('refuses an add at the cap', () => {
+  /**
+   * The cap is upstream's, on the ONE `geoTargets` list countries and postal-code ids share, so the
+   * map's 30 countries alone cannot reach it — the rest of the list is postal-code ids.
+   */
+  it('refuses a country add once countries and postal codes together reach the cap', () => {
     const c = seedChannel(fixture, { includeSearch: true });
-    const options = c['googleGeoOptions'].slice(0, GOOGLE_ADS_MAX_GEO_TARGETS);
-    expect(options).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
-    for (const code of options) c['addGoogleGeoTarget'](code);
+    const [last, ...rest] = c['googleGeoOptions'];
+    for (const code of rest) c['addGoogleGeoTarget'](code);
+    c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS - rest.length }, (_, i) => String(9031900 + i)));
 
-    c['addGoogleGeoTarget'](c['googleGeoOptions'][GOOGLE_ADS_MAX_GEO_TARGETS]);
+    c['addGoogleGeoTarget'](last);
 
-    expect(c['googleGeoTargets']()).toHaveLength(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(c['googleGeoTargets']()).toHaveLength(rest.length);
+    expect(c['googleGeoTargetCount']()).toBe(GOOGLE_ADS_MAX_GEO_TARGETS);
   });
 
   it('removes a chip by index', () => {
@@ -5861,6 +5867,739 @@ describe('ImplementationTabComponent google geo targets', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleGeoTargets']()).toEqual([code]);
+  });
+});
+
+/**
+ * Postal-code and radius targets — the two finer halves of Google's location plan.
+ *
+ * Postal codes reach the wire as raw geo target constant ids in the SAME `geoTargets` list as the
+ * countries, because that is the only spelling upstream's `resolveGeoList` takes; there is no lookup
+ * from a postal code to its id anywhere on this road. Radius targets are `proximityTargets`, a point
+ * in decimal degrees and a radius in an explicit unit, refused upstream on Demand Gen alone.
+ */
+describe('ImplementationTabComponent google postal-code and radius targets', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const SYDNEY_DRAFT = { latitude: ' -33.8688 ', longitude: '151.2093', radius: '25', radiusUnit: 'KILOMETERS' };
+  const SYDNEY = { latitude: -33.8688, longitude: 151.2093, radius: 25, radiusUnit: 'KILOMETERS' };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  /** The focusable `<input>` an `lfx-input-text` renders, which is where its ARIA lands. */
+  const inputOf = (testId: string): HTMLInputElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"] input`);
+
+  /** Typed through the wrapper's own control — the form, not a signal, is the source of truth. */
+  const typePostal = (c: Record<string, any>, text: string): void => {
+    c['googlePostalGeoForm'].controls.postalId.setValue(text);
+    fixture.detectChanges();
+  };
+
+  /** Same, for the radius sub-form. */
+  const typeProximity = (c: Record<string, any>, patch: Record<string, string>): void => {
+    c['googleProximityForm'].patchValue(patch);
+    fixture.detectChanges();
+  };
+
+  describe('postal codes', () => {
+    it('adds a canonical id, trimmed, and refuses a blank or a repeat', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+
+      expect(c['addGooglePostalGeoTarget'](' 9031945 ')).toBe(true);
+      expect(c['addGooglePostalGeoTarget']('9031945')).toBe(false);
+      expect(c['addGooglePostalGeoTarget']('   ')).toBe(false);
+
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+
+    /**
+     * One case per local refusal upstream's `resolveGeoEntry` makes, each named by its own line so
+     * the operator is told which fix applies while the text is still in the box.
+     */
+    it.each([
+      ['a postal code typed as itself', 'SW1A 1AA', 'implementation-google-postal-not-id', 'google-postal-not-id'],
+      ['a leading zero', '02840', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
+      ['zero', '0', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
+      ['a run past int64', '123456789012345678901', 'implementation-google-postal-not-canonical', 'google-postal-not-canonical'],
+    ])('refuses %s and names why', (_label, text, testId, errorId) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typePostal(c, text);
+
+      expect(c['addGooglePostalGeoTarget'](text)).toBe(false);
+      expect(c['googlePostalGeoTargets']()).toEqual([]);
+      expect(query(testId)).not.toBeNull();
+      const input = inputOf('implementation-google-postal-add');
+      expect(input?.getAttribute('aria-invalid')).toBe('true');
+      expect(input?.getAttribute('aria-describedby')).toBe(errorId);
+    });
+
+    it('names a repeat in the box, and points the clean box at its hint', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGooglePostalGeoTarget']('9031945');
+      typePostal(c, '');
+      expect(inputOf('implementation-google-postal-add')?.getAttribute('aria-describedby')).toBe('google-postal-hint');
+
+      typePostal(c, '9031945');
+
+      expect(query('implementation-google-postal-duplicate')).not.toBeNull();
+    });
+
+    it('keeps refused text in the box and clears it on a successful add', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typePostal(c, '02840');
+
+      c['onGooglePostalGeoAdd']();
+      fixture.detectChanges();
+      expect(inputOf('implementation-google-postal-add')?.value).toBe('02840');
+
+      typePostal(c, '9031945');
+      c['onGooglePostalGeoAdd']();
+      fixture.detectChanges();
+      expect(inputOf('implementation-google-postal-add')?.value).toBe('');
+      expect(c['googlePostalGeoDraft']()).toBe('');
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+
+    /** Enter in the wrapper's input bubbles to the host listener, as it did on the raw box. */
+    it('adds on Enter in the wrapped input', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      fixture.detectChanges();
+      const input = inputOf('implementation-google-postal-add') as HTMLInputElement;
+      input.value = '9031945';
+      input.dispatchEvent(new Event('input'));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+
+    it('counts against the cap the countries share, and refuses past it', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      for (const code of c['googleGeoOptions']) c['addGoogleGeoTarget'](code);
+      const room = GOOGLE_ADS_MAX_GEO_TARGETS - c['googleGeoTargets']().length;
+      for (let i = 0; i < room; i++) c['addGooglePostalGeoTarget'](String(9031900 + i));
+      fixture.detectChanges();
+
+      expect(c['addGooglePostalGeoTarget']('9099999')).toBe(false);
+      expect(c['googleGeoTargetCount']()).toBe(GOOGLE_ADS_MAX_GEO_TARGETS);
+      expect(query('implementation-google-postal-full')).not.toBeNull();
+      expect(query('implementation-google-geo-full')).not.toBeNull();
+    });
+
+    it('removes a chip by index', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGooglePostalGeoTarget']('9031945');
+      c['addGooglePostalGeoTarget']('9031946');
+
+      c['removeGooglePostalGeoTarget'](0);
+
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031946']);
+    });
+
+    it('sends the ids after the countries in the one geo list', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleGeoTarget']('CA');
+      c['addGooglePostalGeoTarget']('9031945');
+
+      expect(c['googleEffectiveGeoTargets']()).toEqual(['CA', '9031945']);
+    });
+
+    /**
+     * Google serves the UNION of the location criteria, so falling back to the event country beside a
+     * postal code would buy the whole country. The fallback line must stop claiming it, too.
+     */
+    it('drops the event-country fallback once a postal code is added, and says so', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      fixture.detectChanges();
+      expect(query('implementation-google-geo-default')).not.toBeNull();
+
+      c['addGooglePostalGeoTarget']('9031945');
+      fixture.detectChanges();
+
+      expect(c['googleEffectiveGeoTargets']()).toEqual(['9031945']);
+      expect(query('implementation-google-geo-default')).toBeNull();
+      expect(query('implementation-google-geo-finer-only')).not.toBeNull();
+    });
+
+    /** No channel fence: `validateGeoPlan` reads `geoTargets` on Demand Gen too, at the ad group. */
+    it('is offered and sent on demand-gen', () => {
+      const c = seedChannel(fixture, { includeDemandGen: true });
+      c['addGooglePostalGeoTarget']('9031945');
+      fixture.detectChanges();
+
+      expect(c['googlePostalGeoAvailable']()).toBe(true);
+      expect(query('implementation-google-postal-section')).not.toBeNull();
+      expect(c['googleEffectiveGeoTargets']()).toEqual(['9031945']);
+    });
+
+    /**
+     * The legacy road resolves `geoTargets` through the 30-country map and DROPS anything else, so an
+     * id sent there would vanish. Held, not sent, and the event-country fallback stands.
+     */
+    it.each([[null], [false]])('withholds the section and the ids while googleCreativeEnabled is %s', (capability) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGooglePostalGeoTarget']('9031945');
+      fixture.componentRef.setInput('googleCreativeEnabled', capability);
+      fixture.detectChanges();
+
+      expect(query('implementation-google-postal-section')).toBeNull();
+      expect(c['googleEffectiveGeoTargets']()).toEqual(['US']);
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+
+    it('submits the ids in geoTargets', async () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleGeoTarget']('CA');
+      c['addGooglePostalGeoTarget']('9031945');
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+
+      c['submit']();
+      await fixture.whenStable();
+
+      expect(createCampaign.mock.calls[0][0].geoTargets).toEqual(['CA', '9031945']);
+    });
+
+    it('round-trips the chips through a draft, copied rather than shared', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      let emitted: CampaignImplementationDraft | undefined;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+      c['addGooglePostalGeoTarget']('9031945');
+
+      expect(emitted?.googlePostalGeoTargets).toEqual(['9031945']);
+
+      const saved = [...(emitted?.googlePostalGeoTargets ?? [])];
+      c['googlePostalGeoTargets'].set([]);
+      restoreGoogleDraft(fixture, c, { googlePostalGeoTargets: saved });
+      c['addGooglePostalGeoTarget']('9031946');
+
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945', '9031946']);
+      expect(saved).toEqual(['9031945']);
+    });
+
+    it('leaves the chips alone when the draft carries no postal key', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGooglePostalGeoTarget']('9031945');
+
+      restoreGoogleDraft(fixture, c, {});
+
+      expect(c['googlePostalGeoTargets']()).toEqual(['9031945']);
+    });
+  });
+
+  describe('radius targets', () => {
+    it('adds a target with its numbers parsed and its unit as picked', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+
+      expect(c['addGoogleProximityTarget'](SYDNEY_DRAFT)).toBe(true);
+
+      expect(c['googleProximityTargets']()).toEqual([SYDNEY]);
+    });
+
+    /** One case per branch of `validateProximityTargets`, plus the unit upstream will not default. */
+    it.each([
+      ['a latitude past 90', { latitude: '90.5' }],
+      ['a longitude past -180', { longitude: '-180.01' }],
+      ['a latitude that is not a number', { latitude: 'north' }],
+      ['a zero radius', { radius: '0' }],
+      ['a negative radius', { radius: '-5' }],
+      ['no unit', { radiusUnit: '' }],
+      ['a radius over the kilometre ceiling', { radius: '800.5' }],
+      ['a radius over the mile ceiling', { radius: '501', radiusUnit: 'MILES' }],
+      ['a blank longitude', { longitude: ' ' }],
+    ])('refuses %s', (_label, patch) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+
+      expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, ...patch })).toBe(false);
+      expect(c['googleProximityTargets']()).toEqual([]);
+    });
+
+    /** Upstream refuses only `radius > max`, so each unit's own ceiling is a create Google takes. */
+    it.each([
+      ['500', 'MILES'],
+      ['800', 'KILOMETERS'],
+    ])('accepts exactly %s %s', (radius, radiusUnit) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+
+      expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius, radiusUnit })).toBe(true);
+    });
+
+    it('refuses an exact repeat but not the same point at another radius', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+
+      expect(c['addGoogleProximityTarget'](SYDNEY_DRAFT)).toBe(false);
+      expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius: '30' })).toBe(true);
+      expect(c['googleProximityTargets']()).toHaveLength(2);
+    });
+
+    it('refuses an add at the cap', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      for (let i = 0; i < GOOGLE_ADS_MAX_PROXIMITY_TARGETS; i++) c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius: String(i + 1) });
+      fixture.detectChanges();
+
+      expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius: '99' })).toBe(false);
+      expect(query('implementation-google-proximity-full')).not.toBeNull();
+    });
+
+    it.each([
+      ['latitude', { latitude: '91' }, 'implementation-google-proximity-latitude-invalid', 'implementation-google-proximity-latitude'],
+      ['longitude', { longitude: '181' }, 'implementation-google-proximity-longitude-invalid', 'implementation-google-proximity-longitude'],
+      ['radius', { radius: '0' }, 'implementation-google-proximity-radius-invalid', 'implementation-google-proximity-radius'],
+      ['radius ceiling', { radius: '900' }, 'implementation-google-proximity-radius-too-large', 'implementation-google-proximity-radius'],
+    ])('names a bad %s while it is typed and withholds the add', (_label, patch, alertId, inputId) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typeProximity(c, { ...SYDNEY_DRAFT, ...patch });
+
+      expect(query(alertId)).not.toBeNull();
+      expect(inputOf(inputId)?.getAttribute('aria-invalid')).toBe('true');
+      expect(inputOf(inputId)?.getAttribute('aria-describedby')).toBe(alertId.replace('implementation-', ''));
+      expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    /** The disabled add button carries the reason, as each box carries its own. */
+    it('points the add button at the duplicate line', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      typeProximity(c, SYDNEY_DRAFT);
+
+      expect(query('implementation-google-proximity-duplicate')?.id).toBe('google-proximity-duplicate');
+      expect(query('implementation-google-proximity-add')?.getAttribute('aria-describedby')).toBe('google-proximity-duplicate');
+
+      typeProximity(c, { radius: '30' });
+      expect(query('implementation-google-proximity-add')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('names the picked unit ceiling in the over-radius line', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typeProximity(c, { ...SYDNEY_DRAFT, radius: '600', radiusUnit: 'MILES' });
+
+      expect(query('implementation-google-proximity-radius-too-large')?.textContent).toContain('500 miles');
+    });
+
+    it('withholds the add until every box and the unit are filled, then enables it', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typeProximity(c, { ...SYDNEY_DRAFT, radiusUnit: '' });
+      expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(true);
+
+      typeProximity(c, { radiusUnit: 'KILOMETERS' });
+
+      expect((query('implementation-google-proximity-add') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('clears the sub-form only on a successful add', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      typeProximity(c, { ...SYDNEY_DRAFT, latitude: '91' });
+      c['onGoogleProximityAdd']();
+      expect(c['googleProximityDraft']().latitude).toBe('91');
+
+      typeProximity(c, { latitude: '-33.8688' });
+      c['onGoogleProximityAdd']();
+
+      expect(c['googleProximityDraft']()).toEqual({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
+      expect(c['googleProximityTargets']()).toEqual([SYDNEY]);
+    });
+
+    it('removes a target by index', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, radius: '30' });
+
+      c['removeGoogleProximityTarget'](0);
+
+      expect(c['googleProximityTargets']()).toEqual([{ ...SYDNEY, radius: 30 }]);
+    });
+
+    it.each([
+      ['search', { includeSearch: true }],
+      ['performance-max', { includePerformanceMax: true }],
+      ['display', { includeDisplay: true }],
+    ])('opens the section on %s, which upstream accepts radius targets on', (channel, patch) => {
+      const c = seedChannel(fixture, patch);
+      fixture.detectChanges();
+
+      expect(c['googleProximityChannel']()).toBe(channel);
+      expect(query('implementation-google-proximity-section')).not.toBeNull();
+    });
+
+    /** `validateGeoPlan` refuses proximity on Demand Gen, so the list is held and said to be held. */
+    it('withholds a list added under search once the channel moves to demand-gen, and says so', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      expect(c['googleProximityPayload']()).toEqual({ proximityTargets: [SYDNEY] });
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+      fixture.detectChanges();
+
+      expect(c['googleProximityChannel']()).toBeNull();
+      expect(c['googleProximityPayload']()).toEqual({});
+      expect(c['googleProximityTargets']()).toHaveLength(1);
+      expect(query('implementation-google-proximity-section')).toBeNull();
+      expect(query('implementation-google-proximity-withheld')?.textContent).toContain('Demand Gen');
+      // Held radii no longer suppress the country fallback, since none of them is being sent.
+      expect(c['googleEffectiveGeoTargets']()).toEqual(['US']);
+    });
+
+    it.each([[null], [false]])('withholds the section and the payload while googleCreativeEnabled is %s', (capability) => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      fixture.componentRef.setInput('googleCreativeEnabled', capability);
+      fixture.detectChanges();
+
+      expect(c['googleProximityPayload']()).toEqual({});
+      expect(query('implementation-google-proximity-section')).toBeNull();
+    });
+
+    /** A radius-only campaign sends no geo list: a country beside the radius would buy the country. */
+    it('sends no geo list on a radius-only campaign rather than the event country', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      fixture.detectChanges();
+
+      expect(c['googleEffectiveGeoTargets']()).toEqual([]);
+      expect(query('implementation-google-geo-finer-only')).not.toBeNull();
+      expect(query('implementation-google-geo-none')).toBeNull();
+    });
+
+    it('submits the radius targets as proximityTargets, beside the countries', async () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleGeoTarget']('AU');
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+      fixture.detectChanges();
+      expect(c['canSubmit']()).toBe(true);
+
+      c['submit']();
+      await fixture.whenStable();
+
+      const request = createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>;
+      expect(request['geoTargets']).toEqual(['AU']);
+      expect(request['proximityTargets']).toEqual([SYDNEY]);
+    });
+
+    it('omits proximityTargets from a submit with none', async () => {
+      const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      const c = seedChannel(fixture, { includeSearch: true });
+
+      c['submit']();
+      await fixture.whenStable();
+
+      expect(createCampaign.mock.calls[0][0]).not.toHaveProperty('proximityTargets');
+    });
+
+    it('round-trips the targets through a draft, entries copied rather than shared', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      let emitted: CampaignImplementationDraft | undefined;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+
+      expect(emitted?.googleProximityTargets).toEqual([SYDNEY]);
+
+      const saved = [{ ...SYDNEY }];
+      c['googleProximityTargets'].set([]);
+      restoreGoogleDraft(fixture, c, { googleProximityTargets: saved });
+      c['googleProximityTargets']()[0].radius = 99;
+
+      expect(saved[0].radius).toBe(25);
+    });
+
+    it('leaves the targets alone when the draft carries no radius key', () => {
+      const c = seedChannel(fixture, { includeSearch: true });
+      c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+
+      restoreGoogleDraft(fixture, c, {});
+
+      expect(c['googleProximityTargets']()).toEqual([SYDNEY]);
+    });
+  });
+});
+
+/**
+ * The review fixes on #4455: what the postal-code and radius controls do once the capability is not
+ * an explicit yes, and the edge spellings each box has to judge.
+ */
+describe('ImplementationTabComponent google location targets held by the capability', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const SYDNEY_DRAFT = { latitude: '-33.8688', longitude: '151.2093', radius: '25', radiusUnit: 'KILOMETERS' };
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  /** Search with one postal code and one radius added on the campaign-service road, then the answer taken away. */
+  function seedHeld(
+    capability: boolean | null,
+    read: 'unknown' | 'pending' | 'ready' | 'failed',
+    briefId: string | null,
+    channel: Record<string, unknown> = { includeSearch: true }
+  ): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGooglePostalGeoTarget']('9031945');
+    c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+    return c;
+  }
+
+  /**
+   * The finding: withholding the lists does not shrink the campaign, it WIDENS it to the event
+   * country. So Create is blocked, unlike the extensions block, until a retry succeeds or the
+   * operator removes the targets.
+   */
+  it.each([['failed'], ['unknown']])('blocks Create and offers Retry when the read is %s', (read) => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = seedHeld(null, read as 'failed' | 'unknown', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('failed');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-failed')?.textContent).toContain('1 postal-code target and 1 radius target');
+    expect(find('implementation-google-locations-capability-live')?.textContent?.trim()).toBe(c['googleLocationsCapabilityMessage']());
+    (find('implementation-google-locations-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks Create while the check is in flight, and says why waiting matters', () => {
+    const c = seedHeld(null, 'pending', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('pending');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-pending')?.textContent).toContain('whole event country');
+    expect(find('implementation-google-locations-capability-remove')).toBeNull();
+  });
+
+  it('names the deployment when the capability answered no, with no Retry', () => {
+    const c = seedHeld(false, 'ready', 'brief-1');
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('unsupported');
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-locations-capability-retry')).toBeNull();
+    expect(find('implementation-google-locations-capability-remove')).not.toBeNull();
+  });
+
+  it('asks for the brief to be saved when there is nothing to check against', () => {
+    const c = seedHeld(null, 'unknown', null);
+
+    expect(c['googleLocationsCapabilityBlock']()?.kind).toBe('unsaved');
+  });
+
+  /** The explicit way past the block: drop the held targets and create with country targeting. */
+  it('lets the operator remove the held targets, which unblocks Create', () => {
+    const c = seedHeld(null, 'failed', 'brief-1');
+
+    (find('implementation-google-locations-capability-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googlePostalGeoTargets']()).toEqual([]);
+    expect(c['googleProximityTargets']()).toEqual([]);
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  it('clears once the capability answers yes, and the lists are sent again', () => {
+    const c = seedHeld(null, 'failed', 'brief-1');
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+    expect(c['googleEffectiveGeoTargets']()).toEqual(['9031945']);
+  });
+
+  /** Radius targets on Demand Gen are withheld by the CHANNEL whatever the answer, and their own notice says so. */
+  it('does not count radius targets on demand-gen, where only the postal code is held by the capability', () => {
+    seedHeld(null, 'failed', 'brief-1', { includeDemandGen: true });
+
+    expect(find('implementation-google-locations-capability-failed')?.textContent).toContain('1 postal-code target on this brief');
+  });
+
+  /** "Remove them" names only the postal codes on Demand Gen, so it must keep the channel-held radii. */
+  it('keeps radius targets held by the demand-gen channel when the operator removes the postal codes', () => {
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    const c = seedHeld(null, 'failed', 'brief-1', { includeDemandGen: true });
+
+    (find('implementation-google-locations-capability-remove')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(c['googlePostalGeoTargets']()).toEqual([]);
+    expect(c['googleProximityTargets']()).toHaveLength(1);
+    expect(emitted?.googleProximityTargets).toHaveLength(1);
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The channel notice must not wait on the capability: the block leaves Demand Gen radii to it, so a
+   * muted notice would drop them with nothing on screen.
+   */
+  it.each([[null], [false]])('names held demand-gen radius targets while googleCreativeEnabled is %s', (capability) => {
+    const c = seedHeld(capability, 'failed', 'brief-1', { includeDemandGen: true });
+
+    expect(c['googleProximityWithheldOn']()).toBe('Demand Gen');
+    expect(find('implementation-google-proximity-withheld')).not.toBeNull();
+  });
+
+  /** The region is mounted before the switch, so the switch itself is what it announces. */
+  it('announces held demand-gen radius targets through an always-mounted polite region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleProximityTarget'](SYDNEY_DRAFT);
+    fixture.detectChanges();
+    const region = find('implementation-google-proximity-withheld-live');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.getAttribute('role')).toBe('status');
+    expect(region?.textContent?.trim()).toBe('');
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    // The SAME element, now carrying the sentence the visible notice shows.
+    expect(find('implementation-google-proximity-withheld-live')).toBe(region);
+    expect(region?.textContent?.trim()).toBe(c['googleProximityWithheldMessage']());
+    expect(region?.textContent).toContain('Demand Gen campaigns do not take radius targets');
+    expect(find('implementation-google-proximity-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('says nothing when no postal code or radius is held', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleLocationsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * Ids held on the legacy road are neither shown nor sent there, so they must not take up the
+   * country picker's share of the cap, where the operator could not see or remove them.
+   */
+  it('does not count held postal ids against the country cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoTargets'].set(Array.from({ length: GOOGLE_ADS_MAX_GEO_TARGETS }, (_, i) => String(9031900 + i)));
+    expect(c['googleGeoTargetsFull']()).toBe(true);
+
+    fixture.componentRef.setInput('googleCreativeEnabled', false);
+    fixture.detectChanges();
+    c['addGoogleGeoTarget']('CA');
+
+    expect(c['googleGeoTargetCount']()).toBe(1);
+    expect(c['googleGeoTargets']()).toEqual(['CA']);
+  });
+
+  /**
+   * Postal ids held while the capability is unanswered do not count against the cap, so countries
+   * can still be added; a late yes then releases a list over 60. Create waits, and says why.
+   */
+  it('blocks Create when a late capability yes releases more than the cap allows', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+    // `includeSearch` kept on: the base draft unticks every channel, which would close the section.
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googlePostalGeoTargets: Array.from({ length: 40 }, (_, i) => String(9031900 + i)) });
+    for (const code of c['googleGeoOptions']) c['addGoogleGeoTarget'](code);
+    expect(c['googleGeoTargets']()).toHaveLength(c['googleGeoOptions'].length);
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleGeoTargetCount']()).toBe(40 + c['googleGeoOptions'].length);
+    expect(c['googleGeoTargetsOverCap']()).toBe(true);
+    expect(c['canSubmit']()).toBe(false);
+    expect(find('implementation-google-geo-over-cap')?.textContent).toContain('at most 60');
+
+    c['removeGooglePostalGeoTarget'](0);
+    for (let i = 0; i < 9; i++) c['removeGooglePostalGeoTarget'](0);
+    fixture.detectChanges();
+
+    expect(c['googleGeoTargetCount']()).toBe(60);
+    expect(c['googleGeoTargetsOverCap']()).toBe(false);
+    expect(c['canSubmit']()).toBe(true);
+    expect(find('implementation-google-geo-over-cap')).toBeNull();
+  });
+
+  /** `Number()` reads these as 26, 3 and 100; the form takes decimal degrees only. */
+  it.each([['0x1A'], ['0b11'], ['1e2'], ['Infinity']])('refuses the non-decimal spelling %s and names it', (text) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googleProximityForm'].setValue({ ...SYDNEY_DRAFT, latitude: text });
+    fixture.detectChanges();
+
+    expect(c['googleProximityLatitudeInvalid']()).toBe(true);
+    expect(find('implementation-google-proximity-latitude-invalid')).not.toBeNull();
+    expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(false);
+  });
+
+  it.each([['-33.'], ['+33.5'], ['.5']])('accepts the decimal spelling %s', (text) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleProximityTarget']({ ...SYDNEY_DRAFT, latitude: text })).toBe(true);
+  });
+
+  /** A soft warning: upstream accepts the entry, so the add stays allowed. */
+  it('warns that a short numeric entry looks like a postal code, without refusing it', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoForm'].controls.postalId.setValue('94103');
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-postal-add"] input') as HTMLInputElement;
+
+    expect(find('implementation-google-postal-looks-like-code')).not.toBeNull();
+    expect(input.getAttribute('aria-describedby')).toBe('google-postal-looks-like-code');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(c['addGooglePostalGeoTarget']('94103')).toBe(true);
+  });
+
+  it('does not warn about a seven-digit postal-code id', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePostalGeoForm'].controls.postalId.setValue('9031945');
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-looks-like-code')).toBeNull();
+  });
+
+  it('gives the latitude box its own accessible name', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-proximity-latitude"] input') as HTMLInputElement;
+    expect(input.getAttribute('aria-label')).toBe('Radius target latitude');
+    // `inputId` lands on the focusable input, so the section's `<label for>` still names it.
+    expect(input.id).toBe('google-proximity-latitude');
+  });
+
+  /** frontend-checklist 14.1: the geo controls are the LFX wrappers, bound to the transient form. */
+  it('renders the postal and radius controls as lfx wrappers', () => {
+    seedChannel(fixture, { includeSearch: true });
+    fixture.detectChanges();
+
+    expect(find('implementation-google-postal-add')?.tagName.toLowerCase()).toBe('lfx-input-text');
+    for (const testId of ['latitude', 'longitude', 'radius']) {
+      expect(find(`implementation-google-proximity-${testId}`)?.tagName.toLowerCase()).toBe('lfx-input-text');
+    }
+    expect(find('implementation-google-proximity-unit')?.tagName.toLowerCase()).toBe('lfx-select');
+  });
+
+  /** Picking the unit through the select's control reaches the draft the add reads. */
+  it('reads the unit from the select control, and an unpicked unit as empty', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['googleProximityDraft']().radiusUnit).toBe('');
+
+    c['googleProximityForm'].patchValue({ radiusUnit: 'MILES' });
+
+    expect(c['googleProximityDraft']().radiusUnit).toBe('MILES');
   });
 });
 

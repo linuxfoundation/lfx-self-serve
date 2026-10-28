@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SlicePipe } from '@angular/common';
+import { LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -58,6 +58,8 @@ import {
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
+  GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_LANGUAGE_LABELS,
@@ -71,6 +73,8 @@ import {
   GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
   GOOGLE_ADS_MAX_PRICE_OFFERINGS,
   GOOGLE_ADS_MAX_PROMOTIONS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
+  GOOGLE_ADS_MAX_RADIUS,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
@@ -81,9 +85,11 @@ import {
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_ADS_MIN_PRICE_OFFERINGS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
+  GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS,
   GOOGLE_ADS_PRICE_QUALIFIERS,
   GOOGLE_ADS_PRICE_TYPES,
   GOOGLE_ADS_PRICE_UNITS,
+  GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
@@ -98,6 +104,7 @@ import {
   GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
+  GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -116,6 +123,7 @@ import {
   REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
@@ -139,12 +147,15 @@ import type {
   CampaignCreateResult,
   CampaignGoogleAudienceSegmentsBlock,
   CampaignGoogleExtensionsCapabilityBlock,
+  CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignMetaImageAssetBlock,
+  CampaignProximityTarget,
+  CampaignProximityTargetDraft,
   CampaignRedditImageAssetBlock,
   CampaignCallExtension,
   CampaignCallExtensionDraft,
@@ -159,6 +170,7 @@ import type {
   CampaignType,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
+  GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
@@ -231,7 +243,16 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    LowerCasePipe,
+    SlicePipe,
+    CampaignBiddingControlComponent,
+    CreativeSlotGridComponent,
+  ],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -710,6 +731,14 @@ export class ImplementationTabComponent implements OnInit {
     currencyCode: '',
     offerings: this.fb.nonNullable.array(Array.from({ length: GOOGLE_ADS_MIN_PRICE_OFFERINGS }, () => this.googlePriceRowGroup())),
   });
+  /**
+   * The postal-code box and the radius sub-form, on the same terms as the call, promotion and price
+   * sub-forms above: the wrappers' form-control API, TRANSIENT (reaching the draft only when a target
+   * is added, so neither is listed in `emitDraft`), raw text throughout. `radiusUnit` starts `''`,
+   * not a unit — upstream supplies no default and neither does the form.
+   */
+  protected readonly googlePostalGeoForm = this.fb.nonNullable.group({ postalId: '' });
+  protected readonly googleProximityForm = this.fb.nonNullable.group<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
@@ -974,7 +1003,8 @@ export class ImplementationTabComponent implements OnInit {
    * A SEPARATE list from the form's single `countryCode`, not a replacement for it. `countryCode` is
    * read by five other things — the campaign-name region token, the Meta, Microsoft and Reddit geo
    * fallbacks, and the draft — and widening it to a list would change what every one of them
-   * targets. This list is additive: empty means "use the event country", exactly as before.
+   * targets. This list is additive: empty means "use the event country", exactly as before — unless
+   * a postal code or radius target will be sent, which {@link googleEffectiveGeoTargets} explains.
    */
   protected readonly googleGeoTargets = signal<string[]>([]);
   protected readonly googleMaxGeoTargets = GOOGLE_ADS_MAX_GEO_TARGETS;
@@ -988,6 +1018,48 @@ export class ImplementationTabComponent implements OnInit {
    * the control that cannot express it is the kinder one.
    */
   protected readonly googleGeoOptions = Object.keys(GOOGLE_ADS_GEO_TARGET_MAP).sort();
+  /**
+   * Google's postal-code targets, as raw geo target constant ids.
+   *
+   * Ids rather than the postal codes themselves, because that is all the wire takes: upstream's
+   * `resolveGeoList` (`internal/platform/googleads/geo.go`) reads a numeric `geoTargets` entry as a
+   * constant id from Google's published geo-targets table, and neither campaign-service nor the BFF
+   * exposes a lookup from a postal code to its id. The operator finds the id in that table. Sent in
+   * the same `geoTargets` list as {@link googleGeoTargets}, after the countries — see
+   * {@link googleEffectiveGeoTargets}.
+   *
+   * Free text rather than a select, the opposite choice from {@link googleGeoOptions}: Google's table
+   * has ~100k rows and changes, so the accepted set is not enumerable here. What upstream judges
+   * locally is the SHAPE — digits, canonical — and the add path mirrors exactly that.
+   */
+  protected readonly googlePostalGeoTargets = signal<string[]>([]);
+  /**
+   * The postal-code box's live text, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when an id is added. Derived from {@link googlePostalGeoForm},
+   * which the wrapper binds to, so readers keep a signal while the form stays the source of truth.
+   */
+  protected readonly googlePostalGeoDraft: Signal<string> = computed(() => this.googlePostalGeoFormDraft().postalId);
+  private readonly googlePostalGeoFormDraft: Signal<{ postalId: string }> = this.initFormDraft(this.googlePostalGeoForm);
+  protected readonly googlePostalGeoIdMinDigits = GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  /**
+   * Google's radius targets — "everyone within N miles of the venue" — the one location shape that
+   * is not a place in Google's table.
+   *
+   * A point in decimal degrees, not an address: `googleAdsProximityConfig` upstream carries
+   * `latitude`, `longitude`, `radius` and `radiusUnit` and nothing else, so an address has nowhere
+   * to go on the wire. An entry arrives through {@link addGoogleProximityTarget} or a restored
+   * draft; the BFF guard re-checks every entry against `validateProximityTargets` before dispatch.
+   */
+  protected readonly googleProximityTargets = signal<CampaignProximityTarget[]>([]);
+  protected readonly googleMaxProximityTargets = GOOGLE_ADS_MAX_PROXIMITY_TARGETS;
+  /** The unit select's options, labelled in lower case as the chips read ("25 kilometers around …"). */
+  protected readonly googleRadiusUnitOptions = GOOGLE_ADS_RADIUS_UNITS.map((unit) => ({ label: unit.toLowerCase(), value: unit }));
+  /**
+   * The radius sub-form's live values, on the same rule as {@link googleSitelinkDraft}: transient,
+   * reaching the saved draft only when a radius target is added. Derived from
+   * {@link googleProximityForm} through `initFormDraft`, as the call, promotion and price drafts are.
+   */
+  protected readonly googleProximityDraft: Signal<CampaignProximityTargetDraft> = this.initFormDraft(this.googleProximityForm);
   /**
    * The languages the Google campaign serves in, as ISO 639-1 codes.
    *
@@ -1365,8 +1437,185 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleEffectiveGeoTargets = computed<string[]>(() => {
     const chips = this.googleGeoTargets();
-    if (chips.length > 0) return chips;
+    const postal = this.googleDispatchedPostalGeoTargets();
+    // Countries first, then postal-code ids, in the ONE list upstream reads both spellings from.
+    if (chips.length > 0 || postal.length > 0) return [...chips, ...postal];
+    // A radius-only campaign sends NO geo list. Falling back to the event country here would be
+    // worse than redundant: Google serves the UNION of every location criterion, so a country beside
+    // a 25-mile radius would buy the whole country and make the radius mean nothing.
+    if (this.googleDispatchedProximityTargets().length > 0) return [];
     return [this.googleGeoFallbackCode()];
+  });
+
+  /**
+   * Whether the request falls back to the event country — true only when the operator added no
+   * country, no postal code and no radius that will be sent. The template's two fallback lines
+   * read this rather than the country list alone, so they cannot claim the event country is
+   * targeted while the request carries only postal codes.
+   */
+  protected readonly googleGeoUsesEventCountry = computed(
+    () => this.googleGeoTargets().length === 0 && this.googleDispatchedPostalGeoTargets().length === 0 && this.googleDispatchedProximityTargets().length === 0
+  );
+
+  /**
+   * The postal-code ids a create would carry: the list on the campaign-service road, nothing on the
+   * legacy one. The in-process creator resolves `geoTargets` through the 30-country map and DROPS
+   * any entry the map lacks, so a postal-code id sent there would be discarded while the campaign
+   * was created targeting something else.
+   */
+  private readonly googleDispatchedPostalGeoTargets = computed(() => (this.googlePostalGeoAvailable() ? this.googlePostalGeoTargets() : []));
+
+  /** The radius targets a create would carry: the list on a channel that takes them, else nothing. */
+  private readonly googleDispatchedProximityTargets = computed(() => (this.googleProximityChannel() ? this.googleProximityTargets() : []));
+
+  /**
+   * Countries and postal codes count against ONE cap, because they are one list upstream:
+   * `resolveGeoList` checks `maxGeoTargets` against the `geoTargets` slice as a whole.
+   *
+   * Only the postal ids that will be SENT are counted. Ids held on the legacy road are neither shown
+   * nor sent there, so counting them would refuse countries for a reason the operator cannot see or
+   * remove. The postal box itself renders only where the ids are sent, so its own cap is unaffected.
+   */
+  protected readonly googleGeoTargetCount = computed(() => this.googleGeoTargets().length + this.googleDispatchedPostalGeoTargets().length);
+  protected readonly googleGeoTargetsFull = computed(() => this.googleGeoTargetCount() >= GOOGLE_ADS_MAX_GEO_TARGETS);
+  /**
+   * Whether the list a create would send is OVER the cap — reachable only when postal ids held while
+   * the capability was unanswered are released by a late yes, after countries were added in the
+   * meantime (the add guards cannot see held ids). Create waits rather than letting the BFF refuse it.
+   */
+  protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
+
+  /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
+  private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
+
+  /**
+   * Whether the text in the postal-code box is not a geo target constant id at all — a postal code
+   * typed as itself (`94103`, `SW1A 1AA`) is the likely case. False while the box is empty. A
+   * five-digit US ZIP is digits too and is NOT caught here: it is a well-formed id that names some
+   * other place, which only Google can tell, and the hint under the box says so.
+   */
+  protected readonly googlePostalGeoDraftNotId = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && !GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(text);
+  });
+
+  /** Digits, but not the canonical spelling upstream requires — `02840`, `0`, a 21-digit run. */
+  protected readonly googlePostalGeoDraftNotCanonical = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(text) && !isCanonicalGoogleAdsResourceId(text);
+  });
+
+  /** Already a chip. Upstream collapses the repeat, so refusing it here only spares a dead chip. */
+  protected readonly googlePostalGeoDraftDuplicate = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && this.googlePostalGeoTargets().includes(text);
+  });
+
+  /** The message line describing the postal-code box, or null when it is clean. */
+  protected readonly googlePostalGeoDraftErrorId = computed<string | null>(() => {
+    if (this.googlePostalGeoDraftNotId()) return 'google-postal-not-id';
+    if (this.googlePostalGeoDraftNotCanonical()) return 'google-postal-not-canonical';
+    if (this.googlePostalGeoDraftDuplicate()) return 'google-postal-duplicate';
+    return null;
+  });
+
+  /**
+   * A well-formed id SHORTER than any postal-code id in Google's table — most likely a ZIP typed as
+   * itself (`94103`). A WARNING, not a refusal: upstream accepts the entry, which names some other
+   * criterion or nothing, and an operator who really meant a region id must still be able to add it.
+   * Only raised when the box is otherwise clean, so it never competes with a real error line.
+   */
+  protected readonly googlePostalGeoDraftLooksLikePostalCode = computed(() => {
+    if (this.googlePostalGeoDraftErrorId() !== null) return false;
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && text.length < GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  });
+
+  /** What the postal-code box points `aria-describedby` at: its error, else the warning, else the hint. */
+  protected readonly googlePostalGeoDraftDescribedBy = computed(() => {
+    if (this.googlePostalGeoDraftErrorId()) return this.googlePostalGeoDraftErrorId();
+    return this.googlePostalGeoDraftLooksLikePostalCode() ? 'google-postal-looks-like-code' : 'google-postal-hint';
+  });
+
+  /**
+   * The radius sub-form's three numbers, parsed: `null` for an empty box (not filled in yet), `NaN`
+   * for text that is not a number. Kept apart so the warnings below fire on what was typed, and the
+   * add button's disabled state alone covers what was not.
+   */
+  private readonly googleProximityDraftNumbers = computed(() => {
+    const draft = this.googleProximityDraft();
+    return {
+      latitude: this.parseGoogleProximityNumber(draft.latitude),
+      longitude: this.parseGoogleProximityNumber(draft.longitude),
+      radius: this.parseGoogleProximityNumber(draft.radius),
+    };
+  });
+
+  /** Typed and not a finite latitude in -90..90 — `validateProximityTargets`' first two checks. */
+  protected readonly googleProximityLatitudeInvalid = computed(() => {
+    const { latitude } = this.googleProximityDraftNumbers();
+    return latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90);
+  });
+
+  /** Typed and not a finite longitude in -180..180. */
+  protected readonly googleProximityLongitudeInvalid = computed(() => {
+    const { longitude } = this.googleProximityDraftNumbers();
+    return longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180);
+  });
+
+  /** Typed and not a finite radius above zero. */
+  protected readonly googleProximityRadiusInvalid = computed(() => {
+    const { radius } = this.googleProximityDraftNumbers();
+    return radius !== null && (!Number.isFinite(radius) || radius <= 0);
+  });
+
+  /**
+   * The picked unit's ceiling, or null before a unit is picked. Each unit has its OWN ceiling — the
+   * two are not a converted pair — so the bound cannot be shown until the unit is known.
+   */
+  protected readonly googleProximityMaxRadius = computed<number | null>(() => {
+    const unit = this.googleProximityDraft().radiusUnit;
+    return unit === '' ? null : GOOGLE_ADS_MAX_RADIUS[unit];
+  });
+
+  /** Over the picked unit's ceiling. Equal is accepted: upstream refuses only `radius > max`. */
+  protected readonly googleProximityRadiusOverMax = computed(() => {
+    const { radius } = this.googleProximityDraftNumbers();
+    const max = this.googleProximityMaxRadius();
+    return max !== null && radius !== null && Number.isFinite(radius) && radius > max;
+  });
+
+  /** The message line describing the radius box, or null when it is clean. */
+  protected readonly googleProximityRadiusErrorId = computed<string | null>(() => {
+    if (this.googleProximityRadiusInvalid()) return 'google-proximity-radius-invalid';
+    if (this.googleProximityRadiusOverMax()) return 'google-proximity-radius-too-large';
+    return null;
+  });
+
+  /** The same point, radius and unit as an entry already on the list. */
+  protected readonly googleProximityDuplicate = computed(() => {
+    const { latitude, longitude, radius } = this.googleProximityDraftNumbers();
+    const unit = this.googleProximityDraft().radiusUnit;
+    return this.googleProximityTargets().some((t) => t.latitude === latitude && t.longitude === longitude && t.radius === radius && t.radiusUnit === unit);
+  });
+
+  protected readonly googleProximityFull = computed(() => this.googleProximityTargets().length >= GOOGLE_ADS_MAX_PROXIMITY_TARGETS);
+
+  /**
+   * Whether the radius add button is withheld — {@link googleSitelinkAddDisabled}'s rule: the empty
+   * boxes and the unpicked unit are "not filled in yet", and every warning above withholds it too.
+   */
+  protected readonly googleProximityAddDisabled = computed(() => {
+    const { latitude, longitude, radius } = this.googleProximityDraftNumbers();
+    if (latitude === null || longitude === null || radius === null || this.googleProximityDraft().radiusUnit === '') return true;
+    return (
+      this.googleProximityFull() ||
+      this.googleProximityLatitudeInvalid() ||
+      this.googleProximityLongitudeInvalid() ||
+      this.googleProximityRadiusInvalid() ||
+      this.googleProximityRadiusOverMax() ||
+      this.googleProximityDuplicate()
+    );
   });
 
   /**
@@ -2118,6 +2367,11 @@ export class ImplementationTabComponent implements OnInit {
     // carries a warning instead ({@link googleCreativeEmptyWarning}), because blocking it would
     // refuse a create upstream makes.
     if (googleSelected && this.googleCreativeError() !== null) return false;
+    // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
+    // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
+    if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
+    // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
+    if (googleSelected && this.googleGeoTargetsOverCap()) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -2329,6 +2583,24 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
+  protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
+  protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
+  protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
+  /**
+   * The held-radius sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, the callout warnings' arrangement: the
+   * notice appears with the channel switch that gives it its text, so a region mounted with it would
+   * never announce.
+   */
+  protected readonly googleProximityWithheldMessage = computed(() => {
+    const channelLabel = this.googleProximityWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleProximityTargets().length;
+    return `${channelLabel} campaigns do not take radius targets, so the ${count} you added will not be sent. Switch the channel back to keep them.`;
+  });
+  protected readonly googleLocationsCapabilityBlock: Signal<CampaignGoogleLocationsCapabilityBlock | null> = this.initGoogleLocationsCapabilityBlock();
+  /** The always-mounted live region's text for `googleLocationsCapabilityBlock`; `''` when nothing is withheld. */
+  protected readonly googleLocationsCapabilityMessage = computed(() => this.googleLocationsCapabilityBlock()?.message ?? '');
   protected readonly googleAudienceSegmentsAvailable: Signal<boolean> = this.initGoogleAudienceSegmentsAvailable();
   protected readonly googleAudienceSegmentsWithheldWarning: Signal<string | null> = this.initGoogleAudienceSegmentsWithheldWarning();
   protected readonly googleAudienceSegmentsBlock: Signal<CampaignGoogleAudienceSegmentsBlock | null> = this.initGoogleAudienceSegmentsBlock();
@@ -2956,7 +3228,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected addGoogleGeoTarget(code: string): void {
     if (code === '') return;
-    if (this.googleGeoTargets().length >= GOOGLE_ADS_MAX_GEO_TARGETS) return;
+    // The COMBINED count, because the countries and the postal-code ids are one list upstream.
+    if (this.googleGeoTargetsFull()) return;
     if (this.googleGeoTargets().includes(code)) return;
     this.googleGeoTargets.update((targets) => [...targets, code]);
     this.emitDraft();
@@ -2972,6 +3245,100 @@ export class ImplementationTabComponent implements OnInit {
 
   protected removeGoogleGeoTarget(index: number): void {
     this.googleGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one postal-code target, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleCallout} is: a refusal must leave the text in the box
+   * beside the warning naming what to change. One refusal per check upstream's `resolveGeoEntry`
+   * can make locally — digits only, canonical — plus the combined cap and the repeat. Whether the
+   * id names a real postal code is NOT checked, because nothing on this road can: upstream declines
+   * that lookup, and a well-formed id naming nothing is refused by Google at the criteria mutate.
+   */
+  protected addGooglePostalGeoTarget(text: string): boolean {
+    if (this.googleGeoTargetsFull()) return false;
+    const id = googleAdsTrimSpace(text);
+    if (!GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(id)) return false;
+    if (!isCanonicalGoogleAdsResourceId(id)) return false;
+    if (this.googlePostalGeoTargets().includes(id)) return false;
+    this.googlePostalGeoTargets.update((ids) => [...ids, id]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGooglePostalGeoAdd(): void {
+    const control = this.googlePostalGeoForm.controls.postalId;
+    // Cleared ONLY on success, so a refused id stays in the box with its warning beside it. No
+    // `emitDraft()` for the text itself, matching the callout box: it reaches the draft on ADD.
+    if (this.addGooglePostalGeoTarget(control.value)) {
+      control.setValue('');
+    }
+  }
+
+  protected removeGooglePostalGeoTarget(index: number): void {
+    this.googlePostalGeoTargets.update((ids) => ids.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one radius target, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleSitelink} is: a refusal leaves the sub-form filled. One
+   * refusal per branch of upstream's `validateProximityTargets`, in its order — the cap on the list,
+   * finite coordinates in range, a finite radius above zero, a unit (no default is invented), the
+   * radius against THAT unit's ceiling — then the exact repeat, which upstream would collapse and
+   * this list simply does not grow by.
+   */
+  protected addGoogleProximityTarget(draft: CampaignProximityTargetDraft): boolean {
+    if (this.googleProximityTargets().length >= GOOGLE_ADS_MAX_PROXIMITY_TARGETS) return false;
+    const latitude = this.parseGoogleProximityNumber(draft.latitude);
+    const longitude = this.parseGoogleProximityNumber(draft.longitude);
+    const radius = this.parseGoogleProximityNumber(draft.radius);
+    if (latitude === null || longitude === null || radius === null) return false;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return false;
+    if (!Number.isFinite(radius) || radius <= 0) return false;
+    if (!(GOOGLE_ADS_RADIUS_UNITS as readonly string[]).includes(draft.radiusUnit)) return false;
+    const radiusUnit = draft.radiusUnit as GoogleAdsRadiusUnit;
+    if (radius > GOOGLE_ADS_MAX_RADIUS[radiusUnit]) return false;
+    const target: CampaignProximityTarget = { latitude, longitude, radius, radiusUnit };
+    if (this.googleProximityTargets().some((t) => t.latitude === latitude && t.longitude === longitude && t.radius === radius && t.radiusUnit === radiusUnit)) {
+      return false;
+    }
+    this.googleProximityTargets.update((targets) => [...targets, target]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleProximityAdd(): void {
+    // Cleared ONLY on success, so a refused target keeps all four fields and its warning. The unit
+    // resets to unpicked too — the next target picks its own, as the first one did.
+    if (this.addGoogleProximityTarget(this.googleProximityDraft())) {
+      this.googleProximityForm.reset();
+    }
+  }
+
+  protected removeGoogleProximityTarget(index: number): void {
+    this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Drop every postal-code and radius target held while the capability is not an explicit yes — the
+   * operator's explicit choice to create with country targeting instead, which is the only way past
+   * {@link googleLocationsCapabilityBlock} short of the check succeeding. Their sections are hidden
+   * on that road, so the chips cannot be removed one by one.
+   */
+  protected removeHeldGoogleLocationTargets(): void {
+    this.googlePostalGeoTargets.set([]);
+    // Radius targets only when the block COUNTED them. On Demand Gen they are held by the channel,
+    // not the capability, for a switch back — the banner does not name them, so it must not drop them.
+    const channel = this.resolveGoogleChannel();
+    if (channel !== null && (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) {
+      this.googleProximityTargets.set([]);
+    }
     this.emitDraft();
   }
 
@@ -3432,6 +3799,9 @@ export class ImplementationTabComponent implements OnInit {
       // exists: deriving the request's targets separately from the displayed ones is how a screen
       // ends up claiming one country while the request buys another.
       geoTargets: this.googleEffectiveGeoTargets(),
+      // The radius targets, Google-gated for the same reason the creative is below, and already
+      // withheld unless the dispatched channel is one upstream accepts proximity on.
+      ...(platforms.includes('google-ads') ? this.googleProximityPayload() : {}),
       // The per-channel creative objects, present only for a selected channel that has one and
       // only when something was actually typed into it. Google-gated for the same reason the
       // section is: a LinkedIn-only create must not carry a Google creative the operator left
@@ -4145,6 +4515,17 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleGeoTargets !== undefined) {
       this.googleGeoTargets.set([...draft.googleGeoTargets]);
     }
+    // Copied on the same rule, and restored whatever the capability is: the section and the request
+    // both gate on `googlePostalGeoAvailable`, so a list restored on the legacy road is held, not sent.
+    if (draft.googlePostalGeoTargets !== undefined) {
+      this.googlePostalGeoTargets.set([...draft.googlePostalGeoTargets]);
+    }
+    // Each entry copied as well as the array, for the reason the sitelinks below are: an entry is an
+    // object. Restored whatever the channel is — a list saved under Search and reopened on Demand Gen
+    // is held by `googleProximityChannel`, not sent, and is still there on a switch back.
+    if (draft.googleProximityTargets !== undefined) {
+      this.googleProximityTargets.set(draft.googleProximityTargets.map((t) => ({ ...t })));
+    }
     // Copied on the same rule, and restored whatever the channel selection is: the chips section
     // and `googleLanguagesPayload` both gate on `googleLanguagesChannel`, so a list restored under
     // a channel that takes no languages is held, not sent, and is still there if the operator
@@ -4370,6 +4751,9 @@ export class ImplementationTabComponent implements OnInit {
       googleCreatives: this.googleCreativeSnapshot(),
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
+      googlePostalGeoTargets: [...this.googlePostalGeoTargets()],
+      // Entries copied too, matching the restore.
+      googleProximityTargets: this.googleProximityTargets().map((t) => ({ ...t })),
       googleLanguages: [...this.googleLanguages()],
       googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
@@ -4987,6 +5371,109 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       if (!channel || this.googleLanguagesChannel() || this.googleLanguages().length === 0) return null;
       return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * Whether postal-code targets are offered and sent — on the campaign-service road with a Google
+   * channel selected, which is exactly when `googleBiddingChannel` is non-null.
+   *
+   * NO channel fence beyond that, unlike {@link initGoogleProximityChannel}: `validateGeoPlan` reads
+   * `geoTargets` on every channel, Demand Gen included (attached at the ad group there). The LEGACY
+   * road is the one gate: the in-process creator resolves `geoTargets` through the 30-country map
+   * and drops anything else, so an id sent there would vanish and the campaign target something the
+   * operator did not pick.
+   */
+  private initGooglePostalGeoAvailable(): Signal<boolean> {
+    return computed(() => this.googleBiddingChannel() !== null);
+  }
+
+  /**
+   * The channel the radius control is rendered against, or null when it should not be rendered.
+   *
+   * {@link initGoogleLanguagesChannel}'s shape exactly — `googleBiddingChannel` for the Google
+   * section and the legacy-road gate, then a channel fence — with {@link GOOGLE_CHANNELS_WITH_PROXIMITY}
+   * as the fence. Demand Gen is the one channel outside it: `validateGeoPlan` REFUSES proximity there
+   * before any mutate, so offering the control would offer a refusal.
+   */
+  private initGoogleProximityChannel(): Signal<GoogleCampaignChannel | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      return (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel) ? channel : null;
+    });
+  }
+
+  /**
+   * The label of the channel a radius list is being WITHHELD on, or null when nothing is. The list is
+   * held for a switch back, not sent, and the template says so rather than letting the control vanish.
+   *
+   * Asks {@link resolveGoogleChannel}, NOT `googleBiddingChannel` — the callouts warning's rule and
+   * for its reason. This sentence is about the CHANNEL alone, and `googleBiddingChannel` is null
+   * whenever the create capability is not an explicit yes, which would mute it on Demand Gen exactly
+   * when {@link googleLocationsCapabilityBlock} leaves Demand Gen radii to it. Then a held radius list
+   * would be dropped with nothing on screen, while the request fell back to the event country.
+   */
+  private initGoogleProximityWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || this.googleProximityTargets().length === 0) return null;
+      if ((GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * Why Create is blocked for postal-code or radius targets the capability does not let this request
+   * carry, or null when nothing is held for that reason.
+   *
+   * The extensions block's shape — {@link initGoogleExtensionsCapabilityBlock}: the same kinds, the
+   * same reads, `resolveGoogleChannel` rather than `googleBiddingChannel` because the latter's
+   * capability gate is the thing being reported on — with ONE difference: this block gates Create.
+   * A withheld extension list ships a campaign without extensions; a withheld location list ships a
+   * campaign that falls back to the event country, so a radius around the venue would become the
+   * whole country. Retry the check, or remove the targets explicitly.
+   *
+   * Radius targets on a channel that refuses them (Demand Gen) are NOT counted: they are withheld
+   * whatever the capability answers, and {@link googleProximityWithheldOn} already says so.
+   */
+  private initGoogleLocationsCapabilityBlock(): Signal<CampaignGoogleLocationsCapabilityBlock | null> {
+    return computed(() => {
+      if (this.googleCreativeAvailable()) return null;
+      const channel = this.resolveGoogleChannel();
+      if (channel === null) return null;
+
+      const postal = this.googlePostalGeoTargets().length;
+      const radius = (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel) ? this.googleProximityTargets().length : 0;
+      if (postal + radius === 0) return null;
+
+      const parts: string[] = [];
+      if (postal > 0) parts.push(`${postal} postal-code target${postal === 1 ? '' : 's'}`);
+      if (radius > 0) parts.push(`${radius} radius target${radius === 1 ? '' : 's'}`);
+      const held = parts.join(' and ');
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Postal-code and radius targeting is not available on this deployment, so the ${held} on this brief cannot be sent. Remove them to create the campaign with country targeting instead.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether the ${held} on this brief can be sent. Create waits for the check, because without them this campaign would target the whole event country.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Postal-code and radius support can't be checked until this brief is saved, so the ${held} on it cannot be sent yet. Save the brief, or remove them to create with country targeting.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that the ${held} on this brief can be sent. Retry the check, or remove them to create with country targeting.`,
+      };
     });
   }
 
@@ -5729,6 +6216,30 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleLanguagesChannel()) return {};
     const languages = this.googleLanguages();
     return languages.length > 0 ? { languages: [...languages] } : {};
+  }
+
+  /**
+   * The radius targets as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate and omit-when-empty are {@link googleLanguagesPayload}'s, through
+   * `googleDispatchedProximityTargets` — the SAME list {@link googleEffectiveGeoTargets} reads to
+   * decide whether the event-country fallback applies, so the two halves of the location plan cannot
+   * disagree about whether a radius is being sent. Entries copied, as the sitelinks are.
+   */
+  private googleProximityPayload(): Partial<CampaignCreateRequest> {
+    const targets = this.googleDispatchedProximityTargets();
+    return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
+  }
+
+  /**
+   * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
+   * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
+   * `0b11` and `1e2` and put a value on the chip the operator never typed.
+   */
+  private parseGoogleProximityNumber(text: string): number | null {
+    const trimmed = googleAdsTrimSpace(text);
+    if (trimmed === '') return null;
+    return GOOGLE_ADS_DECIMAL_NUMBER_PATTERN.test(trimmed) ? Number(trimmed) : Number.NaN;
   }
 
   /**

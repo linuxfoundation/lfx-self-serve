@@ -1165,6 +1165,27 @@ export interface CampaignImplementationDraft {
    */
   googleGeoTargets?: string[];
   /**
+   * Google's postal-code targets, as the raw geo target constant ids the operator typed.
+   *
+   * Ids rather than postal codes because that is what the wire takes: upstream's `resolveGeoList`
+   * reads a numeric entry in `geoTargets` as a constant id from Google's published geo-targets
+   * table, and neither campaign-service nor this application exposes a lookup from a postal code to
+   * its id. Sent in the same `geoTargets` list as {@link googleGeoTargets}, after the countries.
+   *
+   * Empty means "no postal codes", so an absent field and an empty list agree. Restored whatever the
+   * capability says: the section and the payload both gate on the campaign-service road, so a list
+   * restored on the legacy road is held rather than sent.
+   */
+  googlePostalGeoTargets?: string[];
+  /**
+   * Google's radius targets, as the operator added them — already validated, because an entry only
+   * reaches this list once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleLanguages}: absent and empty agree, and a list
+   * saved under a channel that takes no radius targets (Demand Gen) is kept rather than discarded.
+   */
+  googleProximityTargets?: CampaignProximityTarget[];
+  /**
    * Google's campaign languages, as ISO 639-1 codes the operator picked.
    *
    * Empty means "every language", which is Google's own default and what this path did before the
@@ -2474,6 +2495,22 @@ export interface CampaignProximityTarget {
 }
 
 /**
+ * The Implementation tab's radius sub-form as TYPED, before it becomes a
+ * {@link CampaignProximityTarget}.
+ *
+ * The three numbers are raw text for the reason {@link CampaignStructuredSnippetDraft.values} is: an
+ * empty box is "not filled in yet", which is a different state from a zero, and a zero latitude is
+ * a real point in the Gulf of Guinea that nothing downstream would refuse. `radiusUnit` admits `''`
+ * because upstream supplies no default and neither does the form — the operator picks one.
+ */
+export interface CampaignProximityTargetDraft {
+  latitude: string;
+  longitude: string;
+  radius: string;
+  radiusUnit: GoogleAdsRadiusUnit | '';
+}
+
+/**
  * The day a {@link CampaignAdSchedule} runs on.
  *
  * Derived from {@link GOOGLE_ADS_SCHEDULE_DAYS} rather than written out again, so a day spelled
@@ -2585,6 +2622,13 @@ export interface CampaignCreateRequest {
   demandGenCreative?: GoogleDemandGenCreative;
   performanceMaxCreative?: GooglePerformanceMaxCreative;
   displayCreative?: GoogleDisplayCreative;
+  /**
+   * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
+   * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
+   * shape. The Implementation tab sends its country chips first and its postal-code ids after them.
+   *
+   * Bounded by {@link GOOGLE_ADS_MAX_GEO_TARGETS} across both spellings together.
+   */
   geoTargets: string[];
   /**
    * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
@@ -5111,6 +5155,20 @@ export interface CampaignBiddingCapabilityBlock {
  * capability read for that is worse than creating and saying so.
  */
 export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for postal-code or radius targets the draft holds but the request cannot
+ * carry, because the campaign-service create capability is unanswered or answered no. The kinds
+ * mean what they do on {@link CampaignGoogleExtensionsCapabilityBlock}.
+ *
+ * Unlike that block this one GATES Create: a withheld location list does not shrink the campaign, it
+ * WIDENS it — the request falls back to the event country, so a 25-mile radius would become a
+ * nationwide campaign. The operator retries the check or removes the targets explicitly.
+ */
+export interface CampaignGoogleLocationsCapabilityBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
