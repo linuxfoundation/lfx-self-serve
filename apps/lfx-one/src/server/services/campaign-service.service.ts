@@ -533,6 +533,18 @@ export function canCreateWithBidding(): boolean {
 }
 
 /**
+ * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
+ * Either alone is not enough, and both failures are silent: the legacy creator never reads the
+ * dates, and a campaign-service older than linuxfoundation/lfx-v2-campaign-service#409 drops the
+ * unknown keys. Both would create the campaign with no flight while the operator set one.
+ */
+export function canCreateMicrosoftSchedule(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftSchedule);
+}
+
+/**
  * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
  *
  * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
@@ -775,6 +787,7 @@ export class CampaignServiceClient {
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
+        microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       };
     }
 
@@ -836,6 +849,7 @@ export class CampaignServiceClient {
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
+      microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
     };
   }
 

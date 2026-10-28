@@ -9189,3 +9189,139 @@ describe('ImplementationTabComponent meta ad image', () => {
     expect(submitVariants(f).some((v) => 'imageUrl' in v)).toBe(false);
   });
 });
+
+/**
+ * Microsoft flight dates, behind `microsoftScheduleEnabled`
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE`).
+ *
+ * Asserted on what `createCampaign` is CALLED with, because the guarantee that matters is the wire
+ * shape: `startDate` / `endDate` on `microsoftConfig` exactly as on `metaConfig` on an explicit yes,
+ * and absent otherwise — a campaign-service without #409 drops them, and the create route refuses
+ * them while the capability is off.
+ */
+describe('ImplementationTabComponent microsoft flight dates', () => {
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['meta-ads', 'microsoft-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  function component(f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    return f.componentInstance as unknown as Record<string, any>;
+  }
+
+  function query(testId: string, f: ComponentFixture<ImplementationTabComponent> = fixture): HTMLElement | null {
+    return f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function mount(schedule: boolean | null | undefined): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (schedule !== undefined) f.componentRef.setInput('microsoftScheduleEnabled', schedule);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    const c = component(f);
+    c['selectedPlatforms'].set(['meta-ads', 'microsoft-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['addMicrosoftKeyword']('service mesh');
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  async function submitted(f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, Record<string, unknown>>> {
+    expect(component(f)['canSubmit']()).toBe(true);
+    component(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+      ],
+    }).compileComponents();
+  });
+
+  describe.each([
+    ['unanswered', undefined],
+    ['null', null],
+    ['false', false],
+  ])('while the capability is %s', (_label, schedule) => {
+    it('keeps the warning that Microsoft ignores the flight dates', async () => {
+      fixture = await mount(schedule);
+
+      expect(query('implementation-microsoft-no-flight')?.textContent).toContain('Microsoft campaigns are created paused and ignore the flight dates above');
+      expect(query('implementation-microsoft-flight')).toBeNull();
+    });
+
+    it('sends no flight dates on microsoftConfig, so the create is unchanged', async () => {
+      fixture = await mount(schedule);
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('startDate');
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('endDate');
+      // Meta's are untouched by this capability.
+      expect(request['metaConfig']['startDate']).toBe('2026-09-01');
+      expect(request['metaConfig']['endDate']).toBe('2026-09-30');
+    });
+  });
+
+  describe('while the capability is an explicit yes', () => {
+    it('replaces the warning with a note that the dates are applied', async () => {
+      fixture = await mount(true);
+
+      expect(query('implementation-microsoft-no-flight')).toBeNull();
+      expect(query('implementation-microsoft-flight')?.textContent).toContain('The flight dates above are applied to the Microsoft ad group.');
+    });
+
+    it('sends the form flight dates on microsoftConfig exactly as metaConfig carries them', async () => {
+      fixture = await mount(true);
+
+      const request = await submitted();
+
+      expect(request['microsoftConfig']['startDate']).toBe('2026-09-01');
+      expect(request['microsoftConfig']['endDate']).toBe('2026-09-30');
+      expect(request['microsoftConfig']['startDate']).toBe(request['metaConfig']['startDate']);
+      expect(request['microsoftConfig']['endDate']).toBe(request['metaConfig']['endDate']);
+    });
+
+    it('stops sending them, and restores the warning, when the capability is withdrawn', async () => {
+      fixture = await mount(true);
+      fixture.componentRef.setInput('microsoftScheduleEnabled', null);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-microsoft-no-flight')).not.toBeNull();
+      const request = await submitted();
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('startDate');
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('endDate');
+    });
+  });
+});

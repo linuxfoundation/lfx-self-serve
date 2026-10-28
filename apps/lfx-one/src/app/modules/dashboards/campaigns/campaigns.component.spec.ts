@@ -1947,6 +1947,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -1985,6 +1986,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2034,6 +2036,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2068,6 +2071,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2077,6 +2081,40 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
         expect(c.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * The Microsoft flight-date capability rides on the same read, asserted the same way: every
+       * other capability set the opposite way, so a component that read the wrong key would fail.
+       */
+      it('loads the microsoft schedule capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: true,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsBiddingEnabled(): boolean | null;
+        };
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingEnabled()).toBe(false);
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
@@ -2097,8 +2135,14 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // Unknown too, which the tab treats as off: no Microsoft dates, and the warning stays.
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
         expect(c.briefCampaignsCapabilityRead()).toBe('failed');
@@ -2153,6 +2197,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2201,6 +2246,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         load();
@@ -2220,6 +2266,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2255,6 +2302,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2291,6 +2339,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2322,6 +2371,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2366,6 +2416,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2411,6 +2462,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2456,6 +2508,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2485,6 +2538,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
 
@@ -2516,6 +2570,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2537,6 +2592,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2567,6 +2623,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2579,6 +2636,7 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect((c as unknown as { briefCampaignsMicrosoftScheduleEnabled(): boolean | null }).briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
@@ -2606,6 +2664,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2642,6 +2701,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2678,6 +2738,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2717,6 +2778,7 @@ describe('CampaignsComponent brief persistence', () => {
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2787,6 +2849,7 @@ describe('CampaignsComponent brief persistence', () => {
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
           })
         );
         load();
@@ -11140,7 +11203,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+  const capability = (biddingEnabled: boolean, microsoftScheduleEnabled = false): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11154,6 +11217,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
       biddingEnabled,
+      microsoftScheduleEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11224,6 +11288,25 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     selectFoundation('tlf');
     await settle();
+  });
+
+  /**
+   * The Microsoft flight-date capability travels the same path into the tab: the real page reads
+   * it, binds it to `microsoftScheduleEnabled`, and the tab swaps its warning for the applied note.
+   */
+  it.each([
+    [true, 'implementation-microsoft-flight', 'implementation-microsoft-no-flight'],
+    [false, 'implementation-microsoft-no-flight', 'implementation-microsoft-flight'],
+  ])('hands a microsoft schedule capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, enabled));
+    const withMicrosoft = { ...brief, selectedPlatforms: ['microsoft-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withMicrosoft);
+    await settle();
+
+    expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
   });
 
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {
