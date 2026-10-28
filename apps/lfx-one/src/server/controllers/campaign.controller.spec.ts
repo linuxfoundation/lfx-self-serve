@@ -9110,19 +9110,20 @@ describe('CampaignController survey surface', () => {
     ]);
   });
 
-  it('refuses a malformed survey link before generating anything', async () => {
-    const req = {
-      body: { deliveryType: 'survey', url: 'not a link', sourceText: 'Survey' },
-      query: {},
-      path: '/api/campaigns/brief/generate',
-    } as unknown as Request;
+  // Protocol-less and relative values included: a check that prefixed them with a base URL would
+  // accept them as links on that host, and the brief's slug and button would point nowhere real.
+  it.each(['not a link', 'surveys.example.com/r/cloud-2026', '/r/cloud-2026', 'ftp://surveys.example.com/r/x'])(
+    'refuses %s as a survey link before generating anything',
+    async (url) => {
+      const req = { body: { deliveryType: 'survey', url, sourceText: 'Survey' }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
 
-    await controller.generateBrief(req, res, next);
+      await controller.generateBrief(req, res, next);
 
-    const error = vi.mocked(next).mock.calls[0][0];
-    expect(error).toBeInstanceOf(ServiceValidationError);
-    expect(fieldOf(error)).toBe('url');
-  });
+      const error = vi.mocked(next).mock.calls[0][0];
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(fieldOf(error)).toBe('url');
+    }
+  );
 
   describe('createSendWorkflow', () => {
     function buildWorkflowReq(body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
@@ -9140,6 +9141,11 @@ describe('CampaignController survey surface', () => {
       ['no name', { name: '  ', briefIds: ['a', 'b'] }],
       ['no briefs', { name: 'Survey - Workflow', briefIds: [] }],
       ['briefs that are not strings', { name: 'Survey - Workflow', briefIds: [1, null, ' '] }],
+      // Matched to workflow steps BY POSITION, so a bad entry is refused rather than dropped:
+      // dropping it would shift every later brief or date onto the wrong step.
+      ['one bad brief among good ones', { name: 'Survey - Workflow', briefIds: ['a', '', 'b'] }],
+      ['a date that is not YYYY-MM-DD', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', '11/09/2026'] }],
+      ['a date that is not a string', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', 7] }],
     ])('refuses a body with %s', async (_label, body) => {
       await controller.createSendWorkflow(buildWorkflowReq(body), res, next);
 
@@ -9152,7 +9158,7 @@ describe('CampaignController survey surface', () => {
       svcCreateSendWorkflow.mockResolvedValue(created);
 
       await controller.createSendWorkflow(
-        buildWorkflowReq({ name: ' Survey - Workflow ', briefIds: ['a', '', 'b'], sendDates: ['2026-11-02', 7, '2026-11-09'] }),
+        buildWorkflowReq({ name: ' Survey - Workflow ', briefIds: [' a', 'b '], sendDates: ['2026-11-02', ' 2026-11-09'] }),
         res,
         next
       );

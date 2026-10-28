@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -60,7 +61,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })

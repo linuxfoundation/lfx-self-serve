@@ -514,6 +514,22 @@ describe('CampaignProxyService email delivery type', () => {
       expect(events.at(-1)?.type).toBe('done');
     });
 
+    it('names a Google Form after its title, not after the `viewform` every form ends in', async () => {
+      const events = await drain(
+        service.streamBrief(
+          req,
+          { ...surveyRequest, url: 'https://docs.google.com/forms/d/e/1FAIpQ/viewform' },
+          new AbortController().signal
+        ) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      // Two forms in one project would otherwise share one brief, keyed on the slug.
+      expect((events.find((e) => e.type === 'event')?.data as Record<string, unknown>)['slug']).toBe('2026-cloud-native-survey');
+    });
+
     it('refuses a survey with nothing pasted rather than inventing its facts', async () => {
       const events = await drain(
         service.streamBrief(req, { ...surveyRequest, sourceText: '   ' }, new AbortController().signal) as AsyncGenerator<{ type: string; data: unknown }>

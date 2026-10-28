@@ -2882,7 +2882,10 @@ export class CampaignServiceClient {
    */
   public async createSendWorkflow(req: Request, projectSlug: string, body: CampaignSendWorkflowRequest): Promise<CampaignSendWorkflowResult> {
     if (projectSlug === '') {
-      throw new Error('A send workflow requires the project.');
+      throw ServiceValidationError.forField('project', 'A send workflow requires the project.', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
     }
     const created = await this.microserviceProxy.proxyRequest<CampaignServiceSendWorkflowResult>(
       req,
@@ -2914,7 +2917,12 @@ export class CampaignServiceClient {
     // operator needs most, since the workflow is created DISABLED and does nothing until they open
     // it and turn it on, so a response without one is not a usable success.
     if (typeof created?.flow_id !== 'string' || created.flow_id.trim() === '' || typeof created?.edit_url !== 'string' || created.edit_url.trim() === '') {
-      throw new Error('The campaign service reported a workflow but returned no usable workflow link.');
+      // 502: the upstream answered 2xx with a body this layer cannot use -- a gateway failure,
+      // not the caller's mistake and not an unexplained 500.
+      throw new MicroserviceError('The campaign service reported a workflow but returned no usable workflow link.', 502, 'BAD_GATEWAY', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
     }
     return {
       flowId: created.flow_id,

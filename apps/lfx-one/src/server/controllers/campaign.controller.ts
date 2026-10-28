@@ -76,6 +76,7 @@ import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
   CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
@@ -201,7 +202,7 @@ import {
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
-import { validateAndSanitizeUrl, validateScrapeUrl } from '../helpers/url-validation';
+import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getLinkedInConfig } from '../services/linkedin-ads.service';
 import { CampaignProxyService } from '../services/campaign-proxy.service';
@@ -428,7 +429,17 @@ export class CampaignController {
     // failed — cannot verify host safety") blocked the whole flow for a page nobody was going to
     // request. The link is still checked for shape below, so a malformed one cannot reach a draft.
     if (body.deliveryType === 'survey') {
-      if (validateAndSanitizeUrl(body.url) === null) {
+      // Parsed here rather than run through `validateAndSanitizeUrl`, which prefixes a
+      // protocol-less value with the PCC base URL and so accepts `surveys.example.com/x` or a
+      // relative path as a link on the PCC host. The link becomes the brief's slug and the email's
+      // button, so it has to be a real absolute http(s) URL as typed.
+      let surveyUrl: URL | null = null;
+      try {
+        surveyUrl = new URL(body.url.trim());
+      } catch {
+        surveyUrl = null;
+      }
+      if (surveyUrl === null || (surveyUrl.protocol !== 'http:' && surveyUrl.protocol !== 'https:') || surveyUrl.hostname === '') {
         _next(
           ServiceValidationError.forField('url', 'url must be a valid http(s) link', {
             operation: 'campaign_generate_brief',
@@ -438,6 +449,7 @@ export class CampaignController {
         );
         return;
       }
+      body.url = surveyUrl.href;
     } else {
       try {
         await validateScrapeUrl(body.url);
@@ -3080,7 +3092,24 @@ export class CampaignController {
     }
 
     const body = req.body as Partial<CampaignSendWorkflowRequest> | undefined;
-    const briefIds = Array.isArray(body?.briefIds) ? body.briefIds.filter((id): id is string => typeof id === 'string' && id.trim() !== '') : [];
+    // REFUSED, not filtered. Both arrays are matched to the workflow's steps BY POSITION -- brief
+    // n to send step n, date n to wait step n -- so dropping a malformed entry from the middle
+    // would shift every later one onto the wrong step of a schedule that sends real email.
+    const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+    const refuse = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'send_workflow_create', service: 'campaign_controller', path: req.path }));
+    if (body?.briefIds !== undefined && (!Array.isArray(body.briefIds) || !body.briefIds.every(isNonEmptyString))) {
+      refuse('briefIds', 'briefIds must be a list of brief ids');
+      return;
+    }
+    if (
+      body?.sendDates !== undefined &&
+      (!Array.isArray(body.sendDates) || !body.sendDates.every((date) => isNonEmptyString(date) && CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN.test(date.trim())))
+    ) {
+      refuse('sendDates', 'sendDates must be a list of YYYY-MM-DD dates');
+      return;
+    }
+    const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
     const sourceWorkflowUrl = typeof body?.sourceWorkflowUrl === 'string' ? body.sourceWorkflowUrl.trim() : '';
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
 
@@ -3105,7 +3134,7 @@ export class CampaignController {
         sourceWorkflowUrl,
         name,
         briefIds,
-        sendDates: Array.isArray(body?.sendDates) ? body.sendDates.filter((d): d is string => typeof d === 'string' && d.trim() !== '') : undefined,
+        sendDates: body?.sendDates?.map((date) => date.trim()),
       });
       logger.success(req, 'send_workflow_create', startTime, { flowId: created.flowId, sends: created.sendEmailSteps });
       res.json(created);

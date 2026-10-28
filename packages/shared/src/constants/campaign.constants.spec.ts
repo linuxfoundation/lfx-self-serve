@@ -559,7 +559,15 @@ describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
     for (const option of CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS) {
       expect(option.label.trim(), String(option.count)).not.toBe('');
       expect(option.description.trim(), String(option.count)).not.toBe('');
+      // One stage per email, every one a real survey stage, opening on the promo.
+      expect(option.stages.length, String(option.count)).toBe(option.count);
+      expect(option.stages[0]).toBe('Survey Promo');
+      for (const stage of option.stages) {
+        expect((CAMPAIGN_SURVEY_STAGES as readonly string[]).includes(stage), stage).toBe(true);
+      }
     }
+    // Two sends end on the CLOSING, the one that carries the deadline, not on a reminder.
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((o) => o.count === 2)?.stages).toEqual(['Survey Promo', 'Survey Closing']);
   });
 });
 

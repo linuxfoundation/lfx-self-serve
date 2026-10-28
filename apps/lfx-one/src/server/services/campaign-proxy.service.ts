@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -1546,11 +1547,29 @@ export class CampaignProxyService {
 
       // Derived from the promoted URL's own path, the same shape the event path falls back to, so
       // two assets promoted from one link collide rather than silently becoming separate briefs.
-      let slug = '';
+      //
+      // Except where the last segment names the PAGE rather than the asset. Every Google Form ends
+      // in `viewform`, so two surveys in one project would share -- and overwrite -- one brief.
+      // Those, and a URL with no path at all, take the asset's own name instead.
+      let lastSegment = '';
       try {
-        slug = new URL(body.url).pathname.split('/').filter(Boolean).pop() ?? '';
+        lastSegment = decodeURIComponent(new URL(body.url).pathname.split('/').filter(Boolean).pop() ?? '');
       } catch {
-        slug = '';
+        lastSegment = '';
+      }
+      const slugOf = (value: string): string =>
+        value
+          .toLowerCase()
+          .normalize('NFKD')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 100);
+      const pageSegment = slugOf(lastSegment.replace(/\.[a-z0-9]+$/i, ''));
+      const slug = pageSegment === '' || CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS.has(pageSegment) ? slugOf(name) : pageSegment;
+      // campaign-service keys the brief on the slug and refuses an empty one, so say so here.
+      if (slug === '') {
+        yield { type: 'error', data: 'Could not name this campaign: start the pasted text with the survey or report title.' };
+        return;
       }
 
       yield {

@@ -3475,13 +3475,23 @@ export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
 export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
 
 /**
+ * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
+ * every form in `viewform`). A survey brief is keyed on its slug, so these fall back to the asset's
+ * own name instead of making every form in a project one brief.
+ */
+export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set(['viewform', 'formresponse', 'edit', 'index', 'form', 'survey', 's', 'r']);
+
+/** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
+export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
  * How many emails a survey can be promoted by. Two sends are an opening and a CLOSING, not a
  * reminder: with only two, the second is the last one the reader gets, so it carries the deadline.
  */
 export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
-  { count: 1, label: 'One email', description: 'A single send, scheduled on its own' },
-  { count: 2, label: 'Two emails', description: 'An opening and a closing push' },
-  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing' },
+  { count: 1, label: 'One email', description: 'A single send, scheduled on its own', stages: ['Survey Promo'] },
+  { count: 2, label: 'Two emails', description: 'An opening and a closing push', stages: ['Survey Promo', 'Survey Closing'] },
+  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing', stages: ['Survey Promo', 'Survey Reminder', 'Survey Closing'] },
 ] as const;
 
 // ---------------------------------------------------------------------------

@@ -529,8 +529,6 @@ export interface CampaignSequenceSend {
   label: string;
   briefId: string;
   copy: EmailBriefCopy;
-  /** The calendar date (YYYY-MM-DD) this send goes out, typed by the operator. */
-  sendDate: string;
   /** The HubSpot draft this send was staged as: its link, and its id for pasting into search. */
   draftUrl?: string;
   draftId?: string;
@@ -609,6 +607,8 @@ export interface CampaignSurveyEmailCountOption {
   count: number;
   label: string;
   description: string;
+  /** The stages this count's sends occupy, in send order. */
+  stages: readonly CampaignSurveyStage[];
 }
 
 /** Where a survey series' generate, stage or workflow build stands. */

@@ -1259,6 +1259,11 @@
                   @if (surveySequenceState() === 'error') {
                     <p class="text-sm text-red-700" role="alert" data-testid="campaigns-survey-sequence-error">{{ surveySequenceError() }}</p>
                   }
+                  <!-- Whatever the state: sharing the audience is best effort, so the series is
+                       written either way and this is the only place that says a send lacks one. -->
+                  @if (surveySequenceWarning(); as warning) {
+                    <p class="text-sm text-amber-800" role="status" data-testid="campaigns-survey-sequence-warning">{{ warning }}</p>
+                  }
 
                   <!-- The written sends, for review before any of them reaches HubSpot. -->
                   @if (surveySequenceSends().length > 0) {
@@ -1268,15 +1273,16 @@
                           <div class="mb-2 flex items-center justify-between gap-3">
                             <span class="text-sm font-semibold text-gray-900">{{ $index + 1 }}. {{ send.label }}</span>
                             @if (surveySequenceSends().length > 1) {
-                              <label class="flex items-center gap-2 text-xs text-gray-600">
-                                Send date
-                                <input
+                              <div class="flex items-center gap-2 text-xs text-gray-600">
+                                <label [for]="'survey-sequence-date-' + $index">Send date</label>
+                                <lfx-input-text
+                                  [form]="sequenceDatesForm"
+                                  [control]="'date-' + $index"
                                   type="date"
-                                  [value]="send.sendDate"
-                                  (input)="onSurveySendDateInput(send.stage, $any($event.target).value)"
-                                  class="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  [attr.data-testid]="'campaigns-survey-sequence-date-' + $index" />
-                              </label>
+                                  size="small"
+                                  [inputId]="'survey-sequence-date-' + $index"
+                                  [dataTest]="'campaigns-survey-sequence-date-' + $index" />
+                              </div>
                             }
                           </div>
                           <!-- Where this send landed in HubSpot, once it is staged. -->
@@ -1300,11 +1306,12 @@
                           <p class="text-sm font-medium text-gray-900" data-testid="campaigns-survey-sequence-subject">{{ send.copy.subject }}</p>
                           <p class="mb-2 text-xs text-gray-500" data-testid="campaigns-survey-sequence-preheader">{{ send.copy.preheader }}</p>
                           <!-- The body as it will be STAGED (resource-loading HTML removed, a
-                               refused button's label folded in). Structure only: Angular strips
-                               inline styles here, so this is never a faithful preview. -->
-                          <div
-                            class="max-h-48 overflow-y-auto border-t border-gray-100 pt-2 text-sm text-gray-700"
-                            [innerHTML]="surveySequenceBodies().get(send.briefId) ?? ''"></div>
+                               refused button's label folded in), framed in the same sandboxed
+                               preview as the single send, so its inline styles survive. -->
+                          <lfx-email-body-preview
+                            [html]="surveySequenceBodies().get(send.briefId) ?? ''"
+                            [heightPx]="240"
+                            [testId]="'campaigns-survey-sequence-body-' + $index" />
                         </div>
                       }
                     </div>
@@ -1366,14 +1373,12 @@
                     <div class="flex flex-col gap-2 border-t border-gray-100 pt-3">
                       <div class="flex flex-col gap-1">
                         <label for="send-workflow-name" class="text-xs font-medium text-gray-700">Workflow name</label>
-                        <input
-                          id="send-workflow-name"
-                          type="text"
-                          [value]="sendWorkflowName()"
-                          (input)="onSendWorkflowNameInput($any($event.target).value)"
+                        <lfx-input-text
+                          [form]="sendWorkflowForm"
+                          control="name"
+                          inputId="send-workflow-name"
                           placeholder="e.g. 2026 Cloud Native Survey - Workflow"
-                          class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          data-testid="campaigns-send-workflow-name-input" />
+                          dataTest="campaigns-send-workflow-name-input" />
                         <p class="text-xs text-gray-500">
                           Copies the configured survey workflow &mdash; its schedule, sending windows and suppression &mdash; then points its sends at these
                           drafts and enrols this campaign's audience. It arrives turned OFF.
@@ -1401,14 +1406,18 @@
                         <p class="text-sm text-green-700" role="status" data-testid="campaigns-send-workflow-result">
                           Built &ldquo;{{ workflow.name }}&rdquo; with {{ workflow.sendEmailSteps }} sends. It is turned OFF and sends nothing until you enable
                           it.
-                          <a
-                            [href]="workflow.editUrl"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="font-medium underline hover:no-underline"
-                            data-testid="campaigns-send-workflow-link"
-                            >Review it in HubSpot</a
-                          >
+                          @if (workflow.editUrl) {
+                            <a
+                              [href]="workflow.editUrl"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="font-medium underline hover:no-underline"
+                              data-testid="campaigns-send-workflow-link"
+                              >Review it in HubSpot</a
+                            >
+                          } @else {
+                            Find it under Workflows in HubSpot.
+                          }
                         </p>
                       }
                     </div>

@@ -8224,7 +8224,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       surveyEmailCount: WritableSignal<number>;
       surveySequenceStages: Signal<readonly string[]>;
       surveySequenceSends: WritableSignal<
-        readonly { stage: string; label: string; briefId: string; copy: EmailBriefCopy; sendDate: string; draftUrl?: string; draftId?: string }[]
+        readonly { stage: string; label: string; briefId: string; copy: EmailBriefCopy; draftUrl?: string; draftId?: string }[]
       >;
       surveySequenceState: Signal<string>;
       surveySequenceError: Signal<string>;
@@ -8236,7 +8236,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       canBuildSequenceWorkflow: Signal<boolean>;
       surveySequenceBodies: Signal<ReadonlyMap<string, string>>;
       onSurveyEmailCountChange(count: number): void;
-      onSurveySendDateInput(stage: string, value: string): void;
+      sequenceDatesForm: { controls: Record<string, { setValue(v: string): void }> };
+      sequenceUnresolvedBriefIds: Signal<readonly string[]>;
+      surveySequenceWarning: Signal<string>;
+      canStageSequence: Signal<boolean>;
+      sendWorkflowResult: Signal<{ editUrl: string } | null>;
       onGenerateSurveySequence(): Promise<void>;
       onStageSequenceSends(): Promise<void>;
       onBuildSequenceWorkflow(): Promise<void>;
@@ -8359,7 +8363,19 @@ describe('CampaignsComponent — email delivery channel', () => {
             enabled: true,
             audiences:
               briefId === 'brief-1'
-                ? [{ id: 'aud-1', status: 'built', platformMasterListId: '31027', includeListIds: ['31027', '31028'], suppressionListIds: ['201'] }]
+                ? [
+                    // NEWEST FIRST, as campaign-service lists them: the current audience is the
+                    // first built row, not the last.
+                    {
+                      id: 'aud-2',
+                      platform: 'hubspot',
+                      status: 'built',
+                      platformMasterListId: '31027',
+                      includeListIds: ['31027', '31028'],
+                      suppressionListIds: ['201'],
+                    },
+                    { id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '30001', suppressionListIds: ['200'] },
+                  ]
                 : [],
           }) as never
       );
@@ -8381,7 +8397,6 @@ describe('CampaignsComponent — email delivery channel', () => {
           stage: 'Survey Promo',
           label: 'Survey Promotion',
           briefId: 'brief-1',
-          sendDate: '',
           copy: {
             subject: 's',
             preheader: 'p',
@@ -8403,8 +8418,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       seq().selectedEmailTemplateId.set('hs-1');
       seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       seq().surveySequenceSends.set([
-        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo'), sendDate: '' },
-        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-2', copy: copyFor('Survey Closing'), sendDate: '' },
+        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') },
+        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-2', copy: copyFor('Survey Closing') },
       ]);
       const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: '', error: 'no audience found for this brief' }) as never);
 
@@ -8426,7 +8441,6 @@ describe('CampaignsComponent — email delivery channel', () => {
           stage: 'Survey Promo',
           label: 'Survey Promotion',
           briefId: 'brief-1',
-          sendDate: '',
           copy: { ...copyFor('Survey Promo'), ctaUrl: 'https://surveys.example.com/r/cloud-native-2026/' },
         },
       ]);
@@ -8458,8 +8472,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);
       seq().surveySequenceSends.set([
-        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo'), sendDate: '' },
-        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-2', copy: copyFor('Survey Closing'), sendDate: '' },
+        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') },
+        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-2', copy: copyFor('Survey Closing') },
       ]);
       const build = vi
         .spyOn(service, 'createSendWorkflow')
@@ -8471,7 +8485,6 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(build).not.toHaveBeenCalled();
 
       seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2']);
-      seq().onSurveySendDateInput('Survey Promo', '2026-11-02');
       expect(seq().canBuildSequenceWorkflow()).toBe(true);
       await seq().onBuildSequenceWorkflow();
 
@@ -8480,9 +8493,68 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sendWorkflowState()).toBe('done');
     });
 
+    it('sends every date when every one is filled in', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(2);
+      seq().emailBriefOutput.set(surveyBrief);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceDatesForm.controls['date-0'].setValue('2026-11-02');
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2']);
+      const build = vi
+        .spyOn(service, 'createSendWorkflow')
+        .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'javascript:alert(1)', sendEmailSteps: 2 }) as never);
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(build.mock.calls[0][1]).toMatchObject({ briefIds: ['brief-1', 'brief-2'], sendDates: ['2026-11-02', '2026-11-09'] });
+      // The review link is pinned to HubSpot's https app host; anything else is not rendered.
+      expect(seq().sendWorkflowResult()?.editUrl).toBe('');
+    });
+
+    it('does not attach an audience to a send whose own audience could not be read, and says so', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(2);
+      seq().emailBriefOutput.set(surveyBrief);
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          (briefId === 'brief-1'
+            ? of({
+                enabled: true,
+                audiences: [{ id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '31027', suppressionListIds: ['201'] }],
+              })
+            : of({ enabled: false })) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      // An outage that hid an existing audience must not mint a second one.
+      expect(attach).not.toHaveBeenCalled();
+      expect(seq().surveySequenceState()).toBe('done');
+      expect(seq().surveySequenceWarning()).toContain('could not be read');
+    });
+
+    it('holds a send whose draft never reported back instead of offering to stage it again', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(throwError(() => new Error('Campaign creation is taking longer than expected.')) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(['brief-1']);
+      expect(seq().sequenceStagingMessage()).toContain('Check HubSpot');
+      // A retry could clone a second draft, so staging stays off until the series is rewritten.
+      expect(seq().canStageSequence()).toBe(false);
+    });
+
     it('forgets the series, its drafts and its workflow when the brief is reset', () => {
       selectSurvey();
-      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo'), sendDate: '' }]);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
       seq().sequenceStagedBriefIds.set(['brief-1']);
 
       seq().onSelectEmailType('report-promo');
