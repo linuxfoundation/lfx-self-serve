@@ -214,6 +214,15 @@ Respond with a JSON object matching the provided schema exactly. Do not include 
 export const AI_MODEL = 'claude-sonnet-4-5';
 
 /**
+ * The shape of every name the LiteLLM proxy publishes: lower-case letters, digits and hyphens only
+ * (`claude-sonnet-4-5`, `amazon-nova-pro`). Neither spelling of a Bedrock routing id matches it —
+ * the provider-prefixed one carries a `/`, the bare inference-profile one carries dots and a colon.
+ * Shared by the startup warning in `ai-model.helper.ts` and the default's shape check in
+ * `ai.constants.spec.ts`.
+ */
+export const AI_PUBLISHED_MODEL_NAME_PATTERN = /^[a-z0-9-]+$/;
+
+/**
  * Which sampling parameters each model family accepts — first match wins, and no match means
  * `none`.
  *

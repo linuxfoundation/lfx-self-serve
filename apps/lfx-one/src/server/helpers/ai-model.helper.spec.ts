@@ -138,6 +138,17 @@ describe('logAiModelConfig', () => {
     expect(vi.mocked(second.logger.info).mock.calls[0][3]).toMatchObject({ sampling_mode: 'none', sampling_family: 'unknown' });
   });
 
+  it('reports model and source from the same memoized read, even if env changes afterwards', async () => {
+    delete process.env['AI_MODEL'];
+    const { getAiModel, logAiModelConfig, logger } = await loadHelper();
+    expect(getAiModel()).toBe(AI_MODEL);
+
+    process.env['AI_MODEL'] = 'claude-opus-4-6';
+    logAiModelConfig();
+
+    expect(vi.mocked(logger.info).mock.calls[0][3]).toMatchObject({ model: AI_MODEL, source: 'default' });
+  });
+
   it('warns when the configured name is a Bedrock routing id rather than a published short name', async () => {
     process.env['AI_MODEL'] = 'bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0';
     const { logAiModelConfig, logger } = await loadHelper();

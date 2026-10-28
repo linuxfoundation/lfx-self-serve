@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { findAiSamplingRule, getAiSamplingParams, resolveAiSamplingMode } from '../utils/ai.utils';
-import { AI_MODEL, AI_REQUEST_CONFIG, AI_SAMPLING_COMPATIBILITY } from './ai.constants';
+import { AI_MODEL, AI_PUBLISHED_MODEL_NAME_PATTERN, AI_REQUEST_CONFIG, AI_SAMPLING_COMPATIBILITY } from './ai.constants';
 
 /**
  * The first two cases pin the default's shape only, never which model is named — that is expected
@@ -34,7 +34,7 @@ import { AI_MODEL, AI_REQUEST_CONFIG, AI_SAMPLING_COMPATIBILITY } from './ai.con
 describe('AI_MODEL', () => {
   it('is not a Bedrock routing id in either spelling the proxy answers 429 to (#4333)', () => {
     expect(AI_MODEL).not.toContain('/');
-    expect(AI_MODEL).toMatch(/^[a-z0-9-]+$/);
+    expect(AI_MODEL).toMatch(AI_PUBLISHED_MODEL_NAME_PATTERN);
   });
 
   it('is a non-empty value, so no request falls back to an unrouted empty model', () => {
