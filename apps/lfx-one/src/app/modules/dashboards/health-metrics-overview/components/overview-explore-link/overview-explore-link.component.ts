@@ -20,5 +20,5 @@ export class OverviewExploreLinkComponent {
   public readonly testId = input.required<string>();
 
   protected readonly linkClass =
-    'inline-flex h-[30px] items-center gap-[6px] rounded-full border border-blue-400 bg-white px-[13px] text-[12px] font-medium text-blue-600 transition-colors hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500';
+    'inline-flex h-[30px] items-center gap-[6px] rounded-[12px] border border-blue-400 bg-white px-[13px] text-[12px] font-medium text-blue-600 transition-colors hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500';
 }
