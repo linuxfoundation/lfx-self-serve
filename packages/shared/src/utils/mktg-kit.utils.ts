@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatInTimeZone } from 'date-fns-tz';
+import { enGB } from 'date-fns/locale';
 import type { FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
@@ -14,10 +16,25 @@ import {
 import type { MktgDocumentListItem, MktgDocumentsResponse } from '../interfaces/mktg-document-store.interface';
 import type { MktgKitAsset, MktgKitAssetRow, MktgKitFamily, MktgKitFamilyView, MktgKitSummary, MktgKitSourcesView } from '../interfaces/mktg-kit.interface';
 
+import { isMktgFamilyAgentAvailable } from './mktg-family-actions.utils';
+
+/** The Kit catalogue owns common asset display labels. */
+export function mktgKitAssetLabel(agentKey: string): string | undefined {
+  return MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((asset) => asset.agentKey === agentKey)?.label;
+}
+
+/** Stable UTC day/month for one-off history; invalid or absent timestamps remain unknown. */
+export function mktgKitRunDate(createdAt: string | null | undefined): string {
+  const date = new Date(createdAt ?? '');
+  return Number.isFinite(date.getTime()) ? formatInTimeZone(date, 'UTC', 'd MMM', { locale: enGB }) : '—';
+}
+
 /** Render workflow states independently of their provenance (including future producer states). */
-export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'version' | 'monthlyCount'>): string {
+export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'version' | 'monthlyCount'> & Partial<Pick<MktgKitAssetRow, 'document'>>): string {
+  if (row.state === 'coming-soon') return MKTG_KIT_STATE_LABELS['coming-soon'];
   if (row.monthlyCount !== null) {
-    return row.monthlyCount > 0 ? `${row.monthlyCount} this month` : MKTG_KIT_STATE_LABELS.missing;
+    if (row.monthlyCount > 0) return `${row.monthlyCount} this month`;
+    return row.document ? `Last run ${mktgKitRunDate(row.document.createdAt)}` : MKTG_KIT_STATE_LABELS.missing;
   }
   if (!row.state) return '';
   const label = MKTG_KIT_STATE_LABELS[row.state];
@@ -64,14 +81,22 @@ export function resolveMktgKitAsset(asset: MktgKitAsset, listing: MktgDocumentsR
     monthlyCount: null,
     badge: '',
   };
-  if (type?.kind === 'run') {
-    row.state = null;
+  if (!type?.catalogAgentId || !isMktgFamilyAgentAvailable(type.catalogAgentId)) {
+    row.state = 'coming-soon';
+  } else if (type.kind === 'run') {
+    // Listing order is not a createdAt guarantee: select the newest run without mutating it.
+    row.document = documents.reduce<MktgDocumentListItem | null>((latest, entry) => {
+      const created = Date.parse(entry.createdAt ?? '');
+      const previous = Date.parse(latest?.createdAt ?? '');
+      return !latest || (Number.isFinite(created) && (!Number.isFinite(previous) || created > previous)) ? entry : latest;
+    }, null);
+    row.state = row.document ? null : 'missing';
     row.monthlyCount = documents.filter((entry) => {
       if (!entry.createdAt) return false;
       const date = new Date(entry.createdAt);
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+      return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
     }).length;
-  } else if (type) {
+  } else {
     const living = resolveMktgKitLivingState(document);
     row.state = living.state;
     row.version = living.version;
@@ -127,6 +152,8 @@ export function mktgKitSources(sidecar: Record<string, unknown> | null): MktgKit
   if (!read.length && !failed.length) return null;
   const sourceLabel = failed.length === 1 ? 'source' : 'sources';
   return {
+    readCount: read.length,
+    failedCount: failed.length,
     readText: read.length ? `Sources read on the last run: ${read.join(', ')}.` : '',
     failedText: failed.length ? `${failed.length} ${sourceLabel} failed: ${failed.map((source) => `${source.name}: ${source.reason}`).join('; ')}.` : '',
   };

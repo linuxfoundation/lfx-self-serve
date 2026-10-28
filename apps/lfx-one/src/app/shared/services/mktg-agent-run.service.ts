@@ -3,7 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import {
   MKTG_ARTIFACT_SHA256_REGEX,
   MKTG_RUN_FAILURE_REASON,
@@ -12,6 +13,7 @@ import {
   MKTG_RUN_STORAGE_KEY_PREFIX,
   MKTG_RUN_STORAGE_TTL_MS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_AGENT_INTAKES,
   MKTG_LAST_INTAKE_API,
 } from '@lfx-one/shared/constants';
 import {
@@ -39,7 +41,7 @@ import {
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
-import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity } from '@lfx-one/shared/utils';
+import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity, mktgRunModeFor } from '@lfx-one/shared/utils';
 import {
   catchError,
   concat,
@@ -51,8 +53,10 @@ import {
   map,
   Observable,
   of,
+  shareReplay,
   switchMap,
   take,
+  takeUntil,
   takeWhile,
   tap,
   throwError,
@@ -64,6 +68,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 
 import { UserService } from './user.service';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
+import { ProjectContextService } from './project-context.service';
 
 /**
  * Form-first agent runs for the Marketing OS marketplace. A first run submits
@@ -86,8 +91,10 @@ import { MktgRunAttemptService } from './mktg-run-attempt.service';
  * stored or retried. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
- * Each run (session + answers + versions) persists in localStorage, keyed to
- * the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
+ * Living runs (session + answers + versions) persist in localStorage. Personalized
+ * one-off versions remain live-memory only; their server-recorded Document is durable.
+ * Optional pending recovery retains minimal proof, not private one-off inputs/output.
+ * Stored runs are keyed to the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
  * user-keyed invalidation precedent in user.service.ts), so one user's stored
  * session — whose ownerToken is HMAC-bound to their sub — can never be replayed
  * as another's. Persistence is time-bounded (`MKTG_RUN_STORAGE_TTL_MS`): the
@@ -102,6 +109,11 @@ export class MktgAgentRunService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly userService = inject(UserService);
   private readonly attempts = inject(MktgRunAttemptService);
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly runScope = computed(() => JSON.stringify([this.attempts.subject(), this.projectContext.activeContextUid()]));
+  private readonly runScope$ = toObservable(this.runScope);
+  /** An ACK can arrive after its page leaves; returning intakes re-read the existing private draft. */
+  public readonly acknowledgementVersion = signal(0);
 
   /**
    * In-memory runs, keyed exactly like localStorage. The authoritative record
@@ -133,7 +145,7 @@ export class MktgAgentRunService {
 
   /** Writer-gated history read only; callers distinguish unavailable history from absence. */
   public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living' && entry.catalogAgentId === agentId);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId && mktgRunModeFor(agentId));
     if (!type) return of(null);
     return this.http
       .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {
@@ -179,7 +191,8 @@ export class MktgAgentRunService {
    * with it.
    */
   public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
-    const stored = this.loadRun(request.projectUid, request.agentId);
+    if (request.intake.oneOffDocument) return throwError(() => new Error('Submit this one-off through its dedicated intake first.'));
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
     let attempt$: Observable<MktgRunAttempt>;
     if (!stored || request.intake.freshRunPerSubmission) {
       // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
@@ -198,23 +211,35 @@ export class MktgAgentRunService {
       attempt$ = this.followUp(request, stored);
     }
 
-    return defer(() => {
-      const subject = this.attempts.subject();
+    // A legacy unscoped run still observes its result once; bind cancellation to the active scope without adding it to the request.
+    const scope = JSON.stringify([this.attempts.subject(), request.projectUid || this.projectContext.activeContextUid()]);
+    const failed = (error: unknown): Observable<never> => {
+      if (scope === this.runScope()) this.track(request, { state: 'failed' });
+      return throwError(() => error);
+    };
+    // Only the POST/ACK leg is service-held. Page teardown still cancels result polling.
+    const acknowledged = defer(() => {
+      if (scope !== this.runScope()) return EMPTY;
       this.attempts.reserve(request); // Before subscribing to the POST: even a pre-ACK 503 keeps the intake.
-      return attempt$.pipe(
-        tap((attempt) => {
-          this.assertSubject(subject);
-          this.track(request, { attempt, state: 'writing' });
-        }),
-        switchMap((attempt) => concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt))),
-        catchError((error: unknown) => {
-          if (subject === this.attempts.subject()) {
-            this.track(request, { state: 'failed' });
-          }
-          return throwError(() => error);
-        })
-      );
-    });
+      return attempt$;
+    }).pipe(
+      // toObservable may replay the previous scope until its effect flushes; inspect the current signal.
+      takeUntil(this.runScope$.pipe(filter(() => this.runScope() !== scope))),
+      takeWhile(() => scope === this.runScope()), // Check synchronously too, before a queued scope effect can run.
+      take(1),
+      tap((attempt) => {
+        this.track(request, { attempt, state: 'writing' });
+        this.acknowledgementVersion.update((version) => version + 1);
+      }),
+      catchError(failed),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return acknowledged.pipe(
+      switchMap((attempt) => {
+        if (scope !== this.runScope()) return EMPTY;
+        return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
+      })
+    );
   }
 
   /**
@@ -261,6 +286,9 @@ export class MktgAgentRunService {
 
   /** Resume polls the SAME accepted attempt; only a fresh prepared draft can submit, never a storage restore. */
   public resume(pending: MktgPendingGeneration): Observable<MktgGenerateProgress> {
+    if (pending.request.intake.oneOffDocument && (!pending.request.documentId || pending.attempt?.documentId !== pending.request.documentId)) {
+      return throwError(() => new Error('The accepted one-off has no matching document destination.'));
+    }
     if (!pending.attempt) {
       if (this.attempts.takeFreshDraft(pending)) return this.generate(pending.request);
       return of({
@@ -273,7 +301,8 @@ export class MktgAgentRunService {
     }
     const subject = this.attempts.subject();
     this.track(pending.request, { state: 'writing' });
-    return this.awaitOutcome(pending.request, pending.attempt, pending.answered).pipe(
+    const answered = pending.answered ?? (pending.answeredQuestionsId ? { questions: [], answers: [], questionsId: pending.answeredQuestionsId } : undefined);
+    return this.awaitOutcome(pending.request, pending.attempt, answered).pipe(
       catchError((error: unknown) => {
         if (subject === this.attempts.subject()) {
           this.track(pending.request, { state: 'failed' });
@@ -284,11 +313,11 @@ export class MktgAgentRunService {
   }
 
   /** Reads the stored run for a project + agent. Returns null on the server, when signed out, or when nothing is stored. */
-  public loadRun(projectUid: string, agentId: string): MktgStoredAgentRun | null {
-    if (!isPlatformBrowser(this.platformId) || !projectUid) {
+  public loadRun(projectUid: string, agentId: string, documentId?: string): MktgStoredAgentRun | null {
+    if (!isPlatformBrowser(this.platformId) || !projectUid || (MKTG_AGENT_INTAKES[agentId]?.oneOffDocument && !documentId)) {
       return null;
     }
-    const key = this.storageKey(projectUid, agentId);
+    const key = this.storageKey(projectUid, agentId, documentId);
     if (!key) {
       return null;
     }
@@ -296,6 +325,7 @@ export class MktgAgentRunService {
     if (cached) {
       return cached;
     }
+    if (documentId) return null; // One-off results and private Q&A are same-visit memory only.
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) {
@@ -460,7 +490,7 @@ export class MktgAgentRunService {
         if (result.status === 'failed') {
           this.track(request, { state: 'failed' });
           // Invalidate session reuse, not successful versions, answers or Q&A.
-          const stored = this.loadRun(request.projectUid, request.agentId);
+          const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
           if (stored) this.saveRun({ ...stored, sessionFailed: true });
           return concat(
             activity$,
@@ -480,11 +510,17 @@ export class MktgAgentRunService {
           return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
         }
         const { run, version } = this.appendVersion(request, attempt, result, answered);
-        this.attempts.clear(request.projectUid, request.agentId, subject);
+        this.attempts.clear(request.projectUid, request.agentId, subject, request.documentId);
         const documentLocation = run.versions.find((entry) => entry.version === version)?.documentLocation ?? null;
         return concat(
           activity$,
-          of<MktgGenerateProgress>({ type: 'document', run, documentLocation, attempt }),
+          of<MktgGenerateProgress>({
+            type: 'document',
+            run,
+            documentLocation,
+            attempt,
+            ...(result.profileSaved !== undefined && { profileSaved: result.profileSaved }),
+          }),
           this.retryPersistence(request, attempt, result, version)
         );
       })
@@ -668,7 +704,7 @@ export class MktgAgentRunService {
   private recordReceipt(request: MktgGenerateRequest, version: number, receipt: MktgRunPersistReceipt | undefined): MktgStoredAgentRun | null {
     const contentSha256 = receipt?.content_sha256;
     const location = receipt?.project === request.projectUid ? mktgDocumentLocationOfReceipt(receipt) : undefined;
-    const stored = this.loadRun(request.projectUid, request.agentId);
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
     if (!stored || !contentSha256) {
       return stored;
     }
@@ -702,7 +738,7 @@ export class MktgAgentRunService {
     result: MktgRunResultResponse,
     answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[] }
   ): MktgRunAppendResult {
-    const stored = this.loadRun(request.projectUid, request.agentId);
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const sha = result.persistence?.content_sha256;
     const identity = sha && MKTG_ARTIFACT_SHA256_REGEX.test(sha) ? sha : payloadDigest;
@@ -744,6 +780,7 @@ export class MktgAgentRunService {
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,
+      ...(request.documentId && { documentId: request.documentId }),
       sessionId: attempt.session.sessionId,
       ownerToken: attempt.session.ownerToken,
       runId: attempt.runId ?? stored?.runId,
@@ -762,7 +799,7 @@ export class MktgAgentRunService {
   }
 
   private track(request: MktgGenerateRequest, patch: Partial<MktgPendingGeneration>): void {
-    const pending: MktgPendingGeneration = this.attempts.load(request.projectUid, request.agentId) ?? {
+    const pending: MktgPendingGeneration = this.attempts.load(request.projectUid, request.agentId, request.documentId) ?? {
       request,
       state: 'draft',
       updatedAt: new Date().toISOString(),
@@ -779,11 +816,12 @@ export class MktgAgentRunService {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    const key = this.storageKey(run.projectUid, run.agentId);
+    const key = this.storageKey(run.projectUid, run.agentId, run.documentId);
     if (!key) {
       return;
     }
     this.memoryRuns.set(key, run);
+    if (run.documentId || MKTG_AGENT_INTAKES[run.agentId]?.oneOffDocument) return; // Never serialize a one-off envelope, setup, source text or private Q&A.
     try {
       window.localStorage.setItem(key, JSON.stringify(run));
     } catch {
@@ -814,11 +852,11 @@ export class MktgAgentRunService {
    * or overwrite — another user's stored run. Null when signed out: stored
    * runs simply don't exist without an authenticated user to own them.
    */
-  private storageKey(projectUid: string, agentId: string): string | null {
+  private storageKey(projectUid: string, agentId: string, documentId?: string): string | null {
     const userSub = this.userService.user()?.sub;
     if (!userSub) {
       return null;
     }
-    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${userSub}:${projectUid}:${agentId}`;
+    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${userSub}:${projectUid}:${agentId}${documentId ? `:${documentId}` : ''}`;
   }
 }

@@ -115,7 +115,8 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-approval-state')).toBe('Draft');
     expect(query('mktg-faq-view-mode')).toBeNull();
     expect(text('mktg-faq-view-size')).toBe('3 questions in 2 groups');
-    expect(text('mktg-faq-view-unanswered-chip')).toBe('1 question needs an answer from your team');
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
   });
 
@@ -139,7 +140,7 @@ describe('MktgFaqViewComponent', () => {
   });
 
   it('lists the unanswered questions for the reviewer on their own tab, and says so when there are none', async () => {
-    query('mktg-faq-view-unanswered-open')?.click();
+    query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     expect(query('mktg-faq-view-tab-unanswered')?.getAttribute('aria-selected')).toBe('true');
     expect(text('mktg-faq-view-unanswered-list')).toContain('About TestOrbit');
@@ -152,8 +153,8 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
   });
 
-  it('moves focus to the rendered panel start when a shortcut opens it', async () => {
-    query('mktg-faq-view-unanswered-chip')?.click();
+  it('moves focus to the rendered panel start when its tab opens it', async () => {
+    query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     const panel = query('mktg-faq-view-panel-unanswered');
     expect(document.activeElement).toBe(panel);

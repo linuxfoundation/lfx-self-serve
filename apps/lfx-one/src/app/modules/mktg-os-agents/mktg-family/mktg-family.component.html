@@ -6,64 +6,31 @@
   @if (definition(); as definition) {
     <lfx-page-header data-testid="mktg-family-header" [title]="definition.name" titleTestId="mktg-family-title">
       <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>
-      @if (live()) {
-        <!-- One primary action, chosen by the family's state: rebuild what is stale, else run the next asset not run yet, else run the lead agent again. -->
-        <div pageHeaderActions class="flex flex-wrap items-start gap-3" data-testid="mktg-family-actions">
-          @if (definition.id === rebuildFamilyId && hasStale()) {
-            <span
-              [pTooltip]="rebuildBlockedReason()"
-              tooltipPosition="bottom"
-              tooltipEvent="both"
-              [attr.aria-label]="rebuildBlockedReason() || null"
-              [attr.tabindex]="rebuildBlockedReason() ? 0 : null">
-              <lfx-button
-                label="Rebuild what is stale"
-                icon="fa-light fa-arrows-rotate"
-                [disabled]="!!rebuildBlockedReason()"
-                ariaLabel="Rebuild what is stale"
-                (onClick)="rebuildPanel()?.start()"
-                data-testid="mktg-family-rebuild" />
-            </span>
-          } @else if (nextAgent(); as next) {
-            <div class="flex flex-col gap-1">
-              @if (next.blocked) {
-                <span [pTooltip]="next.blocked" tooltipPosition="bottom" tooltipEvent="both" [attr.aria-label]="next.blocked" tabindex="0">
-                  <lfx-button
-                    label="Run next agent"
-                    icon="fa-light fa-play"
-                    [ariaLabel]="'Run next agent: ' + next.agent.name"
-                    [disabled]="true"
-                    data-testid="mktg-family-run" />
-                </span>
-              } @else {
-                <lfx-button
-                  label="Run next agent"
-                  icon="fa-light fa-play"
-                  [ariaLabel]="'Run next agent: ' + next.agent.name"
-                  [routerLink]="['../../', next.agent.id]"
-                  [queryParams]="runQueryParams()"
-                  data-testid="mktg-family-run" />
-              }
-              <span class="text-xs text-gray-500" data-testid="mktg-family-run-next">Next: {{ next.label }}</span>
-            </div>
-          } @else if (firstRunName(); as name) {
-            <span
-              [pTooltip]="firstRunEnabled() ? '' : pendingReason()"
-              tooltipPosition="bottom"
-              tooltipEvent="both"
-              [attr.aria-label]="(firstRunEnabled() ? '' : pendingReason()) || null"
-              [attr.tabindex]="firstRunEnabled() ? null : 0">
-              <lfx-button
-                [label]="'Run ' + name"
-                icon="fa-light fa-play"
-                [ariaLabel]="firstRunEnabled() ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
-                [disabled]="!firstRunEnabled()"
-                (onClick)="runFirstAgent()"
-                data-testid="mktg-family-run" />
-              @if (!firstRunEnabled()) {
-                <span class="mt-1 block text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ pendingReason() }}</span>
-              }
-            </span>
+      @if (live() && actions()?.header; as header) {
+        <!-- One solid primary names the next step; the shared rule owns its destination. -->
+        <div pageHeaderActions class="flex flex-col items-end gap-1" data-testid="mktg-family-actions">
+          @if (header.kind === 'rebuild') {
+            <lfx-button
+              [label]="header.label"
+              icon="fa-light fa-arrows-rotate"
+              [ariaLabel]="header.label"
+              (onClick)="rebuildPanel()?.start()"
+              data-testid="mktg-family-rebuild" />
+          } @else if (header.kind === 'export') {
+            <lfx-button [label]="header.label" [ariaLabel]="header.label" (onClick)="exportPanel()?.focusDownload()" data-testid="mktg-family-run" />
+          } @else {
+            <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
+            <lfx-button
+              [label]="header.label"
+              [icon]="header.kind === 'create' ? 'fa-light fa-play' : undefined"
+              [ariaLabel]="header.label"
+              [routerLink]="header.link?.commands ?? ['../../', header.agentId ?? '']"
+              [queryParams]="headerQueryParams()"
+              (onClick)="$event.stopPropagation()"
+              data-testid="mktg-family-run" />
+          }
+          @if (header.caption) {
+            <p class="text-xs text-gray-500" data-testid="mktg-family-next-caption">{{ header.caption }}</p>
           }
         </div>
       }
@@ -79,8 +46,15 @@
         (started)="rebuildStarted()"
         (changed)="kit.retry()" />
     }
+    <p
+      role="status"
+      class="text-gray-500"
+      [class.py-8]="kit.loading()"
+      [class.sr-only]="!kit.loading()"
+      data-testid="mktg-family-loading"
+      [textContent]="kit.loading() ? 'Loading family assets…' : ''"></p>
     @if (kit.loading()) {
-      <p role="status" class="py-8 text-gray-500" data-testid="mktg-family-loading">Loading family assets…</p>
+      <!-- The status above stays mounted across every read state. -->
     } @else if (kit.error()) {
       <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-family-error">
         <p>{{ kit.error() }}</p>
@@ -101,7 +75,8 @@
                 <div class="p-2">Made by</div>
               </div>
               <ul role="list" class="col-span-full grid grid-cols-subgrid gap-y-3" data-testid="mktg-family-assets">
-                @for (row of family.rows; track row.asset.id) {
+                @for (entry of rows(); track entry.row.asset.id) {
+                  @let row = entry.row;
                   <!-- Block rows contain stretched links in WebKit too; table rows do not. -->
                   <li
                     class="relative col-span-full grid grid-cols-subgrid rounded-lg border border-gray-200 bg-white"
@@ -121,33 +96,28 @@
                         <span class="font-semibold">{{ row.asset.label }}</span>
                       }
                       <p class="mt-1 text-xs text-gray-500">{{ row.asset.description }}</p>
-                      @if (rowRunAgents()[row.asset.id]; as agent) {
-                        @if (rowRunBlocked()[row.asset.id]; as reason) {
-                          <!-- Above the row's stretched link so the tooltip gets the hover. -->
-                          <span
-                            class="relative z-10 inline-block"
-                            [pTooltip]="reason"
-                            tooltipPosition="bottom"
-                            tooltipEvent="both"
-                            [attr.aria-label]="reason"
-                            tabindex="0">
+                      @if (entry.action; as action) {
+                        @if (action.blockedReason; as reason) {
+                          <span class="relative z-10 inline-block">
                             <lfx-button
-                              [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                              [label]="action.label"
                               [text]="true"
                               size="small"
                               styleClass="p-0 text-sm"
                               [disabled]="true"
                               [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
+                            <span class="ml-2 text-xs text-gray-500" [attr.data-testid]="'mktg-family-run-reason-' + row.asset.id">· {{ reason }}</span>
                           </span>
                         } @else {
                           <lfx-button
                             class="relative z-10"
-                            [label]="'Run ' + (row.asset.runName ?? row.asset.label)"
+                            [label]="action.label"
                             [text]="true"
                             size="small"
                             styleClass="p-0 text-sm"
-                            [routerLink]="['../../', agent.id]"
-                            [queryParams]="runQueryParams()"
+                            [routerLink]="['../../', action.agentId]"
+                            [queryParams]="action.mode ? runQueryParams().fresh : runQueryParams().plain"
+                            (onClick)="$event.stopPropagation()"
                             [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
                         }
                       }
@@ -159,7 +129,7 @@
                       <span class="block text-xs text-gray-500 @[600px]:sr-only">Current</span>
                       @if (row.document; as document) {
                         @if (row.monthlyCount !== null) {
-                          {{ (document.createdAt | date: 'd MMM') ?? '—' }}
+                          {{ (document.createdAt | date: 'd MMM' : 'UTC') ?? '—' }}
                         } @else {
                           @if (row.version !== null) {
                             v{{ row.version }}
@@ -167,7 +137,7 @@
                             —
                           }
                           @if (document.updatedAt) {
-                            · {{ document.updatedAt | date: 'd MMM' }}
+                            · {{ document.updatedAt | date: 'd MMM' : 'UTC' }}
                           }
                         }
                       } @else {

@@ -166,7 +166,7 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('loading-settled.png'), fullPage: true });
   });
 
-  test('two failed sessions select distinct targets and Retry only rechecks the selected run', async ({ page }) => {
+  test('two persistence-failed sessions select distinct targets and Retry only rechecks the selected run', async ({ page }) => {
     await suppressCookieBanner(page);
     const fixture = await setupAsset(page, { mode: 'failed' });
     await fixture.open('&run=' + 'c'.repeat(64));

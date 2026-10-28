@@ -58,8 +58,8 @@ export class Member360ResultComponent {
   protected readonly ownerOptions = MEMBER_360_OWNER_OPTIONS;
   protected readonly columns = MEMBER_360_SORT_COLUMNS;
   protected readonly renewalLegend = `Renewal days: red ≤${MEMBER_360_RENEWAL_RED_DAYS}, amber ${MEMBER_360_RENEWAL_RED_DAYS + 1}–${MEMBER_360_RENEWAL_AMBER_DAYS}.`;
-  protected readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
-  protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
+  public readonly runRoute = computed(() => mktgRunRouteFor('member-360', mktgKitRootPath(this.router.url)));
+  public readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   public readonly filters = new FormGroup({
     tier: new FormControl(this.tierOptions[0].label, { nonNullable: true }),
     owner: new FormControl(this.ownerOptions[0].label, { nonNullable: true }),
@@ -69,6 +69,7 @@ export class Member360ResultComponent {
   protected readonly direction = signal<'ascending' | 'descending'>('descending');
   protected readonly expanded = signal<number | null>(null);
   protected readonly notice = signal('');
+  public readonly workbookFilename = computed(() => `Member360_${this.envelope().project}_${this.envelope().period.label}.xlsx`);
   protected readonly tooltipDismissed = signal(false);
   private readonly filterValues = toSignal(this.filters.valueChanges.pipe(map(() => this.readFilters())), { initialValue: this.readFilters() });
   protected readonly rows = this.initRows();

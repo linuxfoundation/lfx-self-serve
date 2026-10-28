@@ -4,7 +4,8 @@
 import { DATE_PIPE_DEFAULT_OPTIONS, Location } from '@angular/common';
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Title } from '@angular/platform-browser';
+import { By, Title } from '@angular/platform-browser';
+import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_AGENT_INTAKES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
@@ -25,6 +26,7 @@ describe('Marketing family page', () => {
   const families = signal(resolveMktgKit({ project: 'synthetic', groups: [] }));
   const loading = signal(false);
   const error = signal('');
+  const accessDenied = signal(false);
   const projectSlug = signal('synthetic');
   const framework: MktgRevisionRef = {
     agentKey: 'foundation-message',
@@ -39,7 +41,7 @@ describe('Marketing family page', () => {
   beforeEach(() => {
     const agents = originalAgents.map((agent) => (agent.id === 'member-360' ? { ...agent, status: 'coming-soon' as const } : agent));
     MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...agents);
-    writer.set(false);
+    writer.set(true);
     lastExport.mockClear();
     projectSlug.set('synthetic');
     documents.set({ project: 'synthetic', groups: [] });
@@ -68,6 +70,7 @@ describe('Marketing family page', () => {
     );
     loading.set(false);
     error.set('');
+    accessDenied.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
@@ -94,6 +97,7 @@ describe('Marketing family page', () => {
               families,
               loading,
               error,
+              accessDenied,
               projectUid: signal('synthetic'),
               projectName: signal('Synthetic Project'),
               projectQueryParams: computed(() => ({ project: projectSlug() })),
@@ -148,14 +152,13 @@ describe('Marketing family page', () => {
     }
     expect(list?.querySelector('[data-testid="mktg-family-open-messaging-framework"]')?.classList.contains('after:inset-0')).toBe(true);
     const activeRun = list?.querySelector('[data-testid="mktg-family-run-messaging-framework"]');
-    expect(activeRun?.classList.contains('relative')).toBe(true);
-    expect(activeRun?.classList.contains('z-10')).toBe(true);
+    expect(activeRun).toBeNull(); // Existing assets open their document; Run again lives there.
     const blockedRun = list?.querySelector('[data-testid="mktg-family-run-boilerplates"]')?.parentElement;
     expect(blockedRun?.classList.contains('relative')).toBe(true);
     expect(blockedRun?.classList.contains('z-10')).toBe(true);
   });
 
-  it('links existing assets and the first available agent; exports/rebuild remain disabled', async () => {
+  it('links existing assets and the next clear step; the primary is never disabled', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic&unrelated=drop&profile=drop', MktgFamilyComponent);
     const root = harness.routeNativeElement;
@@ -177,19 +180,19 @@ describe('Marketing family page', () => {
     }
     // Nothing stale: the one header action runs the next asset not run yet.
     expect(root?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
-    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.textContent).toContain('Run next agent');
-    expect(root?.querySelector('[data-testid="mktg-family-run-next"]')?.textContent).toContain('Next: Boilerplates');
+    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.textContent).toContain('Review and approve the framework');
+    expect(root?.querySelector('[data-testid="mktg-family-next-caption"]')?.textContent).toBe('Then: boilerplates, FAQ and the brand kit');
+    expect(root?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
     expect(root?.querySelector('lfx-mktg-family-export-actions')?.getAttribute('data-family-id')).toBe('positioning-brand');
     projectSlug.set('next');
     await harness.fixture.whenStable();
     expect(TestBed.inject(Router).url).toContain('project=synthetic');
     for (const link of root?.querySelectorAll<HTMLAnchorElement>('a') ?? []) expect(link.search).toContain('project=next');
     // The framework is a draft: Boilerplates is next but cannot run until it is approved.
-    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(true);
-    expect(root?.querySelector('[data-testid="mktg-family-run"] a')).toBeNull();
-    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.parentElement?.getAttribute('aria-label')).toContain(
-      'Approve the messaging framework first'
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/documents/foundation-message/living?project=next'
     );
+    expect(root?.querySelector('[data-testid="mktg-family-run"] button')).toBeNull();
     documents.set({ project: 'synthetic', groups: [], approvedFramework: framework });
     harness.detectChanges();
     expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe('/project/mktg-os-agents/boilerplates?project=next&mode=new');
@@ -198,12 +201,12 @@ describe('Marketing family page', () => {
       value.map((family) => ({ ...family, rows: family.rows.map((row) => (row.asset.id === 'faq' ? { ...row, state: 'needs-rebuild' as const } : row)) }))
     );
     harness.detectChanges();
-    // Something stale: the header action becomes the rebuild, disabled here with its reason as a tooltip.
+    // Something stale: the shared primary names the update; panel guards still own starting.
     expect(root?.querySelector('[data-testid="mktg-family-run"]')).toBeNull();
-    expect(root?.querySelector('[data-testid="mktg-family-rebuild"] button')?.getAttribute('aria-label')).toBe('Rebuild what is stale');
-    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-rebuild"] button')?.disabled).toBe(true);
+    expect(root?.querySelector('[data-testid="mktg-family-rebuild"] button')?.getAttribute('aria-label')).toBe('Update FAQ');
+    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-rebuild"] button')?.disabled).toBe(false);
   });
-  it('offers active living-row agents for every built state, preserving project scope and clearing resume selectors', async () => {
+  it('offers quiet Run only for unbuilt rows, with inline blockers and clean project-scoped links', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl(
       '/project/mktg-os-agents/families/positioning-brand?project=synthetic&questions=old&generation=old&revision=old&run=old&profile=drop&type=drop&unrelated=drop',
@@ -214,19 +217,17 @@ describe('Marketing family page', () => {
     for (const id of ['boilerplates', 'faq', 'brand-kit']) {
       const button = root?.querySelector<HTMLButtonElement>(`[data-testid="mktg-family-run-${id}"] button`);
       expect(button?.disabled).toBe(true);
-      expect(root?.querySelector(`[data-testid="mktg-family-run-${id}"]`)?.parentElement?.getAttribute('aria-label')).toContain(
-        'Approve the messaging framework first'
-      );
+      expect(root?.querySelector(`[data-testid="mktg-family-run-reason-${id}"]`)?.textContent).toContain('· after the framework is approved');
     }
     documents.set({ project: 'synthetic', groups: [], approvedFramework: framework });
     harness.detectChanges();
     expect(root?.querySelector('[data-testid="mktg-family-run-brand-kit"] a')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/brand-kit?project=synthetic&mode=new'
     );
-    expect(root?.querySelector('[data-testid="mktg-family-run-boilerplates"]')?.textContent).toContain('Run boilerplates');
-    expect(root?.querySelector('[data-testid="mktg-family-run-messaging-framework"]')?.textContent).toContain('Run messaging framework');
-    expect(root?.querySelector('[data-testid="mktg-family-run-brand-kit"]')?.textContent).toContain('Run brand kit');
-    expect(root?.querySelector('[data-testid="mktg-family-run-faq"]')?.textContent).toContain('Run FAQ');
+    expect(root?.querySelector('[data-testid="mktg-family-run-boilerplates"]')?.textContent).toContain('Create boilerplates');
+    expect(root?.querySelector('[data-testid="mktg-family-run-messaging-framework"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-run-brand-kit"]')?.textContent).toContain('Create brand kit');
+    expect(root?.querySelector('[data-testid="mktg-family-run-faq"]')?.textContent).toContain('Create FAQ');
     expect(root?.querySelector('[data-testid="mktg-family-run-one-pager"]')).toBeNull();
     for (const state of ['approved', 'draft', 'needs-rebuild'] as const) {
       families.update((value) => value.map((family) => ({ ...family, rows: family.rows.map((row) => ({ ...row, state })) })));
@@ -236,7 +237,7 @@ describe('Marketing family page', () => {
     families.update((value) => value.map((family) => ({ ...family, rows: family.rows.map((row) => ({ ...row, state: 'missing', monthlyCount: null })) })));
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-aeo-geo"] a')?.getAttribute('href')).toBe(
-      '/project/mktg-os-agents/aeo-geo?project=synthetic&mode=new'
+      '/project/mktg-os-agents/aeo-geo?project=synthetic'
     );
   });
 
@@ -261,7 +262,7 @@ describe('Marketing family page', () => {
   it.each([
     { agentId: 'foundation-setup', familyId: 'positioning-brand' },
     { agentId: 'member-360', familyId: 'member-sponsor' },
-  ])('disables the active $agentId lead header without an intake, regardless of document kind', async ({ agentId, familyId }) => {
+  ])('hides the active $agentId lead header without an intake, regardless of document kind', async ({ agentId, familyId }) => {
     const saved = MKTG_AGENT_INTAKES[agentId];
     const index = MKTG_AGENTS.findIndex((agent) => agent.id === agentId);
     const original = MKTG_AGENTS[index];
@@ -274,13 +275,58 @@ describe('Marketing family page', () => {
       await harness.navigateByUrl('/project/mktg-os-agents/families/' + familyId, MktgFamilyComponent);
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-      expect(run?.disabled).toBe(true);
-      run?.click();
+      expect(run).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     } finally {
       MKTG_AGENT_INTAKES[agentId] = saved;
       MKTG_AGENTS[index] = original;
     }
+  });
+
+  it('shows the play icon only for Create, with no icon element for blocked or review steps', async () => {
+    const drafts = families();
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    // PrimeNG retains a p-hidden placeholder span; it has no glyph or layout gap.
+    const icon = () => harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] .p-button-icon:not(.p-hidden)');
+    expect(icon()).toBeNull(); // Blocked: review and approve the framework.
+    families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
+    await harness.fixture.whenStable();
+    expect(icon()?.classList.contains('fa-play')).toBe(true);
+    families.set(drafts.map((item) => ({ ...item, rows: item.rows.filter((row) => row.document) })));
+    await harness.fixture.whenStable();
+    expect(icon()).toBeNull(); // Review the existing draft.
+  });
+
+  it('reviews the first draft, then takes an approved fresh kit to its export controls without exporting', async () => {
+    families.update((items) => items.map((item) => ({ ...item, rows: item.rows.filter((row) => row.document) })));
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.textContent).toContain('Review the draft');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toContain(
+      '/documents/foundation-message/living?project=synthetic'
+    );
+    families.update((items) => items.map((item) => ({ ...item, rows: item.rows.map((row) => ({ ...row, state: 'approved' })) })));
+    await harness.fixture.whenStable();
+    const panel = harness.routeDebugElement?.query(By.directive(MktgFamilyExportActionsComponent))?.componentInstance as MktgFamilyExportActionsComponent;
+    const reveal = vi.spyOn(panel, 'focusDownload').mockImplementation(() => undefined);
+    const primary = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
+    expect(primary?.textContent).toContain('Export the kit');
+    primary?.click();
+    expect(reveal).toHaveBeenCalledOnce();
+  });
+
+  it('formats living Current dates in UTC even when the application default would show the previous day', async () => {
+    TestBed.overrideProvider(DATE_PIPE_DEFAULT_OPTIONS, { useValue: { timezone: '-0700' } });
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((row) => ({ ...row, document: row.document ? { ...row.document, updatedAt: '2026-10-01T00:30:00Z' } : null })),
+      }))
+    );
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-current-messaging-framework"]')?.textContent).toContain('1 Oct');
   });
 
   it('shows run dates without pretending revisionCount is a current version', async () => {
@@ -322,40 +368,41 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/unknown', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-not-found"]')).not.toBeNull();
   });
-  it('enables the AEO/GEO Run and captions disabled actions', async () => {
+  it('offers active AEO/GEO through the shared Create path and preserves unavailable Member state', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
-    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(false);
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] button')?.textContent).toContain('Run AEO/GEO scorecard');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.textContent).toContain('Create AEO/GEO scorecard');
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.click();
-    expect(navigate).toHaveBeenCalledWith(['../../', 'aeo-geo'], expect.objectContaining({ queryParamsHandling: 'merge' }));
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/aeo-geo?project=synthetic'
+    );
     const rows = families().flatMap((family) => family.rows);
     const stored = rows.find((row) => row.document)?.document;
     const audit = rows.find((row) => row.asset.agentKey === 'aeo-geo');
     if (!stored || !audit) throw new Error('Missing synthetic audit row fixtures');
-    audit.document = { ...stored, agentKey: 'aeo-geo', documentId: 'run-synthetic-audit' };
-    families.set([...families()]);
-    harness.detectChanges();
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((row) =>
+          row.asset.agentKey === 'aeo-geo' ? { ...row, document: { ...stored, agentKey: 'aeo-geo' as const, documentId: 'run-synthetic-audit' } } : row
+        ),
+      }))
+    );
+    await harness.fixture.whenStable();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-open-aeo-geo"]')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/documents/aeo-geo/run-synthetic-audit?project=synthetic'
     );
     await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
     const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-    expect(run?.disabled).toBe(true);
-    expect(run?.textContent).toContain('Run Member 360');
+    expect(run).toBeNull();
     const pending = MKTG_AGENTS.find((agent) => agent.id === 'member-360');
     expect(pending?.status).toBe('coming-soon');
-    expect(run?.getAttribute('aria-label')).toBe('Run Member 360 (coming soon)');
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')?.textContent).toContain(
-      'Coming soon — the Member 360 page is on its way'
-    );
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-state-member-360"]')?.textContent).toContain('Coming soon');
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-coming-soon"]')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-asset-member-360"]')).not.toBeNull();
   });
-  it('uses explicit pending header copy instead of the row or catalog name when unavailable', async () => {
+  it('never creates a disabled header from pending catalog copy', async () => {
     const family = MKTG_KIT_FAMILIES.find((candidate) => candidate.id === 'member-sponsor');
     if (!family) throw new Error('Missing synthetic family');
     const original = family.pendingAgentName;
@@ -364,8 +411,7 @@ describe('Marketing family page', () => {
       const harness = await RouterTestingHarness.create();
       await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
       const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-      expect(run?.disabled).toBe(true);
-      expect(run?.getAttribute('aria-label')).toBe('Run Synthetic pending product (coming soon)');
+      expect(run).toBeNull();
     } finally {
       if (original === undefined) delete family.pendingAgentName;
       else family.pendingAgentName = original;
@@ -380,16 +426,139 @@ describe('Marketing family page', () => {
     try {
       const harness = await RouterTestingHarness.create();
       await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor?project=synthetic', MktgFamilyComponent);
-      const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-      expect(run?.disabled).toBe(false);
-      expect(run?.textContent).toContain('Run Member 360');
+      const run = harness.routeNativeElement?.querySelector<HTMLAnchorElement>('[data-testid="mktg-family-run"] a');
+      expect(run?.textContent).toContain('Create Member 360');
+      expect(run?.getAttribute('href')).toBe('/project/mktg-os-agents/member-360?project=synthetic');
       expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')).toBeNull();
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-      run?.click();
-      expect(navigate).toHaveBeenCalledWith(['../../', 'member-360'], expect.objectContaining({ queryParamsHandling: 'merge' }));
+      expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
     } finally {
       MKTG_AGENTS[index] = originalAgent;
     }
+  });
+  it.each(['social-community', 'member-sponsor'])('keeps Create for %s while moving built-row actions to the document', async (familyId) => {
+    MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/' + familyId + '?project=synthetic&mode=new&run=stale', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const row = families().find((item) => item.family.id === familyId)?.rows[0];
+    if (!row?.asset.agentKey) throw new Error('Missing synthetic one-off');
+    const action = () => root?.querySelector<HTMLAnchorElement>(`[data-testid="mktg-family-run-${row.asset.id}"] a`);
+    expect(action()?.textContent).toContain('Create ' + (row.asset.runName ?? row.asset.label));
+    expect(action()?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/' + row.asset.agentKey + '?project=synthetic' + (familyId === 'social-community' ? '&mode=new' : '')
+    );
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.textContent).toContain('Create ' + (row.asset.runName ?? row.asset.label));
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((candidate) =>
+          candidate === row
+            ? {
+                ...candidate,
+                state: null,
+                document: {
+                  agentKey: row.asset.agentKey ?? 'linkedin-post',
+                  documentId: 'run-synthetic',
+                  revisionCount: 1,
+                  latestRevisionId: 'synthetic',
+                  approvedCurrent: null,
+                  createdAt: '2026-10-10T12:00:00Z',
+                  updatedAt: null,
+                },
+              }
+            : candidate
+        ),
+      }))
+    );
+    await harness.fixture.whenStable();
+    expect(action()).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe(
+      '/project/mktg-os-agents/' + row.asset.agentKey + '?project=synthetic'
+    );
+    expect(root?.querySelector('[data-testid="mktg-family-run-next"]')).toBeNull();
+  });
+  it.each([
+    { familyId: 'positioning-brand', label: 'Run messaging framework' },
+    { familyId: 'social-community', label: 'Run LinkedIn posts' },
+  ])('a denied $familyId listing hides the header without exposing document state', async ({ familyId }) => {
+    writer.set(false);
+    error.set('You need write access to this project to see its Marketing kit.');
+    accessDenied.set(true);
+    families.set([]);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/' + familyId + '?project=synthetic', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
+    accessDenied.set(false);
+    error.set('The Marketing kit could not be loaded.');
+    await harness.fixture.whenStable();
+    expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
+  });
+  it('announces exactly the primary step in its accessible name', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/social-community?project=synthetic', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('aria-label')).toBe('Create LinkedIn post');
+  });
+  it('keeps a one-off Current date in UTC at a local month boundary', async () => {
+    TestBed.overrideProvider(DATE_PIPE_DEFAULT_OPTIONS, { useValue: { timezone: 'America/Los_Angeles' } });
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing synthetic one-off type');
+    families.set(
+      resolveMktgKit(
+        {
+          project: 'synthetic',
+          groups: [
+            {
+              type,
+              documents: [
+                {
+                  agentKey: 'linkedin-post',
+                  documentId: 'run-synthetic',
+                  revisionCount: 1,
+                  latestRevisionId: 'synthetic',
+                  approvedCurrent: null,
+                  createdAt: '2026-10-01T00:30:00Z',
+                  updatedAt: null,
+                },
+              ],
+            },
+          ],
+        },
+        new Date('2026-10-01T01:00:00Z')
+      )
+    );
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/social-community?project=synthetic', MktgFamilyComponent);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-current-linkedin-post"]')?.textContent).toContain('1 Oct');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-state-linkedin-post"]')?.textContent).toContain('1 this month');
+  });
+  it('modifier clicks stay native on both header and row Run links, without host navigation', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/social-community?project=synthetic', MktgFamilyComponent);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
+    for (const id of ['mktg-family-run', 'mktg-family-run-linkedin-post']) {
+      const anchor = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(`[data-testid="${id}"] a`);
+      expect(anchor?.getAttribute('href')).toBe('/project/mktg-os-agents/linkedin-post?project=synthetic' + (id === 'mktg-family-run' ? '' : '&mode=new'));
+      anchor?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+      anchor?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    }
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it('hides the reader header, explains row blockers inline, and restores anchors for writers', async () => {
+    writer.set(false);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/social-community?project=synthetic', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const header = root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
+    expect(header).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-run-reason-linkedin-post"]')?.textContent).toBe(
+      '· You need write access to this project to run its agents'
+    );
+    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run-linkedin-post"] button')?.disabled).toBe(true);
+    writer.set(true);
+    await harness.fixture.whenStable();
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe('/project/mktg-os-agents/linkedin-post?project=synthetic');
   });
   it('defensively renders no-project while isolated from lens navigation', async () => {
     families.set([]);
@@ -408,17 +577,34 @@ describe('Marketing family page', () => {
     expect(lastExport).toHaveBeenCalledWith({ project: 'synthetic', familyId: 'positioning-brand' }, true);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).not.toBeNull();
   });
-  it('renders loading and errors without claiming missing documents, keeping catalog actions', async () => {
+  it('keeps the loading status node mounted while changing its announcement', async () => {
+    loading.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toContain('Loading family assets');
+    loading.set(false);
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
+    expect(status?.textContent).toBe('');
+    loading.set(true);
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
+    expect(status?.textContent).toContain('Loading family assets');
+  });
+  it('hides every header action until the kit read resolves and on error', async () => {
     loading.set(true);
     families.set([]);
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).not.toBeNull();
-    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(false);
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
     loading.set(false);
     error.set('You need write access.');
     harness.detectChanges();
     expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent).toContain('write access');
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-assets"]')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
   });
 });

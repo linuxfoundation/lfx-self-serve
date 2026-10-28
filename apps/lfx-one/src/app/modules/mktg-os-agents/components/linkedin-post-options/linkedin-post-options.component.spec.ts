@@ -40,6 +40,34 @@ describe('Shared LinkedIn option cards', () => {
     await fixture.whenStable();
     return fixture;
   }
+  it('selects the first option by default and moves the only solid Copy post with the pick or a direct copy', async () => {
+    const fixture = await render('https://public.example/release');
+    const selected = (number: number) => fixture.nativeElement.querySelector(`[data-testid="mktg-linkedin-select-${number}"]`);
+    const copy = (number: number) => fixture.nativeElement.querySelector(`[data-testid="mktg-linkedin-copy-${number}"] button`);
+    expect(selected(1).getAttribute('aria-pressed')).toBe('true');
+    expect(selected(1).textContent).toContain('Selected');
+    expect(selected(1).closest('article').classList.contains('border-blue-500')).toBe(true);
+    expect(copy(1).classList.contains('p-button-outlined')).toBe(false);
+    expect(copy(2).classList.contains('p-button-outlined')).toBe(true);
+    selected(2).click();
+    await fixture.whenStable();
+    expect(selected(1).getAttribute('aria-pressed')).toBe('false');
+    expect(selected(2).getAttribute('aria-pressed')).toBe('true');
+    expect(copy(1).classList.contains('p-button-outlined')).toBe(true);
+    expect(copy(2).classList.contains('p-button-outlined')).toBe(false);
+    expect(clipboard).not.toHaveBeenCalled();
+    copy(3).click();
+    await fixture.whenStable();
+    expect(selected(3).getAttribute('aria-pressed')).toBe('true');
+    expect(copy(2).classList.contains('p-button-outlined')).toBe(true);
+    expect(copy(3).classList.contains('p-button-outlined')).toBe(false);
+    expect(clipboard).toHaveBeenCalledOnce();
+    expect(clipboard.mock.calls[0][0]).toContain('Example post 3.');
+    fixture.componentRef.setInput('shareLink', 'https://public.example/changed');
+    await fixture.whenStable();
+    expect(selected(3).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('renders read-only cards and copies substituted text through the real native button', async () => {
     const fixture = await render('https://public.example/release');
     const host = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-copy-1"]');
