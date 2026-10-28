@@ -2760,6 +2760,19 @@ describe('MktgDocumentViewComponent', () => {
     return { ...revisionResponse(selected), type, markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }) };
   }
 
+  it('enables FAQ comments with stored label content in the shared document scope', async () => {
+    const response = faqResponse();
+    store.getRevision.mockReturnValue(of(response));
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    const select = vi.spyOn(comments, 'select');
+    const label = vi.spyOn(comments, 'setLabelContent');
+    await render(`/documents/faq/living?revision=${response.revision.id}`);
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ agentKey: 'faq', revisionId: response.revision.id }));
+    expect(label).toHaveBeenCalledWith(JSON.parse(response.markdown));
+    expect(harness.routeNativeElement?.querySelectorAll('lfx-mktg-field-comments')).toHaveLength(1);
+    expect(query('mktg-comments-panel')).not.toBeNull();
+  });
+
   it.each([
     [0, 0, 'Ready.'],
     [1, 0, 'Ready — 1 of 3 sources could not be read.'],
@@ -3440,7 +3453,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-faq-view-title')).toBeNull();
-    expect(query('mktg-comments-panel')).toBeNull();
+    expect(query('mktg-comments-panel')).not.toBeNull();
+    expect(query('mktg-faq-view-question-0-0')?.querySelector('lfx-mktg-field-comments')).not.toBeNull();
     expect(query('mktg-faq-view-metadata')).toBeNull();
     expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
@@ -3448,6 +3462,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
     expect(query('mktg-faq-view-unanswered-open')).toBeNull();
     expect(query('mktg-faq-view-tab-unanswered')?.textContent).toContain('Needs an answer (1)');
+    expect(query('mktg-faq-view-unanswered-callout')?.textContent).toContain('1 question needs an answer from your team.');
     expectContentColumn('mktg-faq-view');
   });
 });
