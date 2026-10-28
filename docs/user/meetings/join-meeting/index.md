@@ -88,7 +88,7 @@ Once the meeting has ended, the page says "This meeting has ended" and can show 
 - **AI Summary** opens the summary, with an **Approved** or **Pending Review** badge. If there's no summary, it shows "AI Summary Not Available."
 - **View Transcript** opens the transcript. If there's none, it shows "Transcript Unavailable."
 
-The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. For the first two, you need to be signed in and have access to the meeting. See [Past Meetings](../past-meetings/) for who can see them and how recordings, summaries, and attendance work.
+The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. You need to be signed in and have access to the meeting to use the panel. See [Past Meetings](../past-meetings/) for who can see them and how recordings, summaries, and attendance work.
 
 ## Meeting not found
 

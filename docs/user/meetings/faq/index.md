@@ -24,8 +24,7 @@ An **organizer** manages the meeting: they can edit, cancel, or delete it, manag
 
 It depends on the meeting's access settings.
 
-- **Public meetings** have a join page anyone can open. You need to sign in to see materials and recordings.
-- **Public meetings** can be joined without an account.
+- **Public meetings** have a join page anyone can open, and you can join without an account. You need to sign in to see materials and recordings.
 - **Private meetings** can be joined without an account too. Open the link the organizer shared, because it includes the meeting's password.
 - **Restricted meetings** need you to sign in, and your account has to match someone on the guest list.
 
@@ -69,7 +68,7 @@ Yes, if you're registered for an upcoming meeting. Select **Remove Myself** on t
 
 ## Where can I find a meeting's recording, transcript, or AI summary?
 
-On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. For the first two, you need to be signed in and able to open the meeting. See [Past Meetings](../past-meetings/) for who can see them.
+On the meeting's join page and its **Past** details page, once the meeting has ended and if the organizer turned those features on. The organizer's **Who can access recordings & summaries** setting decides who can use them: **Meeting Hosts Only**, **Meeting Guests**, or **Public**. You need to be signed in and able to open the meeting to use them. See [Past Meetings](../past-meetings/) for who can see them.
 
 ## Why can't I see the AI summary?
 

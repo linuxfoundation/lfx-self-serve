@@ -68,7 +68,7 @@ The recording, transcript, and AI summary exist only if the organizer turned the
 
 ### Who can see them
 
-For **Meeting Hosts Only** and **Meeting Guests**, you need to be **signed in** and able to open the meeting. Two things decide who can use the recording, transcript, and AI summary.
+You need to be **signed in** to use the join page's **Meeting Tools**, and able to open the meeting. Two things decide who can use the recording, transcript, and AI summary.
 
 **Who can open the meeting.**
 
@@ -79,7 +79,7 @@ For **Meeting Hosts Only** and **Meeting Guests**, you need to be **signed in** 
 
 - **Meeting Hosts Only**: only organizers and Meeting Hosts.
 - **Meeting Guests** (the default): organizers, Meeting Hosts, and guests.
-- **Public**: publicly accessible, so the sign-in and meeting-access rules above don't apply to it. Think twice before choosing this for a Private or Restricted meeting, because it makes the recording, transcript, and summary available to people outside the meeting.
+- **Public**: publicly accessible. Think twice before choosing this for a Private or Restricted meeting, because it makes the recording, transcript, and summary available to people outside the meeting.
 
 So a public meeting's recording isn't open to every signed-in user when its setting is **Meeting Hosts Only**.
 
