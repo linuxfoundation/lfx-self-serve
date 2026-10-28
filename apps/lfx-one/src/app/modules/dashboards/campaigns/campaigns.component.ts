@@ -951,6 +951,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
   /** Whether the create flow may offer X at all — `CampaignListResult.twitterCreateEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
+  /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsGoogleGeoSearchEnabled = signal<boolean | null>(null);
   /**
    * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`,
    * read and cleared like the capabilities above. Per caller, not per deployment: root only.
@@ -2522,6 +2524,7 @@ export class CampaignsComponent {
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
         this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+        this.briefCampaignsGoogleGeoSearchEnabled.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
@@ -4625,6 +4628,7 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
           this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+          this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
           this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
@@ -4649,6 +4653,7 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
           this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+          this.briefCampaignsGoogleGeoSearchEnabled.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
       });
@@ -4719,6 +4724,7 @@ export class CampaignsComponent {
     this.briefCampaignsMicrosoftScheduleEnabled.set(null);
     this.briefCampaignsTwitterCreateEnabled.set(null);
     this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+    this.briefCampaignsGoogleGeoSearchEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
     this.briefCampaignsCapabilityRead.set('unknown');
 
@@ -4759,6 +4765,7 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
             this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
+            this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
             this.briefCampaignsCapabilityRead.set('ready');
           }
         },
@@ -4789,6 +4796,7 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
             this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
+            this.briefCampaignsGoogleGeoSearchEnabled.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }
         },

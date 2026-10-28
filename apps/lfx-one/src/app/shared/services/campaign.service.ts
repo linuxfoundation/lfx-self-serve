@@ -66,6 +66,8 @@ import {
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   GoogleAdsAccountOption,
+  GoogleAdsGeoTargetSearchOptions,
+  GoogleAdsGeoTargetSearchResult,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -109,6 +111,7 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
@@ -531,6 +534,26 @@ export class CampaignService {
    */
   public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
     return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Search Google's geo target table for the Implement tab's location picker (campaign-service #411).
+   * 404 while the server's geo-search flag is off. `targetTypes` repeats on the query string; an
+   * omitted option is left off rather than sent empty, so upstream's own default applies.
+   */
+  public searchGoogleAdsGeoTargets(
+    projectSlug: string,
+    query: string,
+    options: GoogleAdsGeoTargetSearchOptions = {}
+  ): Observable<GoogleAdsGeoTargetSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text: Angular's default codec leaves `+`
+    // unescaped and Express reads it back as a space, so `St. Kitts + Nevis` would search for
+    // something else.
+    let params = strictHttpParams().set('project', projectSlug).set('q', query);
+    if (options.countryCode) params = params.set('countryCode', options.countryCode);
+    for (const targetType of options.targetTypes ?? []) params = params.append('targetTypes', targetType);
+    if (options.limit !== undefined) params = params.set('limit', String(options.limit));
+    return this.http.get<GoogleAdsGeoTargetSearchResult>('/api/campaigns/google/geo-targets', { params });
   }
 
   public getMetaMonitorData(

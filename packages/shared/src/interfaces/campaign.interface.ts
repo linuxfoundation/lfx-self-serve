@@ -1235,6 +1235,12 @@ export interface CampaignImplementationDraft {
    */
   googlePostalGeoTargets?: string[];
   /**
+   * Display labels for {@link googlePostalGeoTargets}, by id — Google's canonical name, recorded when
+   * an id was PICKED from the geo target search rather than typed. Display only: the request carries
+   * the ids alone, so an id with no label here still renders (as itself) and still dispatches.
+   */
+  googlePostalGeoLabels?: Record<string, string>;
+  /**
    * Google's radius targets, as the operator added them — already validated, because an entry only
    * reaches this list once it has passed the add guards.
    *
@@ -2063,6 +2069,53 @@ export interface TwitterCreateCapability {
 export interface TwitterAdsAccountsResult {
   accounts: TwitterAdsAccountOption[];
   connection: MonitorConnectionAccount;
+}
+
+/**
+ * One Google Ads location, as `GET /api/campaigns/google/geo-targets` answers it: campaign-service's
+ * suggestion in this app's camelCase vocabulary. `id` goes into `geoTargets` as-is.
+ */
+export interface GoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonicalName: string;
+  countryCode: string;
+  targetType: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /api/campaigns/google/geo-targets`. `truncated` says more locations matched than were returned. */
+export interface GoogleAdsGeoTargetSearchResult {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+}
+
+/**
+ * One row of the Implement tab's location picker: a suggestion plus `disabled`, set when its id is
+ * already a postal-code target, so the row is listed but cannot be picked twice.
+ */
+export interface GoogleAdsGeoTargetOption extends GoogleAdsGeoTargetSuggestion {
+  disabled: boolean;
+}
+
+/**
+ * Where the location picker's search stands. `failed` is a search that did not come back — not an
+ * empty answer, which is `suggestions: []` with `failed: false`. `pending` is a search waiting out
+ * its debounce or its request: its rows are already cleared, but "nothing matched" is not yet true.
+ */
+export interface GoogleAdsGeoTargetSearchState {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+  failed: boolean;
+  pending: boolean;
+}
+
+/** The optional narrowing a geo target search may carry beside its query text. */
+export interface GoogleAdsGeoTargetSearchOptions {
+  countryCode?: string;
+  targetTypes?: string[];
+  limit?: number;
 }
 
 export interface MetaMonitorResponse {
@@ -3765,6 +3818,28 @@ export interface CampaignServiceAccessibleAccounts {
   accounts: CampaignServiceAccessibleAccount[];
 }
 
+/**
+ * One element of campaign-service's geo target suggest (`google-ads-geo-target-suggestion`,
+ * linuxfoundation/lfx-v2-campaign-service#411). `id` is the bare numeric geo target constant id, in
+ * exactly the form `googleAdsConfig.geoTargets` accepts; `reach` is absent when Google sent none.
+ */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonical_name: string;
+  country_code: string;
+  target_type: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /projects/{id}/google-ads/geo-targets` (`suggest-google-ads-geo-targets`). */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestions {
+  suggestions: CampaignServiceGoogleAdsGeoTargetSuggestion[];
+  suggestion_count: number;
+  truncated: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // The Monitor tab's campaign-service shapes (#2519)
 //
@@ -5265,6 +5340,17 @@ export interface CampaignListResult {
    * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
    */
   googleAudienceSegmentsEnabled: boolean;
+  /**
+   * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
+   * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` flag says the deployed campaign-service has the
+   * suggest endpoint (linuxfoundation/lfx-v2-campaign-service#411). An older service answers it 404.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which keeps the typed-id box.
+   */
+  googleGeoSearchEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------

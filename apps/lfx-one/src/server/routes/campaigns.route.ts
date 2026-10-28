@@ -122,6 +122,10 @@ router.get('/google/accounts', (req, res, next) => campaignController.getGoogleA
 router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));
 // Whether X creation is open on this deployment, read by the Plan picker before any brief exists.
 router.get('/twitter/create-capability', (req, res) => campaignController.getTwitterCreateCapability(req, res));
+// Google's geo target table, searched for the Implement tab's location picker (campaign-service #411),
+// behind LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH — 404 while it is off. Public location data,
+// so not root-only: `requireCampaignManager` above is the gate.
+router.get('/google/geo-targets', (req, res, next) => campaignController.searchGoogleAdsGeoTargets(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
