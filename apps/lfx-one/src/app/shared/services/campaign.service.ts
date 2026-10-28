@@ -108,6 +108,7 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, Subject, take, takeUntil, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
@@ -505,15 +506,14 @@ export class CampaignService {
     query: string,
     options: GoogleAdsGeoTargetSearchOptions = {}
   ): Observable<GoogleAdsGeoTargetSearchResult> {
-    return this.http.get<GoogleAdsGeoTargetSearchResult>('/api/campaigns/google/geo-targets', {
-      params: {
-        project: projectSlug,
-        q: query,
-        ...(options.countryCode ? { countryCode: options.countryCode } : {}),
-        ...(options.targetTypes && options.targetTypes.length > 0 ? { targetTypes: options.targetTypes } : {}),
-        ...(options.limit !== undefined ? { limit: options.limit } : {}),
-      },
-    });
+    // `strictHttpParams`, because the query is user-typed text: Angular's default codec leaves `+`
+    // unescaped and Express reads it back as a space, so `St. Kitts + Nevis` would search for
+    // something else.
+    let params = strictHttpParams().set('project', projectSlug).set('q', query);
+    if (options.countryCode) params = params.set('countryCode', options.countryCode);
+    for (const targetType of options.targetTypes ?? []) params = params.append('targetTypes', targetType);
+    if (options.limit !== undefined) params = params.set('limit', String(options.limit));
+    return this.http.get<GoogleAdsGeoTargetSearchResult>('/api/campaigns/google/geo-targets', { params });
   }
 
   public getMetaMonitorData(

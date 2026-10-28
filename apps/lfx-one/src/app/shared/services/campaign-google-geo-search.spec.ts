@@ -47,6 +47,15 @@ describe('CampaignService google geo target search request', () => {
     req.flush(EMPTY);
   });
 
+  /** Express reads a literal `+` as a space, so the typed `+` must reach the wire as `%2B`. */
+  it("encodes a typed '+' so the BFF does not read it as a space", () => {
+    service.searchGoogleAdsGeoTargets('tlf', 'St. Kitts + Nevis').subscribe();
+
+    const req = http.expectOne((r) => r.url === '/api/campaigns/google/geo-targets');
+    expect(req.request.urlWithParams).toContain('q=St.%20Kitts%20%2B%20Nevis');
+    req.flush(EMPTY);
+  });
+
   it('leaves an empty location type list off the wire', () => {
     service.searchGoogleAdsGeoTargets('tlf', 'Austin', { targetTypes: [] }).subscribe();
 

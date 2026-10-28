@@ -134,7 +134,7 @@ import { CampaignService } from '@services/campaign.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, debounceTime, filter, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take } from 'rxjs';
+import { catchError, filter, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -1082,8 +1082,15 @@ export class ImplementationTabComponent implements OnInit {
     const labels = this.googlePostalGeoLabels();
     return this.googlePostalGeoTargets().map((id) => ({ id, label: Object.hasOwn(labels, id) ? labels[id] : id }));
   });
-  /** The location picker's latest query text, trimmed; the search below is debounced off it. */
-  protected readonly googleGeoSearchQuery = signal('');
+  /**
+   * The location picker's latest query text, trimmed; the search below is debounced off it.
+   *
+   * NO equality check: every completion the autocomplete asks for must reach the search, even one
+   * that trims to the query already searched (`Austin` then `Austin `). PrimeNG shows its loading
+   * state until suggestions are set again, so a deduplicated repeat would leave it spinning — and it
+   * is also how the operator retries a search that failed.
+   */
+  protected readonly googleGeoSearchQuery = signal('', { equal: () => false });
   private readonly googleGeoSearchState: Signal<GoogleAdsGeoTargetSearchState> = this.initGoogleGeoSearchState();
   /** The picker's rows, an id already on the list marked `disabled` so it cannot be picked twice. */
   protected readonly googleGeoSearchOptions = computed<GoogleAdsGeoTargetOption[]>(() => {
@@ -6331,37 +6338,44 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
+   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
+   *
+   * The delay sits INSIDE the outer `switchMap`, not before it. Every new query therefore cancels the
+   * request still in flight for the previous one and clears its rows at once (`startWith`), and only
+   * then waits out the debounce. With `debounceTime` in front instead, the old request stayed
+   * subscribed for the whole pause and its answer — for text the operator had already changed — could
+   * land as pickable rows. A blank query, no active project, or the picker not being offered answers
+   * the empty state without a request, the last because a query typed before the capability flipped
+   * off must not reach a 404 route.
+   */
+  private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
+    const empty: GoogleAdsGeoTargetSearchState = { suggestions: [], truncated: false, failed: false };
+    return toSignal(
+      toObservable(this.googleGeoSearchQuery).pipe(
+        switchMap((query) => {
+          const projectSlug = this.activeFoundationSlug();
+          if (query === '' || projectSlug === '' || !this.googleGeoSearchAvailable()) return of(empty);
+          return timer(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS).pipe(
+            switchMap(() =>
+              this.campaignService.searchGoogleAdsGeoTargets(projectSlug, query, { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT }).pipe(
+                map((result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false })),
+                catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true }))
+              )
+            ),
+            startWith(empty)
+          );
+        })
+      ),
+      { initialValue: empty }
+    );
+  }
+
+  /**
    * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
    * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
    * `0b11` and `1e2` and put a value on the chip the operator never typed.
    */
-  /**
-   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
-   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
-   *
-   * `switchMap`, so a slower answer to an older query can never overwrite a newer one. A blank query,
-   * no active project, or the picker not being offered answers the empty state without a request —
-   * the last because a query typed before the capability flipped off must not reach a 404 route.
-   */
-  private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
-    return toSignal(
-      toObservable(this.googleGeoSearchQuery).pipe(
-        debounceTime(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS),
-        switchMap((query) => {
-          const projectSlug = this.activeFoundationSlug();
-          if (query === '' || projectSlug === '' || !this.googleGeoSearchAvailable()) {
-            return of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: false });
-          }
-          return this.campaignService.searchGoogleAdsGeoTargets(projectSlug, query, { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT }).pipe(
-            map((result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false })),
-            catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true }))
-          );
-        })
-      ),
-      { initialValue: { suggestions: [], truncated: false, failed: false } }
-    );
-  }
-
   private parseGoogleProximityNumber(text: string): number | null {
     const trimmed = googleAdsTrimSpace(text);
     if (trimmed === '') return null;

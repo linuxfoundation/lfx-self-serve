@@ -48,6 +48,7 @@ import type {
   CampaignPlatformResult,
   CampaignSitelink,
   CampaignStructuredSnippet,
+  GoogleAdsGeoTargetSearchResult,
   GoogleAdsGeoTargetSuggestion,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
@@ -57,7 +58,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
 
@@ -6326,10 +6327,6 @@ describe('ImplementationTabComponent google postal-code and radius targets', () 
 });
 
 /**
- * The review fixes on #4455: what the postal-code and radius controls do once the capability is not
- * an explicit yes, and the edge spellings each box has to judge.
- */
-/**
  * The location picker (campaign-service #411): with `googleGeoSearchEnabled`, the postal-code box
  * becomes a debounced search of Google's geo target table, and a picked row adds its id to the same
  * list a typed id goes into, with Google's canonical name kept as its display label.
@@ -6365,6 +6362,13 @@ describe('ImplementationTabComponent google location picker', () => {
     fixture = TestBed.createComponent(ImplementationTabComponent);
     fixture.detectChanges();
     await fixture.whenStable();
+    // Timers only, after the fixture is stable: the debounce is an RxJS `timer`, and advancing a fake
+    // clock is exact where a real wait is slow and, on a loaded runner, close to flaky.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
@@ -6377,11 +6381,11 @@ describe('ImplementationTabComponent google location picker', () => {
     return c;
   }
 
-  /** Let the debounce elapse, then settle the signal the search answers into. */
+  /** Flush the query into its observable, then let the debounce elapse on the fake clock. */
   async function afterDebounce(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS + 50));
     fixture.detectChanges();
-    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS);
+    fixture.detectChanges();
   }
 
   it.each([[null], [false]])('keeps the typed-id box while googleGeoSearchEnabled is %s', (enabled) => {
@@ -6426,6 +6430,49 @@ describe('ImplementationTabComponent google location picker', () => {
       { ...AUSTIN, disabled: false },
       { ...ZIP, disabled: true },
     ]);
+  });
+
+  /**
+   * A repeat that trims to the query already searched still reaches the search — PrimeNG waits on
+   * suggestions after every completion — which is also how a failed search is retried.
+   */
+  it('searches again on a repeated completion that trims to the same query', async () => {
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: 'Austin' });
+    await afterDebounce();
+    c['onGoogleGeoSearch']({ query: 'Austin ' });
+    await afterDebounce();
+
+    expect(search).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * An edit cancels the request still out for the previous text and clears its rows at once, so an
+   * answer for text the operator has already changed can never become a pickable row.
+   */
+  it('never offers rows from a superseded search', async () => {
+    const first = new Subject<GoogleAdsGeoTargetSearchResult>();
+    const second = new Subject<GoogleAdsGeoTargetSearchResult>();
+    search.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const c = seedPicker();
+
+    c['onGoogleGeoSearch']({ query: '787' });
+    await afterDebounce();
+    expect(search).toHaveBeenCalledWith('tlf', '787', expect.anything());
+
+    c['onGoogleGeoSearch']({ query: '78701' });
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    // The old answer lands during the new query's debounce: it is not shown.
+    first.next({ suggestions: [AUSTIN], truncated: false });
+    fixture.detectChanges();
+    expect(c['googleGeoSearchOptions']()).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS);
+    second.next({ suggestions: [ZIP], truncated: false });
+    fixture.detectChanges();
+    expect(c['googleGeoSearchOptions']()).toEqual([{ ...ZIP, disabled: false }]);
   });
 
   it('sends no request for a blank query', async () => {
@@ -6484,6 +6531,8 @@ describe('ImplementationTabComponent google location picker', () => {
 
   /** A picked id dispatches exactly as a typed one does: the bare id, in `geoTargets`. */
   it('submits the picked id in geoTargets, with no label on the wire', async () => {
+    // No debounce here, and `whenStable` below waits on the real scheduler, so the real clock is back.
+    vi.useRealTimers();
     const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
     const c = seedPicker();
     c['addGoogleGeoTarget']('US');
@@ -6564,6 +6613,10 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 });
 
+/**
+ * The review fixes on #4455: what the postal-code and radius controls do once the capability is not
+ * an explicit yes, and the edge spellings each box has to judge.
+ */
 describe('ImplementationTabComponent google location targets held by the capability', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 
