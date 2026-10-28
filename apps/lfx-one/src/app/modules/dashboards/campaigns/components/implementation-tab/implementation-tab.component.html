@@ -1213,6 +1213,7 @@
                   id="google-price-type"
                   (change)="onGooglePriceDraftInput('type', $event)"
                   [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-price-type">
                   @for (type of googlePriceTypes; track type) {
@@ -1223,6 +1224,7 @@
                   aria-label="Price qualifier"
                   (change)="onGooglePriceDraftInput('priceQualifier', $event)"
                   [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                   class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                   data-testid="implementation-google-price-qualifier">
                   <option value="" [selected]="googlePriceDraft().priceQualifier === ''">No qualifier</option>
@@ -1237,6 +1239,7 @@
                   [value]="googlePriceDraft().languageCode"
                   (input)="onGooglePriceDraftInput('languageCode', $event)"
                   [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                   class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-price-language" />
                 <input
@@ -1246,6 +1249,7 @@
                   [value]="googlePriceDraft().currencyCode"
                   (input)="onGooglePriceDraftInput('currencyCode', $event)"
                   [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                  [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                   class="w-28 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-price-currency" />
               </div>
@@ -1264,6 +1268,7 @@
                       [value]="row.header"
                       (input)="onGooglePriceRowInput(r, 'header', $event)"
                       [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                       class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                       [attr.data-testid]="'implementation-google-price-row-header-' + r" />
                     <input
@@ -1274,12 +1279,14 @@
                       [value]="row.amount"
                       (input)="onGooglePriceRowInput(r, 'amount', $event)"
                       [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                       class="w-24 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                       [attr.data-testid]="'implementation-google-price-row-amount-' + r" />
                     <select
                       [attr.aria-label]="'Price row ' + (r + 1) + ' unit'"
                       (change)="onGooglePriceRowInput(r, 'unit', $event)"
                       [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                      [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                       class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
                       [attr.data-testid]="'implementation-google-price-row-unit-' + r">
                       <option value="" [selected]="row.unit === ''">No unit</option>
@@ -1305,6 +1312,7 @@
                     [value]="row.description"
                     (input)="onGooglePriceRowInput(r, 'description', $event)"
                     [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                    [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     [attr.data-testid]="'implementation-google-price-row-description-' + r" />
                   <input
@@ -1314,6 +1322,7 @@
                     [value]="row.finalUrl"
                     (input)="onGooglePriceRowInput(r, 'finalUrl', $event)"
                     [attr.aria-describedby]="googlePriceDraftError() ? 'google-price-error' : null"
+                    [attr.aria-invalid]="googlePriceDraftError() ? 'true' : null"
                     class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     [attr.data-testid]="'implementation-google-price-row-url-' + r" />
                 </div>

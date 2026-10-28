@@ -7338,6 +7338,7 @@ describe('ImplementationTabComponent google call, promotion and price extensions
       'implementation-google-price-row-unit-0',
     ]) {
       expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-price-error');
+      expect(find(testId)?.getAttribute('aria-invalid')).toBe('true');
     }
   });
 
