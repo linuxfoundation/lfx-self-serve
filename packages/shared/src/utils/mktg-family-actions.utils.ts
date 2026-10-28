@@ -47,13 +47,13 @@ export function resolveMktgFamilyRun(
     typeof approved.revisionId === 'string' &&
     approved.revisionId.trim().length > 0;
   let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
-  if (run.state === 'questions') caption = run.agentKey === 'member-360' ? 'Paused' : 'Waiting for your answers';
+  if (run.state === 'questions') caption = 'Waiting for your answers';
   return {
-    label: run.state === 'questions' && run.agentKey !== 'member-360' ? 'Answer the questions' : 'Open',
+    label: run.state === 'questions' ? 'Answer the questions' : 'Open',
     caption,
-    // B2 seam: move only writing to the run-page receiver; one-off questions must keep their document/run selection.
+    // B2 seam: move writing to the run-page receiver here; all questions already use their catalog run page.
     link:
-      run.state === 'questions' && type.kind === 'living'
+      run.state === 'questions'
         ? { commands: [...prefix, type.catalogAgentId], queryParams: {} }
         : { commands: [...prefix, 'documents', run.agentKey, run.documentId], queryParams: { run: run.runId } },
   };

@@ -63,7 +63,7 @@ describe('Marketing kit home', () => {
     ['foundation-message', 'writing', 'Writing…', 'Open'],
     ['foundation-message', 'storing', 'Writing…', 'Open'],
     ['foundation-message', 'questions', 'Waiting for your answers', 'Answer the questions'],
-    ['member-360', 'questions', 'Paused', 'Open'],
+    ['member-360', 'questions', 'Waiting for your answers', 'Answer the questions'],
     ['linkedin-post', 'questions', 'Waiting for your answers', 'Answer the questions'],
     ['foundation-message', 'failed', 'Not run yet', null],
   ] as const)('shows %s %s without changing Next step', async (agentKey, state, status, label) => {
@@ -90,10 +90,11 @@ describe('Marketing kit home', () => {
     expect(link?.textContent ?? null).toBe(label);
     if (label) {
       expect(row?.querySelector('[data-testid="mktg-kit-run-status"]')?.textContent).toContain(status);
-      const livingQuestions = state === 'questions' && agentKey === 'foundation-message';
+      const questions = state === 'questions';
       const documentId = agentKey === 'foundation-message' ? 'living' : 'run-synthetic';
-      const target = livingQuestions ? 'foundation-setup' : `documents/${agentKey}/${documentId}`;
-      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (livingQuestions ? '' : '&run=synthetic-run'));
+      const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
+      const target = questions ? runTarget : `documents/${agentKey}/${documentId}`;
+      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (questions ? '' : '&run=synthetic-run'));
     }
     expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
   });
