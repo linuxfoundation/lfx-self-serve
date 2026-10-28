@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants';
+import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '../../../packages/shared/src/constants/mktg-document-store.constants';
+import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -10,6 +12,62 @@ import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 
 test.describe('Marketing OS new run Sources', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing waiting-run fixture type');
+    const runId = 'b'.repeat(64);
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) =>
+      route.fulfill({ json: { sessionId: 'synthetic-waiting-session', ownerToken: 'synthetic-proof', runId } })
+    );
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
+      route.fulfill({
+        json: {
+          status: 'questions',
+          questionsId: 'c'.repeat(64),
+          questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+        },
+      })
+    );
+    await sources.open();
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    const questions = page.getByTestId('mktg-run-questions');
+    await expect(questions).toContainText('Which synthetic goal?');
+    await page.route('**/api/mktg-agents/documents?*', (route) =>
+      route.fulfill({
+        json: {
+          project: DOCUMENT_PROJECT.uid,
+          groups: [],
+          runs: [
+            { project: DOCUMENT_PROJECT.uid, agentKey: type.agentKey, documentId: 'living', runId, state: 'questions', startedAt: new Date().toISOString() },
+          ],
+        },
+      })
+    );
+    const base = '/project/mktg-os-agents';
+    await page.evaluate((url) => {
+      history.pushState({}, '', url);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, `${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
+    const waiting = page.getByTestId(`mktg-documents-nav-${type.agentKey}`);
+    await expect(waiting).toContainText('Needs answers');
+    await expect(waiting).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await waiting.click();
+    await expect(questions).toContainText('Which synthetic goal?');
+    await page.evaluate((url) => {
+      history.pushState({}, '', url);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText('This run is waiting for your answers.');
+    await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-agent-run-form')).toBeHidden();
+    await page.getByTestId('mktg-run-waiting-continue').getByRole('button').click();
+    await expect(questions).toContainText('Which synthetic goal?');
+    await expect(page.getByTestId('mktg-run-questions-return-note')).toContainText('Documents › Started runs › Open.');
+    expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
+    expect(sources.generated).toHaveLength(1);
+    await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
+  });
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
       const sources = await setupFreshSources(page);
