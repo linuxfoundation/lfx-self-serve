@@ -556,8 +556,10 @@ export interface CampaignSendWorkflowRequest {
   /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */
   briefIds: string[];
   /**
-   * Calendar dates (YYYY-MM-DD) for the source workflow's wait-until-date steps, in flow order.
-   * Omitted keeps the source's own schedule; each step's time of day is always the source's.
+   * Calendar dates (YYYY-MM-DD), one per wait-until-date step of the source workflow, in flow
+   * order, each after today and after the one before it. Required by campaign-service whenever the
+   * source has dated steps -- its own dates belong to another campaign. Each step's time of day is
+   * always the source's.
    */
   sendDates?: string[];
 }

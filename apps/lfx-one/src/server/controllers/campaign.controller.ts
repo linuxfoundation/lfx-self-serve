@@ -7,7 +7,7 @@
 // Verified by switching to the barrel and watching the suite fail.
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextLength, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdsToUpperCode,
@@ -82,6 +82,9 @@ import {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
+  CAMPAIGN_SEND_WORKFLOW_MAX_SENDS,
+  CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
@@ -460,6 +463,19 @@ export class CampaignController {
         return;
       }
       body.url = surveyUrl.href;
+      // The 3,000-character limit campaign-service enforces at save and at copy generation, checked
+      // before anything is streamed so the operator reads it as a field error.
+      const sourceLength = typeof body.sourceText === 'string' ? campaignSurveySourceTextLength(body.sourceText) : 0;
+      if (sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
+        _next(
+          ServiceValidationError.forField('sourceText', `sourceText is ${sourceLength} characters; the limit is ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}`, {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
     } else {
       try {
         await validateScrapeUrl(body.url);
@@ -3169,6 +3185,16 @@ export class CampaignController {
       refuse('sendDates', 'sendDates must be a list of YYYY-MM-DD dates');
       return;
     }
+    // Bounded here as campaign-service bounds them (`MaxLength(10)`), so an oversized body is a
+    // field error at this hop rather than a list proxied upstream to be refused there.
+    if ((body?.briefIds?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('briefIds', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} sends`);
+      return;
+    }
+    if ((body?.sendDates?.length ?? 0) > (body?.briefIds?.length ?? 0)) {
+      refuse('sendDates', 'a send workflow has at most one date per send');
+      return;
+    }
     const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
     const sourceWorkflowUrl = typeof body?.sourceWorkflowUrl === 'string' ? body.sourceWorkflowUrl.trim() : '';
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
@@ -3177,6 +3203,10 @@ export class CampaignController {
     // built from the deployment's configured workflow, and the UI therefore sends none -- so
     // requiring it at this hop refused every ordinary request before it reached the service that
     // knows the default.
+    if (name.length > CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS) {
+      refuse('name', `name must be at most ${CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS} characters`);
+      return;
+    }
     if (name === '' || briefIds.length === 0) {
       next(
         ServiceValidationError.forField('body', 'A send workflow needs a name and the briefs it sends', {

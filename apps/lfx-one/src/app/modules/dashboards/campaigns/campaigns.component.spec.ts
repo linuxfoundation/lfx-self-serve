@@ -8262,7 +8262,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       surveySequenceBodies: Signal<ReadonlyMap<string, string>>;
       onSurveyEmailCountChange(count: number): void;
       sequenceDatesForm: { controls: Record<string, { setValue(v: string): void }> };
-      sequenceUnresolvedBriefIds: Signal<readonly string[]>;
+      sequenceUnresolvedBriefIds: WritableSignal<readonly string[]>;
       surveySequenceWarning: Signal<string>;
       canStageSequence: Signal<boolean>;
       sendWorkflowResult: Signal<{ editUrl: string } | null>;
@@ -8270,6 +8270,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       onStageSequenceSends(): Promise<void>;
       onBuildSequenceWorkflow(): Promise<void>;
       onSelectEmailType(typeId: string): void;
+      emailAudienceWriteInFlight: WritableSignal<boolean>;
+      emailChannelEnabled: WritableSignal<boolean | null>;
+      surveyTemplateHint: Signal<string>;
+      surveyTemplateProblem: Signal<string>;
+      audienceLockedByStaging: Signal<boolean>;
+      onRetrySurveyTemplates(): void;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
 
@@ -8300,7 +8306,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     beforeEach(() => {
       service = TestBed.inject(CampaignService);
       let next = 0;
-      persistBrief = vi.spyOn(service, 'persistBrief').mockImplementation(() => of({ enabled: true, briefId: `brief-${++next}`, etag: '"1"' }) as never);
+      persistBrief = vi
+        .spyOn(service, 'persistBrief')
+        .mockImplementation(() => of({ enabled: true, briefId: `brief-${++next}`, etag: '"1"', approved: true, created: true }) as never);
       generateEmailCopy = vi
         .spyOn(service, 'generateEmailCopy')
         .mockImplementation((_project: string, _briefId: string, stage?: string) => of({ enabled: true, copy: copyFor(stage ?? '') }) as never);
@@ -8493,29 +8501,213 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().sequenceStagingState()).toBe('done');
     });
 
-    it('builds the workflow only once every send is staged, with dates only when all are given', async () => {
+    it('builds the workflow only once every send is staged AND has its date', async () => {
       selectSurvey();
+      seq().onSurveyEmailCountChange(2);
       seq().emailBriefOutput.set(surveyBrief);
-      seq().surveySequenceSends.set([
-        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') },
-        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-2', copy: copyFor('Survey Closing') },
-      ]);
+      await seq().onGenerateSurveySequence();
       const build = vi
         .spyOn(service, 'createSendWorkflow')
         .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'https://app.hubspot.com/x', sendEmailSteps: 2 }) as never);
 
       seq().sequenceStagedBriefIds.set(['brief-1']);
-      expect(seq().canBuildSequenceWorkflow()).toBe(false);
+      seq().sequenceDatesForm.controls['date-0'].setValue('2026-11-02');
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      expect(seq().canBuildSequenceWorkflow(), 'one send not staged').toBe(false);
+
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2']);
+      seq().sequenceDatesForm.controls['date-1'].setValue('');
+      // campaign-service needs one date per dated step and refuses a missing one with a 409.
+      expect(seq().canBuildSequenceWorkflow(), 'one date blank').toBe(false);
       await seq().onBuildSequenceWorkflow();
       expect(build).not.toHaveBeenCalled();
 
-      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2']);
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
       expect(seq().canBuildSequenceWorkflow()).toBe(true);
       await seq().onBuildSequenceWorkflow();
+      expect(build).toHaveBeenCalledWith(expect.any(String), {
+        name: '2026 Cloud Native Survey - Workflow',
+        briefIds: ['brief-1', 'brief-2'],
+        sendDates: ['2026-11-02', '2026-11-09'],
+      });
+    });
 
-      // One date of two is a half-finished form, not a schedule: the source's own dates are kept.
-      expect(build).toHaveBeenCalledWith(expect.any(String), { name: '2026 Cloud Native Survey - Workflow', briefIds: ['brief-1', 'brief-2'] });
-      expect(seq().sendWorkflowState()).toBe('done');
+    it('creates each send date control before publishing it, so a failed later send leaves them usable', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      generateEmailCopy.mockImplementation((_p: string, _b: string, stage?: string) =>
+        stage === 'Survey Closing' ? (of({ enabled: true, error: 'model refused' }) as never) : (of({ enabled: true, copy: copyFor(stage ?? '') }) as never)
+      );
+
+      await seq().onGenerateSurveySequence();
+
+      // Two sends published, so the template renders two date inputs bound to these controls.
+      expect(seq().surveySequenceSends()).toHaveLength(2);
+      expect(Object.keys(seq().sequenceDatesForm.controls)).toEqual(['date-0', 'date-1']);
+    });
+
+    it('does not offer Stage all while later sends are still being written', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(2);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      const closing = new Subject<unknown>();
+      generateEmailCopy.mockImplementation((_p: string, _b: string, stage?: string) =>
+        stage === 'Survey Closing' ? (closing as never) : (of({ enabled: true, copy: copyFor(stage ?? '') }) as never)
+      );
+
+      const writing = seq().onGenerateSurveySequence();
+      await vi.waitFor(() => expect(seq().surveySequenceSends()).toHaveLength(1));
+
+      // Staging snapshots the list, so it would stage one send and call the series done.
+      expect(seq().canStageSequence()).toBe(false);
+
+      closing.next({ enabled: true, copy: copyFor('Survey Closing') });
+      closing.complete();
+      await writing;
+      expect(seq().canStageSequence()).toBe(true);
+    });
+
+    it("stops at a refused save instead of writing over another editor's brief", async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      persistBrief.mockImplementation(
+        () => of({ enabled: true, briefId: 'brief-x', etag: null, approved: false, created: false, conflict: 'stale-brief' }) as never
+      );
+
+      await seq().onGenerateSurveySequence();
+
+      expect(generateEmailCopy).not.toHaveBeenCalled();
+      expect(seq().surveySequenceState()).toBe('error');
+      expect(seq().surveySequenceSends()).toEqual([]);
+    });
+
+    it('names the step that failed when the error carries no message of its own', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      generateEmailCopy.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().surveySequenceError()).toBe('The emails could not be written.');
+    });
+
+    it("re-attaches the first send's audience to a later send built against different lists", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(2);
+      seq().emailBriefOutput.set(surveyBrief);
+      const current = { id: 'aud-b', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] };
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          of({
+            enabled: true,
+            audiences:
+              briefId === 'brief-1'
+                ? [current]
+                : [{ id: 'aud-a', platform: 'hubspot', status: 'built', platformMasterListId: '400', suppressionListIds: ['201'] }],
+          }) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      // A built audience that does not MATCH is not "already shared": the workflow refuses
+      // briefs whose audiences differ.
+      expect(attach).toHaveBeenCalledTimes(1);
+      expect(attach.mock.calls[0][1]).toMatchObject({ briefId: 'brief-2', masterListId: '500', suppressionListIds: ['201'] });
+
+      attach.mockClear();
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [current] }) as never);
+      await seq().onGenerateSurveySequence();
+      expect(attach, 'a matching audience is skipped').not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a dropped connection', 0, true],
+      ['a gateway error', 504, true],
+      ['an explicit refusal', 400, false],
+    ])('after %s on the create request, holds the send only when a draft may exist', async (_label, status, held) => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status })) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(held ? ['brief-1'] : []);
+      expect(seq().canStageSequence()).toBe(!held);
+    });
+
+    it('does not hold a send of a series that was reset while its create was in flight', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      const answer = new Subject<unknown>();
+      vi.spyOn(service, 'createCampaign').mockReturnValue(answer as never);
+
+      const staging = seq().onStageSequenceSends();
+      await vi.waitFor(() => expect(service.createCampaign).toHaveBeenCalled());
+      seq().onSurveyEmailCountChange(3);
+      answer.next({ jobId: '', error: 'unconfirmed', indeterminate: true });
+      answer.complete();
+      await staging;
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual([]);
+    });
+
+    it('keeps the audience locked and Stage all off around an audience replacement', () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      expect(seq().canStageSequence()).toBe(true);
+
+      seq().emailAudienceWriteInFlight.set(true);
+      expect(seq().canStageSequence(), 'staging during an audience write').toBe(false);
+      seq().emailAudienceWriteInFlight.set(false);
+
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      expect(seq().audienceLockedByStaging(), 'audience replaced while a series send is held').toBe(true);
+    });
+
+    it('says why there is no template on the survey surface, and retries the read', () => {
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set(null);
+      seq().emailChannelEnabled.set(false);
+      expect(seq().surveyTemplateHint()).not.toBe('Finding a template in this portal to clone.');
+
+      seq().emailChannelEnabled.set(true);
+      seq().emailTemplates.set([]);
+      expect(seq().surveyTemplateProblem()).toContain('no marketing emails');
+
+      const search = vi
+        .spyOn(fixture.componentInstance as unknown as { searchEmailTemplates(q: string): void }, 'searchEmailTemplates')
+        .mockImplementation(() => undefined);
+      seq().onRetrySurveyTemplates();
+      expect(search).toHaveBeenCalledWith('');
+    });
+
+    it('keeps the chosen type, brief and copy across a trip through Paid Marketing', () => {
+      selectSurvey();
+      seq().onSelectEmailType('report-promo');
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-9');
+
+      seq().selectorForm.controls.deliveryType.setValue('paid-marketing');
+      fixture.detectChanges();
+      selectSurvey();
+
+      expect(seq().selectedEmailStage()).toBe('Report Promo');
+      expect(seq().emailBriefId()).toBe('brief-9');
+      expect(seq().emailBriefOutput()).not.toBeNull();
     });
 
     it('sends every date when every one is filled in', async () => {

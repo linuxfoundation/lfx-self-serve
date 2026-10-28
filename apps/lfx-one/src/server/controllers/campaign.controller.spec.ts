@@ -9497,6 +9497,20 @@ describe('CampaignController survey surface', () => {
     expect(fieldOf(error)).toBe('stage');
   });
 
+  it("refuses a survey source over campaign-service's 3,000-character limit before generating", async () => {
+    const req = {
+      body: { deliveryType: 'survey', url: 'https://surveys.example.com/r/cloud-2026', sourceText: 'x'.repeat(3001) },
+      query: {},
+      path: '/api/campaigns/brief/generate',
+    } as unknown as Request;
+
+    await controller.generateBrief(req, res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe('sourceText');
+  });
+
   it('refuses to refine a survey brief, which has no ad copy to refine', async () => {
     await controller.refineBrief(buildReq({ deliveryType: 'survey', feedback: 'shorter', currentCopy: null, currentKeywords: [] }), res, next);
 
@@ -9543,6 +9557,10 @@ describe('CampaignController survey surface', () => {
       ['one bad brief among good ones', { name: 'Survey - Workflow', briefIds: ['a', '', 'b'] }],
       ['a date that is not YYYY-MM-DD', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', '11/09/2026'] }],
       ['a date that is not a string', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', 7] }],
+      // Bounded as campaign-service bounds them, so an oversized body is refused at this hop.
+      ['a name over 200 characters', { name: 'w'.repeat(201), briefIds: ['a', 'b'] }],
+      ['more than 10 briefs', { name: 'Survey - Workflow', briefIds: Array.from({ length: 11 }, (_v, i) => `b${i}`) }],
+      ['more dates than sends', { name: 'Survey - Workflow', briefIds: ['a', 'b'], sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'] }],
     ])('refuses a body with %s', async (_label, body) => {
       await controller.createSendWorkflow(buildWorkflowReq(body), res, next);
 

@@ -16,6 +16,8 @@ import {
   campaignActionItemLever,
   campaignActionRuleLever,
   campaignEtagVersion,
+  campaignSurveySourceTextLength,
+  deriveSurveySlug,
   describeCampaignDispatchFailure,
   keywordActionKey,
   normalizeSponsors,
@@ -355,5 +357,33 @@ describe('describeCampaignDispatchFailure', () => {
     'dispatcher returned no campaign',
   ])('does not flag %j as nothing created', (error) => {
     expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: false });
+  });
+});
+
+describe('deriveSurveySlug', () => {
+  // The ONE derivation the planner looks a survey up with and the BFF saves it under: two copies
+  // that disagreed left a saved Google Form survey impossible to reopen.
+  it("uses the promoted link's last path segment", () => {
+    expect(deriveSurveySlug('https://surveys.example.com/r/Cloud_Native-2026/', 'Anything')).toBe('cloud-native-2026');
+  });
+
+  it.each([
+    ['a Google Form', 'https://docs.google.com/forms/d/e/1FAIpQ/viewform'],
+    ['a link with no path', 'https://surveys.example.com/?sid=5'],
+  ])("names %s after the source document's title", (_label, url) => {
+    expect(deriveSurveySlug(url, '\n  2026 Cloud Native Survey\nTwelve questions.')).toBe('2026-cloud-native-survey');
+  });
+
+  it('is empty when neither the link nor the text names the asset', () => {
+    expect(deriveSurveySlug('https://docs.google.com/forms/d/e/1FAIpQ/viewform', '   ')).toBe('');
+    expect(deriveSurveySlug('not a url', '')).toBe('');
+  });
+});
+
+describe('campaignSurveySourceTextLength', () => {
+  it('counts as campaign-service does: whitespace runs as one space, trimmed, in code points', () => {
+    expect(campaignSurveySourceTextLength('  a \n\n\t b  ')).toBe(3);
+    // One emoji is one rune upstream, though two UTF-16 units here.
+    expect(campaignSurveySourceTextLength('😀')).toBe(1);
   });
 });

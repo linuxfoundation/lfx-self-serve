@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { DecimalPipe, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
@@ -301,6 +302,14 @@ export class CampaignsComponent {
   protected readonly selectedEmailTab = signal<Exclude<CampaignEmailTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
+
+  /**
+   * The SEND surface the email container is working on: the last of Email or Survey the operator
+   * chose. Unlike `selectedDeliveryType` it does not move to paid, so a trip through Paid Marketing
+   * hands the hidden planner no `paid-marketing` (which resets it) and keeps the selected type,
+   * brief and copy for the return.
+   */
+  protected readonly sendSurface = signal<'email' | 'survey'>('email');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
@@ -2130,6 +2139,15 @@ export class CampaignsComponent {
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
+  /**
+   * Whether the Audience tab must not replace the audience: a single send OR a survey series is
+   * being staged (or has a send held), and a replacement mid-way would leave drafts built against
+   * different audiences -- which the series' workflow then refuses.
+   */
+  protected readonly audienceLockedByStaging = computed(
+    () => this.emailStagingHeld() || this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend()
+  );
+
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
   /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
@@ -2215,8 +2233,13 @@ export class CampaignsComponent {
   protected readonly canStageSequence = computed(
     () =>
       this.sequenceStagingState() !== 'staging' &&
+      // Not while later sends are still being written: staging snapshots the list, so it would
+      // stage the sends written so far and report the series done.
+      this.surveySequenceState() !== 'generating' &&
+      // Nor while the audience is being replaced: `emailAudience()` still holds the old row.
+      !this.emailAudienceWriteInFlight() &&
       this.surveySequenceSends().length > 0 &&
-      this.sequenceUnresolvedBriefIds().length === 0 &&
+      !this.sequenceHasHeldSend() &&
       this.emailBriefOutput() !== null &&
       this.activeFoundationSlug() !== '' &&
       this.selectedEmailTemplateId() !== '' &&
@@ -2251,7 +2274,8 @@ export class CampaignsComponent {
       this.sequenceStagingState() !== 'staging' &&
       this.activeFoundationSlug() !== '' &&
       sends.length > 1 &&
-      sends.every((send) => staged.includes(send.briefId))
+      sends.every((send) => staged.includes(send.briefId)) &&
+      this.sequenceDatesComplete()
     );
   });
 
@@ -2281,6 +2305,19 @@ export class CampaignsComponent {
    * is written, since its length is the series'.
    */
   protected readonly sequenceDatesForm = new FormRecord<FormControl<string>>({});
+
+  /** The dates as typed, as a signal so Build's enabled state follows them. */
+  private readonly sequenceDateValues = toSignal(this.sequenceDatesForm.valueChanges, { initialValue: {} as Partial<Record<string, string>> });
+
+  /**
+   * Whether every send has its date. campaign-service needs one per wait-until-date step of the
+   * workflow it copies -- the source's own dates belong to another campaign -- and refuses a
+   * missing one with a 409, so Build waits for all of them.
+   */
+  protected readonly sequenceDatesComplete = computed(() => {
+    const values = this.sequenceDateValues();
+    return this.surveySequenceSends().every((_send, index) => (values[`date-${index}`] ?? '').trim() !== '');
+  });
   protected readonly sendWorkflowState = signal<CampaignSurveySendWorkflowState>('idle');
   protected readonly sendWorkflowError = signal<string>('');
   protected readonly sendWorkflowResult = signal<CampaignSendWorkflowResult | null>(null);
@@ -2354,6 +2391,32 @@ export class CampaignsComponent {
    * the thing that can be mistyped; a name would be resolved from local context and would look
    * correct even when the queried id was wrong.
    */
+  /**
+   * Why the survey surface has no template, when that is a terminal state rather than a load in
+   * progress: not connected, a failed read, or a portal with no marketing emails. '' otherwise.
+   * The survey surface hides the picker, so without this those states read as an endless search.
+   */
+  protected readonly surveyTemplateProblem = computed<string>(() => {
+    if (this.emailTemplatesLoading() || this.selectedEmailTemplateId() !== '') {
+      return '';
+    }
+    if (this.emailChannelEnabled() === false) {
+      return this.emailNotConnectedMessage();
+    }
+    const error = this.emailTemplatesError();
+    if (error) {
+      return error;
+    }
+    const templates = this.emailTemplates();
+    return templates !== null && templates.length === 0 ? 'This HubSpot portal has no marketing emails to clone. Add one in HubSpot, then try again.' : '';
+  });
+
+  /** The survey surface's template line: its problem, or that the search is still running. */
+  protected readonly surveyTemplateHint = computed<string>(() => this.surveyTemplateProblem() || 'Finding a template in this portal to clone.');
+
+  /** Whether a send of the series on screen is held because its draft never confirmed. */
+  protected readonly sequenceHasHeldSend = computed(() => this.surveySequenceSends().some((send) => this.sequenceUnresolvedBriefIds().includes(send.briefId)));
+
   protected readonly emailNotConnectedMessage = computed<string>(() => {
     const slug = this.emailSearchProjectSlug();
     // The empty-slug search is refused before dispatch, so this is defensive only: naming nothing
@@ -2376,7 +2439,7 @@ export class CampaignsComponent {
   protected readonly isEmail = computed(() => this.selectedDeliveryType() === 'email');
 
   /** Survey & Report — the surface whose brief is written from a pasted document, not a scraped event. */
-  protected readonly isSurvey = computed(() => this.selectedDeliveryType() === 'survey');
+  protected readonly isSurvey = computed(() => this.sendSurface() === 'survey');
 
   /**
    * Both SEND surfaces: email and survey.
@@ -2900,7 +2963,12 @@ export class CampaignsComponent {
       // are separate brief identities upstream: the type handler is what drops the brief id, the
       // brief and the audience of the stage being left. Set directly, the survey surface kept
       // the email brief on screen and generated and staged against that row.
-      if (value === 'survey' || value === 'email') {
+      //
+      // Only when the SURFACE changes. Returning to the surface last used -- the round trip
+      // through Paid Marketing -- keeps its selection: its type is valid there, and resetting it
+      // discarded a chosen stage's brief, audience and copy.
+      if ((value === 'survey' || value === 'email') && value !== this.sendSurface()) {
+        this.sendSurface.set(value);
         const defaultTypeId = value === 'survey' ? DEFAULT_CAMPAIGN_SURVEY_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
         this.onSelectEmailType(defaultTypeId);
         this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
@@ -3761,6 +3829,11 @@ export class CampaignsComponent {
     }
   }
 
+  /** Read the portal's templates again after a failed or empty answer on the survey surface. */
+  protected onRetrySurveyTemplates(): void {
+    this.searchEmailTemplates('');
+  }
+
   /** Change how many emails the survey is promoted by. */
   protected onSurveyEmailCountChange(count: number): void {
     if (count === this.surveyEmailCount()) {
@@ -3806,6 +3879,7 @@ export class CampaignsComponent {
     this.surveySequenceError.set('');
     this.surveySequenceWarning.set('');
     this.surveySequenceSends.set([]);
+    this.clearSequenceDates();
 
     const written: CampaignSequenceSend[] = [];
     try {
@@ -3832,21 +3906,25 @@ export class CampaignsComponent {
           throw new Error(result.error ?? `The ${this.surveyStageLabel(stage)} could not be generated.`);
         }
         written.push({ stage, label: this.surveyStageLabel(stage), briefId, copy: result.copy });
+        // The row's date control BEFORE the row is published: the template binds `date-<n>` as
+        // soon as two rows exist, and a control created only after the loop was missing while
+        // later sends were still being written -- and for good if one of them failed.
+        this.sequenceDatesForm.addControl(`date-${written.length - 1}`, new FormControl<string>('', { nonNullable: true }));
         // Published as each send lands, so a failure part-way leaves the sends that DID get
         // written on screen rather than discarding work the operator can still use.
         this.surveySequenceSends.set([...written]);
       }
-      this.rebuildSequenceDates(written.length);
-      this.surveySequenceWarning.set(await this.shareAudienceAcrossSequence(written, projectSlug));
+      const shareProblem = await this.shareAudienceAcrossSequence(written, projectSlug);
       if (!isCurrent()) {
         return;
       }
+      this.surveySequenceWarning.set(shareProblem);
       this.surveySequenceState.set('done');
     } catch (error) {
       if (!isCurrent()) {
         return;
       }
-      this.surveySequenceError.set(this.sendWorkflowErrorText(error));
+      this.surveySequenceError.set(this.sendWorkflowErrorText(error, 'The emails could not be written.'));
       this.surveySequenceState.set('error');
     } finally {
       if (isCurrent()) {
@@ -3903,6 +3981,13 @@ export class CampaignsComponent {
       this.sequenceStagingState.set('error');
       return;
     }
+    // Re-checked after the await, as the single-send path does: the audience may have been
+    // replaced while it was being shared.
+    if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+      this.sequenceStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
+      this.sequenceStagingState.set('error');
+      return;
+    }
     const staged: string[] = [...this.sequenceStagedBriefIds()];
 
     for (const send of sends) {
@@ -3916,15 +4001,29 @@ export class CampaignsComponent {
       }
       this.sequenceStagingMessage.set(`Creating the ${send.label} draft in HubSpot...`);
       try {
-        const outcome = await firstValueFrom(
-          this.campaignService.createCampaign(this.sequenceStageRequest(brief, send, sourceEmailId), projectSlug, send.briefId)
-        );
+        let outcome: { jobId: string; error?: string; indeterminate?: boolean };
+        try {
+          outcome = await firstValueFrom(this.campaignService.createCampaign(this.sequenceStageRequest(brief, send, sourceEmailId), projectSlug, send.briefId));
+        } catch (error) {
+          // The request was SENT and no answer arrived -- a dropped connection, a gateway 5xx --
+          // so the draft may exist, as the single-send path assumes. Held, not retried. Only an
+          // explicit 4xx is a refusal that created nothing and stays retryable.
+          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500;
+          if (!refused && isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw refused ? error : new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
+        }
         // The refusal's own words, as the single-send path shows them. An INDETERMINATE one is
         // a create that may have happened, so it says to look before staging again rather than
         // inviting a retry that could clone a second draft.
         if (outcome.error) {
           if (outcome.indeterminate) {
-            this.holdUnresolvedSend(send.briefId);
+            // Only for the series still on screen: a reset since then cleared the holds, and an
+            // old brief id written back would block staging of the new series with no reason.
+            if (isCurrent()) {
+              this.holdUnresolvedSend(send.briefId);
+            }
             throw new Error(`${outcome.error} Check HubSpot for this draft before staging again.`);
           }
           throw new Error(outcome.error);
@@ -3951,7 +4050,9 @@ export class CampaignsComponent {
           // draft may well exist, so this is not a failure to retry: staging again could clone a
           // second one. Held until the operator has looked, with a message that names HubSpot
           // (the poller's own timeout text is written for the ad platforms).
-          this.holdUnresolvedSend(send.briefId);
+          if (isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
           throw new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
         }
         if (!isCurrent()) {
@@ -3981,7 +4082,7 @@ export class CampaignsComponent {
         if (!isCurrent()) {
           return;
         }
-        this.sequenceStagingMessage.set(`${this.sendWorkflowErrorText(error)} (${send.label})`);
+        this.sequenceStagingMessage.set(`${this.sendWorkflowErrorText(error, 'The draft could not be created.')} (${send.label})`);
         this.sequenceStagingState.set('error');
         return;
       }
@@ -4007,11 +4108,9 @@ export class CampaignsComponent {
     const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
     const typedName = this.sendWorkflowForm.controls.name.value.trim();
     const name = typedName === '' ? `${this.emailBriefOutput()?.eventDetails?.name ?? 'Survey'} - Workflow` : typedName;
-    // Only sent when the operator filled EVERY date in. A partial set would be refused upstream
-    // anyway -- the dates map one-to-one onto the workflow's own wait steps -- and sending it
-    // would turn a half-finished form into an error about step counts.
+    // Every date, always: Build is enabled only once each send has one (`sequenceDatesComplete`),
+    // because campaign-service re-dates every wait step of the copied workflow from them.
     const dates = sends.map((_send, index) => (this.sequenceDatesForm.controls[`date-${index}`]?.value ?? '').trim());
-    const everyDateGiven = dates.every((date) => date !== '');
 
     this.sendWorkflowState.set('building');
     this.sendWorkflowError.set('');
@@ -4024,7 +4123,7 @@ export class CampaignsComponent {
           // this flow is meant to clone.
           name,
           briefIds: sends.map((send) => send.briefId),
-          ...(everyDateGiven ? { sendDates: dates } : {}),
+          sendDates: dates,
         })
       );
       if (!isCurrent()) {
@@ -7228,7 +7327,7 @@ export class CampaignsComponent {
    * (`document-form.component.ts`) -- the BFF's envelope puts it under `error`, Goa's under
    * `message`.
    */
-  private sendWorkflowErrorText(error: unknown): string {
+  private sendWorkflowErrorText(error: unknown, fallback = 'The workflow could not be built.'): string {
     const body = (error as { error?: { error?: string; message?: string } } | null)?.error;
     const fromResponse = body?.error || body?.message;
     if (fromResponse) {
@@ -7241,7 +7340,7 @@ export class CampaignsComponent {
     if (error instanceof Error && error.message.trim() !== '') {
       return error.message;
     }
-    return 'The workflow could not be built.';
+    return fallback;
   }
 
   /**
@@ -7264,6 +7363,19 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
+    // A REFUSED save (another editor changed the brief, or this page's version cannot be trusted)
+    // still answers with the stored row's id. Generating from that row and recording ownership of
+    // it -- with an overwrite licence, since a refusal carries no ETag -- let the next rewrite
+    // replace the other editor's brief without the conflict ever being shown. Stop and say why,
+    // keeping whatever ownership was held before, as `persistEmailBrief` does.
+    if (persisted.conflict !== undefined) {
+      throw new Error(this.emailConflictText(persisted.conflict, 'so the emails were not written.'));
+    }
+    // Saved but not approved: campaign-service will not stage from it, so writing its copy would
+    // only lead to a refusal at staging.
+    if (briefId !== '' && !persisted.approved) {
+      throw new Error('The campaign was saved but not approved, so the emails were not written. Try again.');
+    }
     if (briefId === '' || ownershipKey === null) {
       return briefId;
     }
@@ -7385,10 +7497,12 @@ export class CampaignsComponent {
 
     for (const send of sends.slice(1)) {
       const existing = await this.builtAudienceFor(projectSlug, send.briefId);
-      // Already has one: a re-run after a failure must not mint a second audience row. An
-      // UNREADABLE answer is not "none" either -- attaching then could duplicate one an outage
-      // hid -- so it stops here and says so.
-      if (existing.state === 'built') {
+      // Already has THIS audience: a re-run must not mint a second row for it. A built audience
+      // with DIFFERENT lists -- the first send was re-composed since -- is attached over, since
+      // the newest row is the one staging uses and the workflow refuses briefs whose audiences
+      // differ. An UNREADABLE answer is not "none" either -- attaching then could duplicate one
+      // an outage hid -- so it stops here and says so.
+      if (existing.state === 'built' && this.sameAudienceLists(existing.audience, source)) {
         continue;
       }
       if (existing.state === 'unknown') {
@@ -7407,7 +7521,7 @@ export class CampaignsComponent {
       } catch (error) {
         // Reported with the upstream reason: staging would otherwise refuse this send with "no
         // audience found for this brief", which explains nothing about why there is none.
-        return `The audience could not be attached to the ${send.label}: ${this.sendWorkflowErrorText(error)}`;
+        return `The audience could not be attached to the ${send.label}: ${this.sendWorkflowErrorText(error, 'the request failed.')}`;
       }
     }
     return '';
@@ -7455,17 +7569,26 @@ export class CampaignsComponent {
     this.surveySequenceError.set('');
     this.surveySequenceProgress.set('');
     this.surveySequenceWarning.set('');
-    this.rebuildSequenceDates(0);
+    this.clearSequenceDates();
     this.resetSequenceStaging();
   }
 
-  /** One empty date control per send, in send order. */
-  private rebuildSequenceDates(count: number): void {
+  /**
+   * Whether two recorded audiences send to the same lists with the same suppression -- what the
+   * workflow build compares across a series. Order-insensitive: the lists are sets.
+   */
+  private sameAudienceLists(a: CampaignAudience, b: CampaignAudience): boolean {
+    const sendLists = (audience: CampaignAudience): string[] =>
+      [...((audience.includeListIds ?? []).length > 0 ? (audience.includeListIds ?? []) : [audience.platformMasterListId ?? ''])].sort();
+    const suppression = (audience: CampaignAudience): string[] => [...(audience.suppressionListIds ?? [])].sort();
+    const same = (x: string[], y: string[]): boolean => x.length === y.length && x.every((value, index) => value === y[index]);
+    return same(sendLists(a), sendLists(b)) && same(suppression(a), suppression(b));
+  }
+
+  /** Drop every send's date control; each is added back as its send is written. */
+  private clearSequenceDates(): void {
     for (const key of Object.keys(this.sequenceDatesForm.controls)) {
       this.sequenceDatesForm.removeControl(key);
-    }
-    for (let index = 0; index < count; index++) {
-      this.sequenceDatesForm.addControl(`date-${index}`, new FormControl<string>('', { nonNullable: true }));
     }
   }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -19,7 +19,7 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextLength, deriveSurveySlug, parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -1536,6 +1536,16 @@ export class CampaignProxyService {
         yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
         return;
       }
+      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
+      // generation, because the copy would otherwise be written from a truncated source.
+      const sourceLength = campaignSurveySourceTextLength(sourceText);
+      if (sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
+        yield {
+          type: 'error',
+          data: `The pasted text is ${sourceLength} characters; the limit is ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}. Shorten it so no finding, date or incentive is cut from the email.`,
+        };
+        return;
+      }
 
       yield { type: 'status', data: 'Reading the source document...' };
 
@@ -1550,27 +1560,9 @@ export class CampaignProxyService {
           .find((line) => line !== '') ?? '';
       const name = firstLine.slice(0, 120);
 
-      // Derived from the promoted URL's own path, the same shape the event path falls back to, so
-      // two assets promoted from one link collide rather than silently becoming separate briefs.
-      //
-      // Except where the last segment names the PAGE rather than the asset. Every Google Form ends
-      // in `viewform`, so two surveys in one project would share -- and overwrite -- one brief.
-      // Those, and a URL with no path at all, take the asset's own name instead.
-      let lastSegment = '';
-      try {
-        lastSegment = decodeURIComponent(new URL(body.url).pathname.split('/').filter(Boolean).pop() ?? '');
-      } catch {
-        lastSegment = '';
-      }
-      const slugOf = (value: string): string =>
-        value
-          .toLowerCase()
-          .normalize('NFKD')
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .slice(0, 100);
-      const pageSegment = slugOf(lastSegment.replace(/\.[a-z0-9]+$/i, ''));
-      const slug = pageSegment === '' || CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS.has(pageSegment) ? slugOf(name) : pageSegment;
+      // The SAME derivation the planner looks the brief up with (`deriveSurveySlug`), so a saved
+      // survey -- a Google Form named after its title rather than `viewform` -- is found again.
+      const slug = deriveSurveySlug(body.url, sourceText);
       // campaign-service keys the brief on the slug and refuses an empty one, so say so here.
       if (slug === '') {
         yield { type: 'error', data: 'Could not name this campaign: start the pasted text with the survey or report title.' };

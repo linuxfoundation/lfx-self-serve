@@ -25,7 +25,25 @@
               [rows]="8"
               placeholder="Paste the survey or report description, key findings, deadline, incentive, audience..."
               dataTest="planning-source-text-input" />
-            <p class="text-xs text-gray-500">Its first line names the campaign.</p>
+            <div class="flex items-start justify-between gap-3 text-xs">
+              <p class="text-gray-500">Its first line names the campaign.</p>
+              <!-- Counted as campaign-service counts it (whitespace runs as one), so this and the
+                   server's refusal agree. Not a hard maxlength: that would cut a paste silently. -->
+              <span
+                class="shrink-0 tabular-nums"
+                [class.text-gray-500]="!sourceTextTooLong()"
+                [class.text-red-700]="sourceTextTooLong()"
+                aria-live="polite"
+                data-testid="planning-source-text-count"
+                >{{ sourceTextLength() }} / {{ sourceTextMaxChars }}</span
+              >
+            </div>
+            @if (sourceTextTooLong()) {
+              <p class="text-xs text-red-700" role="alert" data-testid="planning-source-text-too-long">
+                Shorten the text to {{ sourceTextMaxChars }} characters or fewer. Longer text is refused rather than cut, so no finding, date or incentive goes
+                missing from the email.
+              </p>
+            }
           </div>
         </div>
       }
@@ -532,6 +550,16 @@
 
         @if (isEditingEmailBrief()) {
           <div class="flex flex-col gap-3" data-testid="planning-email-brief-edit">
+            <!-- A survey's facts ARE its source text, so it is editable here like the event fields. -->
+            @if (isSurvey()) {
+              <div class="flex flex-col gap-1">
+                <label for="eb-source" class="font-mono text-xs uppercase tracking-wide text-gray-400">Source text</label>
+                <lfx-textarea [form]="emailEditForm" control="sourceText" inputId="eb-source" [rows]="8" dataTest="planning-email-edit-source" />
+                @if (emailEditError(); as editError) {
+                  <p class="text-xs text-red-700" role="alert" data-testid="planning-email-edit-error">{{ editError }}</p>
+                }
+              </div>
+            }
             <div class="flex flex-col gap-1">
               <label for="eb-name" class="font-mono text-xs uppercase tracking-wide text-gray-400">Event name</label>
               <lfx-input-text [form]="emailEditForm" control="name" id="eb-name" type="text" dataTest="planning-email-edit-name" />
@@ -581,6 +609,12 @@
           </div>
         } @else {
           <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm" data-testid="planning-email-brief-view">
+            @if (isSurvey()) {
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Source</dt>
+              <dd class="max-h-48 overflow-y-auto whitespace-pre-line text-gray-900" data-testid="planning-email-brief-source">
+                {{ details.sourceText || '—' }}
+              </dd>
+            }
             <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Event</dt>
             <dd class="text-gray-900" data-testid="planning-email-brief-name">{{ details.name || '—' }}</dd>
             <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>

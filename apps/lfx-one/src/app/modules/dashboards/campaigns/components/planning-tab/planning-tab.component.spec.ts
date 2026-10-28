@@ -131,6 +131,58 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
   });
 
+  it('looks a survey up under the slug it is saved under -- a Google Form by its title, not `viewform`', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey\nTwelve questions.');
+
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('2026-cloud-native-survey', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
+  it('re-runs a survey lookup when its title changes, since the title is half of its identity', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+
+    component.briefForm.controls.sourceText.setValue('Developer Survey 2027');
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('developer-survey-2027', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
+  it('counts the survey source as campaign-service does and will not generate past the limit', async () => {
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { sourceText: { setValue(v: string): void }; url: { setValue(v: string): void } } };
+      canGenerate(): boolean;
+      sourceTextLength(): number;
+    };
+    component.briefForm.controls.url.setValue('https://surveys.example.com/r/cloud-2026');
+
+    // Whitespace runs count as one, as the server counts them.
+    component.briefForm.controls.sourceText.setValue('a  \n\n b');
+    expect(component.sourceTextLength()).toBe(3);
+
+    component.briefForm.controls.sourceText.setValue('x'.repeat(3000));
+    expect(component.canGenerate()).toBe(true);
+    component.briefForm.controls.sourceText.setValue('x'.repeat(3001));
+    fixture.detectChanges();
+    expect(component.canGenerate()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-source-text-too-long"]')).not.toBeNull();
+  });
+
   it('offers a saved brief for restore when the lookup returns status=loaded', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
@@ -1686,7 +1738,7 @@ describe('PlanningTabComponent email brief editing', () => {
    * The brief card lives inside the `step() === 'review'` branch, so a fixture left on the form
    * step renders nothing and every DOM assertion here would pass vacuously.
    */
-  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' = 'email'): Promise<void> {
+  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' | 'survey' = 'email'): Promise<void> {
     fixture = TestBed.createComponent(PlanningTabComponent);
     fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
     fixture.componentRef.setInput('deliveryType', deliveryType);
@@ -1712,6 +1764,33 @@ describe('PlanningTabComponent email brief editing', () => {
     const projectContextService = TestBed.inject(ProjectContextService);
     projectContextService.setRouteLensKind('foundation');
     projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it("shows a survey brief's source text, and lets the operator correct it", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Closes 30 November.' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-email-brief-source"]')?.textContent).toContain('Closes 30 November.');
+
+    internals().enterEmailEditMode();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-test="planning-email-edit-source"]')).not.toBeNull();
+    internals().emailEditForm.controls['sourceText'].setValue('Closes 7 December.');
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Closes 7 December.');
+  });
+
+  it("refuses to save a survey source edit past campaign-service's limit", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
   });
 
   it('renders the scraped brief so the user can see what generation will use', async () => {

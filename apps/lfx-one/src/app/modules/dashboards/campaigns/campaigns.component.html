@@ -276,7 +276,7 @@
 
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
-            [deliveryType]="selectedDeliveryType()"
+            [deliveryType]="sendSurface()"
             [emailStage]="selectedEmailStage() ?? ''"
             (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
@@ -388,7 +388,7 @@
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
           [audienceReadUnavailable]="emailAudienceReadUnavailable()"
           [audienceScope]="emailAudienceScope()"
-          [stagingInFlight]="emailStagingHeld()"
+          [stagingInFlight]="audienceLockedByStaging()"
           [existingAudience]="emailAudience()"
           [briefState]="emailBriefState()"
           [briefSaveMessage]="emailBriefSaveMessage()"
@@ -514,7 +514,26 @@
                       Cloning <span class="font-medium text-gray-700">{{ templateName }}</span> from this portal.
                     </p>
                   } @else {
-                    <p class="text-sm text-gray-500">Finding a template in this portal to clone...</p>
+                    <!-- The picker is hidden on this surface, so its terminal states (not
+                         connected, a failed read, an empty portal) are said here, with a retry,
+                         rather than reading as an endless search. -->
+                    <p
+                      class="text-sm"
+                      [class.text-gray-500]="!surveyTemplateProblem()"
+                      [class.text-red-700]="surveyTemplateProblem()"
+                      data-testid="campaigns-email-template-auto-status">
+                      {{ surveyTemplateHint() }}
+                    </p>
+                    @if (surveyTemplateProblem()) {
+                      <lfx-button
+                        label="Try again"
+                        icon="fa-light fa-rotate-right"
+                        severity="secondary"
+                        size="small"
+                        [disabled]="emailTemplatesLoading()"
+                        (onClick)="onRetrySurveyTemplates()"
+                        data-testid="campaigns-email-template-auto-retry" />
+                    }
                   }
                 </div>
               } @else {
@@ -1135,7 +1154,7 @@
                              a template" would send the operator looking for a control that is not
                              there, when what is actually happening is the portal listing loading. -->
                         @if (isSurvey()) {
-                          Finding a template in this portal to clone.
+                          {{ surveyTemplateHint() }}
                         } @else {
                           Choose a template to clone.
                         }
@@ -1343,12 +1362,16 @@
                           <span class="text-sm text-gray-500" data-testid="campaigns-sequence-stage-hint">
                             <!-- One branch per term of canStageSequence, or the button goes dead
                                  with nothing said about why. -->
-                            @if (emailBriefOutput() === null) {
+                            @if (surveySequenceState() === 'generating') {
+                              Wait for every email to be written.
+                            } @else if (sequenceHasHeldSend()) {
+                              A draft did not confirm. Check HubSpot for it, then write the emails again to stage a fresh series.
+                            } @else if (emailBriefOutput() === null) {
                               {{ briefRequiredHint }}
                             } @else if (activeFoundationSlug() === '') {
                               Select a foundation to stage these sends under.
                             } @else if (selectedEmailTemplateId() === '') {
-                              Finding a template in this portal to clone.
+                              {{ surveyTemplateHint() }}
                             } @else if (emailAudience()?.status !== 'built') {
                               Compose the audience on the Audience tab first.
                             }
@@ -1394,9 +1417,13 @@
                           (onClick)="onBuildSequenceWorkflow()"
                           data-testid="campaigns-send-workflow-build-btn" />
                         @if (!canBuildSequenceWorkflow() && sendWorkflowState() !== 'building') {
-                          <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note"
-                            >Stage every send first &mdash; the workflow sends the drafts.</span
-                          >
+                          <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note">
+                            @if (!sequenceDatesComplete()) {
+                              Enter a send date for every email &mdash; each one re-dates a step of the workflow.
+                            } @else {
+                              Stage every send first &mdash; the workflow sends the drafts.
+                            }
+                          </span>
                         }
                       </div>
                       @if (sendWorkflowState() === 'error') {

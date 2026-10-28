@@ -8,8 +8,8 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
-import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
+import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS } from '@lfx-one/shared/constants';
+import { campaignSurveySourceTextLength, coerceCampaignEventDetails, deriveSurveySlug, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -271,6 +271,9 @@ export class PlanningTabComponent implements OnInit {
    * what the scrape actually returned rather than the last thing typed.
    */
   protected readonly isEditingEmailBrief = signal<boolean>(false);
+
+  /** Why an edit could not be saved -- the survey source over campaign-service's limit. */
+  protected readonly emailEditError = signal<string>('');
 
   /**
    * The email brief editor, as a FormGroup rather than six signals.
@@ -657,6 +660,14 @@ export class PlanningTabComponent implements OnInit {
     initialValue: this.briefForm.controls.sourceText.value,
   });
 
+  /** The limit campaign-service enforces on the source document, for the counter. */
+  protected readonly sourceTextMaxChars = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS;
+
+  /** Its length as campaign-service counts it, so the counter and the server's 400 agree. */
+  protected readonly sourceTextLength = computed(() => campaignSurveySourceTextLength(this.sourceTextValue() ?? ''));
+
+  protected readonly sourceTextTooLong = computed(() => this.sourceTextLength() > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS);
+
   /**
    * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.
    *
@@ -671,8 +682,10 @@ export class PlanningTabComponent implements OnInit {
     }
     // Survey writes the email from the pasted document and scrapes nothing, so an empty one
     // leaves the generator with no facts at all -- it would return three lines or refuse.
+    // Over the limit is refused upstream at save rather than cut, so Generate waits for a
+    // shorter document instead of streaming a brief that cannot be saved.
     if (this.isSurvey()) {
-      return (this.sourceTextValue() ?? '').trim() !== '';
+      return (this.sourceTextValue() ?? '').trim() !== '' && !this.sourceTextTooLong();
     }
     return this.isEmailLike() || this.selectedPlatforms().size > 0;
   });
@@ -757,6 +770,13 @@ export class PlanningTabComponent implements OnInit {
 
   // === Lifecycle ===
   public ngOnInit(): void {
+    // The source text is half of a survey brief's identity (its title names a Google Form), so
+    // editing it re-runs the lookup. The lookup itself is debounced and de-duplicated downstream.
+    this.briefForm.controls.sourceText.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.isSurvey()) {
+        this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
+      }
+    });
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
 
     // `switchMap`, so an edited URL cancels the lookup for the previous one. The persist path
@@ -1075,19 +1095,7 @@ export class PlanningTabComponent implements OnInit {
     // records what was last LOOKED UP, not what was last typed, so an empty field leaves both the
     // offer and the key alone and retyping the same url is correctly a no-op with the offer still
     // on screen.
-    const slug = this.extractSlug(url);
-    if (slug.length > 0) {
-      if (slug !== this.currentSlug) {
-        this.currentSlug = slug;
-        this.savedBrief.set(null);
-        this.savedBriefId = null;
-        this.savedBriefEtag = null;
-        this.savedBriefApproved = false;
-        this.savedBriefReadAt = 0;
-        this.savedBriefWarning.set(null);
-      }
-      this.slugInput$.next(slug);
-    }
+    this.refreshBriefLookup(url);
   }
 
   /** Hand the saved brief straight to the Implementation tab, skipping generation. */
@@ -1604,6 +1612,14 @@ export class PlanningTabComponent implements OnInit {
     if (d === null) {
       return;
     }
+    // The same limit campaign-service enforces at save: a longer source would be refused there,
+    // after the operator had moved on believing the edit was kept.
+    const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
+    if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
+      this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);
+      return;
+    }
+    this.emailEditError.set('');
     this.eventDetails.set({
       ...d,
       sourceText: (this.emailEditForm.controls.sourceText.value ?? '').trim(),
@@ -1925,6 +1941,29 @@ export class PlanningTabComponent implements OnInit {
     }
 
     return null;
+  }
+
+  /**
+   * Point the saved-brief lookup at the brief this form now names. Split from `onUrlInput` so an
+   * edit to a survey's source text -- half of its identity -- re-runs only this, not the
+   * HubSpot UTM lookup keyed on the URL.
+   */
+  private refreshBriefLookup(url: string): void {
+    // A survey brief is stored under `deriveSurveySlug` -- its title when the link ends in a
+    // generic page such as `viewform` -- so it is looked up under the same, or it is never found.
+    const slug = this.isSurvey() ? deriveSurveySlug(url, this.briefForm.controls.sourceText.value) : this.extractSlug(url);
+    if (slug.length > 0) {
+      if (slug !== this.currentSlug) {
+        this.currentSlug = slug;
+        this.savedBrief.set(null);
+        this.savedBriefId = null;
+        this.savedBriefEtag = null;
+        this.savedBriefApproved = false;
+        this.savedBriefReadAt = 0;
+        this.savedBriefWarning.set(null);
+      }
+      this.slugInput$.next(slug);
+    }
   }
 
   private extractEventName(url: string): string {
