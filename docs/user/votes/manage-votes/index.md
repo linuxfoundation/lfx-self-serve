@@ -1,31 +1,76 @@
 ---
 title: Manage Votes
-description: How to view, update, and close polls in LFX Self Serve.
+description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, manage, polls, results, reminders, mailing-list]
-last_updated: 2026-10-18
+tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link]
+last_updated: 2026-10-28
 intercom_collection: Votes
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** personas. Use this guide to view, update, and manage polls in your project.
+This article is for people who manage votes for a project, foundation, or group, and for anyone who needs to cast a ballot. It covers the actions on each row of the **Votes** dashboard.
 
-## View polls
+## Find a vote
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Votes** from the left navigation sidebar.
-3. The votes dashboard opens on the **Active** tab, listing open polls for your active project context. Select **All**, **Draft**, or **Ended** to see polls with other statuses.
-4. Select a poll to open its detail view.
+2. Switch to your **Project** or **Foundation** lens, then select **Votes** from the left navigation sidebar.
+3. The dashboard opens on the **Active** tab. Select **All**, **Draft**, or **Ended** to see votes with other statuses.
+4. Use the search box and the group filter to narrow the list.
+
+## What each row offers
+
+The buttons on a row depend on the vote's status and on whether you can manage it.
+
+| Status     | Buttons on the row   | What they do                                                         |
+| ---------- | -------------------- | -------------------------------------------------------------------- |
+| **Draft**  | **Edit**, **Delete** | Edit the draft, or delete it. Drafts have no **⋮** menu.             |
+| **Active** | **View**             | Opens the [Results drawer](../vote-results/) with live tallies.      |
+| **Ended**  | **Results**          | Opens the [Results drawer](../vote-results/) with the final results. |
+
+Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name opens the same drawer as the main button.
+
+### The ⋮ menu
+
+| Item                              | Who sees it                                              | When                   |
+| --------------------------------- | -------------------------------------------------------- | ---------------------- |
+| **Copy link**                     | Anyone who can see the row                               | Active and ended votes |
+| **Present**                       | People who can manage the vote                           | Active and ended votes |
+| **Extend**                        | People who can manage the vote                           | Active votes           |
+| **Send reminder**                 | People who can manage the vote                           | Active votes           |
+| **Send reminder to mailing list** | People who can manage the vote                           | Active votes           |
+| **Send summary**                  | People who can manage the vote                           | Ended votes            |
+| **Clone**                         | People with project or foundation access to manage votes | Active and ended votes |
+
+**Present**, **Extend**, **Send summary**, and **Clone** are covered in [Present, Extend, Clone, and Send a Summary](../present-extend-clone/). Reminders and **Copy link** are below.
+
+## Edit or delete a draft
+
+Only drafts can be edited. An active vote can't be edited, and there is no action to close a vote early. If an active vote has a mistake, [clone it](../present-extend-clone/#clone-a-vote) into a corrected vote.
+
+1. Open the **Draft** tab.
+2. Select **Edit** on the draft. The create form opens with your saved answers, and you can jump between steps freely.
+3. Change what you need, then select **Save as Draft** to keep it as a draft or **Open Vote** on the last step to open it.
+
+To delete a draft, select **Delete** on its row and confirm. Deleting can't be undone.
+
+See [Create a Vote](../create-vote/) for what each field means.
 
 ## Cast your vote
 
-1. Open an active poll from the votes dashboard.
-2. Select your preferred option or options from the poll.
-3. Submit your vote.
+You vote from the **Me** lens, where **Votes** lists the votes you are invited to.
 
-## View results
+1. Find the active vote. Its button reads **Vote** if you haven't voted yet.
+2. Select **Vote**. A drawer opens with the vote's details and questions.
+3. Answer each question. Single-selection questions use radio buttons, and multiple-selection questions use checkboxes. Select all that apply.
+4. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
+5. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
+6. Select **Submit Vote**.
 
-Select a poll to view its current results and status.
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens a confirmation that your vote was recorded. You can't change a ballot after submitting it, and results stay hidden until the vote closes.
+
+## Share a link
+
+Select **⋮ → Copy link** to copy a direct link to the vote. See [Sharing a link to a vote](../#sharing-a-link-to-a-vote) for who can open it.
 
 ## Send a reminder
 
@@ -58,21 +103,13 @@ The message goes to everyone on the list, including people who have already vote
 
 If the group has no mailing list, LFX tells you so. Use **Copy link** to share the poll another way, or **Send reminder** to email the voters directly.
 
-## Edit a poll
-
-1. Open the poll you want to update.
-2. Select the edit option on the poll detail page.
-3. Update the poll details and save your changes.
-
-## Close a poll
-
-Use the poll settings to edit details or close the poll before its end date.
-
 ## Switch project context
 
-Polls are scoped to a project or foundation. Use the lens switcher to change your active context.
+Votes are scoped to a project or foundation. Use the lens switcher to change your active context.
 
 ## Related
 
-- [Create a Vote](../create-vote/) — steps to create a new poll
-- [Votes overview](../) — an overview of the Votes section
+- [Create a Vote](../create-vote/): steps to create a new vote
+- [Present, Extend, Clone, and Send a Summary](../present-extend-clone/)
+- [Vote results](../vote-results/)
+- [Votes overview](../): an overview of the Votes section
