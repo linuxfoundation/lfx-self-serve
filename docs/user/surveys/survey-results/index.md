@@ -29,11 +29,11 @@ On the **Surveys** page, the **Responses** tab is available to people with permi
 
 At the top, three numbers and a progress bar show how the survey is going:
 
-- **Total Participants**: everyone the survey was sent to
+- **Total Participants**: everyone the survey was sent to. This counts people. It is not the same figure as **Total Participants** on the review step when you create a survey, which counts the groups you selected.
 - **Total Responses**: how many have responded
 - **Response Rate**: responses as a percentage of participants
 
-While the survey is open, this section is titled **Live Participation** and the figures update as people respond. A note at the bottom reminds you that you are monitoring live results and that final results are available after the survey closes. Once the survey closes, the section is titled **Final Results**.
+While the survey is open, this section is titled **Live Participation** and shows the results collected so far. The panel doesn't refresh itself. Reload the page and reopen **Results** to see new responses. A note at the bottom reminds you that final results are available after the survey closes. Once the survey closes, the section is titled **Final Results**.
 
 ### Net Promoter Score
 

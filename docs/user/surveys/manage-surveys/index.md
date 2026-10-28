@@ -63,7 +63,11 @@ A few controls appear in the app but don't take effect yet. You may see them, bu
 
 - **Close Survey** and **Duplicate Survey** in the menu at the top of the results panel
 - **Save as Draft** in the create form
-- **Edit** and **Delete** on a **Draft** row
+- **Delete** on a **Draft** row
+
+### Don't use Edit on a draft
+
+**Edit** on a **Draft** row does more than nothing. It opens the create form with default values, not your saved draft. If you fill it in and select **Save Changes**, a new survey is sent straight away, with no confirmation dialog. To change a draft, don't use **Edit**. Create a new survey instead.
 
 ## Switch project context
 

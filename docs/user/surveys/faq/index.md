@@ -42,11 +42,11 @@ Yes, if you can manage the survey. Open the survey's **Results** and select the 
 
 ## Can I see results while the survey is open?
 
-Yes. The **Overview** tab shows live participation, the NPS, and comments, and updates as people respond. The final results are the same view once the survey closes.
+Yes. The **Overview** tab shows participation, the NPS, and comments collected so far. The panel doesn't refresh itself, so reload the page and reopen **Results** to see new responses. The final results are the same view once the survey closes.
 
 ## Can I edit or close a survey after it is sent?
 
-No. Once a survey has been sent, you can't change its audience, email, or dates, and you can't close it early. A survey closes by itself on its cutoff date. If something needs to change, create a new survey. You may see **Close Survey**, **Duplicate Survey**, or **Save as Draft** in the app, and **Edit** or **Delete** on a draft, but these don't take effect yet.
+No. Once a survey has been sent, you can't change its audience, email, or dates, and you can't close it early. A survey closes by itself on its cutoff date. If something needs to change, create a new survey. You may see **Close Survey**, **Duplicate Survey**, or **Save as Draft** in the app, and **Delete** on a draft, but these don't take effect yet. Don't use **Edit** on a draft: it opens a form with default values instead of the saved draft, and saving it sends a new survey straight away, with no confirmation.
 
 ## Can I change my answer after I respond?
 
