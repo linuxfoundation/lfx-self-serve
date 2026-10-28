@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -28,7 +28,25 @@ import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
+import {
+  catchError,
+  defer,
+  distinctUntilChanged,
+  EMPTY,
+  exhaustMap,
+  expand,
+  filter,
+  finalize,
+  fromEvent,
+  map,
+  merge,
+  of,
+  Subject,
+  switchMap,
+  tap,
+  throwError,
+  timer,
+} from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 
@@ -53,6 +71,7 @@ export class MktgRunProgressComponent {
   private readonly answerRequests = new Subject<MktgRunAnswer[]>();
   private readonly user = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   public readonly project = input.required<string>();
   public readonly projectName = input('your project');
@@ -76,6 +95,8 @@ export class MktgRunProgressComponent {
   public readonly runAgentId = input('');
   public readonly externalActivity = input<MktgRunActivity[] | undefined>();
   public readonly runPage = input(false);
+  /** Keep reconciling a legacy private questions fallback even when no public row exists yet. */
+  public readonly watchQuestions = input(false);
   public readonly suppressCard = input(false);
   /** Keep the single public observer alive without rendering a living document's live presentation. */
   public readonly headless = input(false);
@@ -126,6 +147,14 @@ export class MktgRunProgressComponent {
   protected readonly liveState = this.initLiveState();
 
   public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      merge(fromEvent(window, 'focus'), fromEvent(this.document, 'visibilitychange').pipe(filter(() => this.document.visibilityState === 'visible')))
+        .pipe(takeUntilDestroyed())
+        .subscribe(() => {
+          if (this.runPage() && this.polling()) this.reload.update((count) => count + 1);
+        });
+    }
+    let readerScope = '';
     const scope = computed(() => ({
       project: this.project(),
       agentKey: this.agentKey(),
@@ -135,6 +164,7 @@ export class MktgRunProgressComponent {
       polling: this.polling(),
       loadRevision: this.loadRevision(),
       revisionId: this.revisionId(),
+      watchQuestions: this.watchQuestions(),
       refresh: this.refreshKey(),
       reload: this.reload(),
     }));
@@ -195,15 +225,24 @@ export class MktgRunProgressComponent {
       .subscribe();
     toObservable(scope)
       .pipe(
-        distinctUntilChanged(
-          (a, b) => JSON.stringify(a) === JSON.stringify(b) || (!a.subject && !!b.subject && JSON.stringify({ ...a, subject: b.subject }) === JSON.stringify(b))
-        ),
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap((request) => {
-          this.loaded.set(null);
-          this.loadedSubject.set('');
+          const key = JSON.stringify({
+            project: request.project,
+            agentKey: request.agentKey,
+            documentId: request.documentId,
+            runId: request.runId,
+            subject: request.subject,
+          });
+          if (key !== readerScope) {
+            this.loaded.set(null);
+            this.loadedSubject.set('');
+          }
+          readerScope = key;
           this.warning.set('');
           this.readFailure.set('');
-          if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
+          if (!isPlatformBrowser(this.platformId) || !request.subject || !request.polling || !request.project || !request.agentKey || !request.documentId)
+            return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
             return EMPTY;
@@ -214,6 +253,8 @@ export class MktgRunProgressComponent {
             prior && prior.project === request.project && prior.type.agentKey === request.agentKey && prior.documentId === request.documentId
               ? { detail: prior, view: prior }
               : null;
+          const retained = this.loaded();
+          if (!known && retained) known = { detail: retained, view: null };
           if (!known && this.expectedPending() && type)
             known = { detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] }, view: null };
           let unavailableSince: number | null = null;
@@ -237,7 +278,7 @@ export class MktgRunProgressComponent {
                   .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error))));
               }),
               catchError((error: HttpErrorResponse) => {
-                if (error.status === 404 && this.expectedPending() && type)
+                if (error.status === 404 && (this.expectedPending() || request.runId) && type)
                   return of<MktgDocumentDetailResponse>({
                     project: request.project,
                     type,
@@ -283,7 +324,17 @@ export class MktgRunProgressComponent {
                 if (request.project !== this.project() || request.agentKey !== this.agentKey() || request.documentId !== this.documentId()) return;
                 if (this.runPage() && request.runId !== this.runId()) return;
                 if (request.subject && request.subject !== this.user.user()?.sub) return;
-                this.loaded.set(cycle.detail);
+                const previous = this.loaded();
+                // A poll of the same block must not reset the stepper or overwrite unsent edits.
+                this.loaded.set({
+                  ...cycle.detail,
+                  runs: cycle.detail.runs?.map((row) => {
+                    const prior = previous?.runs?.find((entry) => entry.runId === row.runId);
+                    if (row.pendingQuestions && prior?.pendingQuestions?.questionsId === row.pendingQuestions.questionsId)
+                      return { ...row, pendingQuestions: prior.pendingQuestions };
+                    return row;
+                  }),
+                });
                 this.loadedSubject.set(request.subject);
                 this.observed.emit(cycle);
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
@@ -304,10 +355,10 @@ export class MktgRunProgressComponent {
                 return EMPTY;
               }
               const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-              if (this.selectedRun()?.state === 'questions' && unavailableSince === null) return EMPTY;
+              const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
               const local = this.localProgress();
-              if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-              let delay: number = MKTG_RUN_POLL.intervalMs;
+              if (!active && !questions && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
+              let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
               if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
               if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
               return timer(delay).pipe(switchMap(() => read(true)));
@@ -351,7 +402,7 @@ export class MktgRunProgressComponent {
       const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.agentKey());
       if (type?.kind !== 'living' || !type.catalogAgentId) return null;
       const privateAttempt = this.attempts.load(this.project(), type.catalogAgentId);
-      if (privateAttempt?.attempt?.runId === run.runId && privateAttempt.pendingQuestions) return null;
+      if (privateAttempt?.attempt?.runId === run.runId && privateAttempt.pendingQuestions?.questionsId === run.pendingQuestions.questionsId) return null;
       return run.pendingQuestions;
     });
   }
@@ -367,6 +418,7 @@ export class MktgRunProgressComponent {
 
   private initRunState() {
     return computed(() => {
+      if (this.runPage() && this.selectedRun()) return this.selectedRun()?.state ?? null;
       const states = [this.localProgress(), this.selectedRun()?.state].filter((state) => state != null);
       return states.sort((a, b) => MKTG_STARTED_RUN_STATE_ORDER[b] - MKTG_STARTED_RUN_STATE_ORDER[a])[0] ?? null;
     });

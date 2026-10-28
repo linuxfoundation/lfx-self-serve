@@ -421,13 +421,19 @@ One-off receivers keep their existing poll and generating presentation. A living
 this browser holds the matching private attempt. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave
 `runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the
-shared questions UI. A matching private attempt wins and continues through its
-existing owner-token flow, never also posting publicly. Other writers submit
+shared questions UI. The route shows Checking the run until the first server read,
+never an intake-form flash. Recorded state wins over private recovery on load,
+focus and visibility return; questions are reconciled every ten seconds without
+resetting unsent edits. A private block uses its owner-token continuation only
+while the server still reports that questions turn (or has no record), never also
+posting publicly. LinkedIn pending recovery uses the same headless observer
+before restoring its creator-only questions; writing or a stored revision opens
+its document instead. Other writers submit
 `project`, `questionsId` and answers to `/api/mktg-agents/runs/:runId/answers`
 without any session capability. An accepted answer resumes public progress;
 403 retains a reason-bearing waiting notice without retries, while 409/412
-refresh the current row. A waiting reader can Refresh progress after another browser
-answers; successful Send resumes normal polling. One-off answers remain creator-only.
+refresh the current row. A waiting reader can also Refresh progress after another
+browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,

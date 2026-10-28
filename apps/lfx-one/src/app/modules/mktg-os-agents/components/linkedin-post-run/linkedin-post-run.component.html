@@ -2,6 +2,19 @@
 <!-- SPDX-License-Identifier: MIT -->
 <p-confirmdialog [key]="conflictKey" defaultFocus="reject" data-testid="mktg-linkedin-active-run-confirm" />
 
+@if (recordedPending() && recordedDocumentId()) {
+  <lfx-mktg-run-progress
+    [project]="context.activeContextUid()"
+    [agentKey]="intake().agentId"
+    [documentId]="recordedDocumentId()"
+    [runId]="recordedRunId()"
+    [runPage]="true"
+    [headless]="true"
+    [watchQuestions]="questions().length > 0"
+    (observed)="onRecordedProgress($event)"
+    (readError)="onRecordedReadError()" />
+}
+
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
   <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-[32px] py-[14px]">
@@ -24,8 +37,8 @@
     }
   </header>
   <section aria-label="LinkedIn drafting" class="flex flex-col gap-5 p-4 sm:px-[32px] sm:py-[24px]">
-    @if (loading()) {
-      <p role="status" data-testid="mktg-linkedin-loading">Loading your profile…</p>
+    @if (loading() || checkingPending()) {
+      <p role="status" data-testid="mktg-linkedin-loading">{{ checkingPending() ? 'Checking the run…' : 'Loading your profile…' }}</p>
     } @else {
       @if (writer()) {
         <p role="status" class="text-sm text-gray-500" [class.sr-only]="!lastIntakeLoading() && !lastIntakeNote()" data-testid="mktg-linkedin-intake-note">

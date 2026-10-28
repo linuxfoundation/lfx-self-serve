@@ -166,13 +166,13 @@
     }
   </section>
 }
-@if (runPage() && !detail() && !readFailure()) {
-  <p role="status" class="text-sm text-gray-500" data-testid="mktg-run-progress-loading">Loading run progress…</p>
+@if (!headless() && runPage() && !detail() && !readFailure()) {
+  <p role="status" class="text-sm text-gray-500" data-testid="mktg-run-progress-loading">Checking the run…</p>
 }
-@if (runPage() && detail() && !selectedRun() && !detail()?.revisions?.length && !warning()) {
+@if (!headless() && runPage() && detail() && !selectedRun() && !detail()?.revisions?.length && !warning()) {
   <p role="status" class="text-sm text-gray-600" data-testid="mktg-run-progress-empty">This run could not be found. Open Documents to choose a started run.</p>
 }
-@if (runPage() && readFailure()) {
+@if (!headless() && runPage() && readFailure()) {
   <lfx-message severity="error" [text]="readFailure()" data-testid="mktg-run-progress-error" />
   <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-run-progress-refresh" />
 }

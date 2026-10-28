@@ -40,6 +40,7 @@ import {
   MktgAttachmentChip,
   MktgDependencyDocument,
   MktgDocumentRunProgress,
+  MktgDocumentReadCycle,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgPendingGeneration,
@@ -219,10 +220,13 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
-  protected readonly publicReceiver = signal(false);
-  protected readonly publicRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
+  protected readonly checkingRun = signal(true);
+  protected readonly publicReceiver = signal(!!this.route.snapshot.queryParamMap.get('run'));
+  private readonly discoveredRunId = signal('');
+  private readonly routeRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
     initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
   });
+  protected readonly publicRunId = computed(() => this.routeRunId() || this.discoveredRunId());
   protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
   protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
@@ -633,6 +637,7 @@ export class MktgAgentRunComponent {
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe(({ context, project, dependencies, lastIntake, versionExists, fresh }) => {
+          this.checkingRun.set(false);
           this.hasVersion.set(versionExists ?? !!lastIntake);
           this.dependencyDocs.set(dependencies);
           if (fresh) {
@@ -676,13 +681,36 @@ export class MktgAgentRunComponent {
     this.onRetryHandoff();
   }
 
-  protected onPublicQuestions(): void {
+  protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
+    if (cycle.detail.progressUnavailable || cycle.detail.project !== this.publicProject()) return;
+    this.checkingRun.set(false);
+    const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
-    if (!pending?.pendingQuestions || pending.attempt?.runId !== this.publicRunId()) return;
-    this.activeRequest = pending.request;
-    this.hasAcknowledgement.set(true);
-    this.showQuestions(pending.pendingQuestions);
-    this.publicReceiver.set(false);
+    const owned = pending?.attempt?.runId === this.publicRunId() ? pending : null;
+    if (this.answersSending() && run?.state === 'questions') return;
+    if (run?.state === 'questions' || (!run && !cycle.detail.revisions.length)) {
+      const privateQuestions = owned?.pendingQuestions;
+      if (owned && privateQuestions && (!run?.pendingQuestions || privateQuestions.questionsId === run.pendingQuestions.questionsId)) {
+        if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
+          this.activeRequest = owned.request;
+          this.hasAcknowledgement.set(true);
+          this.showQuestions(privateQuestions);
+        }
+        return;
+      }
+    }
+    if (!run && !cycle.detail.revisions.length && owned?.state === 'writing' && owned.attempt) {
+      this.publicReceiver.set(false);
+      this.resumeAcceptedAttempt(owned, this.publicProject());
+      return;
+    }
+    // Server writing/storing/landed (or a new questions block) beats a stale local questions draft.
+    if (this.phase() === 'questions') {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.clearQuestions();
+      this.phase.set('running');
+    }
   }
 
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
@@ -1011,6 +1039,10 @@ export class MktgAgentRunComponent {
             (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
         );
         this.existingRun.set(run ?? null);
+        if (!fresh && run && !this.startedOverWaiting()) {
+          this.discoveredRunId.set(run.runId);
+          this.publicReceiver.set(true);
+        }
         const saved = this.runAttempts.load(project, this.agent?.id ?? '');
         if (
           !fresh &&
@@ -1530,6 +1562,7 @@ export class MktgAgentRunComponent {
     this.activity.set([]);
     this.activityStartedAt.set(0);
     this.phase.set('form');
+    this.checkingRun.set(true);
     this.recheckingAttempt.set(false);
     this.runFailed.set(false);
     this.errorText.set('');
@@ -1561,12 +1594,15 @@ export class MktgAgentRunComponent {
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
     const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
+    this.discoveredRunId.set('');
     this.publicReceiver.set(!!publicId);
     if (!context) return;
-    if (publicId) {
-      const owned = this.runAttempts.load(context.uid, this.agent.id);
-      if (owned?.attempt?.runId !== publicId || (owned.state !== 'writing' && !(owned.state === 'questions' && owned.pendingQuestions))) return;
-      this.publicReceiver.set(false);
+    const recorded = this.runAttempts.load(context.uid, this.agent.id);
+    const recordedId = !fresh && (recorded?.state === 'writing' || recorded?.state === 'questions') ? recorded.attempt?.runId : '';
+    if (publicId || recordedId) {
+      this.discoveredRunId.set(recordedId ?? '');
+      this.publicReceiver.set(true);
+      return; // Always measure the server before restoring a private questions draft.
     }
     if (fresh) {
       this.readWaitingDraft(context.uid);
@@ -1977,6 +2013,10 @@ export class MktgAgentRunComponent {
 
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
   private showQuestions(pending: MktgRunQuestionsPending): void {
+    if (pending.attempt.runId) {
+      this.discoveredRunId.set(pending.attempt.runId);
+      this.publicReceiver.set(true);
+    }
     this.recheckingAttempt.set(false);
     this.lastAnswers.set({});
     this.questionsPending.set(pending);

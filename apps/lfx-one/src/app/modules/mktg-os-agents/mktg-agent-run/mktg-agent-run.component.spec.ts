@@ -26,6 +26,7 @@ import {
   MktgAnswerMemory,
   MktgDependencyDocument,
   MktgDocumentExtractResponse,
+  MktgDocumentDetailResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgPendingGeneration,
@@ -265,6 +266,8 @@ describe('MktgAgentRunComponent', () => {
 
   it.each(['foundation-setup', 'brand-kit'])('uses Kit labels and fixed parents for %s', async (agentId) => {
     await configure('browser', agentId);
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
     const label = agentId === 'brand-kit' ? 'Brand kit' : 'Messaging framework';
     expect(query('mktg-agent-run-name')?.textContent).toBe(label);
     expect(fixture.nativeElement.querySelector('[aria-current="page"]')?.textContent).toBe(label);
@@ -1232,7 +1235,7 @@ describe('MktgAgentRunComponent', () => {
       await configure('server', agentId, { mode: 'new' });
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(query('mktg-run-sources-loading')).not.toBeNull();
+      expect(query('mktg-agent-run-checking')).not.toBeNull();
       expect(query('mktg-run-source-website_url')).toBeNull();
       expect(lastIntake).not.toHaveBeenCalled();
       expect(loadRun).not.toHaveBeenCalled();
@@ -1470,6 +1473,39 @@ describe('MktgAgentRunComponent', () => {
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
 
+    it.each(['writing', 'storing', 'landed'] as const)('checks the server before restoring stale private questions on reload (%s)', async (state) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-stale', ownerToken: 'synthetic-proof' } };
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        state: 'questions',
+        updatedAt: new Date().toISOString(),
+        attempt,
+        pendingQuestions: {
+          attempt,
+          questionsId: 'synthetic-stale',
+          questions: [{ key: 'goal', label: 'Goal', question: 'Stale question?', why: '', suggestedAnswer: '', basis: [] }],
+        },
+      });
+      const response = new Subject<MktgDocumentDetailResponse>();
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(response);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-form')).toBeNull();
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(host().textContent).toContain('Checking the run');
+      const measured: MktgDocumentDetailResponse = { ...record('writing'), runs: state === 'landed' ? [] : [{ ...record('writing').runs[0], state }] };
+      if (state === 'landed') measured.revisions = [{ id: 'synthetic-current', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
+      response.next(measured);
+      await fixture.whenStable();
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(query('mktg-agent-run-form')).toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+      if (state === 'landed') expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'documents', type.agentKey, 'living'], expect.anything());
+      else expect(query('mktg-document-view-run-steps')).not.toBeNull();
+    });
+
     it('resolves a plain Needs answers entry to public progress when this browser has no questions', async () => {
       await configure('browser', type.catalogAgentId);
       listDocuments.mockReturnValue(of({ ...record('questions'), groups: [] }));
@@ -1520,11 +1556,20 @@ describe('MktgAgentRunComponent', () => {
       vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(component['publicReceiver']()).toBe(!matching);
+      expect(component['publicReceiver']()).toBe(true);
       expect(component['phase']()).toBe(matching ? 'questions' : 'form');
       expect(generate).not.toHaveBeenCalled();
       expect(answerQuestions).not.toHaveBeenCalled();
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+      if (matching) {
+        vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('writing')));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('running');
+        expect(query('mktg-run-questions')).toBeNull();
+        expect(query('mktg-document-view-run-steps')).not.toBeNull();
+        expect(answerQuestions).not.toHaveBeenCalled();
+      }
     });
   });
 

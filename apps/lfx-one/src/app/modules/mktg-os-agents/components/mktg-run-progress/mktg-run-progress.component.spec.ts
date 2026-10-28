@@ -146,7 +146,7 @@ describe('MktgRunProgressComponent', () => {
     expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(answer).toHaveBeenCalledOnce();
-    expect(read).toHaveBeenCalledOnce();
+    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it.each([409, 412])('refreshes current state on %s without repeating answers', async (status) => {
@@ -215,10 +215,50 @@ describe('MktgRunProgressComponent', () => {
     expect(answer).not.toHaveBeenCalled();
   });
 
+  it('checks a questions row every ten seconds and preserves unsent edits until the server moves to writing', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    const textarea = fixture.nativeElement.querySelector('textarea');
+    textarea.value = 'Synthetic edited audience';
+    textarea.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: { ...waiting.pendingQuestions, questions: [...waiting.pendingQuestions.questions] } }])));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('textarea').value).toBe('Synthetic edited audience');
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it.each(['focus', 'visibilitychange'])('rechecks public state on %s and lets stored completion win', async (event) => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    const stored = detail([]);
+    stored.revisions = [{ id: 'synthetic-current', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
+    read.mockReturnValue(of(stored));
+    if (event === 'visibilitychange') {
+      vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      document.dispatchEvent(new Event(event));
+    } else window.dispatchEvent(new Event(event));
+    await fixture.whenStable();
+    expect(landed).toHaveBeenCalledOnce();
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    expect(answer).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   it('lets a matching private questions attempt win and never also posts publicly', async () => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));
-    loadAttempt.mockReturnValue({ attempt: { runId }, pendingQuestions: { questionsId: 'private' } });
+    loadAttempt.mockReturnValue({ attempt: { runId }, pendingQuestions: { questionsId: waiting.pendingQuestions.questionsId } });
     const questions = vi.fn();
     fixture.componentInstance.questions.subscribe(questions);
     await fixture.whenStable();
@@ -309,7 +349,7 @@ describe('MktgRunProgressComponent', () => {
     const pending = new Subject<MktgDocumentDetailResponse>();
     read.mockReturnValue(pending);
     await fixture.whenStable();
-    expect(text()).toContain('Loading run progress');
+    expect(text()).toContain('Checking the run');
     pending.next(detail([]));
     await fixture.whenStable();
     expect(text()).toContain('This run could not be found');

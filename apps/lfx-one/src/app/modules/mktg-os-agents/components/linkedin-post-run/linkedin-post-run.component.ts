@@ -36,6 +36,7 @@ import {
   LinkedinStoredProfile,
   MktgAgentIntake,
   MktgGenerateRequest,
+  MktgDocumentReadCycle,
   MktgPendingGeneration,
   MktgRunAnswer,
   MktgRunQuestion,
@@ -62,6 +63,7 @@ import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, tak
 
 import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
+import { MktgRunProgressComponent } from '../mktg-run-progress/mktg-run-progress.component';
 
 /** Profile/source intake only. Accepted runs and their results belong to the shared document receiver. */
 @Component({
@@ -75,6 +77,7 @@ import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-que
     TextareaComponent,
     MktgBreadcrumbComponent,
     MktgRunQuestionsComponent,
+    MktgRunProgressComponent,
   ],
   templateUrl: './linkedin-post-run.component.html',
   styleUrl: './linkedin-post-run.component.scss',
@@ -135,6 +138,10 @@ export class LinkedinPostRunComponent {
   protected readonly file = signal<File | null>(null);
   protected readonly reload = signal(0);
   protected readonly questions = signal<MktgRunQuestion[]>([]);
+  protected readonly recordedPending = signal<MktgPendingGeneration | null>(null);
+  protected readonly checkingPending = signal(false);
+  protected readonly recordedDocumentId = computed(() => this.recordedPending()?.request.documentId ?? this.recordedPending()?.attempt?.documentId ?? '');
+  protected readonly recordedRunId = computed(() => this.recordedPending()?.attempt?.runId ?? '');
   protected readonly previousAnswers = signal<Record<string, string>>({});
   protected readonly answering = signal(false);
   protected readonly linkError = signal('');
@@ -191,6 +198,8 @@ export class LinkedinPostRunComponent {
           this.sourceReentry = '';
           this.generation?.unsubscribe();
           this.questionsPending = null;
+          this.recordedPending.set(null);
+          this.checkingPending.set(false);
           this.acceptedRequest.set(null);
           this.pendingNotice.set(null);
           this.explicitProfileSave.set(false);
@@ -251,12 +260,11 @@ export class LinkedinPostRunComponent {
         const latest =
           !this.freshMode() && !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
         this.pendingNotice.set(latest);
-        const pending =
-          prepared?.pending ??
-          (latest?.state === 'questions' && latest.questions?.length
-            ? this.attempts.load(this.context.activeContextUid(), this.intake().agentId, latest.documentId)
-            : null);
-        if (pending?.pendingQuestions) {
+        const pending = prepared?.pending ?? (latest ? this.attempts.load(this.context.activeContextUid(), this.intake().agentId, latest.documentId) : null);
+        if (pending && (pending.request.documentId || pending.attempt?.documentId) && pending.state !== 'failed') {
+          this.checkingPending.set(true);
+          this.recordedPending.set(pending);
+        } else if (pending?.pendingQuestions && pending.state !== 'failed') {
           this.questionsPending = pending;
           this.questions.set(pending.pendingQuestions.questions);
           this.editing.set(false);
@@ -273,6 +281,34 @@ export class LinkedinPostRunComponent {
           }
         }
       });
+  }
+
+  protected onRecordedProgress(cycle: MktgDocumentReadCycle): void {
+    const pending = this.recordedPending();
+    if (!pending || cycle.detail.progressUnavailable || cycle.detail.project !== this.context.activeContextUid()) return;
+    this.checkingPending.set(false);
+    if (this.answering()) return;
+    const run = cycle.detail.runs?.find((row) => row.runId === this.recordedRunId());
+    if (run?.state === 'questions' || (!run && !cycle.detail.revisions.length)) {
+      if (pending.pendingQuestions && !this.questions().length) {
+        this.questionsPending = pending;
+        this.questions.set(pending.pendingQuestions.questions);
+        this.editing.set(false);
+      }
+      return;
+    }
+    this.questionsPending = null;
+    this.questions.set([]);
+    this.pendingNotice.set(null);
+    if (this.acceptedRequest() === pending.request) return;
+    this.acceptedRequest.set(pending.request);
+    void this.returnToDocument(pending.request, null);
+  }
+
+  protected onRecordedReadError(): void {
+    this.checkingPending.set(false);
+    this.questions.set([]);
+    this.error.set('The recorded run could not be checked. Open its document or try again before answering.');
   }
 
   protected onShareLinkEnter(event: Event): void {

@@ -18,13 +18,15 @@ import {
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
   MKTG_KIT_FAMILIES,
+  MKTG_DOCUMENT_TYPES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
-import { MktgLastIntake, MktgPendingGeneration, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgLastIntake, MktgPendingGeneration, ProjectContext, MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -45,11 +47,23 @@ describe('LinkedIn profile and post surface', () => {
   const projects = { getProject: vi.fn() };
   const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   const history = { lastIntake: vi.fn() };
+  const documents = { getDocument: vi.fn() };
+  const documentType = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === LINKEDIN_POST_INTAKE.agentId);
+  if (!documentType) throw new Error('Missing synthetic LinkedIn document type');
+  const emptyDetail: MktgDocumentDetailResponse = {
+    project: 'project-one',
+    type: documentType,
+    documentId: 'run-' + 'a'.repeat(24),
+    revisions: [],
+    approvedCurrent: null,
+    runs: [],
+  };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   beforeEach(async () => {
     vi.clearAllMocks();
     localStorage.clear();
     api.startForDocument.mockReset();
+    documents.getDocument.mockReset().mockReturnValue(of(emptyDetail));
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));
@@ -65,6 +79,7 @@ describe('LinkedIn profile and post surface', () => {
         provideNoopAnimations(),
         { provide: ConfirmationService, useValue: confirmation },
         { provide: LinkedinPostService, useValue: api },
+        { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: () => context()?.uid } },
         { provide: ProjectService, useValue: projects },
         { provide: UserService, useValue: { user: identity } },
@@ -335,6 +350,40 @@ describe('LinkedIn profile and post surface', () => {
     first.destroy();
     const fresh = await render();
     expect(fresh.componentInstance['profileForm'].getRawValue()).toMatchObject({ name: 'Example author', role: '', focus_areas: '', primary_audience: '' });
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it.each(['writing', 'landed'] as const)('uses measured %s instead of stale latestPending questions', async (state) => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const pending = intakePending();
+    TestBed.inject(MktgRunAttemptService).save(pending);
+    const measured = new Subject<MktgDocumentDetailResponse>();
+    documents.getDocument.mockReturnValue(measured);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = await render();
+    expect(fixture.nativeElement.textContent).toContain('Checking the run');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+    const detail: MktgDocumentDetailResponse = {
+      ...emptyDetail,
+      runs:
+        state === 'writing'
+          ? [
+              {
+                project: emptyDetail.project,
+                agentKey: documentType.agentKey,
+                documentId: emptyDetail.documentId,
+                runId: pending.attempt?.runId ?? '',
+                state: 'writing',
+                startedAt: '2026-10-28T10:00:00Z',
+              },
+            ]
+          : [],
+    };
+    if (state === 'landed') detail.revisions = [{ id: 'synthetic-current', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
+    measured.next(detail);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, pending.request.documentId]), expect.anything());
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 

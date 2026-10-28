@@ -908,6 +908,8 @@ export const MKTG_RUN_POLL = {
   initialDelayMs: 4000,
   /** Interval between subsequent polls. */
   intervalMs: 5000,
+  /** Reconcile another writer's answers while a questions screen is open. */
+  questionsIntervalMs: 10000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;

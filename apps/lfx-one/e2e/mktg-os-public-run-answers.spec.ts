@@ -14,6 +14,10 @@ test('another browser answers a waiting public kit run, follows writing and land
   const questionsId = 'd'.repeat(64);
   let phase: 'questions' | 'writing' | 'landed' = 'questions';
   const submitted: MktgRunAnswersRequest[] = [];
+  let releaseRead: () => void = () => undefined;
+  const firstRead = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
   const history = documentFixture();
   const revision = history.revisions[0];
   const stored = { ...history, runs: [], revision, markdown: '# Synthetic cross-device draft', sidecar: null, approval: null };
@@ -26,6 +30,7 @@ test('another browser answers a waiting public kit run, follows writing and land
       return fulfillDocumentJson(route, { runId, state: 'writing' });
     }
     if (path.endsWith(`/documents/${DOCUMENT_TYPE.agentKey}/living`)) {
+      await firstRead;
       if (phase === 'landed') return fulfillDocumentJson(route, stored);
       return fulfillDocumentJson(route, {
         project: DOCUMENT_PROJECT.uid,
@@ -62,6 +67,9 @@ test('another browser answers a waiting public kit run, follows writing and land
     window.history.pushState({}, '', url);
     dispatchEvent(new PopStateEvent('popstate'));
   }, `/project/mktg-os-agents/${ICP_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
+  await expect(page.getByTestId('mktg-run-progress-loading')).toHaveText('Checking the run…');
+  await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
+  releaseRead();
   await expect(page.getByTestId('mktg-run-questions-title')).toHaveText('A few questions before the draft');
   const answer = page.locator('textarea[data-test="mktg-run-questions-answer-audience"]');
   await expect(answer).toHaveValue('Synthetic maintainers');
