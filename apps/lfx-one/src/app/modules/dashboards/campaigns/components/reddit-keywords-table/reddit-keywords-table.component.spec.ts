@@ -18,7 +18,7 @@ import { CampaignService } from '@services/campaign.service';
 import { negativeKeywordUnconfirmedAdvice } from '@shared/utils/campaign-negative-keywords.utils';
 import { type Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RedditKeywordsTableComponent } from './reddit-keywords-table.component';
 
@@ -40,6 +40,10 @@ describe('RedditKeywordsTableComponent', () => {
       { key: 't3_b||1', campaignId: 't3_b', keyword: null, impressions: 200, clicks: 0, ctr: 0, spend: 0 },
     ],
     ...over,
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   beforeEach(async () => {
