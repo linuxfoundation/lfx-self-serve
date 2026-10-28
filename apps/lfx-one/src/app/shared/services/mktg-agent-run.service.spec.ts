@@ -1033,15 +1033,18 @@ describe('MktgAgentRunService', () => {
 
     it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
       resultResponses = [READY_NO_RECEIPT];
-      service.generate({ ...generateRequest(), projectUid: '' }).subscribe();
+      const events: MktgGenerateProgress[] = [];
+      service.generate({ ...generateRequest(), projectUid: '' }).subscribe((event) => events.push(event));
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       expect(resultCalls()).toHaveLength(1);
+      expect(events.map((event) => event.type)).toEqual(['submitted', 'document']);
       // The poll carries no project, and no retry poll follows it.
       expect(resultCalls()[0][1]).toEqual({ sessionId: 'sess-1', ownerToken: 'token-1' });
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
       expect(resultCalls()).toHaveLength(1);
+      expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
 
     it('does not retry a receipted result — a successful write is terminal', async () => {
