@@ -462,7 +462,7 @@ Pages opened from a list or an action (detail, create and manage pages), placeho
 
 ### 14.17 User docs currency (SHOULD FIX)
 
-If the diff adds or removes a user-reachable feature, or changes UI a user sees (renamed button/tab/label/route, changed flow, new or changed permission, lens or feature-flag availability, a page redesign), check that it also updates the matching `docs/user/<section>/` article(s), or that the PR description says "No user docs impact" with a reason. Flag a visible change with neither. Pure internal changes (refactors, types, tests, server-only changes) are exempt. Rule: `.claude/rules/development-rules.md` § User Documentation Maintenance.
+If the diff adds or removes a user-reachable feature, or changes UI a user sees (renamed button/tab/label/route, changed flow, new or changed permission, lens or feature-flag availability, a page redesign), check that it also updates the matching `docs/user/<section>/` article(s), or that the PR description says "No user docs impact" with a reason. Flag a visible change with neither. Pure internal changes (refactors, types, tests, server-only changes with no visible effect) are exempt; a server-side change to permissions, personas or lens access is not. Rule: `.claude/rules/development-rules.md` § User Documentation Maintenance.
 
 ---
 
