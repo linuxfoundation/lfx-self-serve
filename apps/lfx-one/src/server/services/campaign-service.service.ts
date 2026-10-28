@@ -567,6 +567,18 @@ export function canUseGoogleCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a Meta create may reference an uploaded image by `imageAssetId` on its variants.
+ *
+ * Needs the campaign-service create path to serve the create AND the Meta-assets flag. Like the
+ * Google sibling, the flag is not about URL signing: Meta's dispatch path uploads the stored bytes
+ * to the ad account's image library. The legacy creator reads no Meta image, hence the cutover
+ * half. Admits an upload into the brief's library alongside the Reddit and Google flags.
+ */
+export function canUseMetaCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAssets);
+}
+
+/**
  * One stored creative asset, snake_case upstream shape to the camelCase one the browser reads.
  *
  * Returns `null` rather than a partly-filled object when the answer is unusable, so the caller can
@@ -760,6 +772,8 @@ export class CampaignServiceClient {
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
+        metaCreativeEnabled: cutoverOwnsCreate(),
+        metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
       };
     }
@@ -819,6 +833,8 @@ export class CampaignServiceClient {
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
+      metaCreativeEnabled: cutoverOwnsCreate(),
+      metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
     };
   }

@@ -196,6 +196,7 @@ import {
   CampaignServiceClient,
   canCreateWithBidding,
   canUseGoogleCreativeAssets,
+  canUseMetaCreativeAssets,
   canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
@@ -688,6 +689,18 @@ export class CampaignController {
       if (unservedBiddingField !== null) {
         next(
           ServiceValidationError.forField(unservedBiddingField, 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Meta image is refused, not dropped, on the same terms as the Reddit one below.
+      const unservedMetaAssetField = this.unservedMetaAssetField(body);
+      if (unservedMetaAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedMetaAssetField, 'uploaded Meta images are not enabled on this deployment; supply an image URL instead', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -2239,9 +2252,9 @@ export class CampaignController {
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
    * the image was stored and 200 when an identical one already was (the id is usable either way).
    *
-   * Refused before anything is sent upstream: BOTH capabilities off (`canUseRedditCreativeAssets`
-   * and `canUseGoogleCreativeAssets` — nothing could use the asset; either one alone admits the
-   * upload), a missing `project` or `brief_id`, a type outside
+   * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
+   * `canUseGoogleCreativeAssets` and `canUseMetaCreativeAssets` — nothing could use the asset; any
+   * one alone admits the upload), a missing `project` or `brief_id`, a type outside
    * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
    * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
    * the length is re-checked here so a direct caller of this method gets the same answer.
@@ -2254,8 +2267,8 @@ export class CampaignController {
       next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
     };
 
-    // EITHER capability admits an upload: the stored library is one library, and a deployment that
-    // can use an image on either platform is reason enough to let it in. Refusing unless Reddit's
+    // ANY capability admits an upload: the stored library is one library, and a deployment that
+    // can use an image on any platform is reason enough to let it in. Refusing unless Reddit's
     // flag were on would mean a Google-only deployment could read and delete the library it is not
     // allowed to add to.
     //
@@ -2264,7 +2277,7 @@ export class CampaignController {
     // stored, listed, planned and deletable but cannot yet be named in a Google create. That is
     // the intended order — the library has to exist before the asset-id field can reference it —
     // and it costs an operator nothing worse than a stored image they can prune.
-    if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets()) {
+    if (!canUseRedditCreativeAssets() && !canUseGoogleCreativeAssets() && !canUseMetaCreativeAssets()) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
       return;
     }
@@ -4390,6 +4403,18 @@ export class CampaignController {
     const config: unknown = body?.redditConfig;
     if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
     return null;
+  }
+
+  /**
+   * The first `metaConfig.variants[i].imageAssetId` when this deployment cannot honour it, else
+   * `null`. `in`, as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   */
+  private unservedMetaAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseMetaCreativeAssets()) return null;
+    const config: unknown = body?.metaConfig;
+    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
+    const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
+    return index === -1 ? null : `metaConfig.variants[${index}].imageAssetId`;
   }
 
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */

@@ -105,6 +105,11 @@ export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 
 /** Where an image upload in the create form stands; a finished upload is its asset id being set. */
 export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
+/**
+ * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
+ * upload per owner, so a Meta pick never cancels or takes over a Reddit one, or the reverse.
+ */
+export type CreativeAssetUploadOwner = 'reddit' | 'meta';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -390,7 +395,13 @@ export interface CampaignPlatformOption {
   id: CampaignPlatform;
   label: string;
   icon: string;
+  /** CREATE is off for the platform: the Ad Channels picker and the Implement tab do not offer it. */
   disabled?: boolean;
+  /**
+   * Whether the Monitoring tab offers the platform's monitor, independently of `disabled`. Omitted,
+   * it follows create (offered unless `disabled`); see `campaignPlatformMonitorable`.
+   */
+  monitorable?: boolean;
 }
 
 export interface CampaignGoalOption {
@@ -1076,6 +1087,20 @@ export interface CampaignImplementationDraft {
    */
   redditVideoGoal?: RedditVideoGoal | '';
   /**
+   * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
+   * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
+   * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
+   * failure raises. Round-trips regardless of `metaCreativeEnabled` and `metaAssetUploadEnabled`.
+   */
+  metaImageUrl?: string;
+  metaImageAssetId?: string;
+  metaImageAssetName?: string;
+  metaImageAssetBriefId?: string;
+  metaImageUploadPendingName?: string;
+  metaImageUploadPendingBriefId?: string;
+  metaImageUploadFailedMessage?: string;
+  metaImageUploadFailedBriefId?: string;
+  /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
    *
@@ -1618,6 +1643,14 @@ export interface MetaAdVariant {
   primaryText: string;
   headline: string;
   description?: string;
+  /**
+   * The ad's image, as ONE of a public https URL Meta fetches or a creative asset uploaded to the
+   * brief (campaign-service resolves the asset's bytes and uploads them to the ad account's image
+   * library at dispatch). Never both: campaign-service refuses a variant carrying the two. Absent
+   * is a link ad with no image of its own. The Implement tab sets the same image on every variant.
+   */
+  imageUrl?: string;
+  imageAssetId?: string;
 }
 
 export interface MetaBriefCopy {
@@ -4649,6 +4682,24 @@ export interface CampaignListResult {
    */
   googleAssetUploadEnabled: boolean;
   /**
+   * Whether a Meta ad image (`MetaAdVariant.imageUrl`) will actually be used.
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `googleCreativeEnabled`: campaign-service reads
+   * the image on every variant, the legacy Meta creator reads none. Modelled on the client the
+   * same way (`boolean | null`, `null` for unanswered), which withholds the image controls.
+   */
+  metaCreativeEnabled: boolean;
+  /**
+   * Whether the Meta section may offer an image UPLOAD, sent as `MetaAdVariant.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS` flag. Like its Google sibling and unlike Reddit's it
+   * asserts no URL signing: Meta's dispatch path uploads the stored bytes to the ad account's image
+   * library, so no URL leaves the service. What it asserts is that the deployed campaign-service
+   * resolves Meta asset ids. Modelled on the client like the capabilities above.
+   */
+  metaAssetUploadEnabled: boolean;
+  /**
    * Whether the create flow may offer the per-platform Bidding control (#3299).
    *
    * True only when the campaign-service create path serves the create AND the
@@ -4849,6 +4900,15 @@ export interface CampaignGoogleExtensionsCapabilityBlock {
  * was made for a different brief than the one now open, so it is never sent whatever the capability.
  */
 export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Meta image the draft still holds but the request cannot
+ * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.
+ */
+export interface CampaignMetaImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
