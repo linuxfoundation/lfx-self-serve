@@ -267,7 +267,7 @@ Before treating the implementation as complete (and so before the single **Pre-P
 - `docs/reviews/docs-checklist.md` — the documentation review checklist.
 - `.claude/rules/development-rules.md` § Documentation Maintenance — what to keep, trim, and never let go stale when editing `docs/`.
 - When a convention, contract, or workflow changes, update `AGENTS.md`, `.claude/rules/`, and the affected architecture docs in the same PR.
-- **User-facing docs under `docs/user/` must stay in sync with the app.** Whenever you add a feature, remove a feature, or make a UI change that affects something a doc describes (renamed buttons or tabs, a changed flow, new permissions, a redesigned page), update the matching `docs/user/` article in the same PR — e.g. restyling the meeting details page means re-checking `docs/user/meetings/`. Pure internal changes are exempt. See `.claude/rules/development-rules.md` § User Documentation Maintenance.
+- **User-facing docs under `docs/user/` must stay in sync with the app.** Whenever you add a feature, remove a feature, or make a UI change that affects something a doc describes (renamed buttons or tabs, a changed flow, new permissions, a redesigned page), update the matching `docs/user/` article in the same PR — e.g. restyling the meeting details page means re-checking `docs/user/meetings/`, and changing the committee wizard means re-checking `docs/user/committees/`. The module-to-section table is in the rule below. Pure internal changes are exempt. See `.claude/rules/development-rules.md` § User Documentation Maintenance.
 
 After `/compact`, re-invoke `/self-serve-dev` if continuing work that depends on its conventions.
 
