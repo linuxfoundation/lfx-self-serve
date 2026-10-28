@@ -492,17 +492,20 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftAssetUploadAvailable = computed<boolean>(() => this.microsoftAssetUploadEnabled() === true);
   /**
    * The library upload is admitted on ANY platform's asset capability, as the BFF route is: the
-   * library is one pool, and a deployment that can use an image anywhere may add to it.
+   * library is one pool, and a deployment that can use an image anywhere may add to it. `null`
+   * while no flag says yes and one is still unanswered — unknown, not a no.
    */
-  protected readonly libraryUploadAvailable = computed<boolean>(() =>
-    [
+  protected readonly libraryUploadAvailable = computed<boolean | null>(() => {
+    const flags = [
       this.redditAssetUploadEnabled(),
       this.metaAssetUploadEnabled(),
       this.linkedInAssetUploadEnabled(),
       this.googleAssetUploadEnabled(),
       this.microsoftAssetUploadEnabled(),
-    ].some((enabled) => enabled === true)
-  );
+    ];
+    if (flags.some((enabled) => enabled === true)) return true;
+    return flags.some((enabled) => enabled !== false) ? null : false;
+  });
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —

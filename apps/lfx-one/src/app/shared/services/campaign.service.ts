@@ -134,7 +134,6 @@ import {
   defer,
   EMPTY,
   exhaustMap,
-  filter,
   finalize,
   last,
   map,
@@ -168,10 +167,19 @@ export class CampaignService {
   /** Each file still to send, or to re-send on Retry, by item id — dropped once its outcome is final. */
   private readonly creativeAssetQueueFiles = new Map<string, File>();
   private creativeAssetQueueSequence = 0;
-  /** Item ids in send order. `concatMap` is what makes the upload serial: one request at a time, ever. */
-  private readonly creativeAssetQueueWork = new Subject<string>();
-  /** Aborts the request in flight when it is the item named; waiting items are marked cancelled by the caller. */
-  private readonly creativeAssetQueueAbort = new Subject<string>();
+  /** Send attempts in order. `concatMap` is what makes the upload serial: one request at a time, ever. */
+  private readonly creativeAssetQueueWork = new Subject<{ id: string; attempt: number }>();
+  /**
+   * Each item's latest attempt. A Retry queues a NEW attempt at the back; an older one still
+   * buffered for the same item is stale and skipped, so a retried file never jumps the queue.
+   */
+  private readonly creativeAssetQueueAttempts = new Map<string, number>();
+  /**
+   * Aborts the request in flight. Fired only when the cancelled brief owns it: one file is in
+   * flight at a time, so another brief's cancel never reaches this. Waiting items are marked
+   * cancelled by the caller.
+   */
+  private readonly creativeAssetQueueAbort = new Subject<void>();
 
   /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
   public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
@@ -179,7 +187,7 @@ export class CampaignService {
   public constructor() {
     this.creativeAssetQueueWork
       .pipe(
-        concatMap((id) => this.sendQueuedCreativeAsset(id)),
+        concatMap((work) => this.sendQueuedCreativeAsset(work.id, work.attempt)),
         takeUntilDestroyed()
       )
       .subscribe();
@@ -467,7 +475,7 @@ export class CampaignService {
       };
     });
     this.creativeAssetQueue.update((items) => [...items, ...added]);
-    added.filter((item) => item.status === 'waiting').forEach((item) => this.creativeAssetQueueWork.next(item.id));
+    added.filter((item) => item.status === 'waiting').forEach((item) => this.queueCreativeAssetAttempt(item.id));
   }
 
   /** Send a failed or cancelled file again, at the back of the queue. */
@@ -477,7 +485,7 @@ export class CampaignService {
       return;
     }
     this.patchQueuedCreativeAsset(itemId, { status: 'waiting', refusal: null, message: '' });
-    this.creativeAssetQueueWork.next(itemId);
+    this.queueCreativeAssetAttempt(itemId);
   }
 
   /** Stop a brief's library upload: its file in flight is aborted and every waiting one is marked cancelled, each still retryable. */
@@ -488,7 +496,9 @@ export class CampaignService {
         item.briefId === briefId && item.status === 'waiting' ? { ...item, status: 'cancelled', message: CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE } : item
       )
     );
-    items.filter((item) => item.briefId === briefId && item.status === 'uploading').forEach((item) => this.creativeAssetQueueAbort.next(item.id));
+    if (items.some((item) => item.briefId === briefId && item.status === 'uploading')) {
+      this.creativeAssetQueueAbort.next();
+    }
   }
 
   /** Cancel anything of the brief's still running and forget its list. Other briefs' items are untouched. */
@@ -498,7 +508,10 @@ export class CampaignService {
       ([mine, others], item) => (item.briefId === briefId ? [[...mine, item], others] : [mine, [...others, item]]),
       [[], []]
     );
-    cleared.forEach((item) => this.creativeAssetQueueFiles.delete(item.id));
+    cleared.forEach((item) => {
+      this.creativeAssetQueueFiles.delete(item.id);
+      this.creativeAssetQueueAttempts.delete(item.id);
+    });
     this.creativeAssetQueue.set(kept);
   }
 
@@ -1259,12 +1272,18 @@ export class CampaignService {
    * upload admission, a dropped connection), which is safe because identical bytes return the
    * asset already stored rather than a second copy.
    */
-  private sendQueuedCreativeAsset(itemId: string): Observable<unknown> {
+  private queueCreativeAssetAttempt(itemId: string): void {
+    const attempt = (this.creativeAssetQueueAttempts.get(itemId) ?? 0) + 1;
+    this.creativeAssetQueueAttempts.set(itemId, attempt);
+    this.creativeAssetQueueWork.next({ id: itemId, attempt });
+  }
+
+  private sendQueuedCreativeAsset(itemId: string, attempt: number): Observable<unknown> {
     return defer(() => {
       const queued = this.creativeAssetQueue().find((item) => item.id === itemId);
       const file = this.creativeAssetQueueFiles.get(itemId);
-      // Cancelled, cleared or already sent since it was queued: a Retry can queue an id twice.
-      if (!file || queued?.status !== 'waiting') {
+      // Cancelled, cleared, already sent, or superseded by a Retry since this attempt was queued.
+      if (!file || queued?.status !== 'waiting' || this.creativeAssetQueueAttempts.get(itemId) !== attempt) {
         return EMPTY;
       }
       this.patchQueuedCreativeAsset(itemId, { status: 'uploading' });
@@ -1295,7 +1314,7 @@ export class CampaignService {
           this.patchQueuedCreativeAsset(itemId, outcome);
           return EMPTY;
         }),
-        takeUntil(this.creativeAssetQueueAbort.pipe(filter((id) => id === itemId))),
+        takeUntil(this.creativeAssetQueueAbort),
         finalize(() => {
           if (this.creativeAssetQueue().find((item) => item.id === itemId)?.status === 'uploading') {
             this.patchQueuedCreativeAsset(itemId, { status: 'cancelled', message: CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE });

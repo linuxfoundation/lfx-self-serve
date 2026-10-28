@@ -76,7 +76,8 @@ import { ImplementationTabComponent } from './implementation-tab.component';
 class CreativeLibraryUploadStubComponent {
   public readonly projectSlug = input('');
   public readonly briefId = input('');
-  public readonly available = input(false);
+  public readonly available = input<boolean | null>(null);
+  public readonly reloadToken = input(0);
   public readonly libraryChanged = output<number>();
 }
 
@@ -10221,8 +10222,25 @@ describe('ImplementationTabComponent reddit image upload', () => {
     const before = at(f).creativeLibraryRevision();
 
     upload.libraryChanged.emit(1);
+    f.detectChanges();
 
     expect(at(f).creativeLibraryRevision()).toBe(before + 1);
+    // Handed back, so a picker's upload re-reads the library upload's quota too.
+    expect(upload.reloadToken()).toBe(before + 1);
+  });
+
+  // Unknown is not no: a capability read still pending must not tell the operator uploads are off.
+  it('reads the library upload as unknown until every capability says no', async () => {
+    const f = (await mount(false)).fixture;
+    const upload = (): CreativeLibraryUploadStubComponent =>
+      f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload().available()).toBeNull();
+
+    for (const flag of ['metaAssetUploadEnabled', 'linkedInAssetUploadEnabled', 'googleAssetUploadEnabled', 'microsoftAssetUploadEnabled']) {
+      f.componentRef.setInput(flag, false);
+    }
+    f.detectChanges();
+    expect(upload().available()).toBe(false);
   });
 
   it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {

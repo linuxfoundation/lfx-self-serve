@@ -34,8 +34,14 @@ export class CreativeLibraryUploadComponent {
   public readonly projectSlug = input('');
   /** The saved brief the images are stored against. */
   public readonly briefId = input('');
-  /** Whether this deployment admits creative-asset uploads at all (any platform's asset capability). */
-  public readonly available = input(false);
+  /**
+   * Whether this deployment admits creative-asset uploads (any platform's asset capability):
+   * `null` while the capability read is unanswered or failed, which is NOT a no. Only the pickers
+   * and Retry depend on it; a run already going stays listed and cancellable either way.
+   */
+  public readonly available = input<boolean | null>(null);
+  /** The host's library revision, bumped by any upload (a platform picker's too), to re-read the quota. */
+  public readonly reloadToken = input(0);
 
   // === Computed Signals ===
   protected readonly accept = CREATIVE_ASSET_MIME_TYPES.join(',');
@@ -48,12 +54,15 @@ export class CreativeLibraryUploadComponent {
       ...item,
       statusLabel: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].label,
       statusBadge: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].badge,
-      retryable: item.status === 'failed' || item.status === 'cancelled',
+      retryable: this.available() === true && (item.status === 'failed' || item.status === 'cancelled'),
     }))
   );
   protected readonly running = computed(() => this.items().some((item) => item.status === 'waiting' || item.status === 'uploading'));
-  /** Files that added an asset to the library: what moves the quota and the slot coverage. */
-  private readonly storedCount = computed(() => this.items().filter((item) => item.status === 'uploaded').length);
+  /**
+   * Files the library now holds. `present` counts too: a first attempt can store the image and lose
+   * its answer, and the idempotent re-send then answers "already there" for an image that is new.
+   */
+  private readonly storedCount = computed(() => this.items().filter((item) => item.status === 'uploaded' || item.status === 'present').length);
   /**
    * The stored count each time it RISES. Clear list, or a switch to another brief, drops the count
    * without changing the library, so neither re-reads the quota nor tells the host.
@@ -106,8 +115,8 @@ export class CreativeLibraryUploadComponent {
    * and costs nothing, which only the service can tell.
    */
   private initQuota(): Signal<CreativeAssetLibraryQuotaState> {
-    const request = computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.libraryRevision() }), {
-      equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.stored === b.stored,
+    const request = computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.libraryRevision(), reload: this.reloadToken() }), {
+      equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.stored === b.stored && a.reload === b.reload,
     });
     return toSignal(
       toObservable(request).pipe(
@@ -161,12 +170,18 @@ export class CreativeLibraryUploadComponent {
       if (!library) {
         return '';
       }
+      const pending = this.items().filter((item) => item.status === 'waiting' || item.status === 'uploading');
       const room = Math.max(0, library.countLimit - library.count);
-      const toSend = this.items().filter((item) => item.status === 'waiting' || item.status === 'uploading').length;
-      if (toSend <= room) {
-        return '';
+      const bytesLeft = Math.max(0, library.bytesLimit - library.bytesUsed);
+      const bytesToSend = pending.reduce((total, item) => total + item.byteSize, 0);
+      const caveat = 'Any already in the library cost nothing; the rest will be refused once the quota is spent.';
+      if (pending.length > room) {
+        return `${pending.length} images are still to send and this library has room for ${room} more. ${caveat}`;
       }
-      return `${toSend} images are still to send and this library has room for ${room} more. Any already in the library cost nothing; the rest will be refused.`;
+      if (bytesToSend > bytesLeft) {
+        return `The images still to send total ${formatFileSize(bytesToSend)} and this library has ${formatFileSize(bytesLeft)} left. ${caveat}`;
+      }
+      return '';
     });
   }
 

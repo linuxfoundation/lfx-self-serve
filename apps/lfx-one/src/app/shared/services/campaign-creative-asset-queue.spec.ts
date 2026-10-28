@@ -177,6 +177,37 @@ describe('CampaignService library upload queue', () => {
     expect(open().length).toBe(0);
   });
 
+  it("cancelling one brief leaves another brief's waiting files waiting", () => {
+    service.enqueueCreativeAssetUploads([png('a1.png'), png('a2.png')], 'tlf', BRIEF_ID);
+    service.enqueueCreativeAssetUploads([png('b1.png')], 'tlf', OTHER_BRIEF_ID);
+
+    service.cancelCreativeAssetUploads(OTHER_BRIEF_ID);
+
+    expect(statuses()).toEqual(['uploading', 'waiting', 'cancelled']);
+    open()[0].flush(asset('a-1'));
+    open()[0].flush(asset('a-2'));
+    expect(open().length).toBe(0);
+  });
+
+  // A Retry re-queues at the BACK. The file's original attempt is still buffered behind the run in
+  // flight, and reviving it would let the retried file take the last quota place ahead of B2.
+  it('sends a retried file after files queued since, not from its old place', () => {
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    service.enqueueCreativeAssetUploads([png('b1.png')], 'tlf', OTHER_BRIEF_ID);
+    const inFlight = open();
+    service.cancelCreativeAssetUploads(OTHER_BRIEF_ID);
+    service.enqueueCreativeAssetUploads([png('b2.png')], 'tlf', OTHER_BRIEF_ID);
+    service.retryCreativeAssetUpload(items()[1].id);
+
+    inFlight[0].flush(asset('a-1'));
+    const second = open();
+    expect(items().find((item) => item.status === 'uploading')?.name).toBe('b2.png');
+    second[0].flush(asset('a-2'));
+    expect(items().find((item) => item.status === 'uploading')?.name).toBe('b1.png');
+    open()[0].flush(asset('a-3'));
+    expect(open().length).toBe(0);
+  });
+
   it('cancels a file waiting out a re-send delay without sending it again', () => {
     vi.useFakeTimers();
     service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);

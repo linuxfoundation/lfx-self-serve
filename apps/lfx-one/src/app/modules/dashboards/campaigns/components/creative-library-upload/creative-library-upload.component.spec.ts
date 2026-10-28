@@ -146,7 +146,7 @@ describe('CreativeLibraryUploadComponent', () => {
     fixture.componentInstance.libraryChanged.subscribe(changed);
 
     setQueue([item('a', 'uploaded'), item('b', 'uploading')]);
-    setQueue([item('a', 'uploaded'), item('b', 'present')]);
+    setQueue([item('a', 'uploaded'), item('b', 'failed')]);
     // Clear list drops the count without changing the library.
     setQueue([]);
 
@@ -175,6 +175,39 @@ describe('CreativeLibraryUploadComponent', () => {
     reads.next({ ...LIBRARY, count: 99 });
     fixture.detectChanges();
     expect(text('creative-library-upload-quota')).toBe('99 of 100 images · 100 MB of 512 MB used');
+  });
+
+  it('keeps a running queue listed and cancellable while the capability is unknown, offering no pick or Retry', () => {
+    fixture.componentRef.setInput('available', null);
+    setQueue([item('a', 'uploading'), item('d', 'failed')]);
+
+    expect(q('creative-library-upload-checking')).not.toBeNull();
+    expect(q('creative-library-upload-files')).toBeNull();
+    expect(q('creative-library-upload-items')).not.toBeNull();
+    expect(q('creative-library-upload-cancel')).not.toBeNull();
+    expect(q('creative-library-upload-retry-d')).toBeNull();
+  });
+
+  it('treats an idempotent answer as a library change, since a lost first answer may have stored it', () => {
+    const changed = vi.fn();
+    fixture.componentInstance.libraryChanged.subscribe(changed);
+
+    setQueue([item('a', 'uploading')]);
+    setQueue([item('a', 'present')]);
+
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the quota when the host's library revision moves", () => {
+    fixture.componentRef.setInput('reloadToken', 1);
+    fixture.detectChanges();
+    expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns when the files still to send exceed the bytes the library has left', async () => {
+    await build(vi.fn(() => of({ ...LIBRARY, count: 1, bytesUsed: 512 * 1024 * 1024 - 1024 })));
+    setQueue([item('a', 'waiting')]);
+    expect(text('creative-library-upload-headroom')).toContain('total 2 KB and this library has 1 KB left');
   });
 
   it('offers no upload when the deployment admits none', () => {

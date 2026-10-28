@@ -3442,6 +3442,7 @@
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"
             [available]="libraryUploadAvailable()"
+            [reloadToken]="creativeLibraryRevision()"
             (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"
