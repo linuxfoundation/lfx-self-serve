@@ -3117,6 +3117,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
+  /**
+   * The held-languages sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, as {@link googleProximityWithheldMessage}
+   * does: the notice is created by the channel switch that gives it its text, so a region mounted with
+   * it would not reliably announce (#3568).
+   */
+  protected readonly googleLanguagesWithheldMessage = computed(() => {
+    const channelLabel = this.googleLanguagesWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleLanguages().length;
+    return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
+  });
   protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
   protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
   protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
