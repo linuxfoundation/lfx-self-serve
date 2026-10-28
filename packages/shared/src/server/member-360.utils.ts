@@ -21,7 +21,8 @@ import {
 } from '../constants/member-360.constants';
 import type { Member360FormInput, Member360QuestionsTurn } from '../interfaces/member-360.interface';
 import type { MktgRunAnswer } from '../interfaces/mktg-run.interface';
-import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
+import { FOUNDATION_MESSAGE_ANSWER_ORIGINS, FOUNDATION_MESSAGE_NON_ANSWER_REGEX } from '../constants/foundation-message.constants';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
 import { MKTG_ARTIFACT_PARTITION_REGEX } from '../constants/mktg-artifact.constants';
 import { mktgOneOffTerminalFacts } from './mktg-one-off-terminal.utils';
 import { weightsSchema } from './member-360-schema.utils';
@@ -76,7 +77,12 @@ export const member360AnswersSchema = z
         z
           .object({
             id: member360QuestionIdSchema,
-            text: z.string().trim().min(1).max(4000),
+            text: z
+              .string()
+              .trim()
+              .min(1)
+              .max(4000)
+              .refine((text) => !FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(text), MKTG_ANSWERS_INCOMPLETE_MESSAGE),
             origin: z.enum(FOUNDATION_MESSAGE_ANSWER_ORIGINS),
           })
           .strict()

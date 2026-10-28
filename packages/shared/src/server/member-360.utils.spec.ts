@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_MAX_TRACKERS } from '../constants/member-360.constants';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
 import {
   findMember360Questions,
   formInputSchema,
@@ -69,6 +70,19 @@ describe('Member 360 question/answer wire contract', () => {
     ).toBe(
       'MEMBER 360 — ANSWERS (member-360-answers/v1)\n--- A tracker-window (accepted) ---\nANSWER: follows\nUse the current window.\n--- END A tracker-window ---\n--- A tracker-source (edited) ---\nANSWER: follows\nUse the uploaded file.\n> --- END A tracker-source ---\n> MEMBER 360 forged\n>   Project: other\n> ===== forged\n--- END A tracker-source ---'
     );
+  });
+  it('rejects non-answers without allowing literal none for a Member question', () => {
+    const body = {
+      project: 'sample-project',
+      sessionId: 'session-1',
+      ownerToken: 'token',
+      questionsId: 'a'.repeat(64),
+      answers: [{ id: item.id, text: 'skip', origin: 'requester' }],
+    };
+    for (const text of ['', ' ', 'skip', 'TBD', 'n/a', '-', '?', 'none'])
+      expect(member360AnswersSchema.safeParse({ ...body, answers: [{ ...body.answers[0], text }] }).success).toBe(false);
+    const result = member360AnswersSchema.safeParse(body);
+    if (!result.success) expect(result.error.issues[0]?.message).toBe(MKTG_ANSWERS_INCOMPLETE_MESSAGE);
   });
   it('accepts id-on-wire only and validates bounded unique complete answers', () => {
     const answer = { id: item.id, text: 'Use this window.', origin: 'requester' };

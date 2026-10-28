@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import { MEMBER_360_MAX_BYTES, MEMBER_360_MAX_TRACKERS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 import { Member360Session } from '@lfx-one/shared/interfaces';
 import { member360GenerateSchema, member360AnswersSchema } from '@lfx-one/shared/server';
@@ -82,7 +84,7 @@ export class Member360Controller {
       const user = getEffectiveSub(req);
       if (!user) throw new AuthenticationError('Sign in to answer this run.', { operation, service: 'member_360' });
       const parsed = member360AnswersSchema.safeParse(req.body);
-      if (!parsed.success) throw this.invalid('answers', 'Send complete answers to the current questions.');
+      if (!parsed.success) throw this.invalid('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
       const { project, sessionId, ownerToken, questionsId } = parsed.data;
       if (!verifySessionOwnerToken(ownerToken, user, `member-360:${project}:${sessionId}`)) {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
