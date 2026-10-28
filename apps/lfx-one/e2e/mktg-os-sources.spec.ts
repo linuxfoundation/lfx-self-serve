@@ -70,6 +70,20 @@ test.describe('Marketing OS new run Sources', () => {
     });
     let acknowledged = false;
     let askQuestions = false;
+    const pendingQuestions = {
+      questionsId: 'c'.repeat(64),
+      askedAt: new Date().toISOString(),
+      questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+    };
+    const recordedRun = () => ({
+      project: DOCUMENT_PROJECT.uid,
+      agentKey: type.agentKey,
+      documentId: 'living',
+      runId: activeRunId,
+      state: askQuestions ? 'questions' : 'writing',
+      startedAt: new Date().toISOString(),
+      ...(askQuestions && { pendingQuestions }),
+    });
     await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
       await ack;
       acknowledged = true;
@@ -82,8 +96,8 @@ test.describe('Marketing OS new run Sources', () => {
         json: askQuestions
           ? {
               status: 'questions',
-              questionsId: 'c'.repeat(64),
-              questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+              questionsId: pendingQuestions.questionsId,
+              questions: pendingQuestions.questions,
             }
           : { status: 'pending' },
       })
@@ -94,6 +108,13 @@ test.describe('Marketing OS new run Sources', () => {
       path: MKTG_DOCUMENTS_API_PATH,
       project: DOCUMENT_PROJECT.uid,
     });
+    const recordedDetail = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+      path: `${MKTG_DOCUMENTS_API_PATH}/${type.agentKey}/living`,
+      project: DOCUMENT_PROJECT.uid,
+    });
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+      route.fulfill({ json: { ...recordedDetail, revisions: [], current: null, runs: acknowledged ? [recordedRun()] : [] } })
+    );
     await page.getByTestId('mktg-run-start').getByRole('button').click();
     await expect.poll(() => sources.generated.length).toBe(1);
     await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Getting started… Stay on this page for a few seconds.');
@@ -103,18 +124,7 @@ test.describe('Marketing OS new run Sources', () => {
       route.fulfill({
         json: {
           ...listing,
-          runs: acknowledged
-            ? [
-                {
-                  project: DOCUMENT_PROJECT.uid,
-                  agentKey: type.agentKey,
-                  documentId: 'living',
-                  runId: activeRunId,
-                  state: askQuestions ? 'questions' : 'writing',
-                  startedAt: new Date().toISOString(),
-                },
-              ]
-            : [],
+          runs: acknowledged ? [recordedRun()] : [],
         },
       })
     );
@@ -141,7 +151,8 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
     expect(sources.generated).toHaveLength(1);
     await page.getByTestId('mktg-run-waiting-open').getByRole('link').click();
-    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing… You can leave this page');
     await expect(page).not.toHaveURL(/\/documents\//);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
@@ -230,33 +241,59 @@ test.describe('Marketing OS new run Sources', () => {
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
       const sources = await setupFreshSources(page);
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+      if (!type) throw new Error('Missing questions-record fixture type');
+      let recorded = false;
+      let questionsAsked = false;
+      const pendingQuestions = {
+        questionsId: 'c'.repeat(64),
+        askedAt: new Date().toISOString(),
+        questions: [
+          {
+            key: 'goal',
+            label: 'Goal',
+            question: 'Which synthetic goal should guide this run?',
+            why: 'Synthetic research gap.',
+            suggestedAnswer: 'Grow adoption',
+            basis: [],
+          },
+        ],
+      };
+      const recordedRun = () => ({
+        project: DOCUMENT_PROJECT.uid,
+        agentKey: type.agentKey,
+        documentId: 'living',
+        runId: 'b'.repeat(64),
+        state: questionsAsked ? 'questions' : 'writing',
+        startedAt: new Date().toISOString(),
+        ...(questionsAsked && { pendingQuestions }),
+      });
       let releaseAck: () => void = () => undefined;
       const accepted = new Promise<void>((resolve) => {
         releaseAck = resolve;
       });
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
         await accepted;
+        recorded = true;
         await route.fulfill({ json: { sessionId: 'synthetic-questions-session', ownerToken: 'synthetic-questions-proof', runId: 'b'.repeat(64) } });
       });
-      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
-        route.fulfill({
-          json: {
-            status: 'questions',
-            questionsId: 'c'.repeat(64),
-            questions: [
-              {
-                key: 'goal',
-                label: 'Goal',
-                question: 'Which synthetic goal should guide this run?',
-                why: 'Synthetic research gap.',
-                suggestedAnswer: 'Grow adoption',
-                basis: [],
-              },
-            ],
-          },
-        })
-      );
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) => {
+        questionsAsked = true;
+        return route.fulfill({ json: { status: 'questions', questionsId: pendingQuestions.questionsId, questions: pendingQuestions.questions } });
+      });
       await sources.open(mount);
+      const listing = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+        path: MKTG_DOCUMENTS_API_PATH,
+        project: DOCUMENT_PROJECT.uid,
+      });
+      const recordedDetail = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+        path: `${MKTG_DOCUMENTS_API_PATH}/${type.agentKey}/living`,
+        project: DOCUMENT_PROJECT.uid,
+      });
+      await page.route('**/api/mktg-agents/documents?*', (route) => route.fulfill({ json: { ...listing, runs: recorded ? [recordedRun()] : [] } }));
+      await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+        route.fulfill({ json: { ...recordedDetail, revisions: [], current: null, runs: recorded ? [recordedRun()] : [] } })
+      );
       const start = page.getByTestId('mktg-run-start').getByRole('button');
       await expect(start).toBeEnabled();
       expect(sources.generated).toHaveLength(0);
