@@ -45,6 +45,7 @@ import type {
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
+  LinkedInTargetingProfile,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
@@ -156,6 +157,17 @@ export const REDDIT_MAX_BUDGET_USD = 1_000_000_000;
  * on a live mount resets the field to this rather than keeping the previous brief's figure (#4589).
  */
 export const DEFAULT_REDDIT_BUDGET_USD = 500;
+
+/**
+ * The Meta, LinkedIn and Microsoft budgets the Implementation tab starts from, on the Reddit budget's
+ * terms: a brief switch on a live mount resets each to this unless the new brief sets it (#4624).
+ */
+export const DEFAULT_META_BUDGET_USD = 500;
+export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
+export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
+
+/** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
+export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
@@ -664,6 +676,12 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
+
+/**
+ * The Meta objective the Implementation tab starts from: `traffic`, what campaign-service assumes when
+ * the field is absent. A brief switch on a live mount resets the picker to it (#4624).
+ */
+export const DEFAULT_META_OBJECTIVE: MetaObjective = 'traffic';
 
 /** Default Meta ad placement toggles — Facebook and Instagram feeds enabled, all others off. */
 export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
