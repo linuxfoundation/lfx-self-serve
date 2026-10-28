@@ -120,9 +120,9 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await expect(windowLabel).toHaveText('Trailing 12 months, recent quarter emphasised (default)');
   expect(await windowLabel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   const uploadButton = page.getByRole('button', { name: 'Upload tracker', exact: true });
-  // No variant attribute is exposed by the upload wrapper; verify the rendered outlined/dashed button.
+  // No variant attribute is exposed by the upload wrapper; verify the standard solid-border outline.
   await expect(uploadButton).toHaveClass(/p-button-outlined/);
-  await expect(uploadButton).toHaveCSS('border-top-style', 'dashed');
+  await expect(uploadButton).toHaveCSS('border-top-style', 'solid');
   const trackerSpacing = await page
     .getByTestId('member-360-run-page')
     .getByText('Trackers', { exact: true })
@@ -149,7 +149,11 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await expect(page.getByRole('button', { name: 'Upload tracker', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Remove speaking.csv' }).click();
   await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
-  await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
+  const create = page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true });
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(page.getByTestId('member-360-error')).toContainText('There is no previous run to compare with. Choose No comparison');
+  await expect(create).toBeEnabled();
   await page.screenshot({ path: info.outputPath('form-empty-history.png'), fullPage: true });
 });
 
@@ -225,6 +229,7 @@ test('a finished refusal shows a plain reason, collapsed Details and Run again',
     if (request.url().includes('/member-360/result')) legacyPolls++;
   });
   await openMember360(page);
+  await selectMember360Option(page, 'member-360-compare', 'No comparison');
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('mktg-document-view-error')).toContainText(
     "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
@@ -293,6 +298,7 @@ test('a questions turn keeps the document open with the feed and an unsupported-
   );
   await stubMember360Progress(page, () => member360Progress('questions'));
   await openMember360(page);
+  await selectMember360Option(page, 'member-360-compare', 'No comparison');
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-needs-input')).toContainText('this version of the page cannot answer yet; the run stays open');
   await expect(page.getByTestId('mktg-run-activity')).toBeVisible();
@@ -342,6 +348,7 @@ test('a failed submission preserves the form and permits retry', async ({ page }
   await setupMember360(page);
   await page.route('**/api/mktg-agents/member-360/generate', (route) => route.fulfill({ status: 503, body: '{}' }));
   await openMember360(page);
+  await selectMember360Option(page, 'member-360-compare', 'No comparison');
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-error')).toContainText('could not be started');
   await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();

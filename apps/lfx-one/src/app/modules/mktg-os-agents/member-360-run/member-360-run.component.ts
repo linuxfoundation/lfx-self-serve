@@ -139,15 +139,23 @@ export class Member360RunComponent {
   protected run(): void {
     const project = this.context.activeContextUid();
     const user = this.users.user()?.sub;
-    if (
-      !project ||
-      !this.context.canWrite() ||
-      this.uploading() ||
-      this.submitting() ||
-      this.historyLoading() ||
-      (this.form.controls.compare.value && this.historyError())
-    )
+    if (!project || !this.context.canWrite() || this.submitting()) return;
+    if (this.uploading()) {
+      this.error.set('Wait for your trackers to finish parsing, then create Member 360.');
       return;
+    }
+    if (this.historyLoading()) {
+      this.error.set('Wait for run history to finish loading, then create Member 360.');
+      return;
+    }
+    if (this.form.controls.compare.value && (this.historyError() || !this.latest())) {
+      this.error.set(
+        this.historyError()
+          ? 'The previous run could not be read. Choose No comparison or retry history.'
+          : 'There is no previous run to compare with. Choose No comparison to create Member 360.'
+      );
+      return;
+    }
     this.submitting.set(true);
     this.error.set('');
     this.api

@@ -6,7 +6,7 @@
   <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'member-360' }" data-testid="member-360-breadcrumb" />
   <section class="flex w-full min-w-0 flex-col gap-[20px]">
     <header class="flex flex-col gap-[6px]">
-      <h1 class="text-[30px] font-bold">Member 360</h1>
+      <h1 class="font-display font-light text-xl text-gray-900">Member 360</h1>
       <p class="text-[15px] text-gray-500">{{ intro }}</p>
       <span class="text-sm text-gray-500" data-testid="member-360-last-run">
         @if (latest(); as last) {
@@ -102,7 +102,7 @@
                 [maxFileSize]="trackerMaxBytes"
                 [disabled]="uploading() || submitting()"
                 chooseLabel="Upload tracker"
-                chooseStyleClass="p-button-outlined p-button-secondary !border-dashed"
+                chooseStyleClass="p-button-outlined p-button-secondary"
                 (onSelect)="rejectUnsupportedTrackers($event.files)"
                 (onCustomUpload)="upload($event.files)"
                 dataTest="member-360-upload" />
@@ -128,22 +128,19 @@
             </p>
           </div>
           @if (error()) {
-            <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+            <div aria-live="polite">
+              <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+            </div>
           }
           @if (historyError()) {
             <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
             <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
           }
-          <div class="flex flex-wrap items-center gap-3">
-            <lfx-button
-              type="submit"
-              [label]="submitting() ? 'Starting run…' : 'Run Member 360'"
-              [loading]="submitting()"
-              [disabled]="submitting() || uploading() || historyLoading() || (form.controls.compare.value && !!historyError())"
-              data-testid="member-360-run" />
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-sm text-gray-500"
-              >About 5 to 10 minutes for 12 members. The result is stored as a new run with its workbook; nothing is overwritten.</span
+              >About 5 to 10 minutes for 40 members. Saved as a new Member 360 report, with its workbook; nothing is overwritten.</span
             >
+            <lfx-button type="submit" class="ml-auto" [label]="submitting() ? 'Starting…' : 'Create Member 360'" data-testid="member-360-run" />
           </div>
         </section>
       </form>

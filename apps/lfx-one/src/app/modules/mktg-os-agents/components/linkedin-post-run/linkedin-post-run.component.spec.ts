@@ -155,7 +155,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-intake-note"]')?.textContent).toContain(
       status === 503 ? 'Last run inputs could not be loaded' : 'You need write access'
     );
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(status !== 503);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
   });
   it('keeps a user source choice made while last inputs are loading', async () => {
     const pending = new Subject<MktgLastIntake | null>();
@@ -196,15 +196,85 @@ describe('LinkedIn profile and post surface', () => {
     return fixture;
   }
   it.each(['text', 'url'] as const)('rejects empty pasted text and non-HTTPS URLs without a Generate POST (%s)', async (source) => {
-    const component = (await savedIntake()).componentInstance;
+    const fixture = await savedIntake();
+    const component = fixture.componentInstance;
     component['onSource'](source);
     if (source === 'url') component['contentForm'].controls.url.setValue('http://source.example/not-https');
     component['contentForm'].controls.share_link.setValue(''); // Test the source guard, not optional-link validation.
     await component['onDraft']();
     expect(component['error']()).toBe('Supply pasted text or one public HTTPS link.');
+    fixture.detectChanges();
+    const form = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]');
+    expect(form.querySelector('[data-testid="mktg-linkedin-error"][aria-live="polite"]')?.textContent).toContain(component['error']());
+    expect(form.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
     expect(component['busy']()).toBe(false);
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.generate);
+  });
+
+  it.each(['lastIntakeDenied', 'acceptedRequest'] as const)('explains %s on draft press without generating again', async (state) => {
+    const fixture = await savedIntake();
+    const component = fixture.componentInstance;
+    if (state === 'lastIntakeDenied') component['lastIntakeDenied'].set(true);
+    else component['acceptedRequest'].set(intakePending().request);
+    await component['onDraft']();
+    fixture.detectChanges();
+    const message =
+      state === 'lastIntakeDenied'
+        ? 'Your last run inputs could not be read; paste text, a link or a file to draft.'
+        : 'Your draft is already started — use Open draft above.';
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"] [data-testid="mktg-linkedin-error"]')?.textContent).toContain(message);
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+  it('uses the board profile copy and a rightmost always-available primary with Cancel to its left', async () => {
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    const form = root.querySelector('[data-testid="mktg-linkedin-profile-form"]');
+    expect(form?.querySelector('h1')?.className).toContain('font-display');
+    for (const token of ['font-light', 'text-xl', 'text-gray-900']) expect(form?.querySelector('h1')?.classList.contains(token)).toBe(true);
+    for (const label of ['Your name', 'Your role', 'Your main focus areas', 'Projects you are closely associated with', 'Your main LinkedIn audience']) {
+      expect(form?.textContent).toContain(label);
+    }
+    expect(form?.textContent).toContain('Asked once. Every post is written in your voice; change it any time from Edit profile.');
+    const save = form?.querySelector('[data-testid="mktg-linkedin-save-profile"]');
+    expect(save?.textContent).toContain('Continue to draft a post');
+    expect(save?.parentElement?.lastElementChild).toBe(save);
+    expect(save?.parentElement?.parentElement?.textContent).toContain('Saved to your profile when your first draft finishes.');
+    expect(save?.querySelector('button')?.disabled).toBe(false);
+    fixture.componentInstance['saved'].set({ profile, profile_markdown: renderLinkedinProfileMarkdown(profile) });
+    fixture.componentInstance['busy'].set(true);
+    fixture.detectChanges();
+    expect(save?.previousElementSibling?.getAttribute('data-testid')).toBe('mktg-linkedin-cancel-edit');
+    expect(save?.querySelector('button')?.disabled).toBe(false);
+    await fixture.componentInstance['onProfileSubmit']();
+    expect(api.save).not.toHaveBeenCalled();
+  });
+  it('uses light-blue source tabs and a rightmost primary that stays enabled while busy', async () => {
+    const fixture = await savedIntake();
+    const root: HTMLElement = fixture.nativeElement;
+    const title = root.querySelector('h1');
+    for (const token of ['font-display', 'font-light', 'text-xl', 'text-gray-900']) expect(title?.classList.contains(token)).toBe(true);
+    expect(title?.textContent).toBe('Draft a post');
+    const text = root.querySelector('[data-testid="mktg-linkedin-source-text"]');
+    expect(text?.classList.contains('bg-blue-50')).toBe(true);
+    expect(text?.classList.contains('text-blue-700')).toBe(true);
+    expect(text?.classList.contains('bg-gray-900')).toBe(false);
+    fixture.componentInstance['onSource']('url');
+    fixture.detectChanges();
+    expect(text?.getAttribute('aria-pressed')).toBe('false');
+    const url = root.querySelector('[data-testid="mktg-linkedin-source-url"]');
+    expect(url?.classList.contains('bg-blue-50')).toBe(true);
+    expect(url?.classList.contains('text-blue-700')).toBe(true);
+    const draft = root.querySelector('[data-testid="mktg-linkedin-draft"]');
+    expect(draft?.parentElement?.lastElementChild).toBe(draft);
+    expect(draft?.previousElementSibling?.textContent).toBe('About a minute. Each draft is saved under LinkedIn posts.');
+    expect(draft?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
+    fixture.componentInstance['busy'].set(true);
+    fixture.detectChanges();
+    expect(draft?.querySelector('button')?.disabled).toBe(false);
+    expect(draft?.textContent).toContain('Drafting…');
+    await fixture.componentInstance['onDraft']();
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('prefills first-run setup from creator/project live memory on return, not in a fresh visit', async () => {
@@ -230,6 +300,9 @@ describe('LinkedIn profile and post surface', () => {
     const first = await render();
     expect(navigate).not.toHaveBeenCalled();
     expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is being written');
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.classList.contains('p-button-outlined')).toBe(true);
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-open-pending"] button')?.classList.contains('p-button-outlined')).toBe(false);
     first.destroy();
     await render();
     expect(navigate).not.toHaveBeenCalled();
@@ -371,6 +444,9 @@ describe('LinkedIn profile and post surface', () => {
       expect(accepted.querySelector('p')?.getAttribute('role')).toBe('status');
       expect(accepted.querySelector('[role="status"] button')).toBeNull();
       expect(fixture.componentInstance['error']()).toBe('');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.classList.contains('p-button-outlined')).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"] button')?.classList.contains('p-button-outlined')).toBe(false);
       await fixture.componentInstance['onDraft']();
       navigate.mockReturnValueOnce(firstValueFrom(opening));
       fixture.componentInstance['onOpenAccepted']();
@@ -523,7 +599,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(link?.textContent?.trim()).toBe(family.name);
     expect(link?.getAttribute('href')).toContain(`/families/${family.id}`);
   });
-  it('uses fixed context parents on a shared run URL and the catalog agent title', async () => {
+  it('uses fixed context parents on a shared run URL and the intake action title', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
     await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=old&profile=edit&revision=old');
@@ -533,7 +609,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(element.querySelector('[data-testid="mktg-breadcrumb-link-1"]')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/families/social-community?project=example-project'
     );
-    expect(element.querySelector('[aria-current="page"]')?.textContent).toBe('LinkedIn Post Agent');
+    expect(element.querySelector('[aria-current="page"]')?.textContent).toBe('Draft a LinkedIn post');
   });
   it.each(['project', 'user'])('distinguishes a missing %s from a refused writer grant', async (missing) => {
     if (missing === 'project') context.set(null);
@@ -594,7 +670,7 @@ describe('LinkedIn profile and post surface', () => {
   it('collects first-run questions, keeps defaults optional and does not save before a run', async () => {
     const fixture = await render();
     const component = fixture.componentInstance;
-    expect(fixture.nativeElement.textContent).toContain('Their role (for personalization)');
+    expect(fixture.nativeElement.textContent).toContain('Your role');
     component['profileForm'].patchValue({ ...profile.about });
     component['onProfileSubmit']();
     fixture.detectChanges();
