@@ -13,7 +13,7 @@
 
 @if (link() !== null) {
   <a
-    [routerLink]="link()"
+    [routerLink]="disabled() ? null : link()"
     [class]="classes()"
     [attr.aria-label]="ariaLabel() || null"
     [attr.aria-disabled]="disabled() || null"

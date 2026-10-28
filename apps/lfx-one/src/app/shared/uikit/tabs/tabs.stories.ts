@@ -15,6 +15,7 @@ const meta: Meta<UiTabsComponent> = {
     ],
     value: 'upcoming',
     ariaLabel: 'Meetings',
+    idPrefix: '',
   },
   render: (args) => ({ props: args, template: `<lfx-ui-tabs ${argsToTemplate(args)} />` }),
 };
@@ -30,6 +31,7 @@ export const WithoutCounts: Story = {
     ],
   },
 };
+export const WithPanelIds: Story = { args: { idPrefix: 'meetings' } };
 export const SecondSelected: Story = { args: { value: 'past' } };
 export const WithDisabledTab: Story = {
   args: {

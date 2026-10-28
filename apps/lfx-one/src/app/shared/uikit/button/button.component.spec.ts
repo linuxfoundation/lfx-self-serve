@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { provideRouter, Router } from '@angular/router';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from './button.component';
 
@@ -86,6 +86,25 @@ describe('UiButtonComponent', () => {
   it('disables the native button', async () => {
     await set('disabled', true);
     expect((el() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('does not navigate when a disabled link is clicked', async () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl');
+    await set('link', '/meetings');
+    await set('disabled', true);
+    el().click();
+    await fixture.whenStable();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(el().getAttribute('href')).toBeNull();
+  });
+
+  it('warns in dev mode when an icon-only button has no accessible name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await set('iconOnly', true);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('stretches to full width', async () => {

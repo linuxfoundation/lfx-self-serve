@@ -31,4 +31,4 @@ yarn storybook          # dev server on http://localhost:6006
 yarn build-storybook    # static build into apps/lfx-one/storybook-static
 ```
 
-Storybook is not part of CI yet.
+Autodocs read the JSDoc on each input through Compodoc, which `build-storybook` runs. Storybook is not part of CI yet.

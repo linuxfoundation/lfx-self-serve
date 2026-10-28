@@ -9,6 +9,13 @@ import { UiButtonComponent } from './button.component';
 const meta: Meta<UiButtonComponent> = {
   title: 'Uikit/Button',
   component: UiButtonComponent,
+  // Compodoc cannot read the multi-line variant union, so the select is declared here.
+  argTypes: {
+    variant: {
+      control: 'select',
+      options: ['primary', 'outline-neutral', 'outline-accent', 'ghost-neutral', 'ghost-accent', 'destructive', 'ghost-destructive', 'recording'],
+    },
+  },
   decorators: [applicationConfig({ providers: [provideRouter([])] })],
   args: { variant: 'primary', size: 'md', icon: '', trailingIcon: '', iconOnly: false, disabled: false, fullWidth: false, type: 'button', ariaLabel: '' },
   render: (args) => ({ props: args, template: `<lfx-ui-button ${argsToTemplate(args)}>Button</lfx-ui-button>` }),

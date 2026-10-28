@@ -4,11 +4,13 @@
 <div role="tablist" [attr.aria-label]="ariaLabel() || null" class="flex items-end gap-6 border-b border-gray-200">
   @for (tab of tabs(); track tab.value; let i = $index) {
     <button
-      #tab
+      #tabButton
       type="button"
       role="tab"
       [attr.aria-selected]="value() === tab.value"
-      [attr.tabindex]="value() === tab.value ? 0 : -1"
+      [attr.tabindex]="focusIndex() === i ? 0 : -1"
+      [attr.id]="idPrefix() ? idPrefix() + '-tab-' + tab.value : null"
+      [attr.aria-controls]="idPrefix() ? idPrefix() + '-panel-' + tab.value : null"
       [disabled]="tab.disabled"
       (click)="select(tab)"
       (keydown)="onKeydown($event, i)"

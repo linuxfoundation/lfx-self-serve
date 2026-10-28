@@ -38,6 +38,7 @@ out/
 build
 dist
 storybook-static
+apps/lfx-one/documentation.json
 
 
 # Debug

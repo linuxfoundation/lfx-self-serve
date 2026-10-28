@@ -54,6 +54,29 @@ describe('UiTabsComponent', () => {
     expect(tab('past').getAttribute('tabindex')).toBe('-1');
   });
 
+  it('keeps exactly one tab in the tab order when the value matches no tab', async () => {
+    for (const value of ['', 'nope', 'drafts']) {
+      fixture.componentInstance.value.set(value);
+      await fixture.whenStable();
+      const inOrder = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')).filter((t) => (t as HTMLElement).getAttribute('tabindex') === '0');
+      expect(inOrder).toHaveLength(1);
+      expect(inOrder[0]).toBe(tab('upcoming'));
+    }
+  });
+
+  it('adds no ids or aria-controls without an idPrefix', () => {
+    expect(tab('upcoming').getAttribute('id')).toBeNull();
+    expect(tab('upcoming').getAttribute('aria-controls')).toBeNull();
+  });
+
+  it('links each tab to its panel when an idPrefix is set', async () => {
+    fixture.componentRef.setInput('idPrefix', 'meetings');
+    await fixture.whenStable();
+
+    expect(tab('past').getAttribute('id')).toBe('meetings-tab-past');
+    expect(tab('past').getAttribute('aria-controls')).toBe('meetings-panel-past');
+  });
+
   it('selects a tab on click', async () => {
     tab('past').click();
     await fixture.whenStable();

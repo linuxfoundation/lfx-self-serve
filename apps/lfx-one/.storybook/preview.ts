@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideZonelessChangeDetection } from '@angular/core';
-import { applicationConfig, type Preview } from '@storybook/angular';
+import { setCompodocJson } from '@storybook/addon-docs/angular';
+import type { Preview } from '@storybook/angular';
+
+import docJson from '../documentation.json';
+
+setCompodocJson(docJson);
 
 const preview: Preview = {
-  // The app is zoneless, so stories run under the same change detection.
-  decorators: [applicationConfig({ providers: [provideZonelessChangeDetection()] })],
   tags: ['autodocs'],
   parameters: {
     controls: { expanded: true },

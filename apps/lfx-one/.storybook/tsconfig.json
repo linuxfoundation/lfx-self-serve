@@ -1,7 +1,9 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "resolveJsonModule": true
   },
-  "include": ["../src/app/shared/uikit/**/*.stories.ts", "./preview.ts"]
+  "include": ["../src/app/shared/uikit/**/*.ts", "./preview.ts"],
+  "exclude": ["../src/**/*.spec.ts"]
 }

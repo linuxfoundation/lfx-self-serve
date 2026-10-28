@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, ElementRef, input, model, viewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, input, model, Signal, viewChildren } from '@angular/core';
 import { UiTabItem } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -18,7 +18,13 @@ export class UiTabsComponent {
   /** Accessible name for the tab list. */
   public readonly ariaLabel = input<string>('');
 
-  private readonly tabElements = viewChildren<ElementRef<HTMLButtonElement>>('tab');
+  /** Prefix for tab and panel ids. When set, each tab gets `{prefix}-tab-{value}` and `aria-controls="{prefix}-panel-{value}"`. */
+  public readonly idPrefix = input<string>('');
+
+  private readonly tabElements = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
+
+  /** The one tab in the tab order: the selected enabled tab, else the first enabled tab. */
+  protected readonly focusIndex: Signal<number> = this.initFocusIndex();
 
   protected select(tab: UiTabItem): void {
     if (!tab.disabled) this.value.set(tab.value);
@@ -46,5 +52,13 @@ export class UiTabsComponent {
     event.preventDefault();
     this.select(tabs[next]);
     this.tabElements()[next]?.nativeElement.focus();
+  }
+
+  private initFocusIndex(): Signal<number> {
+    return computed(() => {
+      const tabs = this.tabs();
+      const selected = tabs.findIndex((t) => t.value === this.value() && !t.disabled);
+      return selected >= 0 ? selected : tabs.findIndex((t) => !t.disabled);
+    });
   }
 }

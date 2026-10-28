@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -41,6 +41,14 @@ export class UiButtonComponent {
 
   protected readonly classes: Signal<string> = this.initClasses();
 
+  public constructor() {
+    effect(() => {
+      if (isDevMode() && this.iconOnly() && !this.ariaLabel()) {
+        console.warn('lfx-ui-button: an icon-only button needs an ariaLabel.');
+      }
+    });
+  }
+
   private initClasses(): Signal<string> {
     return computed(() => {
       const base =
@@ -56,7 +64,7 @@ export class UiButtonComponent {
         'ghost-destructive': 'text-red-700 hover:bg-red-50 hover:text-red-800 active:bg-red-100',
         recording: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow active:bg-emerald-800 active:shadow-none',
       };
-      // Radius is about three quarters of the height, per the design spec.
+      // Radius follows the design's 8/12/16px steps.
       const sizes = {
         sm: { text: 'h-6 gap-1 rounded-lg text-xs', pad: 'px-1.5', square: 'w-6 px-0' },
         md: { text: 'h-8 gap-2 rounded-xl text-sm', pad: 'px-3', square: 'w-8 px-0' },
