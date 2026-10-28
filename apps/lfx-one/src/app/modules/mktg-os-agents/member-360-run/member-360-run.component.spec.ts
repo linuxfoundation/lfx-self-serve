@@ -15,6 +15,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
+import { ConfirmationService, ConfirmEventType } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Member360RunComponent } from './member-360-run.component';
@@ -32,9 +33,12 @@ describe('Member360RunComponent', () => {
     getRevision: vi.fn(() => of(member360Revision())),
   };
   const run = {
-    generate: vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })),
+    generate: vi.fn<Member360Service['generate']>(() =>
+      of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })
+    ),
     parseTracker: vi.fn(() => of({ filename: 'repeat.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] })),
   };
+  const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   async function render(): Promise<void> {
     fixture = TestBed.createComponent(Member360RunComponent);
     fixture.detectChanges();
@@ -46,6 +50,7 @@ describe('Member360RunComponent', () => {
   }
   beforeEach(async () => {
     context.canWrite.set(true);
+    confirmation.confirm.mockClear();
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
     run.generate.mockReturnValue(of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' }));
     run.generate.mockClear();
@@ -55,6 +60,7 @@ describe('Member360RunComponent', () => {
         provideNoopAnimations(),
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: ConfirmationService, useValue: confirmation },
         { provide: Member360Service, useValue: run },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: context },
@@ -63,6 +69,40 @@ describe('Member360RunComponent', () => {
     }).compileComponents();
   });
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+  it.each(['open', 'discard'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
+    await render();
+    const conflict = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your Member 360 run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'member-360',
+      documentId: 'run-' + 'a'.repeat(24),
+      startedBy: 'Synthetic writer',
+    };
+    run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    expect(prompt).toMatchObject({ header: 'Your Member 360 run is in progress', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
+    const original = run.generate.mock.calls[0][0];
+    if (choice === 'discard') {
+      fixture.componentInstance.form.controls.window.setValue('6');
+      prompt?.accept?.();
+      prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
+      expect(run.generate).toHaveBeenCalledTimes(2);
+      expect(run.generate).toHaveBeenNthCalledWith(2, { ...original, discard: conflict.activeRunId });
+    } else {
+      prompt?.reject?.(ConfirmEventType.REJECT);
+      expect(run.generate).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith(
+        expect.arrayContaining(['documents', 'member-360', conflict.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: conflict.activeRunId }) })
+      );
+    }
+  });
+
   it('fixes the project and defaults to a twelve-month window with empty run history', async () => {
     await render();
     const project = fixture.nativeElement.querySelector('[data-testid="member-360-project"]');

@@ -29,6 +29,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { firstValueFrom, of, Subject, throwError } from 'rxjs';
+import { ConfirmationService, ConfirmEventType } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 
@@ -42,6 +43,7 @@ describe('LinkedIn profile and post surface', () => {
     setupForDocument: vi.fn(),
   };
   const projects = { getProject: vi.fn() };
+  const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   const history = { lastIntake: vi.fn() };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   beforeEach(async () => {
@@ -61,6 +63,7 @@ describe('LinkedIn profile and post surface', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideNoopAnimations(),
+        { provide: ConfirmationService, useValue: confirmation },
         { provide: LinkedinPostService, useValue: api },
         { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: () => context()?.uid } },
         { provide: ProjectService, useValue: projects },
@@ -89,6 +92,42 @@ describe('LinkedIn profile and post surface', () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     return render();
   }
+  it.each(['open', 'discard'] as const)('handles a LinkedIn active-run conflict and the %s choice with the exact source', async (choice) => {
+    const fixture = await fresh();
+    const conflict = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your LinkedIn post run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'questions',
+      agentKey: 'linkedin-post',
+      documentId: 'run-' + 'a'.repeat(24),
+      startedBy: 'Synthetic writer',
+    };
+    api.startForDocument
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+      .mockReturnValue(of({ documentId: 'run-' + 'c'.repeat(24), runId: 'd'.repeat(64), sessionId: 'synthetic-new', ownerToken: 'synthetic-proof' }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic original source');
+    await fixture.componentInstance['onDraft']();
+    const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    expect(prompt).toMatchObject({ header: 'Your LinkedIn post run is in progress', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
+    const original = api.startForDocument.mock.calls[0];
+    if (choice === 'discard') {
+      fixture.componentInstance['contentForm'].controls.text.setValue('Edited while confirming');
+      prompt?.accept?.();
+      prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
+      expect(api.startForDocument).toHaveBeenCalledTimes(2);
+      expect(api.startForDocument).toHaveBeenNthCalledWith(2, ...original, conflict.activeRunId);
+    } else {
+      prompt?.reject?.(ConfirmEventType.REJECT);
+      expect(api.startForDocument).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith(
+        expect.arrayContaining(['documents', 'linkedin-post', conflict.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: conflict.activeRunId }) })
+      );
+    }
+  });
+
   it.each([
     { source: 'text', text: 'Synthetic previous text', url: '', share: '' },
     { source: 'url', text: '', url: 'https://source.example/', share: 'https://share.example/' },

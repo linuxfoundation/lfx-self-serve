@@ -16,6 +16,43 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  for (const choice of ['Open it', 'Discard and start over'])
+    test(`LinkedIn active-run conflict: ${choice}`, async ({ page }, info) => {
+      const runs = createLinkedinRuns();
+      const documentId = 'run-' + 'a'.repeat(24);
+      runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
+      await setupLinkedin(page, { runs, saved: true }); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+      const bodies: Record<string, unknown>[] = [];
+      const activeRunId = 'b'.repeat(64);
+      await page.route(`**${LINKEDIN_API}/generate`, (route) => {
+        bodies.push(route.request().postDataJSON());
+        if (bodies.length === 1)
+          return json(
+            route,
+            {
+              code: 'MKTG_RUN_ACTIVE',
+              message: 'Your LinkedIn post run is in progress.',
+              activeRunId,
+              state: 'writing',
+              agentKey: 'linkedin-post',
+              documentId,
+              startedBy: 'Synthetic writer',
+            },
+            409
+          );
+        return route.fallback();
+      });
+      await openLinkedin(page);
+      await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
+      await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText('Your LinkedIn post run is in progress');
+      await dialog.getByRole('button', { name: choice, exact: true }).click();
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+      expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
+      if (choice !== 'Open it') expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+      await page.screenshot({ path: info.outputPath('linkedin-active-run-choice.png'), fullPage: true });
+    });
   test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
     await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
     await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
