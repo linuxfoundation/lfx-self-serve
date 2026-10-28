@@ -15,7 +15,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, ORG_ALL_FOUNDATIONS_LABEL, roleToContactType } from '@lfx-one/shared/constants';
 import { agreedUsername, avatarInitials, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
@@ -432,7 +432,7 @@ export class KeyContactsComponent {
       }
     }
     const options = [...slugs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ label, value }));
-    return [{ label: 'All Foundations', value: '' }, ...options];
+    return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...options];
   }
 
   private initRoleOptions(): OrgKeyContactDropdownOption[] {

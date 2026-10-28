@@ -8862,6 +8862,113 @@ describe('CampaignController.createCampaign Reddit uploaded image', () => {
 });
 
 /**
+ * `redditConfig.conversionPixelId` is honoured only by campaign-service, so a real value is refused
+ * — not dropped — while the legacy creator serves the create (#3484). A blank one means "use the
+ * connection's pixel" on both arms, so it is never refused.
+ */
+describe('CampaignController.createCampaign Reddit conversion pixel', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const PIXEL = 't2_synthpixel';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards conversionPixelId untouched when the cutover owns the create', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, conversionPixelId: PIXEL } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['conversionPixelId']).toBe(PIXEL);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request carrying conversionPixelId while the cutover is dark, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, conversionPixelId: PIXEL } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.conversionPixelId',
+        message: "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel",
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  /**
+   * A non-string is refused on BOTH arms with the same field error: campaign-service decodes the
+   * field into a Go string, so forwarding one could only fail there, opaquely.
+   */
+  it.each([
+    ['a number', 'dark', 123],
+    ['an object', 'dark', { id: 't2_synthpixel' }],
+    ['a number', 'on', 123],
+    ['an object', 'on', { id: 't2_synthpixel' }],
+  ])('refuses %s as conversionPixelId with the cutover %s', async (_label, cutover, pixel) => {
+    isServerFeatureEnabled.mockImplementation(() => cutover === 'on');
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, conversionPixelId: pixel } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'redditConfig.conversionPixelId', message: 'the Reddit conversion pixel must be text', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['an empty string', ''],
+    ['whitespace', '   '],
+    ['null', null],
+  ])('does not refuse %s while the cutover is dark, since it asks for the connection pixel either way', async (_label, pixel) => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, conversionPixelId: pixel } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const refusal = vi.mocked(next).mock.calls.find((call) => (call[0] as unknown) instanceof ServiceValidationError)?.[0] as
+      | ServiceValidationError
+      | undefined;
+    expect(refusal?.toResponse()['errors']).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'redditConfig.conversionPixelId' })]));
+  });
+});
+
+/**
  * `metaConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused — not
  * dropped — unless the create cutover AND the Meta-assets flag are on, on the Reddit field's terms.
  * A pasted `imageUrl` is not gated here: the form withholds it while `metaCreativeEnabled` is off.

@@ -27,11 +27,14 @@ import {
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+  ORG_ALL_FOUNDATIONS_LABEL,
+  ORG_ANY_PROJECT_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_OPTIONS,
   ORG_CODE_METRIC_UNIT,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
+  ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -44,10 +47,12 @@ import type {
   OrgCodeMeasure,
   OrgCodeMeasureOption,
   OrgContributionCommitRowVm,
+  OrgContributionProjectOption,
   OrgContributionRepoRowVm,
   OrgContributionsQuery,
   OrgContributionsResponse,
   OrgCountUnit,
+  OrgDropdownOption,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
   OrgProjectScope,
@@ -108,6 +113,8 @@ export class OrgContributionsComponent {
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
   protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
+  protected readonly anyProjectLabel = ORG_ANY_PROJECT_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
@@ -116,6 +123,7 @@ export class OrgContributionsComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     dateRange: new FormControl<OrgLensTimeRange>(parseOrgLensTimeRange(this.initialParams.get('range')), { nonNullable: true }),
+    foundation: new FormControl<string>((this.initialParams.get('foundation') ?? '').trim(), { nonNullable: true }),
     projects: new FormControl<string[]>(this.parseInitialCsv('projects'), { nonNullable: true }),
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
@@ -137,6 +145,8 @@ export class OrgContributionsComponent {
   private readonly fetchErrorState = signal<boolean>(false);
   protected readonly isLoading = this.loadingState.asReadonly();
   protected readonly fetchError = this.fetchErrorState.asReadonly();
+  // The last name each employee id was listed under, so a pick the foundation-narrowed options drop keeps its label.
+  private readonly employeeLabels = new Map<string, string>();
 
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
   protected readonly pageState = this.emptyState.pageState;
@@ -181,6 +191,7 @@ export class OrgContributionsComponent {
   protected readonly commitsTotalRecords = computed(() => this.response().commitsTotalRecords);
   protected readonly activeTotalRecords = computed(() => (this.mainTab() === 'commits' ? this.commitsTotalRecords() : this.totalRecords()));
 
+  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
   protected readonly projectOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initProjectOptions());
   protected readonly employeeOptions: Signal<ContributionsFilterOption[]> = computed(() => this.initEmployeeOptions());
 
@@ -206,11 +217,18 @@ export class OrgContributionsComponent {
     this.capFilterSelection(this.filterForm.controls.projects);
     this.capFilterSelection(this.filterForm.controls.employees);
 
+    // The Projects picker lists only the picked foundation's projects, so picking one drops the selected projects outside it.
+    this.filterForm.controls.foundation.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((foundation) => this.dropProjectsOutside(foundation, this.response().projectOptions));
+
     // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link, or a default, unknown or legacy
     // (`12mo`) range, once the initial navigation has settled (browser-only; normal loads are untouched).
+    const rawFoundation = this.initialParams.get('foundation');
     if (
       this.isCsvParamNormalized('projects') ||
       this.isCsvParamNormalized('employees') ||
+      (rawFoundation !== null && rawFoundation !== this.filterForm.controls.foundation.value) ||
       this.isRangeParamNormalized() ||
       this.isCommitFilterParamNormalized()
     ) {
@@ -249,6 +267,18 @@ export class OrgContributionsComponent {
       )
       .subscribe((dateRange) => {
         if (dateRange !== this.filterForm.controls.dateRange.value) this.filterForm.patchValue({ dateRange });
+      });
+
+    // `?foundation=` follows a query-only navigation (back/forward, an edited link), its removal included. The guard
+    // skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => (params.get('foundation') ?? '').trim()),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((foundation) => {
+        if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
       });
   }
 
@@ -306,6 +336,7 @@ export class OrgContributionsComponent {
     this.filterForm.reset({
       search: '',
       dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
+      foundation: '',
       projects: [],
       employees: [],
       projectScope: DEFAULT_ORG_COMMIT_FILTERS.projectScope,
@@ -327,6 +358,7 @@ export class OrgContributionsComponent {
       view: this.mainTab(),
       dateRange: values.dateRange ?? ORG_LENS_DEFAULT_TIME_RANGE,
       search: (values.search ?? '').trim(),
+      foundation: values.foundation ?? '',
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
@@ -344,6 +376,7 @@ export class OrgContributionsComponent {
     return (
       query.search.length > 0 ||
       query.dateRange !== ORG_LENS_DEFAULT_TIME_RANGE ||
+      query.foundation.length > 0 ||
       query.projects.length > 0 ||
       query.employees.length > 0 ||
       !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
@@ -367,7 +400,11 @@ export class OrgContributionsComponent {
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });
           }
           return this.dataService.getContributions(orgUid, query).pipe(
-            tap(() => this.loadingState.set(false)),
+            tap((res) => {
+              this.loadingState.set(false);
+              for (const employee of res.employeeOptions) this.employeeLabels.set(employee.id, employee.displayName);
+              this.reconcileSelections(res, query);
+            }),
             catchError(() => {
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
@@ -423,22 +460,59 @@ export class OrgContributionsComponent {
     };
   }
 
-  private initProjectOptions(): ContributionsFilterOption[] {
-    const unit = this.codeUnit();
-    return this.response().projectOptions.map((p) => ({
-      label: p.name,
-      value: p.slug,
-      sublabel: `${p.commits.toLocaleString()} ${p.commits === 1 ? unit.one : unit.other}`,
-    }));
+  private initFoundationOptions(): OrgDropdownOption[] {
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
+  private initProjectOptions(): ContributionsFilterOption[] {
+    const unit = this.codeUnit();
+    const foundation = this.query().foundation;
+    return this.response()
+      .projectOptions.filter((p) => !foundation || p.foundationId === foundation)
+      .map((p) => ({
+        label: p.name,
+        value: p.slug,
+        sublabel: `${p.commits.toLocaleString()} ${p.commits === 1 ? unit.one : unit.other}`,
+      }));
+  }
+
+  /**
+   * Employee options narrow to the picked foundation, but a pick is never dropped for it (employee and foundation
+   * intersect). A picked employee the options no longer list stays offered, under the last label seen for them, so
+   * the picker can still show and remove them.
+   */
   private initEmployeeOptions(): ContributionsFilterOption[] {
     const unit = this.codeUnit();
-    return this.response().employeeOptions.map((e) => ({
+    const listed = this.response().employeeOptions;
+    const options = listed.map((e) => ({
       label: e.displayName,
       value: e.id,
       sublabel: `${e.commits.toLocaleString()} ${e.commits === 1 ? unit.one : unit.other}`,
     }));
+    for (const id of this.query().employees) {
+      if (!listed.some((e) => e.id === id)) options.push({ label: this.employeeLabels.get(id) ?? id, value: id, sublabel: `0 ${unit.other}` });
+    }
+    return options;
+  }
+
+  /**
+   * A new range or project type can drop the picked foundation from the options, and filtering on it would empty the
+   * page, so it is cleared (as on People → Contributors). Options also arrive with each project's foundation, so a
+   * deep-linked project pick outside the foundation is dropped. Only a response for the range, project type and
+   * foundation the form still holds may do either: one that lands during the debounce of a newer pick belongs to
+   * filters the user has already left.
+   */
+  private reconcileSelections(res: OrgContributionsResponse, query: OrgContributionsQuery): void {
+    const { dateRange, projectScope, foundation } = this.filterForm.getRawValue();
+    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation) {
+      return;
+    }
+    const control = this.filterForm.controls.foundation;
+    if (control.value && !res.foundationOptions.some((option) => option.foundationId === control.value)) control.setValue('');
+    this.dropProjectsOutside(control.value, res.projectOptions);
   }
 
   private initSortIconMap(): Record<ContributionsSortColumn, string> {
@@ -470,6 +544,7 @@ export class OrgContributionsComponent {
         q: query.search || null,
         range: orgLensTimeRangeUrlParam(query.dateRange),
         ...orgCommitFiltersUrlParams(query),
+        foundation: query.foundation || null,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
@@ -519,6 +594,25 @@ export class OrgContributionsComponent {
         control.setValue(values.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
       }
     });
+  }
+
+  /**
+   * Drops the selected projects the options place under a foundation other than `foundation`. Projects the options do
+   * not list (no activity in the range for this project type, or options not loaded yet) are kept; any foundation keeps
+   * them all. Leaves the control untouched, and so fetches nothing, when nothing is dropped.
+   */
+  private dropProjectsOutside(foundation: string, options: readonly OrgContributionProjectOption[]): void {
+    const projects = this.filterForm.controls.projects;
+    if (!foundation || !projects.value.length) {
+      return;
+    }
+    const kept = projects.value.filter((value) => {
+      const option = options.find((o) => o.slug === value || o.projectId === value);
+      return !option || option.foundationId === foundation;
+    });
+    if (kept.length !== projects.value.length) {
+      projects.setValue(kept);
+    }
   }
 
   private isCsvParamNormalized(param: 'projects' | 'employees'): boolean {

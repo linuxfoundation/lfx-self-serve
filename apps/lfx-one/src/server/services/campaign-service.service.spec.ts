@@ -4712,6 +4712,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5035,6 +5037,33 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   /**
+   * The Reddit conversion pixel override (#3484) needs exactly the create cutover: campaign-service
+   * prefers it over the connection's pixel, and the legacy creator never reads it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true }, true],
+    [{ create: false, briefs: true, jobs: true }, false],
+    [{ create: true, briefs: false, jobs: true }, false],
+    [{ create: true, briefs: true, jobs: false }, false],
+  ])('reports the Reddit conversion pixel capability only when the cutover owns the create (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditConversionPixelEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
    * The Google capability is gated the same way and on the same three cutover flags, but on its
    * OWN sibling flag — the two are independent, and the last row is what says so: Reddit's flag on
    * and Google's off must not report Google as enabled. Unlike Reddit's, this flag claims nothing
@@ -5207,6 +5236,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,

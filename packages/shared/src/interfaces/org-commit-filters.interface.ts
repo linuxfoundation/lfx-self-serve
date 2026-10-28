@@ -3,9 +3,9 @@
 
 // Org Lens drill-down filters on the one commit definition every surface shares (lfx-self-serve#4164,
 // #4322): a commit is a distinct SHA with an `authored-commit` activity, on any branch, by a non-bot
-// member. The defaults reproduce LFX Insights; each filter narrows to a stricter view.
+// member. The defaults count LF projects, like the Overview (lfx-self-serve#4160); LF and non-LF projects is what LFX Insights counts.
 
-/** Projects a count covers: every project (Insights' default), LF projects (Insights' `is_lf_project`), or the rest. */
+/** Projects a count covers: LF projects (Insights' `is_lf_project`, the default), every project (what Insights counts), or the rest. */
 export type OrgProjectScope = 'all' | 'lf' | 'non_lf';
 
 /** Commits that count: every authored commit on any branch, or only the ones merged to the main branch. */

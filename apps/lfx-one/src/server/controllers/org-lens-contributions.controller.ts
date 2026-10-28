@@ -30,6 +30,8 @@ import { OrgContributionsService } from '../services/org-contributions.service';
 const VALID_SORT_COLUMNS: ReadonlySet<ContributionsSortColumn> = new Set(['commits', 'firstCommit', 'lastCommit']);
 const VALID_VIEWS: ReadonlySet<ContributionsView> = new Set(['repositories', 'commits']);
 const VALID_COMMIT_SORT_COLUMNS: ReadonlySet<ContributionsCommitSortColumn> = new Set(['project', 'committer', 'username', 'date']);
+/** A foundation id is a short project id; anything longer is not one and would only bloat the bind and the cache key. */
+const MAX_FOUNDATION_LENGTH = 255;
 
 /** HTTP boundary for the OrgContributionsService (LFXV2-1894) — validation, lifecycle logging, error propagation. */
 export class OrgLensContributionsController {
@@ -54,6 +56,7 @@ export class OrgLensContributionsController {
         project_scope: query.projectScope,
         commit_scope: query.commitScope,
         metric: query.metric,
+        foundation_id: query.foundation || null,
         project_count: query.projects.length,
         employee_count: query.employees.length,
         page: query.page,
@@ -96,6 +99,7 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',
+    foundation: parseFoundation(getStringQueryParam(req, 'foundation'), operation),
     projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
     employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
     sort,
@@ -105,6 +109,15 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     page: clampInteger(Number.parseInt(getStringQueryParam(req, 'page') ?? '', 10), 1, MAX_SNOWFLAKE_PAGINATION_PAGE, 1),
     size: parsePageSize(getStringQueryParam(req, 'size')),
   };
+}
+
+/** One foundation id, matched exactly like People → Contributors; missing or blank is any foundation, over 255 chars → 400. */
+function parseFoundation(raw: string | undefined, operation: string): string {
+  const foundation = raw?.trim() ?? '';
+  if (foundation.length > MAX_FOUNDATION_LENGTH) {
+    throw ServiceValidationError.forField('foundation', `Invalid foundation value. Maximum length: ${MAX_FOUNDATION_LENGTH}`, { operation });
+  }
+  return foundation;
 }
 
 function parseView(raw: string | undefined, operation: string): ContributionsView {
