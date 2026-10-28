@@ -558,6 +558,16 @@ export function canCreateMicrosoftSchedule(): boolean {
 }
 
 /**
+ * Whether this deployment's create path can carry Google `audienceSegments` at all — the
+ * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
+ * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
+ * creator never does, and would create the campaign without the user lists while reporting success.
+ */
+export function canCreateWithAudienceSegments(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
  *
  * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
@@ -801,6 +811,8 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+        googleAudienceSegmentsEnabled: false,
       };
     }
 
@@ -863,6 +875,8 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+      googleAudienceSegmentsEnabled: false,
     };
   }
 
