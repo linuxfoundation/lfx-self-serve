@@ -2038,6 +2038,28 @@ export interface GoogleAdsAccountOption {
   label: string;
 }
 
+/** One X Ads account the connection's credential can reach, in the same option shape. `key` is X's alphanumeric account id verbatim. */
+export interface TwitterAdsAccountOption {
+  key: string;
+  label: string;
+}
+
+/**
+ * `GET /api/campaigns/twitter/accounts` (LFXV2-3319): which X ad account an X create will use, and
+ * what the credential can reach.
+ *
+ * `twitterConfig` takes no account id: campaign-service creates under the account bound on the
+ * project's X connection (`account_id`), and refuses the create with `ErrAccountNotSelected` when
+ * that is empty. So `connection` is the answer that matters — `connected` names the account,
+ * `no_account` is a create that will be refused, and `no_connection` means campaign-service falls
+ * back to the LF system X connection. `accounts` is `list-twitter-ads-accounts`, the choices an
+ * administrator can bind the connection to.
+ */
+export interface TwitterAdsAccountsResult {
+  accounts: TwitterAdsAccountOption[];
+  connection: MonitorConnectionAccount;
+}
+
 export interface MetaMonitorResponse {
   accountLabel: string;
   pulledAt: string;
@@ -5496,6 +5518,16 @@ export interface CampaignTwitterImageAssetBlock {
  * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
  * brief is saved, or answered no.
  */
+export interface CampaignTwitterAccountState {
+  /**
+   * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
+   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `error` for any
+   * other failure. Only `loaded` carries a `result`.
+   */
+  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'error';
+  result: TwitterAdsAccountsResult | null;
+}
+
 export interface CampaignTwitterCreateBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;

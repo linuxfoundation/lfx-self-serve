@@ -3421,6 +3421,64 @@
               Manager before enabling it if it should not.
             </p>
 
+            <!--
+              Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
+              carries no account id, and campaign-service creates under the account bound on the
+              project's X connection. An unbound connection is a certain refusal, so it blocks Create.
+            -->
+            <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
+              <span class="font-medium text-gray-700">Ad account</span>
+              @switch (twitterAccountState().status) {
+                @case ('loading') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-loading">
+                    <i class="fa-light fa-spinner-third fa-spin mr-1" aria-hidden="true"></i>Checking the X ad account…
+                  </p>
+                }
+                @case ('restricted') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-restricted">
+                    Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
+                  </p>
+                }
+                @case ('error') {
+                  <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
+                    <p class="text-amber-800">
+                      Could not read the X ad account. The campaign is still created under the account bound on this project's X connection.
+                    </p>
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [text]="true"
+                      (onClick)="onTwitterAccountRetry()"
+                      data-testid="implementation-twitter-account-retry" />
+                  </div>
+                }
+                @case ('loaded') {
+                  @switch (twitterAccountState().result?.connection?.state) {
+                    @case ('connected') {
+                      <p class="text-sm text-gray-900" data-testid="implementation-twitter-account-connected">{{ twitterAccountLabel() }}</p>
+                    }
+                    @case ('no_account') {
+                      <p role="alert" class="rounded-md bg-amber-50 px-3 py-2 text-amber-800" data-testid="implementation-twitter-account-unbound">
+                        This project's X connection has no ad account chosen, so campaign-service will refuse the create. Bind one of the
+                        {{ twitterAccountState().result?.accounts?.length ?? 0 }} accounts its credential reaches to the connection, then create again.
+                      </p>
+                    }
+                    @case ('no_connection') {
+                      <p class="text-gray-700" data-testid="implementation-twitter-account-shared">
+                        This project has no X connection of its own, so the campaign is created under the LF shared X connection's ad account.
+                      </p>
+                    }
+                    @default {
+                      <p class="text-gray-500" data-testid="implementation-twitter-account-unknown">
+                        The X connection could not be read. The campaign is created under the account bound on it.
+                      </p>
+                    }
+                  }
+                }
+              }
+            </div>
+
             <!-- Budget and flight -->
             <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div class="flex flex-col gap-1">

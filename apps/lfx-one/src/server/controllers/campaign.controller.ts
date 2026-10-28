@@ -56,6 +56,8 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
   GoogleAdsAccountOption,
+  TwitterAdsAccountOption,
+  TwitterAdsAccountsResult,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   GoogleCreativeFieldSpec,
@@ -3443,6 +3445,58 @@ export class CampaignController {
         .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
       logger.success(req, operation, startTime, { count: accounts.length });
       res.json(accounts);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319):
+   * campaign-service's `list-twitter-ads-accounts` beside the project's own X connection.
+   *
+   * `twitterConfig` names no account — the create runs under the connection's bound `account_id` and
+   * is refused with `ErrAccountNotSelected` when it is empty — so the Implement tab shows this rather
+   * than offering a choice the request could not carry.
+   *
+   * Root-only, as the Google Ads accounts route is and for the same reason: campaign-service resolves
+   * a project with no X connection of its own to the LF system credential, so the list is then every
+   * account the LF can reach. Gated on `canCreateTwitter` (404 while X creation is off, as if it were
+   * not mounted): the read exists for the create flow only.
+   */
+  public async getTwitterAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'twitter_ads_accounts';
+    if (!canCreateTwitter()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'X Ads'))) {
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const [payload, connection] = await Promise.all([
+        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug),
+        this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
+      ]);
+      // `accounts` is required upstream; reading its absence as an empty list would say the
+      // credential reaches nothing, so an unreadable body fails the read instead.
+      if (!Array.isArray(payload?.accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable X Ads account list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const accounts: TwitterAdsAccountOption[] = payload.accounts
+        .filter((a) => typeof a?.id === 'string' && a.id !== '')
+        .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
+      const result: TwitterAdsAccountsResult = { accounts, connection };
+      logger.success(req, operation, startTime, { count: accounts.length, connection: connection.state });
+      res.json(result);
     } catch (error) {
       next(error);
     }

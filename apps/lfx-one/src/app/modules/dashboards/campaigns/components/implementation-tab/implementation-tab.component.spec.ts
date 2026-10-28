@@ -11488,6 +11488,9 @@ describe('ImplementationTabComponent x create', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let getTwitterAdsAccounts: ReturnType<typeof vi.fn>;
+  const ACCOUNT_ID = '18ce54d4x5t';
+  const accounts = (connection: Record<string, unknown>) => of({ accounts: [{ key: ACCOUNT_ID, label: 'Linux Foundation' }], connection });
 
   const brief = (platforms: string[] = ['twitter-ads']): CampaignBriefOutput =>
     ({
@@ -11562,6 +11565,7 @@ describe('ImplementationTabComponent x create', () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
     uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
     resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
+    getTwitterAdsAccounts = vi.fn().mockReturnValue(accounts({ state: 'connected', accountId: ACCOUNT_ID, label: 'LF X' }));
 
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
@@ -11580,6 +11584,7 @@ describe('ImplementationTabComponent x create', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload: vi.fn(),
             getLinkedInAccounts: () => of([]),
+            getTwitterAdsAccounts,
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -11740,6 +11745,65 @@ describe('ImplementationTabComponent x create', () => {
     c(fixture)['onBiddingChange']('twitter-ads', { strategy: 'manual', bidAmount: 2.5 });
     fixture.detectChanges();
     expect(submitted(fixture)['twitterConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+  });
+
+  /** Which X ad account the create uses (LFXV2-3319): shown, since `twitterConfig` takes no account id. */
+  describe('ad account', () => {
+    it('names the account bound on the project X connection, read for the open foundation', async () => {
+      const { fixture } = await mount(true);
+
+      expect(getTwitterAdsAccounts).toHaveBeenCalledWith('tlf');
+      expect(q(fixture, 'implementation-twitter-account-connected')?.textContent).toContain('Linux Foundation (18ce54d4x5t)');
+    });
+
+    it('does not read the account while X creation is not an explicit yes', async () => {
+      await mount(null, { read: 'pending' });
+
+      expect(getTwitterAdsAccounts).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the connection has no account bound, which campaign-service refuses', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_account', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+      fill(fixture);
+
+      expect(q(fixture, 'implementation-twitter-account-unbound')?.textContent).toContain('no ad account chosen');
+      expect(c(fixture)['canSubmit']()).toBe(false);
+    });
+
+    it('says the LF shared account is used when the project has no X connection, and lets Create through', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_connection', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+      fill(fixture);
+
+      expect(q(fixture, 'implementation-twitter-account-shared')).not.toBeNull();
+      expect(c(fixture)['canSubmit']()).toBe(true);
+    });
+
+    it.each([
+      [403, 'implementation-twitter-account-restricted'],
+      [503, 'implementation-twitter-account-error'],
+    ])('leaves the create to campaign-service on a %s read, saying why', async (status, testId) => {
+      getTwitterAdsAccounts.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+      const { fixture } = await mount(true);
+      fill(fixture);
+
+      expect(q(fixture, testId)).not.toBeNull();
+      expect(c(fixture)['canSubmit']()).toBe(true);
+    });
+
+    it('re-reads on Retry after a failed read', async () => {
+      getTwitterAdsAccounts.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const { fixture } = await mount(true);
+
+      (q(fixture, 'implementation-twitter-account-retry')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getTwitterAdsAccounts).toHaveBeenCalledTimes(2);
+      expect(q(fixture, 'implementation-twitter-account-connected')).not.toBeNull();
+    });
   });
 
   it('sends no bidding key while the bidding capability is off', async () => {

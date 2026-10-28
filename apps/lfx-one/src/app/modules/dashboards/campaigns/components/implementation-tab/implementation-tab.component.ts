@@ -166,6 +166,7 @@ import type {
   CampaignPlatformResult,
   CampaignGoogleImageAssetBlock,
   CampaignLinkedInImageAssetBlock,
+  CampaignTwitterAccountState,
   CampaignTwitterCreateBlock,
   CampaignTwitterImageAssetBlock,
   TwitterCampaignCreateRequest,
@@ -2572,6 +2573,32 @@ export class ImplementationTabComponent implements OnInit {
     return null;
   });
 
+  /** Bumped by the X account Retry; joins the read's key below, so a click re-reads. */
+  private readonly twitterAccountAttempt = signal(0);
+
+  /**
+   * Which X ad account the create will use (LFXV2-3319), read while the X section is offered.
+   * `twitterConfig` names no account — campaign-service creates under the connection's bound one —
+   * so the section shows this rather than a choice. A derived signal over the read, not an effect:
+   * `switchMap` drops an answer for a foundation or attempt the operator has moved past.
+   */
+  protected readonly twitterAccountState: Signal<CampaignTwitterAccountState> = this.initTwitterAccountState();
+
+  /**
+   * Whether the read says the create will certainly be refused: the project's own X connection
+   * exists but has no ad account bound, which campaign-service refuses as `ErrAccountNotSelected`.
+   * Every other answer, including a failed or restricted read, leaves the create to campaign-service.
+   */
+  protected readonly twitterAccountUnbound = computed(() => this.twitterAccountState().result?.connection.state === 'no_account');
+
+  /** The bound account's label, when the connection names one the credential also lists. */
+  protected readonly twitterAccountLabel = computed(() => {
+    const result = this.twitterAccountState().result;
+    if (result?.connection.state !== 'connected' || !result.connection.accountId) return '';
+    const listed = result.accounts.find((a) => a.key === result.connection.accountId);
+    return listed ? `${listed.label} (${listed.key})` : (result.connection.label ?? result.connection.accountId);
+  });
+
   /** The registration link campaign-service appends to the tweet, as the preview shows it. */
   protected readonly twitterDestinationUrl = computed(() => {
     void this.campaignFormRevision();
@@ -2768,6 +2795,8 @@ export class ImplementationTabComponent implements OnInit {
     // campaign-service would refuse during dispatch — after the job exists — is caught here, each
     // with its message on screen in the X section.
     if (this.twitterCreateBlock() !== null) return false;
+    // An X connection with no ad account bound: campaign-service refuses that create outright.
+    if (twitterSelected && this.twitterAccountUnbound()) return false;
     if (twitterSelected && (this.twitterBudgetError() !== null || this.twitterTweetError() !== null || this.twitterFlightError() !== null)) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
@@ -3558,6 +3587,11 @@ export class ImplementationTabComponent implements OnInit {
 
     this.followTwitterImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'twitter'), briefId, file.name);
     this.emitDraft();
+  }
+
+  /** Re-read the X account after a failed read. */
+  protected onTwitterAccountRetry(): void {
+    this.twitterAccountAttempt.update((attempt) => attempt + 1);
   }
 
   /** Forget the uploaded X image (the stored asset stays upstream, unused). */
@@ -5107,6 +5141,31 @@ export class ImplementationTabComponent implements OnInit {
   /** Whether the uploaded X image goes out: X creation is an explicit yes and the asset was made for the open brief. */
   private twitterImageSent(): boolean {
     return this.twitterCreateAvailable() && this.twitterImageAssetForThisBrief();
+  }
+
+  /** The X account read behind `twitterAccountState`, keyed on the foundation, the offer and the Retry count. */
+  private initTwitterAccountState(): Signal<CampaignTwitterAccountState> {
+    const idle: CampaignTwitterAccountState = { status: 'idle', result: null };
+    const key = computed(() => ({
+      slug: this.activeFoundationSlug(),
+      offered: this.showTwitterSection() && this.twitterCreateAvailable(),
+      attempt: this.twitterAccountAttempt(),
+    }));
+    return toSignal(
+      toObservable(key).pipe(
+        switchMap(({ slug, offered }) => {
+          if (!offered || slug === '') return of(idle);
+          return this.campaignService.getTwitterAdsAccounts(slug).pipe(
+            map((result): CampaignTwitterAccountState => ({ status: 'loaded', result })),
+            catchError((err: unknown) =>
+              of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
+            ),
+            startWith<CampaignTwitterAccountState>({ status: 'loading', result: null })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
   }
 
   /** `initBiddingCapabilityBlock`'s sibling for X as a whole, on the same capability read. */

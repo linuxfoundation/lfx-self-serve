@@ -117,6 +117,9 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 // campaign-service account discovery for the project's Google Ads connection, behind
 // LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
+// Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
+// behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as above.
+router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));

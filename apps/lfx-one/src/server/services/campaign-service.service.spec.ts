@@ -6349,3 +6349,26 @@ describe('CampaignServiceClient creative-asset library reads', () => {
     });
   });
 });
+
+describe('CampaignServiceClient.listTwitterAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's X Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listTwitterAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-twitter-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listTwitterAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});

@@ -82,6 +82,7 @@ import {
   RedditMonitorResponse,
   ReportBackedMonitorResponse,
   SSEEvent,
+  TwitterAdsAccountsResult,
 } from '@lfx-one/shared/interfaces';
 import type {
   CampaignAdoptableBriefsResponse,
@@ -511,6 +512,15 @@ export class CampaignService {
    */
   public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
     return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Which X ad account an X create will use, and the accounts the connection's credential reaches
+   * (LFXV2-3319). 404 while X creation is off on the server, and a 403 for a non-root caller: with
+   * no X connection of its own, the project is answered from the LF's shared credential.
+   */
+  public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
+    return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
   }
 
   public getMetaMonitorData(

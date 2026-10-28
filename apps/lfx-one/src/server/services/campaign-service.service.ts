@@ -3132,6 +3132,27 @@ export class CampaignServiceClient {
     );
   }
 
+  /**
+   * The X Ads accounts the project's connection credential can reach (`list-twitter-ads-accounts`,
+   * LFXV2-3319) — `listGoogleAdsAccounts`'s X sibling, on the same resolution: a project with no X
+   * connection of its own is answered from the LF system credential upstream (`creds.resolve`), so
+   * the list can be the LF's own accounts. Upstream failures are left to the caller.
+   */
+  public async listTwitterAdsAccounts(req: Request, projectSlug: string): Promise<CampaignServiceAccessibleAccounts> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An account discovery read requires the project it belongs to.', {
+        operation: 'list_twitter_ads_accounts',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccessibleAccounts>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-twitter-ads/accounts`,
+      'GET'
+    );
+  }
+
   /** The shared account-monitor GET. The provider segment comes from the calling method, never the request. */
   private async getAccountMonitor(
     req: Request,
