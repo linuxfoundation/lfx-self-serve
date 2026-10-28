@@ -1683,12 +1683,13 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The promotion sub-form's refusal, on {@link googleCallExtensionDraftError}'s rule: silent until
    * the three boxes every promotion needs — what is on sale, the discount and the destination — are
-   * filled, then upstream's first refusal for what is in the form.
+   * filled, then the selected condition's own refusal ({@link googlePromotionConditionRefusal}), then
+   * upstream's first refusal for what is in the form.
    */
   protected readonly googlePromotionDraftError = computed<string | null>(() => {
     const draft = this.googlePromotionDraft();
     if ([draft.promotionTarget, draft.discount, draft.finalUrl].some((text) => googleAdsTrimSpace(text) === '')) return null;
-    return googlePromotionRefusal(this.googlePromotionFromDraft(draft), this.googlePromotions());
+    return this.googlePromotionConditionRefusal(draft) ?? googlePromotionRefusal(this.googlePromotionFromDraft(draft), this.googlePromotions());
   });
 
   protected readonly googlePromotionsFull = computed(() => this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS);
@@ -3096,6 +3097,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected addGooglePromotion(draft: CampaignPromotionDraft): boolean {
     if (this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS) return false;
+    if (this.googlePromotionConditionRefusal(draft) !== null) return false;
     const promotion = this.googlePromotionFromDraft(draft);
     if (googlePromotionRefusal(promotion, this.googlePromotions()) !== null) return false;
     this.googlePromotions.update((promotions) => [...promotions, promotion]);
@@ -5613,6 +5615,21 @@ export class ImplementationTabComponent implements OnInit {
       if (value !== '') promotion[field] = value;
     }
     return promotion;
+  }
+
+  /**
+   * Why the condition the promotion form SELECTED is unusable, or `null`. Upstream treats both
+   * conditions as optional, so an empty code box or a zero minimum order would pass its check — by
+   * being dropped, and the ad would then advertise an unconditional offer while the select still
+   * names a condition. Only the explicit "No condition" choice may produce one.
+   */
+  private googlePromotionConditionRefusal(draft: CampaignPromotionDraft): string | null {
+    if (draft.eligibilityKind === 'code' && googleAdsTrimSpace(draft.promotionCode) === '') return 'Enter the promotion code, or choose No condition.';
+    if (draft.eligibilityKind === 'ordersOver') {
+      const ordersOver = this.googleAssetAmount(draft.ordersOverAmount);
+      if (ordersOver === undefined || ordersOver === 0) return 'Enter a minimum order amount greater than 0, or choose No condition.';
+    }
+    return null;
   }
 
   /** The price sub-form as the entry it would add, the table's currency copied onto every row. */

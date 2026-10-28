@@ -1033,6 +1033,8 @@
                     aria-label="Promotion code"
                     [value]="googlePromotionDraft().promotionCode"
                     (input)="onGooglePromotionDraftInput('promotionCode', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-code" />
                 } @else if (googlePromotionDraft().eligibilityKind === 'ordersOver') {
@@ -1043,6 +1045,8 @@
                     aria-label="Promotion minimum order amount"
                     [value]="googlePromotionDraft().ordersOverAmount"
                     (input)="onGooglePromotionDraftInput('ordersOverAmount', $event)"
+                    [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                    [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                     class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                     data-testid="implementation-google-promotion-orders-over" />
                 }
@@ -1054,6 +1058,8 @@
                   aria-label="Promotion currency code"
                   [value]="googlePromotionDraft().currencyCode"
                   (input)="onGooglePromotionDraftInput('currencyCode', $event)"
+                  [attr.aria-invalid]="googlePromotionDraftError() ? 'true' : null"
+                  [attr.aria-describedby]="googlePromotionDraftError() ? 'google-promotion-error' : null"
                   class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-currency" />
               }
@@ -1085,36 +1091,45 @@
                   class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-xs"
                   data-testid="implementation-google-promotion-language" />
               </div>
-              <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed. -->
+              <!-- Two independent windows, as upstream judges them: when the ad shows, and when the offer can be redeemed.
+                   Each picker sits in a visible label, since four identical date boxes say nothing on their own. -->
               <div class="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  aria-label="Promotion shows from"
-                  [value]="googlePromotionDraft().startDate"
-                  (input)="onGooglePromotionDraftInput('startDate', $event)"
-                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-start" />
-                <input
-                  type="date"
-                  aria-label="Promotion shows until"
-                  [value]="googlePromotionDraft().endDate"
-                  (input)="onGooglePromotionDraftInput('endDate', $event)"
-                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-end" />
-                <input
-                  type="date"
-                  aria-label="Promotion redeemable from"
-                  [value]="googlePromotionDraft().redemptionStartDate"
-                  (input)="onGooglePromotionDraftInput('redemptionStartDate', $event)"
-                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-redemption-start" />
-                <input
-                  type="date"
-                  aria-label="Promotion redeemable until"
-                  [value]="googlePromotionDraft().redemptionEndDate"
-                  (input)="onGooglePromotionDraftInput('redemptionEndDate', $event)"
-                  class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
-                  data-testid="implementation-google-promotion-redemption-end" />
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows from
+                  <input
+                    type="date"
+                    [value]="googlePromotionDraft().startDate"
+                    (input)="onGooglePromotionDraftInput('startDate', $event)"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Shows until
+                  <input
+                    type="date"
+                    [value]="googlePromotionDraft().endDate"
+                    (input)="onGooglePromotionDraftInput('endDate', $event)"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-end" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable from
+                  <input
+                    type="date"
+                    [value]="googlePromotionDraft().redemptionStartDate"
+                    (input)="onGooglePromotionDraftInput('redemptionStartDate', $event)"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-redemption-start" />
+                </label>
+                <label class="flex flex-col gap-1 text-[10px] text-gray-600">
+                  Redeemable until
+                  <input
+                    type="date"
+                    [value]="googlePromotionDraft().redemptionEndDate"
+                    (input)="onGooglePromotionDraftInput('redemptionEndDate', $event)"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                    data-testid="implementation-google-promotion-redemption-end" />
+                </label>
               </div>
               <button
                 type="button"

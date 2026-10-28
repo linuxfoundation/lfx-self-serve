@@ -7253,6 +7253,39 @@ describe('ImplementationTabComponent google call, promotion and price extensions
     expect(c['googlePromotionAddDisabled']()).toBe(true);
   });
 
+  /**
+   * A SELECTED condition must be filled. Upstream treats both conditions as optional, so an empty code
+   * or a zero minimum order would pass by being dropped, and the ad would advertise an unconditional
+   * offer while the select still names a condition.
+   */
+  it.each([
+    ['a promotion code selected with no code', { eligibilityKind: 'code', promotionCode: '  ' }, 'Enter the promotion code'],
+    ['a minimum order selected with no amount', { eligibilityKind: 'ordersOver', ordersOverAmount: '' }, 'Enter a minimum order amount'],
+    ['a minimum order of zero', { eligibilityKind: 'ordersOver', ordersOverAmount: '0', currencyCode: 'USD' }, 'greater than 0'],
+  ])('refuses %s rather than dropping the condition', (_label, overrides, expected) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePromotionDraft'].set(promotionDraft(c, overrides));
+    fixture.detectChanges();
+
+    expect(c['googlePromotionAddDisabled']()).toBe(true);
+    expect(c['addGooglePromotion'](c['googlePromotionDraft']())).toBe(false);
+    expect(c['googlePromotions']()).toHaveLength(0);
+    expect(find('implementation-google-promotion-error')?.textContent).toContain(expected);
+  });
+
+  it('points the condition and currency boxes at the error line, and labels each date picker visibly', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['googlePromotionDraft'].set(promotionDraft(c, { discountKind: 'amount', discount: '50', eligibilityKind: 'code', promotionCode: 'C'.repeat(21) }));
+    fixture.detectChanges();
+
+    for (const testId of ['implementation-google-promotion-code', 'implementation-google-promotion-currency']) {
+      expect(find(testId)?.getAttribute('aria-describedby')).toBe('google-promotion-error');
+      expect(find(testId)?.getAttribute('aria-invalid')).toBe('true');
+    }
+    expect(find('implementation-google-promotion-start')?.closest('label')?.textContent).toContain('Shows from');
+    expect(find('implementation-google-promotion-redemption-end')?.closest('label')?.textContent).toContain('Redeemable until');
+  });
+
   it('says nothing about a promotion until what is on sale, the discount and the destination are filled', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['googlePromotionDraft'].set(promotionDraft(c, { finalUrl: '', discount: '150' }));
