@@ -20,6 +20,11 @@
             <span class="rounded border border-gray-200 px-1.5 font-mono text-xs text-gray-500">{{ row.badge }}</span>
             <span class="break-all text-sm text-gray-800">{{ row.title }}</span>
             <span class="text-xs" [ngClass]="row.statusClass">{{ row.status }}</span>
+            @if (linkWarnings()[row.id]; as warning) {
+              <span class="basis-full text-xs text-amber-700" role="status" aria-live="polite" [attr.data-testid]="'mktg-intake-documents-warning-' + row.id">{{
+                warning
+              }}</span>
+            }
           </span>
           <span class="flex shrink-0 items-center gap-2">
             <!-- What the document is: the agent reads a press release, a deck, a plan and a document differently, and never reads a logo package. -->
@@ -57,6 +62,9 @@
         placeholder="https://…"
         dataTest="mktg-intake-documents-link-input"
         (keydown.enter)="$event.preventDefault(); onAddLink()" />
+      @if (linkWarnings()['pending']; as warning) {
+        <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-intake-documents-link-warning">{{ warning }}</span>
+      }
     </div>
     <lfx-button
       label="Add link"

@@ -62,7 +62,7 @@ describe('OverviewCodeCardComponent', () => {
   it('offers LFX Insights from its empty state', async () => {
     await render({ ...CODE, measured: false });
 
-    expect(query('overview-code-empty')?.textContent).toContain('No contribution data yet');
-    expect(query('overview-code-empty-insights')).not.toBeNull();
+    expect(query('overview-code-empty-title')?.textContent).toBe('No contributions tracked');
+    expect(query('overview-code-empty-insights')?.textContent?.trim()).toContain('LFX Insights');
   });
 });

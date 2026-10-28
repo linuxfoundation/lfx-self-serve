@@ -80,7 +80,7 @@
                 <span class="break-all"
                   ><span class="mr-2 rounded border border-gray-200 px-2 py-1 font-mono text-xs">{{ upload.format }}</span
                   >{{ upload.tracker.filename }}
-                  <span class="text-sm text-emerald-700"
+                  <span class="text-sm text-gray-500" data-testid="member-360-tracker-summary"
                     >{{ upload.tracker.rows.length }} {{ upload.tracker.rows.length === 1 ? 'row' : 'rows' }} · {{ upload.summary }}</span
                   ></span
                 >
@@ -117,9 +117,13 @@
           <div class="flex flex-col gap-2">
             <b>Sources this run will use</b>
             <div class="grid gap-2 text-sm md:grid-cols-3">
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">LFX: roster, memberships, key contacts, committees, meetings</div>
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">Web research: speaking, content, ambassadors (capped)</div>
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
+                LFX: roster, memberships, key contacts, committees, meetings
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
+                Web research: speaking, content, ambassadors (capped)
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
                 Your trackers: {{ trackers().length }} {{ trackers().length === 1 ? 'file' : 'files' }}
               </div>
             </div>
