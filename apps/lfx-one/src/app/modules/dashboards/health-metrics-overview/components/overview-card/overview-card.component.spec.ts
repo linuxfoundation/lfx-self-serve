@@ -47,6 +47,8 @@ describe('OverviewCardComponent', () => {
   it('titles the card and names its info icon', () => {
     expect(query('card-header')?.querySelector('h2')?.textContent).toBe('Outstanding balance');
     expect(query('card-header')?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Unpaid invoices');
+    // The title's tip is the larger 14px question mark, opening below the icon.
+    expect(query('card-header')?.querySelector('[role="img"]')?.className).toContain('text-[14px]');
     expect(query('card-action')).not.toBeNull();
   });
 

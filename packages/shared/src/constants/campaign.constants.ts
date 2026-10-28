@@ -3920,6 +3920,34 @@ export const GOOGLE_ADS_CHANNEL_TYPE_ENUMS = {
 export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
 
 /**
+ * The Google criteria and ad extension fields that only the campaign-service create path reads,
+ * each with the name the operator knows it by.
+ *
+ * With the cutover dark the legacy creator (`campaign-proxy.service.ts`) serves the create, and it
+ * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
+ * Every field here would be dropped there while the create reports success, so the BFF refuses a
+ * non-empty one by name instead (#3692). `geoTargets` postal-code ids and `proximityTargets` have
+ * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
+ *
+ * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
+ * carrying several is refused by the one upstream would have judged first.
+ */
+export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
+  { field: 'excludedGeoTargets', label: 'excluded locations' },
+  { field: 'languages', label: 'languages' },
+  { field: 'adSchedules', label: 'ad schedules' },
+  { field: 'deviceBidModifiers', label: 'device bid modifiers' },
+  { field: 'excludedAgeRanges', label: 'excluded age ranges' },
+  { field: 'excludedGenders', label: 'excluded genders' },
+  { field: 'sitelinks', label: 'sitelinks' },
+  { field: 'callouts', label: 'callouts' },
+  { field: 'structuredSnippets', label: 'structured snippets' },
+  { field: 'callExtensions', label: 'call extensions' },
+  { field: 'promotions', label: 'promotions' },
+  { field: 'prices', label: 'price extensions' },
+] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string }[];
+
+/**
  * Whether this application offers Video as a CREATABLE channel.
  *
  * `false` — and not because of a deployment flag or a gap on our side. The Google Ads API has no
