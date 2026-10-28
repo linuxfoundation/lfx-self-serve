@@ -949,6 +949,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
+  /** Whether the create flow may offer X at all — `CampaignListResult.twitterCreateEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
   /** Whether a Meta create carries the Instagram id and EU DSA disclosures — `CampaignListResult.metaInstagramDsaEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
@@ -2522,6 +2524,7 @@ export class CampaignsComponent {
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+        this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -4626,6 +4629,7 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+          this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
@@ -4651,6 +4655,7 @@ export class CampaignsComponent {
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+          this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -4722,6 +4727,7 @@ export class CampaignsComponent {
     this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+    this.briefCampaignsTwitterCreateEnabled.set(null);
     this.briefCampaignsMetaInstagramDsaEnabled.set(null);
     this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
     this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -4763,6 +4769,7 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+            this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
@@ -4794,6 +4801,7 @@ export class CampaignsComponent {
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+            this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(null);

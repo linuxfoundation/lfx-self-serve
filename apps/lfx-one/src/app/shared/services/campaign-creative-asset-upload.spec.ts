@@ -120,6 +120,25 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
     http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
 
+  // An X tweet image is its own owner too: cancelling it leaves a LinkedIn upload alone.
+  it('keeps an X upload apart from a LinkedIn one', () => {
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'linkedin').subscribe();
+    const linkedIn = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+    const twitter$ = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'twitter');
+    twitter$.subscribe();
+
+    expect(linkedIn.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('twitter', BRIEF_ID)).toBe(twitter$);
+
+    service.cancelCreativeAssetUpload('twitter');
+    expect(linkedIn.cancelled).toBe(false);
+    expect(service.resumeCreativeAssetUpload('twitter', BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload('linkedin', BRIEF_ID)).not.toBeNull();
+
+    linkedIn.flush(ASSET);
+    http.match((r) => r.url === '/api/campaigns/brief/creative-assets');
+  });
+
   // A LinkedIn pick is a third owner on the same terms: cancelling it leaves the Meta upload alone.
   it('keeps a LinkedIn upload apart from a Meta one', () => {
     service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID, 'meta').subscribe();

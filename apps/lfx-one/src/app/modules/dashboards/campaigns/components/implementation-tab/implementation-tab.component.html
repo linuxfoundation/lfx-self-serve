@@ -3546,6 +3546,306 @@
       }
 
       <!--
+        X (Twitter) Ads Section, behind `twitterCreateEnabled`. Held without an explicit yes, the
+        section is only the `twitterCreateBlock` and its Remove: nothing here is sent until the
+        deployment says it can create X campaigns. The live region stays mounted while X is held,
+        like the other blocks' regions, and only its text changes.
+      -->
+      @if (showTwitterSection()) {
+        <div class="rounded-lg border border-gray-300 bg-white p-5" data-testid="implementation-twitter-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-x-twitter text-gray-900" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">X / Twitter Ads</h3>
+          </div>
+
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-create-block-live">
+            {{ twitterCreateBlockMessage() }}
+          </div>
+          @if (twitterCreateBlock(); as block) {
+            <div
+              class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-twitter-create-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-twitter-create-block-retry" />
+                }
+                <lfx-button
+                  label="Remove X"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onTwitterRemove()"
+                  data-testid="implementation-twitter-create-block-remove" />
+              </div>
+            </div>
+          }
+
+          @if (twitterCreateAvailable()) {
+            <!--
+              Stated, not hidden: `twitterConfig` has no location field, so campaign-service creates
+              the line item with no location targeting at all. The campaign is created PAUSED, but
+              once enabled it can serve wherever X serves.
+            -->
+            <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-twitter-no-geo">
+              <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+              X campaigns are created paused and with no location targeting: once enabled, the campaign can serve in every market X serves. Narrow it in X Ads
+              Manager before enabling it if it should not.
+            </p>
+
+            <!--
+              Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
+              carries no account id, and campaign-service creates under the account bound on the
+              project's X connection. An unbound connection is a certain refusal, so it blocks Create.
+            -->
+            <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
+              <span class="font-medium text-gray-700">Ad account</span>
+              @switch (twitterAccountState().status) {
+                @case ('loading') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-loading">
+                    <i class="fa-light fa-spinner-third fa-spin mr-1" aria-hidden="true"></i>Checking the X ad account…
+                  </p>
+                }
+                @case ('restricted') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-restricted">
+                    Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
+                  </p>
+                }
+                @case ('error') {
+                  <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
+                    <p class="text-amber-800">
+                      Could not read the X ad account. The campaign is still created under the account bound on this project's X connection.
+                    </p>
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [text]="true"
+                      (onClick)="onTwitterAccountRetry()"
+                      data-testid="implementation-twitter-account-retry" />
+                  </div>
+                }
+                @case ('loaded') {
+                  @switch (twitterAccountState().result?.connection?.state) {
+                    <!--
+                      Stated as the project connection's account, not as THE account: a deployment
+                      with LFX_FORCE_SYSTEM_ADS_ACCOUNT creates every paid campaign on the LF system
+                      connection instead, which this app cannot see. So an unbound connection warns
+                      rather than blocking Create, and offers Retry for after it is bound.
+                    -->
+                    @case ('connected') {
+                      <p class="text-sm text-gray-900" data-testid="implementation-twitter-account-connected">{{ twitterAccountLabel() }}</p>
+                      <p class="text-gray-500">
+                        The project's X connection is bound to this account. A deployment that forces the LF system account creates there instead.
+                      </p>
+                    }
+                    @case ('no_account') {
+                      <div
+                        class="flex flex-col items-start gap-1 rounded-md bg-amber-50 px-3 py-2 text-amber-800"
+                        data-testid="implementation-twitter-account-unbound">
+                        <p role="alert">
+                          This project's X connection has no ad account chosen. Unless this deployment creates on the LF system account, campaign-service will
+                          refuse the create. Bind one of the {{ twitterAccountState().result?.accounts?.length ?? 0 }} accounts its credential reaches to the
+                          connection, then check again.
+                        </p>
+                        <lfx-button
+                          label="Check again"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onTwitterAccountRetry()"
+                          data-testid="implementation-twitter-account-unbound-retry" />
+                      </div>
+                    }
+                    @case ('no_connection') {
+                      <p class="text-gray-700" data-testid="implementation-twitter-account-shared">
+                        This project has no X connection of its own, so the campaign is created under the LF shared X connection's ad account.
+                      </p>
+                    }
+                    @default {
+                      <p class="text-gray-500" data-testid="implementation-twitter-account-unknown">
+                        The X connection could not be read. The campaign is created under the account bound on it.
+                      </p>
+                    }
+                  }
+                }
+              }
+            </div>
+
+            <!-- Budget and flight -->
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="twitter-budget">Daily Budget</label>
+                <lfx-input-text
+                  [form]="campaignForm"
+                  control="twitterBudget"
+                  inputId="twitter-budget"
+                  type="text"
+                  inputmode="decimal"
+                  size="small"
+                  placeholder="e.g. 50"
+                  [invalid]="!!twitterBudgetError()"
+                  [describedBy]="twitterBudgetError() ? 'twitter-budget-error' : 'twitter-budget-hint'"
+                  data-testid="implementation-twitter-budget" />
+                <!-- "account currency", not "USD": X's budget is sent in the ad account's own currency, with no FX conversion. -->
+                <span id="twitter-budget-hint" class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
+                @if (twitterBudgetError(); as error) {
+                  <p id="twitter-budget-error" role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-budget-error">{{ error }}</p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-medium text-gray-700">Flight</span>
+                <p class="text-sm text-gray-900" data-testid="implementation-twitter-flight">
+                  {{ campaignForm.controls.startDate.value || '—' }} to {{ campaignForm.controls.endDate.value || '—' }}
+                </p>
+                <span class="text-xs text-gray-400">The flight dates above, applied to the X line item from midnight UTC.</span>
+                @if (twitterFlightError(); as error) {
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-flight-error">{{ error }}</p>
+                }
+              </div>
+            </div>
+
+            <!-- The authored tweet -->
+            <div class="mb-4 flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="twitter-tweet-text">Tweet</label>
+              <lfx-textarea
+                [form]="campaignForm"
+                control="twitterTweetText"
+                inputId="twitter-tweet-text"
+                [rows]="4"
+                placeholder="What the promoted tweet says. The registration link is added for you."
+                [invalid]="!!twitterTweetError() && twitterTweetText() !== ''"
+                describedBy="twitter-tweet-hint"
+                styleClass="w-full"
+                data-testid="implementation-twitter-tweet-text" />
+              <p id="twitter-tweet-hint" class="text-xs text-gray-500" data-testid="implementation-twitter-tweet-count">
+                {{ twitterTweetLength() }}/{{ twitterMaxTweetChars }} characters, including the registration link (every link counts 23). Posted as a
+                promoted-only tweet, never to the public timeline.
+              </p>
+              @if (twitterTweetError(); as error) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-tweet-error">{{ error }}</p>
+              }
+            </div>
+
+            <!-- Tweet image (optional): an upload to this brief, attached to the authored tweet. -->
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-image-status-live">
+              {{ twitterImageUploadLiveMessage() }}
+            </div>
+            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-twitter-image-upload">
+              <label class="text-xs font-medium text-gray-700" for="twitter-image-file">Tweet image (optional)</label>
+              <!-- A raw file input, as the Meta and LinkedIn pickers are: there is no LFX file wrapper bound to the creative-asset upload. -->
+              <input
+                id="twitter-image-file"
+                type="file"
+                [attr.accept]="creativeAssetAccept"
+                (change)="onTwitterImageFileChange($event)"
+                [disabled]="twitterImagePickerDisabled()"
+                [attr.aria-describedby]="twitterImageFileDescribedBy()"
+                [attr.aria-invalid]="twitterImageUploadStatus() === 'error' ? 'true' : null"
+                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                data-testid="implementation-twitter-image-file" />
+              <p id="twitter-image-file-hint" class="text-xs text-gray-500">PNG or JPEG, up to 5 MB.</p>
+              <p id="twitter-image-file-status" class="text-xs text-gray-700" data-testid="implementation-twitter-image-status">
+                {{ twitterImageUploadStatusMessage() }}
+              </p>
+              @if (twitterImageUploadStatus() === 'uploading') {
+                <div>
+                  <lfx-button
+                    label="Cancel upload"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onTwitterImageAssetRemove()"
+                    data-testid="implementation-twitter-image-cancel" />
+                </div>
+              } @else if (twitterImageAssetId()) {
+                <div>
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onTwitterImageAssetRemove()"
+                    data-testid="implementation-twitter-image-remove" />
+                </div>
+              }
+              @if (twitterImageUploadStatus() === 'error') {
+                <p id="twitter-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-image-error">
+                  {{ twitterImageUploadError() }}
+                </p>
+              }
+            </div>
+
+            <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+            @if (biddingAvailable()) {
+              <div class="mb-4">
+                <lfx-campaign-bidding-control [view]="biddingViews()['twitter-ads']" (biddingChange)="onBiddingChange('twitter-ads', $event)" />
+              </div>
+            }
+
+            <!-- Preview, read from the same values the request sends. -->
+            <div>
+              <span class="mb-2 block text-xs font-medium text-gray-700">Tweet Preview</span>
+              <div class="rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="implementation-twitter-preview">
+                @if (twitterPreviewImageLabel(); as imageLabel) {
+                  <p class="mb-1 text-xs text-gray-500" data-testid="implementation-twitter-preview-image">
+                    <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                  </p>
+                }
+                <p class="whitespace-pre-line text-sm text-gray-800" data-testid="implementation-twitter-preview-text">
+                  {{ twitterTweetText().trim() || 'No tweet text yet.' }}
+                </p>
+                <p class="mt-1 break-all text-xs text-blue-700" data-testid="implementation-twitter-preview-link">
+                  {{ twitterDestinationUrl() || 'No registration URL' }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500">
+                  The saved brief's registration link, tagged with UTM parameters before posting. Change it on the Plan tab.
+                </p>
+              </div>
+            </div>
+          }
+
+          <!-- An X image the request cannot carry, or a failed upload; see `initTwitterImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-image-asset-block-live">
+            {{ twitterImageAssetBlockMessage() }}
+          </div>
+          @if (twitterImageAssetBlock(); as block) {
+            <div
+              class="mt-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-twitter-image-asset-block-' + block.kind">
+              <p>{{ block.message }}</p>
+              <lfx-button
+                label="Remove image"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onTwitterImageAssetRemove()"
+                data-testid="implementation-twitter-image-asset-block-remove" />
+            </div>
+          }
+        </div>
+      }
+
+      <!--
         Which stored images cover each platform's image slots. Only rendered once the brief is
         saved: campaign-service plans against a stored brief, and an unsaved one has no library to
         plan against. The revision token re-reads the plan after an upload in the section above.
