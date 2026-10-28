@@ -135,14 +135,30 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prints the existing family document under its body class, never a slide view', async ({ page }, info) => {
-  await openFamilyExports(page);
+test('Download PDF prepares held revisions then opens print synchronously on the explicit preview click (including WebKit)', async ({ page }, info) => {
+  const controls = await openFamilyExports(page, { holdPrint: true });
   await page.evaluate(() => {
     window.print = () => {
       document.body.dataset['familyPrintClass'] = document.body.className;
     };
+    // The bubbling listener observes the end of the very same click dispatch,
+    // before any network/font/render continuation could call print asynchronously.
+    document.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('[data-testid="family-export-pdf"]')) {
+        document.body.dataset['familyPrintSync'] = String(!!document.body.dataset['familyPrintClass']);
+      }
+    });
   });
-  await page.getByTestId('family-export-pdf').getByRole('button').click();
+  const pdf = page.getByTestId('family-export-pdf').getByRole('button');
+  await pdf.click();
+  await expect(pdf).toBeDisabled();
+  await expect(page.locator('body')).toHaveAttribute('data-family-print-sync', 'false');
+  controls.releasePrint();
+  await expect(pdf).toHaveText('Open print preview');
+  await expect(page.getByTestId('family-export-pdf-ready')).toHaveText('Your PDF is ready — click to open the print preview');
+  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
+  await pdf.click();
+  await expect(page.locator('body')).toHaveAttribute('data-family-print-sync', 'true');
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
   await expect(page.getByTestId('family-export-print-document').locator('lfx-mktg-framework-print')).toHaveCount(1);
   await expect(page.getByTestId('family-export-print-document')).toBeHidden();

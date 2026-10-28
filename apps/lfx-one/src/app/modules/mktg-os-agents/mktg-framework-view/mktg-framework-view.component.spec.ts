@@ -134,7 +134,12 @@ const ASSET: MktgFrameworkAsset = {
 describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
-  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; ensureFontStylesheet: ReturnType<typeof vi.fn> };
+  let printer: {
+    prepare: ReturnType<typeof vi.fn>;
+    printNow: ReturnType<typeof vi.fn>;
+    clear: ReturnType<typeof vi.fn>;
+    ensureFontStylesheet: ReturnType<typeof vi.fn>;
+  };
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -145,7 +150,7 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+    printer = { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -459,7 +464,8 @@ describe('MktgFrameworkViewComponent', () => {
     // Export to Google Slides waits for the page to name a stored revision.
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, null);
+    expect(printer.prepare).toHaveBeenCalledWith(null);
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
 
     fixture.destroy();
     expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
@@ -485,7 +491,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
     expect(query('mktg-framework-view-print')).toBeNull();
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).not.toHaveBeenCalled();
+    expect(printer.printNow).not.toHaveBeenCalled();
   });
 
   it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
@@ -526,7 +532,8 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Montserrat');
+    expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   });
 
   it('opens Sources from its tab without the duplicate reviewer-note link', async () => {

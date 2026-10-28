@@ -30,7 +30,7 @@ import { mktgFamilyExportAgentKeys } from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, distinctUntilChanged, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
 import { BrandKitViewComponent } from '../../brand-kit-view/brand-kit-view.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
 
@@ -68,7 +68,11 @@ export class MktgFamilyExportActionsComponent {
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
   private readonly retry = new Subject<boolean>();
   private run: Subscription | null = null;
-  private pdf: Subscription | null = null;
+  private readonly pdfRetry = new Subject<void>();
+  protected readonly pdfReady = signal(false);
+  protected readonly previewRequested = signal(false);
+  private pdfPending = false;
+  private pdfScope = '';
 
   protected readonly writer = computed(() => this.context.canWrite());
   protected readonly target = this.initTarget();
@@ -96,10 +100,10 @@ export class MktgFamilyExportActionsComponent {
           } else if (!this.checking()) this.focusRequested.set(false);
         });
       this.initLookup();
+      this.initPdf();
     }
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
-      this.pdf?.unsubscribe();
       this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
     });
   }
@@ -136,28 +140,82 @@ export class MktgFamilyExportActionsComponent {
     const target = this.target();
     const members = this.lookup()?.currentMembers;
     if (!target || !members || !this.canPrint()) return;
+    if (this.pdfReady() && this.printView() && this.pdfScope === JSON.stringify([target, members])) {
+      this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+      return;
+    }
+    this.previewRequested.set(true);
     this.printing.set(true);
     this.message.set('');
-    this.pdf = this.api
-      .printView(target, members, this.context.activeContext()?.name ?? 'Project')
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (view) => {
-          if (JSON.stringify(this.target()) !== JSON.stringify(target) || !this.writer()) return;
-          this.printView.set(view);
-          afterNextRender(
-            () => {
-              if (this.printView() !== view || !this.writer()) return;
-              void this.print.print(MKTG_FAMILY_PRINT_BODY_CLASS, view.fontFamily, view.weights).finally(() => this.printing.set(false));
-            },
-            { injector: this.injector }
-          );
-        },
-        error: (error: unknown) => {
-          console.error('[mktg-family-export] PDF could not be prepared', error);
+    if (!this.pdfPending) this.pdfRetry.next();
+  }
+
+  /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
+  private initPdf(): void {
+    const scope = computed(() => ({ target: this.target(), writer: this.writer(), lookup: this.lookup(), checking: this.checking() }));
+    toObservable(scope)
+      .pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        switchMap(({ target, writer, lookup, checking }) => {
+          this.printView.set(null);
+          this.pdfReady.set(false);
+          this.pdfPending = false;
+          this.pdfScope = '';
           this.printing.set(false);
-          this.message.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
-        },
+          this.previewRequested.set(false);
+          if (
+            !target ||
+            !writer ||
+            checking ||
+            !lookup?.currentMembers.some((member) => member.agentKey === 'foundation-message' || member.agentKey === 'brand-kit')
+          )
+            return of(null);
+          const key = JSON.stringify([target, lookup.currentMembers]);
+          return this.pdfRetry.pipe(
+            startWith(undefined),
+            switchMap(() => {
+              this.pdfPending = true;
+              return this.api.printView(target, lookup.currentMembers, this.context.activeContext()?.name ?? 'Project').pipe(
+                switchMap((view) => {
+                  this.printView.set(view);
+                  const url = view.kit?.fontUrl ?? view.framework?.brand.fontUrl;
+                  if (url) this.print.ensureFontStylesheet(url);
+                  return from(this.print.prepare(view.fontFamily, view.weights)).pipe(map(() => ({ view, key })));
+                }),
+                catchError((error: unknown) => {
+                  console.error('[mktg-family-export] PDF could not be prepared', error);
+                  this.message.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
+                  return of(null);
+                })
+              );
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((prepared) => {
+        if (!prepared) {
+          this.pdfPending = false;
+          this.printing.set(false);
+          return;
+        }
+        // Mount the print-only document before offering the synchronous click.
+        afterNextRender(
+          () => {
+            if (
+              this.destroyRef.destroyed ||
+              !this.writer() ||
+              this.printView() !== prepared.view ||
+              JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== prepared.key
+            )
+              return;
+            this.pdfScope = prepared.key;
+            this.pdfReady.set(true);
+            this.pdfPending = false;
+            this.printing.set(false);
+          },
+          { injector: this.injector }
+        );
       });
   }
 
@@ -207,7 +265,6 @@ export class MktgFamilyExportActionsComponent {
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap(({ target, writer }) => {
           this.run?.unsubscribe();
-          this.pdf?.unsubscribe();
           this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
           this.printView.set(null);
           this.printing.set(false);
@@ -224,7 +281,7 @@ export class MktgFamilyExportActionsComponent {
           const running = this.api.running(target);
           if (running) this.watch(running);
           return this.retry.pipe(
-            startWith(false),
+            startWith(true),
             switchMap((refresh) => {
               this.checking.set(true);
               this.lookupError.set('');

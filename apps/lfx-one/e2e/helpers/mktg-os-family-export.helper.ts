@@ -21,6 +21,7 @@ export async function openFamilyExports(
     lookupStatus?: number;
     result?: 'pending' | 'failed';
     holdList?: boolean;
+    holdPrint?: boolean;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -69,7 +70,14 @@ export async function openFamilyExports(
     if (options.holdList) return;
     return route.fulfill({ status: options.writer === false ? 403 : 200, json: options.writer === false ? { code: 'FORBIDDEN' } : listing });
   });
-  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', (route) => route.fulfill({ json: response }));
+  let releasePrint: () => void = () => undefined;
+  const printGate = new Promise<void>((resolve) => {
+    releasePrint = resolve;
+  });
+  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', async (route) => {
+    if (options.holdPrint) await printGate;
+    return route.fulfill({ json: response });
+  });
   let record = options.existing ? familyExportRecord({ project: DOCUMENT_PROJECT.uid }) : null;
   let ready = options.result !== 'pending';
   let started = familyExportStarted(DOCUMENT_PROJECT.uid);
@@ -121,5 +129,6 @@ export async function openFamilyExports(
       ready = true;
     },
     lookupReads: () => lookupReads,
+    releasePrint,
   };
 }

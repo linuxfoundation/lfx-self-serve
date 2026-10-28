@@ -11,7 +11,7 @@
   } @else {
     <p class="text-sm text-gray-500">{{ slidesNote }}</p>
     <lfx-button
-      label="Download PDF"
+      [label]="previewRequested() && pdfReady() ? 'Open print preview' : 'Download PDF'"
       [disabled]="!canPrint()"
       [loading]="printing()"
       [outlined]="true"
@@ -40,6 +40,9 @@
       <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
     }
     <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
+      @if (previewRequested() && pdfReady()) {
+        <p class="text-sm text-gray-700" data-testid="family-export-pdf-ready">Your PDF is ready — click to open the print preview</p>
+      }
       @switch (phase()) {
         @case ('choosing') {
           <p class="text-sm text-gray-700">
