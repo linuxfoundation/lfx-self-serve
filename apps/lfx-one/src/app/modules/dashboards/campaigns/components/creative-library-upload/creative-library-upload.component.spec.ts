@@ -3,9 +3,9 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { CreativeAssetLibrary, CreativeAssetQueueItem, CreativeAssetUploadQueueState } from '@lfx-one/shared/interfaces';
+import type { CreativeAssetLibrary, CreativeAssetQueueItem } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreativeLibraryUploadComponent } from './creative-library-upload.component';
@@ -13,8 +13,10 @@ import { CreativeLibraryUploadComponent } from './creative-library-upload.compon
 const BRIEF_ID = 'b-1';
 const LIBRARY: CreativeAssetLibrary = { assets: [], count: 98, countLimit: 100, bytesUsed: 100 * 1024 * 1024, bytesLimit: 512 * 1024 * 1024 };
 
-const item = (id: string, status: CreativeAssetQueueItem['status'], message = ''): CreativeAssetQueueItem => ({
+const item = (id: string, status: CreativeAssetQueueItem['status'], message = '', briefId = BRIEF_ID): CreativeAssetQueueItem => ({
   id,
+  briefId,
+  projectSlug: 'tlf',
   name: `${id}.png`,
   byteSize: 2048,
   status,
@@ -25,12 +27,12 @@ const item = (id: string, status: CreativeAssetQueueItem['status'], message = ''
 
 describe('CreativeLibraryUploadComponent', () => {
   let fixture: ComponentFixture<CreativeLibraryUploadComponent>;
-  let queue: ReturnType<typeof signal<CreativeAssetUploadQueueState>>;
+  let queue: ReturnType<typeof signal<CreativeAssetQueueItem[]>>;
   let service: Record<string, ReturnType<typeof vi.fn> | unknown>;
 
   const build = async (listCreativeAssets: ReturnType<typeof vi.fn> = vi.fn(() => of(LIBRARY))): Promise<void> => {
     TestBed.resetTestingModule();
-    queue = signal<CreativeAssetUploadQueueState>({ briefId: '', items: [], running: false });
+    queue = signal<CreativeAssetQueueItem[]>([]);
     service = {
       creativeAssetUploadQueue: queue.asReadonly(),
       listCreativeAssets,
@@ -52,8 +54,8 @@ describe('CreativeLibraryUploadComponent', () => {
 
   const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   const text = (testId: string): string => q(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-  const setQueue = (items: CreativeAssetQueueItem[], briefId = BRIEF_ID): void => {
-    queue.set({ briefId, items, running: items.some((i) => i.status === 'waiting' || i.status === 'uploading') });
+  const setQueue = (items: CreativeAssetQueueItem[]): void => {
+    queue.set(items);
     fixture.detectChanges();
   };
   const pick = (testId: string, files: File[]): void => {
@@ -95,6 +97,7 @@ describe('CreativeLibraryUploadComponent', () => {
     setQueue([item('a', 'uploaded'), item('b', 'present'), item('c', 'refused', 'Only PNG and JPEG images can be uploaded.'), item('d', 'failed')]);
 
     expect(text('creative-library-upload-summary')).toBe('4 files: 1 uploaded, 1 already in library, 1 refused, 1 failed.');
+    // Settled, the live region says how the run ended.
     expect(text('creative-library-upload-live')).toBe(text('creative-library-upload-summary'));
     expect(text('creative-library-upload-item-c')).toContain('Only PNG and JPEG images can be uploaded.');
     expect(q('creative-library-upload-retry-d')).not.toBeNull();
@@ -107,14 +110,25 @@ describe('CreativeLibraryUploadComponent', () => {
     expect(service['retryCreativeAssetUpload']).toHaveBeenCalledWith('d');
   });
 
-  it('offers Cancel while running and Clear once settled', () => {
+  it('announces a run once as it starts, not each file it sends', () => {
     setQueue([item('a', 'uploading'), item('b', 'waiting')]);
-    expect(q('creative-library-upload-cancel')).not.toBeNull();
+    const started = text('creative-library-upload-live');
+    setQueue([item('a', 'uploaded'), item('b', 'uploading')]);
+
+    expect(started).toBe("Uploading to this brief's library: 2 files listed.");
+    expect(text('creative-library-upload-live')).toBe(started);
+  });
+
+  it('offers Cancel while running and Clear once settled, each for this brief', () => {
+    setQueue([item('a', 'uploading'), item('b', 'waiting')]);
+    (q('creative-library-upload-cancel')?.querySelector('button') as HTMLButtonElement).click();
+    expect(service['cancelCreativeAssetUploads']).toHaveBeenCalledWith(BRIEF_ID);
     expect(q('creative-library-upload-clear')).toBeNull();
 
     setQueue([item('a', 'uploaded'), item('b', 'cancelled')]);
     expect(q('creative-library-upload-cancel')).toBeNull();
-    expect(q('creative-library-upload-clear')).not.toBeNull();
+    (q('creative-library-upload-clear')?.querySelector('button') as HTMLButtonElement).click();
+    expect(service['clearCreativeAssetUploadQueue']).toHaveBeenCalledWith(BRIEF_ID);
   });
 
   it('warns when more files are still to send than the library has room for', () => {
@@ -123,7 +137,7 @@ describe('CreativeLibraryUploadComponent', () => {
   });
 
   it("does not show another brief's queue", () => {
-    setQueue([item('a', 'uploading')], 'b-other');
+    setQueue([item('a', 'uploading', '', 'b-other')]);
     expect(q('creative-library-upload-items')).toBeNull();
   });
 
@@ -133,9 +147,34 @@ describe('CreativeLibraryUploadComponent', () => {
 
     setQueue([item('a', 'uploaded'), item('b', 'uploading')]);
     setQueue([item('a', 'uploaded'), item('b', 'present')]);
+    // Clear list drops the count without changing the library.
+    setQueue([]);
 
     expect(changed).toHaveBeenCalledTimes(1);
     expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the last quota and headroom warning on screen while a re-read is pending', async () => {
+    const reads = new Subject<CreativeAssetLibrary>();
+    let first = true;
+    await build(
+      vi.fn(() => {
+        if (first) {
+          first = false;
+          return of(LIBRARY);
+        }
+        return reads;
+      })
+    );
+    setQueue([item('a', 'uploading'), item('b', 'waiting'), item('c', 'waiting')]);
+    setQueue([item('a', 'uploaded'), item('b', 'uploading'), item('c', 'waiting'), item('d', 'waiting')]);
+
+    expect(text('creative-library-upload-quota')).toBe('98 of 100 images · 100 MB of 512 MB used');
+    expect(q('creative-library-upload-headroom')).not.toBeNull();
+
+    reads.next({ ...LIBRARY, count: 99 });
+    fixture.detectChanges();
+    expect(text('creative-library-upload-quota')).toBe('99 of 100 images · 100 MB of 512 MB used');
   });
 
   it('offers no upload when the deployment admits none', () => {

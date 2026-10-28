@@ -53,8 +53,9 @@
       </p>
     }
 
-    <!-- Always mounted so its CONTENTS change, which is what a screen reader announces. -->
-    <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-library-upload-live">{{ summary() }}</div>
+    <!-- Always mounted so its CONTENTS change, which is what a screen reader announces. It says when
+         a run starts and how it settled, not every file's step. -->
+    <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-library-upload-live">{{ liveMessage() }}</div>
 
     @if (items().length > 0) {
       <div class="flex flex-wrap items-center justify-between gap-2">
@@ -70,12 +71,12 @@
       </div>
 
       <ul class="flex max-h-80 flex-col gap-1 overflow-y-auto" data-testid="creative-library-upload-items">
-        @for (item of items(); track item.id) {
+        @for (item of rows(); track item.id) {
           <li class="flex flex-wrap items-center gap-2 rounded border border-gray-200 px-3 py-2" [attr.data-testid]="'creative-library-upload-item-' + item.id">
             <span class="min-w-0 flex-1 truncate text-xs text-gray-900" [title]="item.name">{{ item.name }}</span>
-            <span class="text-2xs tabular-nums text-gray-500">{{ size(item.byteSize) }}</span>
-            <span class="rounded-full px-2 py-0.5 text-2xs font-medium" [class]="statusBadge(item.status)">{{ statusLabel(item.status) }}</span>
-            @if (item.status === 'failed' || item.status === 'cancelled') {
+            <span class="text-2xs tabular-nums text-gray-500">{{ item.byteSize | fileSize }}</span>
+            <span class="rounded-full px-2 py-0.5 text-2xs font-medium" [class]="item.statusBadge">{{ item.statusLabel }}</span>
+            @if (item.retryable) {
               <lfx-button
                 label="Retry"
                 size="small"

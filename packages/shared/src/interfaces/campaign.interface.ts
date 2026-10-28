@@ -244,6 +244,12 @@ export type CreativeAssetQueueRefusal = 'type' | 'size' | 'quota' | 'subfolder' 
 export interface CreativeAssetQueueItem {
   /** Unique within the queue — two files can share a name when picked from different folders. */
   id: string;
+  /**
+   * The brief the file is stored against. The queue is one serial lane across briefs, so a pick on
+   * a second brief waits its turn rather than erasing what the first brief's run reported.
+   */
+  briefId: string;
+  projectSlug: string;
   name: string;
   byteSize: number;
   status: CreativeAssetQueueItemStatus;
@@ -255,24 +261,29 @@ export interface CreativeAssetQueueItem {
   assetId: string;
 }
 
-/**
- * A brief's library upload: every file picked for it, in pick order, uploaded one at a time.
- *
- * Serial on purpose: campaign-service's upload admission sheds concurrent uploads with a 503, so a
- * parallel run would fail most of a folder for no reason of its own.
- */
-export interface CreativeAssetUploadQueueState {
-  /** The brief the files are being stored against; empty when nothing was ever queued. */
-  briefId: string;
-  items: CreativeAssetQueueItem[];
-  /** True from the first waiting file until the last one settles. */
-  running: boolean;
+/** How one library upload outcome reads: its label and its badge's Tailwind classes. */
+export interface CreativeAssetQueueStatusView {
+  label: string;
+  badge: string;
+}
+
+/** A library upload item as the upload list renders it, its outcome's label and badge resolved. */
+export interface CreativeAssetQueueRow extends CreativeAssetQueueItem {
+  statusLabel: string;
+  statusBadge: string;
+  retryable: boolean;
 }
 
 /** The library upload's read of the brief's quota. `error` keeps no library: a guessed headroom would mislead. */
 export interface CreativeAssetLibraryQuotaState {
   status: 'loading' | 'ready' | 'error';
   library: CreativeAssetLibrary | null;
+}
+
+/** One quota read tagged with the brief it was for, so a re-read can keep showing that brief's last answer. */
+export interface CreativeAssetLibraryQuotaRead {
+  briefId: string;
+  quota: CreativeAssetLibraryQuotaState;
 }
 
 /** One platform image slot and the stored assets that fill it, best fit first. */

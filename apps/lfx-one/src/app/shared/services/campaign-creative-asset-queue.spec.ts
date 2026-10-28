@@ -29,7 +29,7 @@ describe('CampaignService library upload queue', () => {
     return file;
   };
   const asset = (id: string, created = true): CreativeAssetUploadResult => ({ id, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created });
-  const items = (): CreativeAssetQueueItem[] => service.creativeAssetUploadQueue().items;
+  const items = (): CreativeAssetQueueItem[] => service.creativeAssetUploadQueue();
   const statuses = (): string[] => items().map((item) => item.status);
   // `match` takes what it returns off the pending list, so each call sees only requests opened since.
   const open = (): TestRequest[] => http.match((r) => r.url === UPLOAD_URL);
@@ -65,7 +65,7 @@ describe('CampaignService library upload queue', () => {
 
     expect(statuses()).toEqual(['uploaded', 'present', 'uploaded']);
     expect(items().map((item) => item.assetId)).toEqual(['a-1', 'a-2', 'a-3']);
-    expect(service.creativeAssetQueueRunning()).toBe(false);
+    expect(items().every((item) => item.briefId === BRIEF_ID && item.projectSlug === 'tlf')).toBe(true);
   });
 
   it('refuses a wrong type, an oversized file and a subfolder file before sending, and lists each one', () => {
@@ -98,14 +98,18 @@ describe('CampaignService library upload queue', () => {
     expect(statuses()).toEqual(['refused', 'present']);
   });
 
-  it('re-sends a file the upload admission shed, then reports it failed and retryable once the re-sends run out', () => {
+  it('re-sends a file the upload admission shed, backing off, then reports it failed and retryable once the re-sends run out', () => {
     vi.useFakeTimers();
     service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Three re-sends after 1 s, 2 s and 4 s: a picker's upload can hold the admission for seconds.
+    for (const delay of [1000, 2000, 4000]) {
       open()[0].flush({ message: 'busy' }, { status: 503, statusText: 'Service Unavailable' });
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(delay - 1);
+      expect(open().length).toBe(0);
+      vi.advanceTimersByTime(1);
     }
+    open()[0].flush({ message: 'busy' }, { status: 503, statusText: 'Service Unavailable' });
     expect(open().length).toBe(0);
     expect(items()[0].status).toBe('failed');
 
@@ -119,7 +123,7 @@ describe('CampaignService library upload queue', () => {
     service.enqueueCreativeAssetUploads([png('a.png'), png('b.png')], 'tlf', BRIEF_ID);
     const inFlight = open()[0];
 
-    service.cancelCreativeAssetUploads();
+    service.cancelCreativeAssetUploads(BRIEF_ID);
 
     expect(inFlight.cancelled).toBe(true);
     expect(statuses()).toEqual(['cancelled', 'cancelled']);
@@ -141,25 +145,87 @@ describe('CampaignService library upload queue', () => {
     expect(statuses()).toEqual(['uploaded', 'uploaded']);
   });
 
-  it('replaces the queue when files are picked for another brief, aborting the old upload', () => {
-    service.enqueueCreativeAssetUploads([png('a.png'), png('b.png')], 'tlf', BRIEF_ID);
-    const old = open()[0];
+  it("queues another brief's files behind the first brief's run, keeping every outcome of both", () => {
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    const first = open();
 
     service.enqueueCreativeAssetUploads([png('c.png')], 'tlf', OTHER_BRIEF_ID);
 
-    expect(old.cancelled).toBe(true);
-    expect(service.creativeAssetUploadQueue().briefId).toBe(OTHER_BRIEF_ID);
-    expect(items().map((item) => item.name)).toEqual(['c.png']);
+    expect(first[0].cancelled).toBe(false);
+    expect(open().length).toBe(0);
+    first[0].flush(asset('a-1'));
     const next = open();
-    expect(next.length).toBe(1);
     expect(next[0].request.params.get('brief_id')).toBe(OTHER_BRIEF_ID);
     next[0].flush(asset('a-3'));
+    expect(items().map((item) => [item.briefId, item.status])).toEqual([
+      [BRIEF_ID, 'uploaded'],
+      [OTHER_BRIEF_ID, 'uploaded'],
+    ]);
+  });
+
+  it("cancels and clears only the brief asked about, leaving another brief's run going", () => {
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    service.enqueueCreativeAssetUploads([png('c.png')], 'tlf', OTHER_BRIEF_ID);
+    const inFlight = open()[0];
+
+    service.clearCreativeAssetUploadQueue(OTHER_BRIEF_ID);
+
+    expect(inFlight.cancelled).toBe(false);
+    expect(items().map((item) => item.briefId)).toEqual([BRIEF_ID]);
+    inFlight.flush(asset('a-1'));
+    // The cleared brief's file is never sent.
+    expect(open().length).toBe(0);
+  });
+
+  it('cancels a file waiting out a re-send delay without sending it again', () => {
+    vi.useFakeTimers();
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    open()[0].flush({ message: 'busy' }, { status: 503, statusText: 'Service Unavailable' });
+    vi.advanceTimersByTime(500);
+
+    service.cancelCreativeAssetUploads(BRIEF_ID);
+    vi.advanceTimersByTime(10_000);
+
+    expect(open().length).toBe(0);
+    expect(items()[0].status).toBe('cancelled');
+  });
+
+  it.each([
+    [400, 'refused', false],
+    [413, 'refused', false],
+    [415, 'refused', false],
+    [401, 'failed', true],
+  ])('reports a %s as %s, retryable: %s', (status, outcome, retryable) => {
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    open()[0].flush({ message: 'no' }, { status, statusText: 'Error' });
+
+    expect(items()[0].status).toBe(outcome);
+    service.retryCreativeAssetUpload(items()[0].id);
+    const resent = open();
+    expect(resent.length).toBe(retryable ? 1 : 0);
+    resent.forEach((req) => req.flush(asset('a-1')));
+  });
+
+  it('waits its turn when a cancelled file is retried while another is in flight', () => {
+    service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
+    service.cancelCreativeAssetUploads(BRIEF_ID);
+    expect(open()[0].cancelled).toBe(true);
+    service.enqueueCreativeAssetUploads([png('b.png')], 'tlf', BRIEF_ID);
+    const inFlight = open();
+
+    service.retryCreativeAssetUpload(items()[0].id);
+
+    expect(inFlight.length).toBe(1);
+    expect(open().length).toBe(0);
+    inFlight[0].flush(asset('a-2'));
+    open()[0].flush(asset('a-1'));
+    expect(statuses()).toEqual(['uploaded', 'uploaded']);
   });
 
   it('leaves a single-slot picker upload running while the library uploads', () => {
     service.uploadCreativeAsset(png('meta.png'), 'tlf', BRIEF_ID, 'meta').subscribe();
     service.enqueueCreativeAssetUploads([png('a.png')], 'tlf', BRIEF_ID);
-    service.clearCreativeAssetUploadQueue();
+    service.clearCreativeAssetUploadQueue(BRIEF_ID);
 
     const pending = open();
     expect(pending.length).toBe(2);

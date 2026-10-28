@@ -4,25 +4,12 @@
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { outputFromObservable, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { CREATIVE_ASSET_MIME_TYPES } from '@lfx-one/shared/constants';
-import type { CreativeAssetLibraryQuotaState, CreativeAssetQueueItem, CreativeAssetQueueItemStatus } from '@lfx-one/shared/interfaces';
+import { CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_QUEUE_STATUS_VIEW, CREATIVE_ASSET_QUEUE_SUMMARY_ORDER } from '@lfx-one/shared/constants';
+import type { CreativeAssetLibraryQuotaRead, CreativeAssetLibraryQuotaState, CreativeAssetQueueItem, CreativeAssetQueueRow } from '@lfx-one/shared/interfaces';
 import { formatFileSize } from '@lfx-one/shared/utils';
+import { FileSizePipe } from '@pipes/file-size.pipe';
 import { CampaignService } from '@services/campaign.service';
-import { catchError, map, of, skip, startWith, switchMap } from 'rxjs';
-
-/** How each outcome reads, and its badge colours. One table, so the label and the colour cannot disagree. */
-const STATUS_VIEW: Readonly<Record<CreativeAssetQueueItemStatus, { label: string; badge: string }>> = {
-  waiting: { label: 'Waiting', badge: 'bg-gray-100 text-gray-700' },
-  uploading: { label: 'Uploading', badge: 'bg-blue-100 text-blue-800' },
-  uploaded: { label: 'Uploaded', badge: 'bg-emerald-100 text-emerald-800' },
-  present: { label: 'Already in library', badge: 'bg-emerald-50 text-emerald-700' },
-  refused: { label: 'Refused', badge: 'bg-red-100 text-red-700' },
-  failed: { label: 'Failed', badge: 'bg-amber-100 text-amber-800' },
-  cancelled: { label: 'Cancelled', badge: 'bg-gray-100 text-gray-700' },
-};
-
-/** The order outcomes are counted in on the summary line. */
-const SUMMARY_ORDER: readonly CreativeAssetQueueItemStatus[] = ['uploaded', 'present', 'refused', 'failed', 'cancelled', 'uploading', 'waiting'];
+import { catchError, filter, map, of, pairwise, scan, startWith, switchMap } from 'rxjs';
 
 /**
  * Upload many images to a brief's creative library at once — picked as files or as a folder.
@@ -35,7 +22,7 @@ const SUMMARY_ORDER: readonly CreativeAssetQueueItemStatus[] = ['uploaded', 'pre
  */
 @Component({
   selector: 'lfx-creative-library-upload',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, FileSizePipe],
   templateUrl: './creative-library-upload.component.html',
   styleUrl: './creative-library-upload.component.scss',
 })
@@ -52,23 +39,41 @@ export class CreativeLibraryUploadComponent {
 
   // === Computed Signals ===
   protected readonly accept = CREATIVE_ASSET_MIME_TYPES.join(',');
-  /** The queue's items, only when they belong to the brief on screen. */
-  protected readonly items: Signal<CreativeAssetQueueItem[]> = computed(() => {
-    const queue = this.campaignService.creativeAssetUploadQueue();
-    return queue.briefId !== '' && queue.briefId === this.briefId() ? queue.items : [];
-  });
+  /** The queue's items for the brief on screen; other briefs' runs stay listed under their own brief. */
+  protected readonly items: Signal<CreativeAssetQueueItem[]> = computed(() =>
+    this.campaignService.creativeAssetUploadQueue().filter((item) => item.briefId !== '' && item.briefId === this.briefId())
+  );
+  protected readonly rows: Signal<CreativeAssetQueueRow[]> = computed(() =>
+    this.items().map((item) => ({
+      ...item,
+      statusLabel: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].label,
+      statusBadge: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].badge,
+      retryable: item.status === 'failed' || item.status === 'cancelled',
+    }))
+  );
   protected readonly running = computed(() => this.items().some((item) => item.status === 'waiting' || item.status === 'uploading'));
   /** Files that added an asset to the library: what moves the quota and the slot coverage. */
   private readonly storedCount = computed(() => this.items().filter((item) => item.status === 'uploaded').length);
+  /**
+   * The stored count each time it RISES. Clear list, or a switch to another brief, drops the count
+   * without changing the library, so neither re-reads the quota nor tells the host.
+   */
+  private readonly libraryGrowth$ = toObservable(this.storedCount).pipe(
+    pairwise(),
+    filter(([before, after]) => after > before),
+    map(([, after]) => after)
+  );
+  private readonly libraryRevision = toSignal(this.libraryGrowth$.pipe(scan((count) => count + 1, 0)), { initialValue: 0 });
   protected readonly quota: Signal<CreativeAssetLibraryQuotaState> = this.initQuota();
   protected readonly quotaText: Signal<string> = this.initQuotaText();
   protected readonly overHeadroom: Signal<string> = this.initOverHeadroom();
   protected readonly summary: Signal<string> = this.initSummary();
+  protected readonly liveMessage: Signal<string> = this.initLiveMessage();
   protected readonly canClear = computed(() => this.items().length > 0 && !this.running());
 
   // === Outputs ===
   /** Emitted each time a file adds an asset to the library, so the host can re-read what depends on it. */
-  public readonly libraryChanged = outputFromObservable(toObservable(this.storedCount).pipe(skip(1)));
+  public readonly libraryChanged = outputFromObservable(this.libraryGrowth$);
 
   // === Protected Methods ===
   protected onFilesPicked(event: Event, folder: boolean): void {
@@ -87,23 +92,11 @@ export class CreativeLibraryUploadComponent {
   }
 
   protected cancel(): void {
-    this.campaignService.cancelCreativeAssetUploads();
+    this.campaignService.cancelCreativeAssetUploads(this.briefId());
   }
 
   protected clear(): void {
-    this.campaignService.clearCreativeAssetUploadQueue();
-  }
-
-  protected statusLabel(status: CreativeAssetQueueItemStatus): string {
-    return STATUS_VIEW[status].label;
-  }
-
-  protected statusBadge(status: CreativeAssetQueueItemStatus): string {
-    return STATUS_VIEW[status].badge;
-  }
-
-  protected size(bytes: number): string {
-    return formatFileSize(bytes);
+    this.campaignService.clearCreativeAssetUploadQueue(this.briefId());
   }
 
   // === Private Initializers ===
@@ -113,21 +106,33 @@ export class CreativeLibraryUploadComponent {
    * and costs nothing, which only the service can tell.
    */
   private initQuota(): Signal<CreativeAssetLibraryQuotaState> {
-    const request = computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.storedCount() }), {
+    const request = computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), stored: this.libraryRevision() }), {
       equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.stored === b.stored,
     });
     return toSignal(
       toObservable(request).pipe(
         switchMap((target) => {
+          const tag = (quota: CreativeAssetLibraryQuotaState): CreativeAssetLibraryQuotaRead => ({ briefId: target.briefId, quota });
           if (target.projectSlug === '' || target.briefId === '') {
-            return of<CreativeAssetLibraryQuotaState>({ status: 'error', library: null });
+            return of(tag({ status: 'error', library: null }));
           }
           return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
-            map((library): CreativeAssetLibraryQuotaState => ({ status: 'ready', library })),
-            catchError(() => of<CreativeAssetLibraryQuotaState>({ status: 'error', library: null })),
-            startWith<CreativeAssetLibraryQuotaState>({ status: 'loading', library: null })
+            map((library) => tag({ status: 'ready', library })),
+            catchError(() => of(tag({ status: 'error', library: null }))),
+            startWith(tag({ status: 'loading', library: null }))
           );
-        })
+        }),
+        // A re-read after each stored file keeps the last answer on screen while it loads, so the
+        // quota line and the headroom warning do not blink out between files. A change of brief
+        // starts from nothing: another brief's numbers are not this one's.
+        scan(
+          (previous: CreativeAssetLibraryQuotaRead, next: CreativeAssetLibraryQuotaRead): CreativeAssetLibraryQuotaRead =>
+            next.quota.status === 'loading' && next.briefId === previous.briefId
+              ? { briefId: next.briefId, quota: { status: 'loading', library: previous.quota.library } }
+              : next,
+          { briefId: '', quota: { status: 'loading', library: null } }
+        ),
+        map((tagged) => tagged.quota)
       ),
       { initialValue: { status: 'loading', library: null } }
     );
@@ -136,10 +141,10 @@ export class CreativeLibraryUploadComponent {
   private initQuotaText(): Signal<string> {
     return computed(() => {
       const { status, library } = this.quota();
-      if (status === 'loading' && !library) {
-        return 'Checking how much room this library has…';
-      }
       if (!library) {
+        if (status === 'loading') {
+          return 'Checking how much room this library has…';
+        }
         return "Couldn't read this library's quota. Uploads still work; any that would exceed it are refused and listed below.";
       }
       return `${library.count} of ${library.countLimit} images · ${formatFileSize(library.bytesUsed)} of ${formatFileSize(library.bytesLimit)} used`;
@@ -172,10 +177,25 @@ export class CreativeLibraryUploadComponent {
       if (items.length === 0) {
         return '';
       }
-      const parts = SUMMARY_ORDER.map((status) => ({ status, count: items.filter((item) => item.status === status).length }))
+      const parts = CREATIVE_ASSET_QUEUE_SUMMARY_ORDER.map((status) => ({ status, count: items.filter((item) => item.status === status).length }))
         .filter((part) => part.count > 0)
-        .map((part) => `${part.count} ${STATUS_VIEW[part.status].label.toLowerCase()}`);
+        .map((part) => `${part.count} ${CREATIVE_ASSET_QUEUE_STATUS_VIEW[part.status].label.toLowerCase()}`);
       return `${items.length} file${items.length === 1 ? '' : 's'}: ${parts.join(', ')}.`;
+    });
+  }
+
+  /**
+   * What a screen reader hears: the run starting and the run settling, not every file's step. A
+   * folder of 50 changes `summary` about 100 times, and announcing each would bury the outcome.
+   */
+  private initLiveMessage(): Signal<string> {
+    return computed(() => {
+      if (this.running()) {
+        // The file COUNT, not what is left: a countdown would be one more announcement per file.
+        const total = this.items().length;
+        return `Uploading to this brief's library: ${total} file${total === 1 ? '' : 's'} listed.`;
+      }
+      return this.summary();
     });
   }
 }
