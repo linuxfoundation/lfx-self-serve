@@ -6,6 +6,9 @@
     <i [class]="icon()" aria-hidden="true"></i>
   }
   <ng-content />
+  @if (trailingIcon() && !iconOnly()) {
+    <i [class]="trailingIcon()" aria-hidden="true" data-testid="ui-button-trailing-icon"></i>
+  }
 </ng-template>
 
 @if (link() !== null) {

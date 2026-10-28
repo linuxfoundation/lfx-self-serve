@@ -10,7 +10,7 @@ const meta: Meta<UiButtonComponent> = {
   title: 'Uikit/Button',
   component: UiButtonComponent,
   decorators: [applicationConfig({ providers: [provideRouter([])] })],
-  args: { variant: 'primary', size: 'md', icon: '', iconOnly: false, disabled: false, fullWidth: false, type: 'button', ariaLabel: '' },
+  args: { variant: 'primary', size: 'md', icon: '', trailingIcon: '', iconOnly: false, disabled: false, fullWidth: false, type: 'button', ariaLabel: '' },
   render: (args) => ({ props: args, template: `<lfx-ui-button ${argsToTemplate(args)}>Button</lfx-ui-button>` }),
 };
 export default meta;
@@ -27,8 +27,10 @@ export const Recording: Story = { args: { variant: 'recording', icon: 'fa-light 
 export const Small: Story = { args: { size: 'sm' } };
 export const Large: Story = { args: { size: 'lg' } };
 export const WithLeadingIcon: Story = { args: { icon: 'fa-light fa-plus' } };
+export const WithTrailingIcon: Story = { args: { variant: 'outline-neutral', size: 'sm', trailingIcon: 'fa-light fa-chevron-right' } };
+export const WithBothIcons: Story = { args: { icon: 'fa-light fa-video', trailingIcon: 'fa-light fa-chevron-right' } };
 export const IconOnly: Story = {
-  args: { variant: 'outline-neutral', iconOnly: true, icon: 'fa-light fa-angle-right', ariaLabel: 'Next' },
+  args: { variant: 'outline-neutral', iconOnly: true, icon: 'fa-light fa-angle-right', trailingIcon: 'fa-light fa-chevron-right', ariaLabel: 'Next' },
   render: (args) => ({ props: args, template: `<lfx-ui-button ${argsToTemplate(args)} />` }),
 };
 export const Disabled: Story = { args: { disabled: true } };

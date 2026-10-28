@@ -15,12 +15,12 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 ## Components
 
-| Selector              | Class                    | Purpose                                                                                                       |
-| --------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`       | `UiButtonComponent`      | Eight variants, three sizes, icon-only, leading icon, disabled, full width; renders a button or a router link |
-| `lfx-ui-tabs`         | `UiTabsComponent`        | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                     |
-| `lfx-ui-search-input` | `UiSearchInputComponent` | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                |
-| `lfx-ui-badge`        | `UiBadgeComponent`       | Count badge, neutral or accent tone                                                                           |
+| Selector              | Class                    | Purpose                                                                                                                    |
+| --------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `lfx-ui-button`       | `UiButtonComponent`      | Eight variants, three sizes, icon-only, leading and trailing icon, disabled, full width; renders a button or a router link |
+| `lfx-ui-tabs`         | `UiTabsComponent`        | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                                  |
+| `lfx-ui-search-input` | `UiSearchInputComponent` | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                             |
+| `lfx-ui-badge`        | `UiBadgeComponent`       | Count badge, neutral or accent tone                                                                                        |
 
 ## Storybook
 

@@ -60,6 +60,22 @@ describe('UiButtonComponent', () => {
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('renders the trailing icon after the label, independent of the leading icon', async () => {
+    await set('icon', 'fa-light fa-video');
+    await set('trailingIcon', 'fa-light fa-chevron-right');
+    const icons = el().querySelectorAll('i');
+    expect(icons).toHaveLength(2);
+    expect(icons[1].classList).toContain('fa-chevron-right');
+    expect(icons[1].getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('ignores the trailing icon on an icon-only button', async () => {
+    await set('iconOnly', true);
+    await set('icon', 'fa-light fa-angle-right');
+    await set('trailingIcon', 'fa-light fa-chevron-right');
+    expect(el().querySelectorAll('i')).toHaveLength(1);
+  });
+
   it('makes an icon-only button square and names it', async () => {
     await set('iconOnly', true);
     await set('ariaLabel', 'Next');

@@ -24,6 +24,8 @@ export class UiButtonComponent {
   public readonly size = input<'sm' | 'md' | 'lg'>('md');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. */
   public readonly icon = input<string>('');
+  /** Font Awesome class string for a trailing icon, e.g. `fa-light fa-chevron-right`. Independent of `icon`. */
+  public readonly trailingIcon = input<string>('');
   /** Renders a square, icon-only button. Pair it with `ariaLabel`. */
   public readonly iconOnly = input<boolean>(false);
   /** Accessible name; required for icon-only buttons. */
