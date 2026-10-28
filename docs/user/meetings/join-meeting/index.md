@@ -60,6 +60,7 @@ The AI summary shows an **Approved** or **Pending Review** status badge alongsid
 
 ## Related
 
+- [Past Meetings](../past-meetings/) — a meeting's details page, attendance, and AI summary approval
 - [Meeting Materials](../meeting-materials/) — where materials live and how organizers add them
 - [Meetings overview](../) — an overview of the Meetings section
 - [Schedule a Meeting](../schedule-meeting/) — for organizers creating a new meeting

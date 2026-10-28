@@ -63,3 +63,7 @@ On the meeting's join page, in the **Meeting Materials** panel — organizers ca
 ## Where do I find the Zoom host key?
 
 If you're a meeting host, the key appears on the meeting's card (**Host Key** button) and on its join page (**Host controls**) from 70 minutes before the meeting starts until 40 minutes after it ends. In Zoom, open **Participants → Claim Host** and enter the key. See [Host Controls and the Host Key](../host-controls/) for who can see it and how to make a guest a meeting host.
+
+## Where can I see who attended a past meeting?
+
+Open the **Past** tab in Meetings and select **See Meeting Details** on the meeting. The details page shows the attendance rate and a **Participants** table. Organizers, and people who were invited or attended, see who was there. Anyone else sees the totals only. See [Past Meetings](../past-meetings/).

@@ -20,7 +20,7 @@ The Meetings section lets you create, manage, and join meetings for your Linux F
 - RSVP (Yes/No/Maybe) to a meeting you're invited to (requires signing in)
 - Remove yourself from an upcoming meeting you're registered for, from its card or its page (requires signing in). This also works when you were added through a committee or a mailing list: you stay a member, but their syncs don't add you back to this meeting unless you leave and rejoin the committee or list. An organizer, or registering yourself, can still add you. Organizers who are also registered can remove their registration too and stay organizers
 - Generate a draft meeting agenda with AI assistance, or start from a pre-built agenda template
-- View a past meeting's recording, transcript, and AI summary, if you have access
+- View a past meeting's attendance, recording, transcript, and AI summary, if you have access — see [Past Meetings](past-meetings/)
 - Upload or view meeting materials (files and links) — see [Meeting Materials](meeting-materials/)
 - Invite guests directly or by linking a project committee, and resend or remove invitations — see [Manage Participants](manage-participants/)
 - Subscribe to a live calendar feed of a project's or foundation's meetings
@@ -98,6 +98,7 @@ Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private*
 
 ## Related sections
 
+- [Past Meetings](past-meetings/) — attendance, participants, recording, transcript, and AI summary
 - [Meeting Materials](meeting-materials/) — add, organize, and find files and links
 - [Manage Participants](manage-participants/) — invite guests, add groups, resend invitations, and remove people
 - [Host Controls and the Host Key](host-controls/) — who can see the Zoom host key, when it's available, and how to use it
