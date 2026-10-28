@@ -1950,6 +1950,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -1994,6 +1995,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2049,6 +2051,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2089,6 +2092,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2125,6 +2129,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: true,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: true,
             googleGeoSearchEnabled: false,
@@ -2165,6 +2170,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleAudienceSegmentsEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2207,6 +2213,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleAudienceSegmentsEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2315,6 +2322,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2369,6 +2377,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2394,6 +2403,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
@@ -2435,6 +2445,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2477,6 +2488,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2514,6 +2526,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2564,6 +2577,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2615,6 +2629,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
@@ -2666,6 +2681,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
@@ -2701,6 +2717,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2738,6 +2755,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2765,6 +2783,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2801,6 +2820,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2849,6 +2869,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
@@ -2891,6 +2912,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2933,6 +2955,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -2978,6 +3001,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
           metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
@@ -3054,6 +3078,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
             metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
@@ -11827,7 +11852,8 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     microsoftScheduleEnabled = false,
     googleAudienceSegmentsEnabled = false,
     googleGeoSearchEnabled = false,
-    metaInstagramDsaEnabled = false
+    metaInstagramDsaEnabled = false,
+    twitterCreateEnabled = false
   ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
@@ -11845,6 +11871,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
+      twitterCreateEnabled,
       metaInstagramDsaEnabled,
       googleAudienceSegmentsEnabled,
       googleGeoSearchEnabled,
@@ -11935,6 +11962,25 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /**
+   * The X create capability travels the same path into the tab: the real page reads it and binds
+   * it to `twitterCreateEnabled`, and the tab either renders the X fields or holds X behind its block.
+   */
+  it.each([
+    [true, 'implementation-twitter-budget', 'implementation-twitter-create-block-unsupported'],
+    [false, 'implementation-twitter-create-block-unsupported', 'implementation-twitter-budget'],
+  ])('hands an X create capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, enabled));
+    const withTwitter = { ...brief, selectedPlatforms: ['twitter-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withTwitter);
+    await settle();
+
+    expect(tab()['twitterCreateEnabled']()).toBe(enabled);
     expect(q(shown)).not.toBeNull();
     expect(q(hidden)).toBeNull();
   });

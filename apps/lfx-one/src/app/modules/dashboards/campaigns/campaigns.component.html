@@ -1747,6 +1747,7 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             [savedBriefRefreshToken]="savedBriefRefreshToken()"
+            [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
             (proceedToImplementation)="onProceedToImplementation($event)"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
@@ -1784,6 +1785,7 @@
               [microsoftAssetUploadEnabled]="briefCampaignsMicrosoftAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
               [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
+              [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"

@@ -2653,6 +2653,20 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBeNull();
   });
 
+  /** The X sibling of the Microsoft pair: nothing else executes the `'twitter-ads': 'twitterConfig'` entry. */
+  it('dispatches an X campaign once twitterConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-0000000000aa' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {
+      twitterConfig: { budgetAmount: 75, startDate: '2099-08-01', endDate: '2099-08-31', tweetText: 'Join us' },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-0000000000aa');
+    expect(res.error).toBeNull();
+  });
+
   it('still refuses a Microsoft campaign whose microsoftConfig is missing', async () => {
     // A non-empty envelope carrying the WRONG key — the shape a half-built builder produces.
     // `unmarshalPlatformConfig` reads the absent `microsoftConfig` as a ZERO VALUE, which would
@@ -2999,12 +3013,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000b');
   });
 
-  it('refuses a platform it has no config mapping for', async () => {
+  it('refuses a platform whose config the envelope does not carry', async () => {
     // An earlier revision waved unmapped platforms through, reasoning this should not police the
     // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is
     // `disabled: true` in the UI constants, but that is a CLIENT guarantee, and the upstream
-    // contract accepts twitter/microsoft/hubspot. This service builds no config for any of them,
-    // so waving them through queued a job whose dispatcher reads an absent key as a zero value.
+    // contract accepts it regardless. X is mapped now (`buildTwitterConfig`), so this is the
+    // missing-config half: waving it through would queue a job whose dispatcher reads an absent
+    // `twitterConfig` as a zero value.
     bothFlagsOn();
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {});
@@ -4707,6 +4722,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
       microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
@@ -4958,6 +4975,37 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   /**
+   * The X create capability needs the create cutover AND its own flag: the legacy creator has no X
+   * path, and the flag is the product decision to open X creation at all.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, twitter: true }, true],
+    [{ create: true, briefs: true, jobs: true, twitter: false }, false],
+    [{ create: false, briefs: true, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: false, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: true, jobs: false, twitter: true }, false],
+  ])('reports the X create capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceTwitterCreate) return flags.twitter;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+      expect(result.twitterCreateEnabled).toBe(expected);
+      // Reported on the refused-scope answer too, read the same way.
+      const refused = await new CampaignServiceClient().listBriefCampaigns(req, '', 'b-1');
+      expect(refused.twitterCreateEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
    * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
    * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
    * refuses it.
@@ -5169,6 +5217,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
       microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
       metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
@@ -6507,5 +6557,28 @@ describe('CampaignServiceClient.createSendWorkflow', () => {
     proxyRequest.mockResolvedValueOnce({ ...wire, edit_url: '' });
 
     await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).rejects.toThrow(/no usable workflow link/);
+  });
+});
+
+describe('CampaignServiceClient.listTwitterAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's X Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listTwitterAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-twitter-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listTwitterAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

@@ -125,6 +125,11 @@ router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonito
 // campaign-service account discovery for the project's Google Ads connection, behind
 // LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
+// Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
+// behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as above.
+router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));
+// Whether X creation is open on this deployment, read by the Plan picker before any brief exists.
+router.get('/twitter/create-capability', (req, res) => campaignController.getTwitterCreateCapability(req, res));
 // Google's geo target table, searched for the Implement tab's location picker (campaign-service #411),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH — 404 while it is off. Public location data,
 // so not root-only: `requireCampaignManager` above is the gate.

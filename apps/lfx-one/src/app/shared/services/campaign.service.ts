@@ -86,6 +86,8 @@ import {
   RedditMonitorResponse,
   ReportBackedMonitorResponse,
   SSEEvent,
+  TwitterAdsAccountsResult,
+  TwitterCreateCapability,
 } from '@lfx-one/shared/interfaces';
 import type {
   CampaignAdoptableBriefsResponse,
@@ -342,7 +344,7 @@ export class CampaignService {
 
   /**
    * Upload an image for a saved brief and get back the creative-asset id a Reddit, Meta, LinkedIn,
-   * Google or Microsoft create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
+   * Google, Microsoft or X create names as `imageAssetId`; `owner` says which control the upload belongs to. The body is the file's raw bytes typed with its own MIME type — the BFF route
    * refuses anything but PNG/JPEG up to `CREATIVE_ASSET_MAX_BYTES` and does the base64 encoding
    * campaign-service's JSON wire needs. `project` and `brief_id` travel as query params, as for
    * `createCampaign`, because they are path segments upstream.
@@ -533,6 +535,24 @@ export class CampaignService {
    */
   public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
     return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Whether X creation is open on this deployment, with no brief — the Plan picker's answer before
+   * one exists. `project` is not read by the answer, which is deployment-wide; it is what lets the
+   * campaign-manager guard authorise a project-scoped caller, which refuses an unscoped request.
+   */
+  public getTwitterCreateCapability(projectSlug: string): Observable<TwitterCreateCapability> {
+    return this.http.get<TwitterCreateCapability>('/api/campaigns/twitter/create-capability', { params: { project: projectSlug } });
+  }
+
+  /**
+   * Which X ad account an X create will use, and the accounts the connection's credential reaches
+   * (LFXV2-3319). 404 while X creation is off on the server, and a 403 for a non-root caller: with
+   * no X connection of its own, the project is answered from the LF's shared credential.
+   */
+  public getTwitterAdsAccounts(projectSlug: string): Observable<TwitterAdsAccountsResult> {
+    return this.http.get<TwitterAdsAccountsResult>('/api/campaigns/twitter/accounts', { params: { project: projectSlug } });
   }
 
   /**
