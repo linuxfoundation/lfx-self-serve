@@ -72,6 +72,7 @@ import type {
   CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceAccessibleAccounts,
+  CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceCreativeAsset,
@@ -568,6 +569,18 @@ export function canCreateWithAudienceSegments(): boolean {
 }
 
 /**
+ * Whether the Implement tab may search Google's geo target table for postal-code targets.
+ *
+ * Needs the campaign-service create path AND the geo-search flag. The path, because a picked id is a
+ * postal-code `geoTargets` entry and those reach a campaign on that road only (the legacy creator
+ * drops them). The flag, because a campaign-service older than linuxfoundation/lfx-v2-campaign-service#411
+ * has no suggest route, so every search would fail.
+ */
+export function canSearchGoogleGeoTargets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleGeoSearch);
+}
+
+/**
  * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
  *
  * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
@@ -844,6 +857,7 @@ export class CampaignServiceClient {
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
+        googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
       };
     }
 
@@ -910,6 +924,7 @@ export class CampaignServiceClient {
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
     };
   }
 
@@ -3113,6 +3128,42 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-google-ads/accounts`,
       'GET'
+    );
+  }
+
+  /**
+   * Search Google's geo target table (`suggest-google-ads-geo-targets` on campaign-service,
+   * linuxfoundation/lfx-v2-campaign-service#411) for the Implement tab's location picker.
+   *
+   * Public data, not account data, so upstream answers it from the LF system credential when the
+   * project has no Google Ads connection of its own — the same fallback account discovery uses. The
+   * parameters arrive validated by the controller; `target_types` repeats on the query string, which
+   * is how Goa decodes an array parameter, and an absent `limit` is omitted so upstream's default of
+   * 20 applies (its generated client must not send `limit=0`).
+   */
+  public async suggestGoogleAdsGeoTargets(
+    req: Request,
+    projectSlug: string,
+    params: { q: string; country_code?: string; target_types?: string[]; limit?: number }
+  ): Promise<CampaignServiceGoogleAdsGeoTargetSuggestions> {
+    if (projectSlug === '') {
+      // `/projects//google-ads/…` 404s at the gateway, which a caller would read as "not found".
+      throw ServiceValidationError.forField('project', 'A geo target search requires the project it is made for.', {
+        operation: 'suggest_google_ads_geo_targets',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsGeoTargetSuggestions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/geo-targets`,
+      'GET',
+      {
+        q: params.q,
+        ...(params.country_code ? { country_code: params.country_code } : {}),
+        ...(params.target_types && params.target_types.length > 0 ? { target_types: params.target_types } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      }
     );
   }
 
