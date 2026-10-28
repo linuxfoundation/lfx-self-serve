@@ -1209,6 +1209,15 @@ export interface CampaignImplementationDraft {
    */
   googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**
+   * Google's audience segments, as the user-list resource names the operator entered — already
+   * trimmed, because an entry only becomes a chip once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
+   * saved under a non-Search channel is kept rather than discarded. Typed by hand like
+   * {@link googleStructuredSnippets}, so it shares their shorter lifetime.
+   */
+  googleAudienceSegments?: string[];
+  /**
    * Google's call, promotion and price extensions, as the operator added them.
    *
    * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and
@@ -2711,6 +2720,17 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   structuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * The existing Google Ads user lists the Search ad group targets, as full resource names
+   * (`customers/{customerId}/userLists/{id}`, see `GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN`).
+   *
+   * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
+   * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
+   * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
+   * upstream refuses the create on any other channel, so the UI withholds the list there and the BFF
+   * refuses it by name.
+   */
+  audienceSegments?: string[];
   /**
    * The Google campaign's call extensions — a phone number shown with the text ad.
    *
@@ -4899,6 +4919,19 @@ export interface CampaignListResult {
    * which sends no dates and keeps the "ignores the flight dates" warning.
    */
   microsoftScheduleEnabled: boolean;
+  /**
+   * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
+   *
+   * Per CALLER, unlike every capability above: true only when the campaign-service create path
+   * serves the create AND the caller is a ROOT writer or ROOT campaign manager. Every foundation's
+   * Google Ads connection points at one shared LF customer, and a user list cannot yet be mapped to
+   * a project, so a non-root operator could otherwise target another foundation's list — the same
+   * reason campaign-service refuses to list user lists on the shared account
+   * (linuxfoundation/lfx-v2-campaign-service#411). The create route refuses a non-root caller's
+   * segments with a 403 `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
+   */
+  googleAudienceSegmentsEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -5079,6 +5112,18 @@ export interface CampaignBiddingCapabilityBlock {
  */
 export interface CampaignGoogleExtensionsCapabilityBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Google audience segments the draft still holds but the request cannot
+ * carry. `restricted`: the caller is not a root writer or root campaign manager, so the segments
+ * would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * campaign-service create path does not serve this deployment. The other kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
+ */
+export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }
 
