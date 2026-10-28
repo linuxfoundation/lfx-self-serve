@@ -4,11 +4,13 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
 import { SearchService } from '@services/search.service';
+import { UserService } from '@services/user.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { NEVER, of, throwError } from 'rxjs';
@@ -45,6 +47,8 @@ describe('ImpersonationDialogComponent', () => {
   let searchUsers: ReturnType<typeof vi.fn>;
   let recents: RecentImpersonation[];
 
+  let currentUser: { email: string; 'https://sso.linuxfoundation.org/claims/username': string } | null;
+
   async function createDialog(dialogData?: Record<string, unknown>): Promise<void> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -56,6 +60,7 @@ describe('ImpersonationDialogComponent', () => {
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
         { provide: DynamicDialogConfig, useValue: { closable: true, data: dialogData } },
         { provide: SearchService, useValue: { searchUsers } },
+        { provide: UserService, useValue: { user: signal(currentUser) } },
         {
           provide: ImpersonationService,
           useValue: {
@@ -79,6 +84,7 @@ describe('ImpersonationDialogComponent', () => {
     startImpersonation = vi.fn();
     searchUsers = vi.fn().mockReturnValue(of([]));
     recents = [];
+    currentUser = null;
     await createDialog();
   });
 
@@ -217,6 +223,12 @@ describe('ImpersonationDialogComponent', () => {
       expect(searchUsers).toHaveBeenCalledWith('ja', 'committee_member', true);
     });
 
+    it('sends the typed text to the directory with its case intact', async () => {
+      await search('  Jane.Doe@Example.com ');
+
+      expect(searchUsers).toHaveBeenCalledWith('Jane.Doe@Example.com', 'committee_member', true);
+    });
+
     it('lists directory people with their username as the target and a composed name', async () => {
       searchUsers.mockReturnValue(of([directoryRow({})]));
 
@@ -250,6 +262,21 @@ describe('ImpersonationDialogComponent', () => {
   });
 
   describe('when opened from the banner to switch users', () => {
+    it('leaves the current target out of the recents but keeps the others', async () => {
+      recents = [
+        { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', lastUsedAt: 1 },
+        { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', lastUsedAt: 2 },
+      ];
+      currentUser = { email: 'ALEX.SMITH@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+      await createDialog({ switching: true });
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
+    });
+
     it('starts the change as a switch', async () => {
       await createDialog({ switching: true });
       startImpersonation.mockReturnValue(NEVER);

@@ -8,9 +8,16 @@ import { AutocompleteComponent } from '@components/autocomplete/autocomplete.com
 import { ButtonComponent } from '@components/button/button.component';
 import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
-import { composeFullName, hasLfAccount, rankUserSearchResults, resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
+import {
+  composeFullName,
+  excludeUserSearchIdentities,
+  hasLfAccount,
+  rankUserSearchResults,
+  resolveImpersonationStartErrorMessage,
+} from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
 import { SearchService } from '@services/search.service';
+import { UserService } from '@services/user.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -24,6 +31,7 @@ import { map, Observable, of, Subject, switchMap, take } from 'rxjs';
 export class ImpersonationDialogComponent {
   private readonly impersonationService = inject(ImpersonationService);
   private readonly searchService = inject(SearchService);
+  private readonly userService = inject(UserService);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly dialogConfig = inject(DynamicDialogConfig, { optional: true });
 
@@ -37,7 +45,9 @@ export class ImpersonationDialogComponent {
   protected loading = signal(false);
   protected loadingMessage = computed(() => (this.loading() ? IMPERSONATION_TRANSITION_MESSAGES[this.switching ? 'switching' : 'starting'] : ''));
   protected error = signal('');
-  protected recentImpersonations = signal<RecentImpersonation[]>(this.impersonationService.getRecentImpersonations());
+  // While switching, the signed-in user is the current target, so their recent entry is left out: picking it
+  // would only be refused as already impersonated.
+  protected recentImpersonations = signal<RecentImpersonation[]>(this.withoutCurrentTarget(this.impersonationService.getRecentImpersonations()));
 
   // Typed text goes through a subject rather than a valueChanges pipeline: PrimeNG's `delay` already
   // coalesces keystrokes before `completeMethod` fires, and its panel only opens for a suggestions
@@ -125,7 +135,8 @@ export class ImpersonationDialogComponent {
       return of(recents);
     }
 
-    return this.searchService.searchUsers(term, 'committee_member', true).pipe(
+    // The raw text goes to the directory: its exact-email lookup is case-sensitive and retries the lowercased form itself.
+    return this.searchService.searchUsers(query.trim(), 'committee_member', true).pipe(
       map((users) => {
         const listed = new Set(recents.map((entry) => entry.username.toLowerCase()));
         const found = rankUserSearchResults(users.filter(hasLfAccount), term)
@@ -142,5 +153,14 @@ export class ImpersonationDialogComponent {
         return [...recents, ...found];
       })
     );
+  }
+
+  private withoutCurrentTarget(recents: RecentImpersonation[]): RecentImpersonation[] {
+    if (!this.switching) {
+      return recents;
+    }
+
+    const target = this.userService.user();
+    return excludeUserSearchIdentities(recents, [{ username: target?.['https://sso.linuxfoundation.org/claims/username'], email: target?.email }]);
   }
 }
