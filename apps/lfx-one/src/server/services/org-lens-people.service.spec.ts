@@ -859,6 +859,22 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '30d', 'all']);
     });
 
+    it("reads Past 2 years as the warehouse's 730d rows, apart from the other ranges", async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'recent', 'Recent Person', 'recent@company.example', 7);
+      addRangeRow(ACCOUNT, 'person-two-years', '730d', false, 'twoyears', 'Two Years', 'twoyears@company.example', 2);
+
+      const response = await service.getAllEmployees(ACCOUNT, '730d', FILTERS);
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        [personKey, 7],
+        ['person-two-years', 2],
+      ]);
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
+      expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:730d:all')!)).toBe(true);
+    });
+
     it('lists the rows of the requested project scope only', async () => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 3);
       addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 1, { projectScope: 'lf' });
