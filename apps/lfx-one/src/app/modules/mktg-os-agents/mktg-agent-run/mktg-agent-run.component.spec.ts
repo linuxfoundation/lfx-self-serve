@@ -916,7 +916,7 @@ describe('MktgAgentRunComponent', () => {
       return { activeRunId: 'b'.repeat(64), agentKey: type.agentKey, documentId: 'living' };
     };
 
-    it('confirms Sources-first discard, keeps the notice on Keep it, and does not ask twice before one explicit Create', async () => {
+    it('confirms Sources-first discard, opens progress on Keep it, and does not ask twice before one explicit Create', async () => {
       await configure('browser', agentId, { mode: 'new' });
       const conflict = activeConflict();
       lastIntake.mockReturnValue(of(history));
@@ -935,8 +935,11 @@ describe('MktgAgentRunComponent', () => {
       });
       discardPrompt()?.reject?.(ConfirmEventType.REJECT);
       await fixture.whenStable();
-      expect(query('mktg-run-waiting-open')).not.toBeNull();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/mktg-os-agents', 'documents', conflict.agentKey, 'living'], {
+        queryParams: { project: PROJECT_1.slug, run: conflict.activeRunId },
+      });
       expect(generate).not.toHaveBeenCalled();
+      // The router mock keeps this fixture mounted; reopen the discard branch explicitly.
       query('mktg-run-waiting-start-over')?.click();
       discardPrompt()?.accept?.();
       await fixture.whenStable();
@@ -980,7 +983,7 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).toHaveBeenCalledOnce();
     });
 
-    it.each(['continue', 'start-over'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
+    it.each(['continue', 'keep-it', 'start-over', 'dismiss'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
       await configure('browser', agentId, { mode: 'new' });
       const attempts = TestBed.inject(MktgRunAttemptService);
       const request = { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: history.answers };
@@ -997,8 +1000,13 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-sources')).toBeNull();
       expect(component['showIntakeForm']()).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
-      if (choice === 'continue') {
-        query('mktg-run-waiting-continue')?.querySelector('button')?.click();
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      navigate.mockClear();
+      if (choice === 'continue' || choice === 'keep-it') {
+        if (choice === 'keep-it') {
+          query('mktg-run-waiting-start-over')?.click();
+          discardPrompt()?.reject?.(ConfirmEventType.REJECT);
+        } else query('mktg-run-waiting-continue')?.querySelector('button')?.click();
         expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { mode: null }, replaceUrl: true }));
         queryParams.next(convertToParamMap({})); // Router mock: emit the accepted plain-route navigation.
         await fixture.whenStable();
@@ -1006,6 +1014,13 @@ describe('MktgAgentRunComponent', () => {
         expect(component['questionsPending']()).toEqual(pending);
         expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
         expect(query('mktg-run-questions-return-note')?.textContent).toContain('Documents › Started runs › Answer the questions.');
+      } else if (choice === 'dismiss') {
+        query('mktg-run-waiting-start-over')?.click();
+        discardPrompt()?.reject?.(ConfirmEventType.CANCEL);
+        await fixture.whenStable();
+        expect(navigate).not.toHaveBeenCalled();
+        expect(query('mktg-run-waiting-notice')).not.toBeNull();
+        expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
       } else {
         query('mktg-run-waiting-start-over')?.click();
         discardPrompt()?.accept?.();
