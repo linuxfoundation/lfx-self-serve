@@ -362,7 +362,7 @@ describe('MktgDocumentViewComponent', () => {
     expectNoKitAssetChrome();
     expect(query('mktg-linkedin-draft-another')).not.toBeNull();
     expect(query('mktg-document-view-title-card')?.contains(query('mktg-linkedin-draft-another'))).toBe(true);
-    expect(query('mktg-linkedin-draft-another')?.className).toBe('flex flex-wrap items-center gap-4');
+    expect(query('mktg-linkedin-draft-another')?.className).toBe('ml-auto flex flex-wrap items-center gap-4');
     expect(query('mktg-linkedin-draft-another')?.querySelector('button')?.className).toBe('text-sm font-medium text-blue-700 hover:underline');
     expect(query('mktg-document-view-document')?.contains(query('mktg-linkedin-draft-another'))).toBe(false);
     expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/shared');
@@ -793,7 +793,7 @@ describe('MktgDocumentViewComponent', () => {
     const title = query('mktg-document-view-title-card');
     const actions = query('member-360-result-actions');
     expect(title?.contains(actions)).toBe(true);
-    expect(actions?.className).toBe('flex flex-wrap items-center gap-4');
+    expect(actions?.className).toBe('ml-auto flex flex-wrap items-center gap-4');
     expect(query('member-360-result')?.contains(actions)).toBe(false);
     const create = query('member-360-new-run');
     const download = query('member-360-download');

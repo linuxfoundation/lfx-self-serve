@@ -35,7 +35,7 @@
             }
           </span>
         }
-        <div class="flex flex-wrap items-center gap-4" data-testid="mktg-linkedin-draft-another">
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-linkedin-draft-another">
           <button type="button" class="text-sm font-medium text-blue-700 hover:underline" (click)="onDraftAnother()">Draft another post</button>
         </div>
       } @else if (view(); as current) {
@@ -52,7 +52,7 @@
         }
       }
       @if (memberResult(); as result) {
-        <div class="flex flex-wrap items-center gap-4" data-testid="member-360-result-actions">
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="member-360-result-actions">
           <a
             [routerLink]="result.runRoute()"
             [queryParams]="result.projectParams()"
