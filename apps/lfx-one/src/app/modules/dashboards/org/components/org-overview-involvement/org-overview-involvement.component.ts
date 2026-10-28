@@ -229,7 +229,7 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.contributorsLoading(),
       value: data.totalActiveContributors.toString(),
-      subtitle: 'Employees actively contributing to projects',
+      subtitle: 'Current and former employees contributing code',
       tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
       chartOptions: this.createBarChartOptions('Active contributors'),
       chartData:

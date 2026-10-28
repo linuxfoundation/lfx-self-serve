@@ -71,7 +71,7 @@ export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL: Readonly<Record<OrgCodeMetric, st
 
 /** Note on the All Employees code tile while only current employees are shown (lfx-self-serve#4160). */
 export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
-  'Counts current employees only. People who have since left are excluded; choose Employment: All to include them.';
+  'Counts current employees only, unlike People → Contributors and Code Contributions. Set the employment filter to "All" to include people who have since left.';
 
 /** Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =

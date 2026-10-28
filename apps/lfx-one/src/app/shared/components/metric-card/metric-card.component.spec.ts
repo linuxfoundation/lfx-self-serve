@@ -4,7 +4,7 @@
 import { Component, input, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ChartComponent } from '@components/chart/chart.component';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MetricCardComponent } from './metric-card.component';
 
@@ -26,9 +26,8 @@ class HostComponent {
   public readonly info = signal<string | undefined>(undefined);
 }
 
-const infoButton = (root: HTMLElement): HTMLButtonElement | null => root.querySelector('button[aria-label="Methodology info"]');
+const infoButton = (root: HTMLElement): HTMLButtonElement | null => root.querySelector('[data-testid="metric-card-info"]');
 const tooltipText = (): string => document.body.querySelector('.p-tooltip')?.textContent?.trim() ?? '';
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50));
 
 describe('MetricCardComponent info tooltip', () => {
   beforeEach(() => {
@@ -59,8 +58,7 @@ describe('MetricCardComponent info tooltip', () => {
     expect(button?.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
 
     button?.dispatchEvent(new FocusEvent('focus'));
-    await settle();
 
-    expect(tooltipText()).toBe('Who is counted and over what range.');
+    await vi.waitFor(() => expect(tooltipText()).toBe('Who is counted and over what range.'));
   });
 });
