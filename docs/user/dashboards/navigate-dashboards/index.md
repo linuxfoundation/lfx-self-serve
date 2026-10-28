@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-10-09
+last_updated: 2026-10-28
 intercom_collection: Dashboards
 ---
 
@@ -20,6 +20,16 @@ The LFX Self Serve dashboard adapts based on your persona and the lens you have 
 On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
 
 Your lens selection is saved for 30 days. The next time you sign in, the app restores your last-used lens.
+
+## Collapse the sidebar
+
+On a computer, you can collapse the left navigation sidebar to a narrow rail of icons to give the page more room.
+
+1. Select the sidebar toggle next to the LF logo at the top of the sidebar (**Close sidebar**). The sidebar collapses to the rail, and this browser remembers your choice.
+2. To look at the full sidebar without reopening it, hover over the toggle on the rail. The sidebar opens over the page and closes again when you move the pointer away.
+3. To dock the sidebar open again, select the toggle (**Open sidebar**, or **Keep sidebar open** while the sidebar is showing over the page).
+
+On a computer without a touch screen, the sidebar always shows as the rail when the browser window is under 1200 pixels wide. Select the toggle to open the full sidebar over the page; select outside it, press Escape, or go to another page to close it. On a phone or small touch screen, the navigation menu works as before.
 
 ## Me lens
 

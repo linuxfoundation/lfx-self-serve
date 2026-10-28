@@ -4,7 +4,7 @@ description: How to view and manage project committees in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-10-20
+last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
@@ -29,9 +29,21 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 ## Edit a committee
 
 1. Open a committee from the committees dashboard.
-2. Select the edit option from the committee detail page.
+2. Select **Edit Group** in the group's header. The button appears only if you have write access to the group's project.
 3. Update the committee name, description, or other fields.
 4. Save your changes.
+
+If you can edit the group but don't see **Edit Group**, select the pencil (**Edit description**) next to the group's description to change it, and use the **Settings** tab to change the name, type, or parent.
+
+### Change the name, type, or parent from Settings
+
+If you can edit the group, its **Settings** tab includes a **General** card:
+
+- **Group Name** — required.
+- **Group Type** — the group's category.
+- **Parent Group (Optional)** — choose a top-level group in the same project, or **No Parent Group** to detach it. A group can't be its own parent.
+
+Select **Save Changes**. If you changed the type, a **Change Group Type** confirmation appears because the change updates how the group is labeled and governed, including on its members' records. Select **Change Type** to save, or **Cancel** to go back.
 
 ## Add or remove members
 
