@@ -5,11 +5,10 @@ import { HttpClient } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
-import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { AnalyticsService } from './analytics.service';
@@ -523,14 +522,11 @@ describe('AccountContextService — All Organizations roll-up', () => {
   let cookies: Map<string, string>;
   let service: AccountContextService;
   let httpGet: ReturnType<typeof vi.fn>;
-  let rollUpFlag: WritableSignal<boolean>;
-  let providerReady: WritableSignal<boolean>;
   let routerUrl: string;
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigateSpy: ReturnType<typeof vi.fn>;
   let currentNavigation: unknown;
   let routerEvents: Subject<unknown>;
-  let flagInitialized: WritableSignal<boolean>;
   /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
   let liveRows: OrgLensAccountContextResponse[];
   let grants: {
@@ -544,8 +540,25 @@ describe('AccountContextService — All Organizations roll-up', () => {
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
 
-  /** The roll-up suite's TestBed wiring, reusable so a test can rebuild the service (e.g. under fake timers). */
-  const configureRollUpTestBed = (): void => {
+  beforeEach(() => {
+    cookies = new Map();
+    routerUrl = '/org/all/people';
+    navigateByUrl = vi.fn();
+    navigateSpy = vi.fn();
+    currentNavigation = null;
+    routerEvents = new Subject<unknown>();
+    liveRows = [];
+    httpGet = vi.fn().mockReturnValue(of(null));
+    grants = {
+      writerSet: signal(new Set<string>()),
+      auditorSet: signal(new Set<string>()),
+      inheritedWriterSet: signal(new Set<string>()),
+      inheritedAuditorSet: signal(new Set<string>()),
+      isStaff: signal(false),
+      claManagerOrgSet: signal(new Set<string>()),
+      loaded: signal(true),
+      lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
+    };
     TestBed.configureTestingModule({
       providers: [
         {
@@ -559,7 +572,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => rollUpFlag, providerReady, initialized: flagInitialized } },
         { provide: UrlSerializer, useClass: DefaultUrlSerializer },
         {
           provide: Router,
@@ -577,40 +589,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
         { provide: HttpClient, useValue: { get: httpGet } },
       ],
     });
-  };
-
-  beforeEach(() => {
-    cookies = new Map();
-    rollUpFlag = signal(true);
-    providerReady = signal(true);
-    routerUrl = '/org/all/people';
-    navigateByUrl = vi.fn();
-    navigateSpy = vi.fn();
-    currentNavigation = null;
-    routerEvents = new Subject<unknown>();
-    flagInitialized = signal(true);
-    liveRows = [];
-    httpGet = vi.fn().mockReturnValue(of(null));
-    grants = {
-      writerSet: signal(new Set<string>()),
-      auditorSet: signal(new Set<string>()),
-      inheritedWriterSet: signal(new Set<string>()),
-      inheritedAuditorSet: signal(new Set<string>()),
-      isStaff: signal(false),
-      claManagerOrgSet: signal(new Set<string>()),
-      loaded: signal(true),
-      lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
-    };
-    configureRollUpTestBed();
     service = TestBed.inject(AccountContextService);
-  });
-
-  // The whole surface is dark-launched until the BFF accepts the sentinel (#4127).
-  it('offers nothing while the feature flag is off, however many organizations the caller holds', () => {
-    rollUpFlag.set(false);
-    service.initializeUserOrganizations([seedA, seedB]);
-    expect(service.canSelectRollUp()).toBe(false);
-    expect(service.selectRollUp()).toBe(false);
   });
 
   it('counts persona seeds and grant sets together, de-duplicated by uid', () => {
@@ -788,38 +767,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
   });
 
   /**
-   * Regression, PR #4415 review 3 (high). `AppComponent` calls `initializeUserOrganizations()`
-   * before `featureFlagService.initialize()`, and `getBooleanFlag` answers false until the provider
-   * streams real values — so the flag I added read as "feature off" at restore time and the saved
-   * `{ uid: 'all' }` was overwritten with the first seed before LaunchDarkly had been asked.
-   */
-  it('does not treat an unresolved feature flag as a disabled one', () => {
-    providerReady.set(false);
-    flagInitialized.set(false);
-    rollUpFlag.set(false); // what getBooleanFlag answers before the provider is ready
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-
-    service.initializeUserOrganizations([seedA, seedB]);
-
-    expect(service.isRollUp()).toBe(true);
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  it('demotes once the provider confirms the flag is genuinely off', () => {
-    providerReady.set(false);
-    flagInitialized.set(false);
-    rollUpFlag.set(false);
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([seedA, seedB]);
-
-    providerReady.set(true);
-    TestBed.tick();
-
-    expect(service.isRollUp()).toBe(false);
-    expect(service.selectedAccount().uid).toBe(UID_A);
-  });
-
-  /**
    * Regression, PR #4415 review 3. Eligibility counts inherited grants, but the demotion fallback
    * only looked at persona seeds — so a caller holding one inherited organization and no seed was
    * dropped to the placeholder with their cookie cleared, rather than onto the organization they
@@ -869,44 +816,7 @@ describe('AccountContextService — All Organizations roll-up', () => {
     expect(navigateByUrl).not.toHaveBeenCalled();
   });
 
-  /**
-   * Regression, PR #4415 review 6. `initialized` is set once `OpenFeature.setContext()` resolves —
-   * which happens even when the raw provider status is ERROR, with `providerReady` left false and
-   * error recovery armed. Ending the wait on it meant a slow LaunchDarkly read exactly like a
-   * disabled flag, and the demotion that followed took the caller's cookie with it.
-   */
-  it('keeps waiting when initialization finished but the provider never became ready', () => {
-    providerReady.set(false);
-    flagInitialized.set(true);
-    rollUpFlag.set(false); // every flag reads its default while the provider is not READY
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-
-    service.initializeUserOrganizations([seedA, seedB]);
-    TestBed.tick();
-
-    expect(service.isRollUp()).toBe(true);
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  /**
-   * The flag being off makes the roll-up unavailable, not wrong for this caller. The live selection
-   * must change so nothing renders under a roll-up the BFF cannot serve, but the saved choice is
-   * theirs and is honoured again when the flag returns.
-   */
-  it('changes the live selection but keeps the saved choice when the flag is off', () => {
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([seedA, seedB]);
-    expect(service.isRollUp()).toBe(true);
-
-    rollUpFlag.set(false);
-    TestBed.tick();
-
-    expect(service.isRollUp()).toBe(false);
-    expect(service.selectedAccount().uid).toBe(UID_A);
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  // Losing organizations IS about the caller, so that demotion updates the cookie like any switch.
+  // Demotion is always about the caller now, so it updates the cookie like any other switch.
   it('updates the saved choice when the caller no longer holds two organizations', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
@@ -989,116 +899,16 @@ describe('AccountContextService — All Organizations roll-up', () => {
   });
 
   /**
-   * Regression, PR #4415 review 8. `rollUpFlagResolved` is `providerReady() || wait elapsed`, so
-   * once the provider never becomes READY the constructor's timer is the ONLY thing that closes the
-   * pending window — and it is the fix for review 4's fail-open, where `/org/all` stayed admitted
-   * for the whole session while LaunchDarkly was unreachable. No spec drove that timer, so dropping
-   * or mis-arming it would have reinstated the fail-open silently.
-   */
-  describe('the fail-closed timeout on the flag wait', () => {
-    // The timer is armed in the service constructor, which the outer `beforeEach` has already run —
-    // so the clock has to be faked before that, and the service rebuilt against it.
-    beforeEach(() => {
-      vi.useFakeTimers();
-      TestBed.resetTestingModule();
-      configureRollUpTestBed();
-      service = TestBed.inject(AccountContextService);
-    });
-    afterEach(() => vi.useRealTimers());
-
-    it('closes the pending window when the provider never becomes ready', () => {
-      providerReady.set(false);
-      flagInitialized.set(false);
-      rollUpFlag.set(false);
-      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-
-      service.initializeUserOrganizations([seedA, seedB]);
-      expect(service.isRollUp()).toBe(true);
-
-      vi.advanceTimersByTime(FEATURE_FLAG_READY_TIMEOUT_MS);
-      TestBed.tick();
-
-      expect(service.isRollUp()).toBe(false);
-    });
-
-    // Closing the window is about availability, not about this caller, so the choice survives it.
-    it('keeps the saved choice when the window closes without a ready provider', () => {
-      providerReady.set(false);
-      flagInitialized.set(false);
-      rollUpFlag.set(false);
-      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-      service.initializeUserOrganizations([seedA, seedB]);
-
-      vi.advanceTimersByTime(FEATURE_FLAG_READY_TIMEOUT_MS);
-      TestBed.tick();
-
-      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-    });
-  });
-
-  /**
-   * Regression, PR #4415 review 8 (cursor/Copilot). `persist: false` guarded only the demotion's own
-   * write. The grant-only fallback hydrates through `refreshCanonicalRecord`, and
-   * `applyCanonicalRecord` persists unconditionally — so the concrete uid reached the cookie a
-   * moment later anyway, for exactly the inherited-grants caller this path exists for.
-   */
-  it('keeps the saved choice through canonical hydration after an unavailability demotion', async () => {
-    // No persona seeds; two organizations, both inherited grants — the caller this path exists for.
-    httpGet.mockReturnValue(of({ uid: UID_A, accountId: UID_A, name: 'Alpha Inc', logoUrl: null, parentUid: null }));
-    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([]);
-    expect(service.isRollUp()).toBe(true);
-
-    rollUpFlag.set(false);
-    TestBed.tick();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(service.isRollUp()).toBe(false);
-    expect(service.selectedAccount().uid).toBe(UID_A);
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  // An indexed slug landing after the demotion must not write the concrete uid either.
-  it('keeps the saved choice when an indexed slug arrives afterwards', () => {
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([seedA, seedB]);
-    rollUpFlag.set(false);
-    TestBed.tick();
-
-    service.setIndexedSlug('alpha-inc');
-
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  // The hold ends the moment the caller chooses for themselves.
-  it('releases the hold on a deliberate organization switch', () => {
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([seedA, seedB]);
-    rollUpFlag.set(false);
-    TestBed.tick();
-
-    service.setAccount(seedB);
-
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
-  });
-
-  /**
-   * lfx-self-serve#4415 review 9. `orgPathParamGuard` used to decide this itself, and got three
-   * things wrong that `demoteFromRollUp` already had right: it persisted over the saved choice
-   * whatever the reason, it could reuse the roll-up as its own fallback (`orgUrlSegment` answers the
-   * sentinel, so the re-point no-opped and the caller stayed on `/org/all`), and it left the result
-   * unpinned where a persona re-seed could replace it.
+   * lfx-self-serve#4415 review 9. `orgPathParamGuard` used to decide this itself, and got two
+   * things wrong that `demoteFromRollUp` already had right: it could reuse the roll-up as its own
+   * fallback (`orgUrlSegment` answers the sentinel, so the re-point no-opped and the caller stayed
+   * on `/org/all`), and it left the result unpinned where a persona re-seed could replace it.
    */
   describe('demoteAddressedRollUp', () => {
     it('never answers with the roll-up itself', () => {
       service.initializeUserOrganizations([seedA, seedB]);
       service.selectRollUp();
       expect(service.isRollUp()).toBe(true);
-
-      grants.inheritedWriterSet.set(new Set([UID_B]));
-      rollUpFlag.set(false);
 
       const next = service.demoteAddressedRollUp();
 
@@ -1107,21 +917,11 @@ describe('AccountContextService — All Organizations roll-up', () => {
       expect(service.isRollUp()).toBe(false);
     });
 
-    it('keeps the saved choice when the roll-up is merely unavailable', () => {
-      cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-      service.initializeUserOrganizations([seedA, seedB]);
-      rollUpFlag.set(false);
-
-      service.demoteAddressedRollUp();
-
-      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-    });
-
     it('writes the concrete choice when the caller no longer qualifies', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
       service.initializeUserOrganizations([seedA, seedB]);
       service.selectRollUp();
-      // Flag still on; the caller simply holds one organization now.
+      // The caller holds one organization now.
       service.initializeUserOrganizations([seedA]);
 
       service.demoteAddressedRollUp();
@@ -1133,7 +933,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
     it('pins the result as an address selection', () => {
       service.initializeUserOrganizations([seedA, seedB]);
       service.selectRollUp();
-      rollUpFlag.set(false);
 
       const next = service.demoteAddressedRollUp();
 
@@ -1151,63 +950,13 @@ describe('AccountContextService — All Organizations roll-up', () => {
     });
   });
 
-  // Review 9: the bootstrap fall-through reached with a sentinel cookie and the flag resolved off
-  // must not write the default selection over the stored choice either.
-  it('keeps the saved choice when bootstrap defaults past an unavailable roll-up', () => {
-    rollUpFlag.set(false);
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-
-    service.initializeUserOrganizations([seedA, seedB]);
-
-    expect(service.isRollUp()).toBe(false);
-    expect(service.selectedAccount().uid).toBe(UID_A);
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
   /**
-   * Regression, PR #4415 review 10. The demotion re-points the address; that navigation runs
-   * `orgPathParamGuard`, which adopts through `adoptFromAddress` → `setAccount`. An ordinary write
-   * clears the hold, so the demotion's own follow-up wrote the concrete uid over `{ uid: 'all' }` a
-   * moment after taking the hold — for the inherited-grants caller it exists for.
-   */
-  it('survives the address adoption its own re-point sets off', () => {
-    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([]);
-    expect(service.isRollUp()).toBe(true);
-
-    rollUpFlag.set(false);
-    TestBed.tick();
-    const demotedTo = service.selectedAccount().uid as string;
-
-    // What the guard does on the re-pointed navigation.
-    service.adoptFromAddress({ accountId: demotedTo, accountName: 'Alpha Inc', membershipTier: '', uid: demotedTo, slug: 'alpha-inc' });
-
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: 'all' });
-  });
-
-  // A different organization is the caller going somewhere themselves, which IS a choice.
-  it('releases the hold when a different organization is adopted from an address', () => {
-    grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
-    cookies.set(COOKIE, JSON.stringify({ uid: 'all' }));
-    service.initializeUserOrganizations([]);
-    rollUpFlag.set(false);
-    TestBed.tick();
-
-    const other = service.selectedAccount().uid === UID_A ? UID_B : UID_A;
-    service.adoptFromAddress({ accountId: other, accountName: 'Other', membershipTier: '', uid: other, slug: 'other-inc' });
-
-    expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: other });
-  });
-
-  /**
-   * Regression, PR #4415 review 10 (high). With the flag resolved off and the grants not yet
-   * answered, `rollUpEligibilityPending` short-circuits to false — so a caller with no persona
-   * seeds had nothing to be demoted to, and the guard's only answer was `/org/not-found`: a dead
-   * end later grants cannot repair, since reconciliation stops once the roll-up is deselected.
+   * Regression, PR #4415 review 10 (high). On a cold `/org/all/…` deep link the grants have not
+   * answered, so a caller with no persona seeds had nothing to be demoted to and the guard's only
+   * answer was `/org/not-found`: a dead end later grants cannot repair, since reconciliation stops
+   * once the roll-up is deselected.
    */
   it('admits a cold /org/all visit it cannot yet decide, rather than stranding the caller', () => {
-    rollUpFlag.set(false);
     grants.loaded.set(false);
     service.initializeUserOrganizations([]);
 
@@ -1223,7 +972,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
    * never flushing the effect while the answer was still unknown.
    */
   it('survives an effect flush while the fallback is still undecidable', () => {
-    rollUpFlag.set(false);
     grants.loaded.set(false);
     service.initializeUserOrganizations([]);
     service.selectRollUp({ admitWhilePending: true });
@@ -1244,7 +992,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
   });
 
   it('demotes that caller as soon as the grants name an organization', () => {
-    rollUpFlag.set(false);
     grants.loaded.set(false);
     service.initializeUserOrganizations([]);
     service.selectRollUp({ admitWhilePending: true });
@@ -1259,7 +1006,6 @@ describe('AccountContextService — All Organizations roll-up', () => {
 
   // Settled grants with nothing in them is a real answer, so the dead end is still correct.
   it('still refuses when the grants have settled on nothing', () => {
-    rollUpFlag.set(false);
     grants.loaded.set(true);
     service.initializeUserOrganizations([]);
 

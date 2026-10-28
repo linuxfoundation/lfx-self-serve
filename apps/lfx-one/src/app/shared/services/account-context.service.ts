@@ -8,9 +8,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import {
   ACCOUNT_COOKIE_KEY,
-  FEATURE_FLAG_READY_TIMEOUT_MS,
   ORG_ACCOUNT_ID_PATTERN,
-  ORG_LENS_ROLLUP_ENABLED_FLAG,
   ORG_NOT_FOUND_PATH,
   ORG_ROLLUP_SEGMENT,
   ROLLUP_ACCOUNT,
@@ -23,7 +21,6 @@ import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxj
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
-import { FeatureFlagService } from './feature-flag.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -41,39 +38,12 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   /** At most one deferred address re-point; a later demotion supersedes an earlier pending one. */
   private pendingRepoint: Subscription | null = null;
 
-  /**
-   * True while a stored `{ uid: 'all' }` is being held for a caller who has been demoted only
-   * because the roll-up is *unavailable* (flag off, or its provider never answered) — never because
-   * they stopped qualifying.
-   *
-   * It has to outlive the demotion itself. `persist: false` on that one `setAccount` is not enough:
-   * the grant-only fallback hydrates through `refreshCanonicalRecord`, and `applyCanonicalRecord`
-   * persists unconditionally — as does `setIndexedSlug`, and any address adoption that follows — so
-   * the concrete uid reached the cookie a moment later anyway, for exactly the inherited-grants
-   * caller this path exists for (#4415 review 8).
-   *
-   * Cleared by a deliberate choice: an ordinary `setAccount` (the selector, a default, a restored
-   * match), re-selecting the roll-up, or `clearAccount`.
-   */
-  private rollUpChoicePreserved = false;
-
-  /**
-   * While `rollUpChoicePreserved` holds, the uid the demotion moved to.
-   *
-   * The demotion re-points the address, that navigation runs `orgPathParamGuard`, and the guard
-   * adopts through `adoptFromAddress` → `setAccount` → which clears the hold and writes the concrete
-   * uid. So the demotion's own follow-up undid the hold a moment after taking it (#4415 review 10).
-   * Matching on the uid keeps that one adoption automatic while a later adoption of a DIFFERENT
-   * organization — the caller navigating somewhere themselves — still counts as a deliberate choice.
-   */
-  private rollUpHoldTargetUid: string | null = null;
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
@@ -168,65 +138,32 @@ export class AccountContextService {
     return uids.size;
   });
 
-  /** Dark-launch gate — off until the BFF accepts the sentinel (#4127). See `ORG_LENS_ROLLUP_ENABLED_FLAG`. */
-  private readonly rollUpFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ROLLUP_ENABLED_FLAG);
-
-  /** Set once the wait for the flag provider has run out — see `rollUpFlagResolved`. */
-  private readonly rollUpFlagWaitElapsed: WritableSignal<boolean> = signal(false);
-
   /**
-   * Whether `rollUpFlag()` is worth believing yet.
-   *
-   * `getBooleanFlag` answers its default (false) until the provider streams real values, so an
-   * unresolved flag must not read as a disabled one — `AppComponent` seeds organizations before it
-   * initializes the flag service, and treating that window as "off" overwrote a restored `all`
-   * cookie (#4415 review 3).
-   *
-   * Bounded, though. `providerReady` stays false for the whole session if LaunchDarkly is
-   * unreachable or the authenticated `identify()` fails and recovery fails too, and an unbounded
-   * wait would admit `/org/all` indefinitely — for a single-organization caller, and even with the
-   * flag genuinely off (#4415 review 4). So the window closes on READY, or on
-   * `FEATURE_FLAG_READY_TIMEOUT_MS` elapsing — the same budget `waitForReady` gives every
-   * flag-gated guard.
-   *
-   * Deliberately NOT `initialized`. That signal is set once `OpenFeature.setContext()` resolves,
-   * which happens even when the raw provider status is ERROR — `initialize()` then arms error
-   * recovery and leaves `providerReady` false. Treating it as readiness ended the wait while every
-   * flag still read its default, so a slow LaunchDarkly was indistinguishable from a disabled
-   * feature (#4415 review 6).
-   *
-   * Closing the window without a READY provider still means the flag reads its default, false — the
-   * feature stays dark through an outage, which is what a dark-launch gate is for. What must not
-   * follow from it is destroying the caller's saved choice: see `demoteFromRollUp`.
-   */
-  private readonly rollUpFlagResolved: Signal<boolean> = computed(() => this.featureFlagService.providerReady() || this.rollUpFlagWaitElapsed());
-
-  /**
-   * True when the roll-up is the selection and has stopped being available or right for this
-   * caller — the one condition that demotes.
+   * True when the roll-up is the selection and the caller has stopped qualifying for it — the one
+   * condition that demotes.
    *
    * `isRollUp()` is read first and short-circuits: there is no eligibility question while a concrete
-   * organization is selected, and asking anyway would pull the flag provider and the grant sets into
-   * every consumer that merely holds this service.
+   * organization is selected, and asking anyway would pull the grant sets into every consumer that
+   * merely holds this service.
    *
-   * `demotionUndecidable()` is part of the same question, so admission and reconciliation cannot
-   * answer it differently — the defect of #4415 review 12.
+   * The exact complement of what `selectRollUp` admits, so admission and reconciliation cannot
+   * answer the same question differently — the defect of #4415 review 12.
    */
-  private readonly rollUpShouldDemote: Signal<boolean> = computed(
-    () => this.isRollUp() && !this.rollUpEligibilityPending() && !this.canSelectRollUp() && !this.demotionUndecidable()
-  );
+  private readonly rollUpShouldDemote: Signal<boolean> = computed(() => this.isRollUp() && !this.grantsUnsettled() && !this.canSelectRollUp());
 
-  /** Whether the roll-up is offered at all: the flag is on and the caller holds two or more organizations (#4132). */
-  public readonly canSelectRollUp: Signal<boolean> = computed(
-    () => this.rollUpFlagResolved() && this.rollUpFlag() && this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS
-  );
+  /** Whether the roll-up is offered at all: the caller holds two or more organizations (#4132). */
+  public readonly canSelectRollUp: Signal<boolean> = computed(() => this.rollUpOrganizationCount() >= ROLLUP_MIN_ORGANIZATIONS);
 
   /**
-   * True while eligibility cannot be judged: `rollUpOrganizationCount()` is a lower bound, so a
-   * caller who does qualify can still count as one organization. A conglomerate's sibling
-   * organizations arrive as *inherited* grants rather than persona seeds, which is what makes the
-   * difference. Callers restoring or adopting a roll-up admit it optimistically here and let the
-   * constructor's reconciliation effect (`demoteFromRollUp`) settle it.
+   * True while the grant sets are not a usable answer — still loading, or loaded from a lookup that
+   * failed or came back partial, which `OrgRoleGrantsService` reports as grants "unknown, not
+   * empty". Anything derived from them (the roll-up count, the demotion fallback) is a lower bound
+   * until this clears, so it is also the window in which roll-up eligibility cannot be judged.
+   *
+   * `rollUpOrganizationCount()` under-counts while it holds: a conglomerate's sibling organizations
+   * arrive as *inherited* grants rather than persona seeds, so a caller who does qualify can still
+   * count as one organization. Callers restoring or adopting a roll-up therefore admit it
+   * optimistically and let the constructor's reconciliation settle it.
    *
    * Two windows, not one. The obvious one is `!loaded()`. The other is a lookup that finished
    * *badly*: `OrgRoleGrantsService.refresh()` sets `loaded` true in its `catchError` branch too,
@@ -234,45 +171,10 @@ export class AccountContextService {
    * and it raises `degraded` / `lookupOutcome: 'failed'` to say so. Reading that as a settled answer
    * would demote a genuine conglomerate admin on a transient BFF outage and persist the concrete uid
    * over their `all` cookie, so the choice would not come back when the outage cleared. Anything but
-   * `'ok'` therefore stays pending: a `'partial'` roll-up expansion is a lower bound for the same
-   * reason. Staying in the roll-up through a degraded lookup is recoverable; silently overwriting
-   * the cookie is not.
-   */
-  public readonly rollUpEligibilityPending: Signal<boolean> = computed(() => {
-    // The flag value itself is not trustworthy yet. `AppComponent` calls
-    // `initializeUserOrganizations()` (line ~146) before `featureFlagService.initialize()` (~164),
-    // and `getBooleanFlag` answers false until the provider streams real values — so a restored
-    // `{ uid: 'all' }` cookie read as "feature off" and was overwritten with the first seed before
-    // anyone had asked LaunchDarkly. `providerReady` is the distinction between "off" and "not yet".
-    if (!this.rollUpFlagResolved()) {
-      return true;
-    }
-    // A settled "off" is a real answer: nothing to wait for, and a stale roll-up should be demoted.
-    if (!this.rollUpFlag()) {
-      return false;
-    }
-    return this.grantsUnsettled();
-  });
-
-  /**
-   * True while the grant sets are not a usable answer — still loading, or loaded from a lookup that
-   * failed or came back partial, which `OrgRoleGrantsService` reports as grants "unknown, not
-   * empty". Anything derived from them (the roll-up count, the demotion fallback) is a lower bound
-   * until this clears.
+   * `'ok'` therefore stays unsettled: a `'partial'` roll-up expansion is a lower bound for the same
+   * reason.
    */
   public readonly grantsUnsettled: Signal<boolean> = computed(() => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok');
-
-  /**
-   * True while leaving the roll-up has no answer yet: nothing names an organization to leave it
-   * FOR, and the grants that might are still unsettled.
-   *
-   * Admission and reconciliation both have to ask this, and the same way. They did not:
-   * `selectRollUp` admitted an undecidable `/org/all` visit, and the reconciliation effect — which
-   * only checked "pending or eligible" — immediately demoted it to the placeholder and queued
-   * `/org/not-found`, the dead end the admission existed to avoid. Later grants could not repair it,
-   * because reconciliation returns early once the roll-up is no longer selected (#4415 review 12).
-   */
-  private readonly demotionUndecidable: Signal<boolean> = computed(() => this.grantsUnsettled() && this.rollUpFallbackOrganization() === null);
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -334,13 +236,6 @@ export class AccountContextService {
     // Bootstrap on the placeholder; cookie only contributes accountId for later seed reconciliation — display fields never come from the cookie.
     this.selectedAccount = signal<Account>(PLACEHOLDER_ACCOUNT);
 
-    // Bound the unresolved-flag window (see `rollUpFlagResolved`). Browser-only: SSR renders once
-    // and never sits in this window waiting.
-    if (isPlatformBrowser(this.platformId)) {
-      const timer = setTimeout(() => this.rollUpFlagWaitElapsed.set(true), FEATURE_FLAG_READY_TIMEOUT_MS);
-      this.destroyRef.onDestroy(() => clearTimeout(timer));
-    }
-
     // Settle an optimistically admitted roll-up once the grant sets land. A cookie restore or a
     // `/org/all` deep link is admitted while `OrgRoleGrantsService` is still loading — the count is
     // a lower bound until then, and demoting on it would drop a genuine conglomerate admin into one
@@ -390,7 +285,7 @@ export class AccountContextService {
     // and demoting on that transient count would drop the caller into one company and overwrite the
     // cookie that said otherwise. Once the grants have loaded the count is trustworthy, and a caller
     // who no longer holds two organizations falls through to the ordinary default selection below.
-    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || this.rollUpEligibilityPending())) {
+    if (isOrgRollUpSegment(storedUid) && (this.canSelectRollUp() || this.grantsUnsettled())) {
       this.applyRollUpSelection();
       this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       return;
@@ -409,13 +304,6 @@ export class AccountContextService {
     // It must not reach the uid-stub path below, which would select `{ uid: 'all' }` as though it
     // were an organization and leave `isRollUp()` true after the demotion.
     const concreteStoredUid = isOrgRollUpSegment(storedUid) ? null : storedUid;
-    // Reached with a sentinel cookie only when the roll-up was refused above. If that refusal was
-    // the flag being off rather than a confirmed loss of organizations, the default selection below
-    // must not write over the stored choice — same rule as `demoteFromRollUp` (#4415 review 9).
-    const preserveStoredRollUp = isOrgRollUpSegment(storedUid) && !this.rollUpFlag();
-    if (preserveStoredRollUp) {
-      this.rollUpChoicePreserved = true;
-    }
     const matchedSeed = concreteStoredUid ? (seeds.find((seed) => seed.uid === concreteStoredUid) ?? null) : null;
     if (matchedSeed) {
       this.setAccount(matchedSeed);
@@ -424,9 +312,7 @@ export class AccountContextService {
       this.setAccount(stub);
       void this.refreshCanonicalRecord(stub);
     } else {
-      // `persist: false` where the stored roll-up is being held: an ordinary write would clear the
-      // hold it was just given and put the default organization in the cookie.
-      this.setAccount(seeds[0], { persist: !preserveStoredRollUp });
+      this.setAccount(seeds[0]);
     }
 
     this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
@@ -445,7 +331,7 @@ export class AccountContextService {
     this.persistToStorage(next);
   }
 
-  public setAccount(account: Account, options?: { persist?: boolean }): void {
+  public setAccount(account: Account): void {
     const live = this.liveAccounts().get(account.accountId);
     const next = live
       ? {
@@ -464,20 +350,7 @@ export class AccountContextService {
       this.pinSource.set(null);
     }
     this.selectedAccount.set(next);
-    // `persist: false` keeps the stored selection as it is while still changing the live one — used
-    // when the roll-up becomes *unavailable* rather than *wrong* (see `demoteFromRollUp`).
-    //
-    // An ordinary write ends the hold, because it is a deliberate choice — with one exception: a
-    // write of the very organization the hold demoted to. That is the demotion's own address
-    // re-point coming back through the guard, not the caller choosing anything.
-    if (options?.persist !== false) {
-      const isHeldTarget = this.rollUpChoicePreserved && !!next.uid && next.uid === this.rollUpHoldTargetUid;
-      if (!isHeldTarget) {
-        this.rollUpChoicePreserved = false;
-        this.rollUpHoldTargetUid = null;
-      }
-      this.persistToStorage(next);
-    }
+    this.persistToStorage(next);
   }
 
   /**
@@ -490,15 +363,14 @@ export class AccountContextService {
    * `/org/all` cannot put a single-org caller into a mode built for several.
    */
   public selectRollUp(options?: { admitWhilePending?: boolean }): boolean {
-    // `rollUpEligibilityPending` short-circuits to false the moment the flag resolves off, without
-    // consulting the grants. On a cold `/org/all/…` with the flag off and the grants not yet
-    // answered, a caller with no persona seeds therefore had nothing to be demoted TO, and the
-    // guard's only remaining answer was `/org/not-found` — a dead end later grants cannot repair,
+    // `admitWhilePending` is for an ADDRESS — a `/org/all/…` deep link the guard is activating.
+    // The count is a lower bound while the grants are unsettled, so refusing then would send a
+    // genuine conglomerate admin to `/org/not-found`: a dead end later grants cannot repair,
     // because reconciliation stops once the roll-up is deselected and no default may leave
-    // not-found. Admitting here is transiently wrong (the pages fail closed while the flag is off)
-    // and self-correcting: the reconciliation effect demotes and re-points as soon as the grants
-    // land. A dead end is neither (#4415 review 10).
-    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && (this.rollUpEligibilityPending() || this.demotionUndecidable()));
+    // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
+    // complement of this condition, so the moment the grants land either they confirm the roll-up
+    // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
+    const admissible = this.canSelectRollUp() || (options?.admitWhilePending === true && this.grantsUnsettled());
     if (!admissible) {
       return false;
     }
@@ -542,18 +414,11 @@ export class AccountContextService {
    * Leave an addressed `/org/all/…` this caller may not have, and answer with the organization the
    * address should name instead — `orgPathParamGuard`'s half of `demoteFromRollUp`.
    *
-   * Same two reasons as that one, and the same rule about which touches the stored choice: the flag
-   * being off (or its wait timed out) makes the roll-up *unavailable* and leaves `{ uid: 'all' }`
-   * alone; grants settling below two organizations makes it *wrong* for this caller and writes the
-   * concrete uid. The guard previously made no distinction, so a grant-only caller opening
-   * `/org/all/…` during an outage lost the very choice review 6 set out to protect (#4415 review 9).
-   *
    * The result is adopted as an ADDRESS selection, not a bare `setAccount`. The address is about to
    * name it, so a persona re-seed or an empty org-items first page must not replace or clear it
    * before that navigation settles — the same reason a resolver hit pins.
    */
   public demoteAddressedRollUp(): Account | null {
-    const preserveStoredChoice = !this.rollUpFlag();
     const current = this.selectedAccount();
     // The current selection counts only when it is a CONCRETE organization. `orgUrlSegment` is
     // truthy for the roll-up itself (it answers the sentinel), so reusing it would leave the caller
@@ -564,11 +429,7 @@ export class AccountContextService {
       return null;
     }
 
-    if (preserveStoredChoice) {
-      this.rollUpChoicePreserved = true;
-      this.rollUpHoldTargetUid = next.uid ?? null;
-    }
-    this.applyDemotionFallback(next, preserveStoredChoice);
+    this.applyDemotionFallback(next);
     return next;
   }
 
@@ -617,8 +478,6 @@ export class AccountContextService {
   }
 
   public clearAccount(): void {
-    this.rollUpChoicePreserved = false;
-    this.rollUpHoldTargetUid = null;
     this.addressedUid.set(null);
     this.pinSource.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
@@ -794,6 +653,10 @@ export class AccountContextService {
    * they hold none), releasing the pin the roll-up took so the ordinary selection paths own the
    * choice again.
    *
+   * Only ever reached once the grants have settled below `ROLLUP_MIN_ORGANIZATIONS` — the roll-up is
+   * now *wrong* for this caller, not merely unavailable — so the stored choice is updated like any
+   * other switch rather than held.
+   *
    * The address is re-pointed off `/org/all/…` in place by `repointAddressAfterDemotion`
    * (`replaceUrl`, keeping page, query and fragment). An earlier revision deliberately left that to
    * `orgPathParamGuard`'s next run, on the grounds that navigating from a service effect would
@@ -805,33 +668,15 @@ export class AccountContextService {
     this.addressedUid.set(null);
     this.pinSource.set(null);
 
-    // Two different reasons to leave the roll-up, and only one of them is about the caller.
-    //
-    // The flag being off (or unresolved past the wait) makes the roll-up *unavailable*; it says
-    // nothing about whether this caller still wants it. Erasing `{ uid: 'all' }` in that case
-    // destroys a choice the feature will honour again the moment the flag is back — and a slow
-    // LaunchDarkly looks exactly like a disabled flag from here, so the outage window would quietly
-    // take the preference with it (#4415 review 6). The live selection still changes, so nothing
-    // renders under a roll-up it cannot serve; only the stored choice is left alone.
-    //
-    // Grants settling on fewer than two organizations is the other reason, and that IS about the
-    // caller: the roll-up is now *wrong* for them, so the cookie is updated like any other switch.
-    const preserveStoredChoice = !this.rollUpFlag();
     const fallback = this.rollUpFallbackOrganization();
-    if (preserveStoredChoice) {
-      this.rollUpChoicePreserved = true;
-      this.rollUpHoldTargetUid = fallback?.uid ?? null;
-    }
     if (!fallback) {
       this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
-      if (!preserveStoredChoice) {
-        this.clearStorage();
-      }
+      this.clearStorage();
       this.repointAddressAfterDemotion(null);
       return;
     }
 
-    this.applyDemotionFallback(fallback, preserveStoredChoice);
+    this.applyDemotionFallback(fallback);
     this.repointAddressAfterDemotion(fallback);
   }
 
@@ -845,8 +690,8 @@ export class AccountContextService {
    * the grant they still held (#4415 review 11). Pinned as an address selection, exactly as a
    * resolver hit, nothing may replace it before the navigation lands.
    */
-  private applyDemotionFallback(next: Account, preserveStoredChoice: boolean): void {
-    this.setAccount(next, { persist: !preserveStoredChoice });
+  private applyDemotionFallback(next: Account): void {
+    this.setAccount(next);
     this.addressedUid.set(next.uid ?? null);
     this.pinSource.set(next.uid ? 'address' : null);
     // A uid-only stub (a grant with no seed behind it) has no display fields yet.
@@ -927,8 +772,6 @@ export class AccountContextService {
 
   /** Writes the roll-up selection and pins it as an address selection. The eligibility gate lives in the callers. */
   private applyRollUpSelection(): void {
-    this.rollUpChoicePreserved = false;
-    this.rollUpHoldTargetUid = null;
     this.selectedAccount.set(ROLLUP_ACCOUNT);
     this.persistToStorage(ROLLUP_ACCOUNT);
     this.addressedUid.set(ORG_ROLLUP_SEGMENT);
@@ -937,12 +780,6 @@ export class AccountContextService {
 
   /** Spec 002: persist only the org account id (SFID, in `uid`) — display fields stay in memory and are always re-hydrated from persona seeds + Snowflake + the canonical fetch. */
   private persistToStorage(account: Account): void {
-    // Hold the saved roll-up through every incidental write that follows an unavailability
-    // demotion — canonical hydration, an indexed slug, an address adoption. Writing the roll-up
-    // itself is always allowed; it is the same value already stored.
-    if (this.rollUpChoicePreserved && !isOrgRollUpSegment(account.uid)) {
-      return;
-    }
     if (!this.isValidUid(account.uid)) {
       this.clearStorage();
       return;
