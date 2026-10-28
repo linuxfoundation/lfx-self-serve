@@ -50,6 +50,8 @@ import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
 /** A start must explicitly discard the current active run before replacing it. */
 export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+/** Another writer already accepted the answers for this exact questions turn. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 

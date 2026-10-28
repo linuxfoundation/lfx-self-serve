@@ -431,8 +431,11 @@ before restoring its creator-only questions; writing or a stored revision opens
 its document instead. Other writers submit
 `project`, `questionsId` and answers to `/api/mktg-agents/runs/:runId/answers`
 without any session capability. An accepted answer resumes public progress;
-403 retains a reason-bearing waiting notice without retries, while 409/412
-refresh the current row. A waiting reader can also Refresh progress after another
+403 retains a reason-bearing waiting notice without retries. A scoped 409
+`MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
+safe display name (or Another writer), and resumes writing progress without
+resending. Identifier-like names are not echoed. A genuinely new server questions
+block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
 browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
 Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay

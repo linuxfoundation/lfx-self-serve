@@ -11,6 +11,7 @@ import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_ANSWERED,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_STARTED_RUN_STATE_ORDER,
 } from '@lfx-one/shared/constants';
@@ -100,6 +101,9 @@ export class MktgRunProgressComponent {
   private readonly reload = signal(0);
   protected readonly answersSending = signal(false);
   protected readonly answersError = signal('');
+  protected readonly answersNotice = signal('');
+  private readonly answeredRunId = signal('');
+  private readonly answeredQuestionsId = signal('');
   private readonly answersDenied = signal(false);
   protected readonly publicQuestions = this.initPublicQuestions();
 
@@ -157,6 +161,9 @@ export class MktgRunProgressComponent {
         switchMap((request) => {
           this.answersDenied.set(false);
           this.answersError.set('');
+          this.answersNotice.set('');
+          this.answeredRunId.set('');
+          this.answeredQuestionsId.set('');
           return this.answerRequests.pipe(
             exhaustMap((answers) => {
               const run = this.selectedRun();
@@ -185,6 +192,19 @@ export class MktgRunProgressComponent {
                         : 'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
                     );
                   } else if (error.status === 409 || error.status === 412) {
+                    const answered = this.answeredConflict(error, run.runId, pending.questionsId);
+                    if (answered) {
+                      this.answersNotice.set(`${answered} already answered these — the agent is writing.`);
+                      this.answeredRunId.set(run.runId);
+                      this.answeredQuestionsId.set(pending.questionsId);
+                      this.loaded.update(
+                        (detail) =>
+                          detail && {
+                            ...detail,
+                            runs: detail.runs?.map((row) => (row.runId === run.runId ? { ...row, state: 'writing', pendingQuestions: undefined } : row)),
+                          }
+                      );
+                    }
                     this.onRefreshProgress();
                   } else {
                     this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
@@ -305,6 +325,13 @@ export class MktgRunProgressComponent {
                 this.loaded.set({
                   ...cycle.detail,
                   runs: cycle.detail.runs?.map((row) => {
+                    if (row.runId === this.answeredRunId() && row.state === 'questions') {
+                      if (!row.pendingQuestions || row.pendingQuestions.questionsId === this.answeredQuestionsId())
+                        return { ...row, state: 'writing', pendingQuestions: undefined };
+                      this.answersNotice.set('');
+                      this.answeredRunId.set('');
+                      this.answeredQuestionsId.set('');
+                    }
                     const prior = previous?.runs?.find((entry) => entry.runId === row.runId);
                     if (row.pendingQuestions && prior?.pendingQuestions?.questionsId === row.pendingQuestions.questionsId)
                       return { ...row, pendingQuestions: prior.pendingQuestions };
@@ -312,7 +339,7 @@ export class MktgRunProgressComponent {
                   }),
                 });
                 this.loadedSubject.set(request.subject);
-                this.observed.emit(cycle);
+                this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
                 const outcome = this.selectedRun()?.state ?? (request.runId && cycle.detail.revisions.length ? 'landed' : '');
                 if (outcome === terminal) return;
@@ -331,7 +358,10 @@ export class MktgRunProgressComponent {
                   this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
                   return EMPTY;
                 }
-                const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
+                const active =
+                  this.runState() === 'writing' ||
+                  this.runState() === 'storing' ||
+                  cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
                 const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
                 const local = this.localProgress();
                 if (!active && !questions && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
@@ -378,6 +408,18 @@ export class MktgRunProgressComponent {
     if (this.submittingGeneration()) return;
     if (this.polling() && this.runPage()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
+  }
+
+  /** Only the exact scoped server conflict can retire this browser's answer form. */
+  private answeredConflict(error: HttpErrorResponse, runId: string, questionsId: string): string | null {
+    const body: unknown = error.error;
+    if (error.status !== 409 || !body || typeof body !== 'object' || !('code' in body) || body.code !== MKTG_RUN_ANSWERED) return null;
+    const details = 'details' in body ? body.details : body;
+    if (!details || typeof details !== 'object') return null;
+    if (('runId' in details && details.runId !== runId) || ('questionsId' in details && details.questionsId !== questionsId)) return null;
+    const name = 'answeredBy' in details && typeof details.answeredBy === 'string' ? details.answeredBy.trim() : '';
+    // The contract is display-name only; never echo an accidental email or subject identifier.
+    return name && !/[@|:]/.test(name) ? name : 'Another writer';
   }
 
   private initPublicQuestions() {

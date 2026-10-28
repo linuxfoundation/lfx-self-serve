@@ -5,7 +5,7 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -147,6 +147,63 @@ describe('MktgRunProgressComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(answer).toHaveBeenCalledOnce();
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { answeredBy: 'Synthetic writer', flattened: false, expected: 'Synthetic writer' },
+    { answeredBy: null, flattened: true, expected: 'Another writer' },
+    { answeredBy: '<script>synthetic</script>', flattened: false, expected: '<script>synthetic</script>' },
+    { answeredBy: 'synthetic-writer@example.test', flattened: true, expected: 'Another writer' },
+    { answeredBy: 'auth0|synthetic-subject', flattened: false, expected: 'Another writer' },
+  ])('moves an already-answered conflict to writing with attribution ($answeredBy)', async ({ answeredBy, flattened, expected }) => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    const details = { runId, questionsId: waiting.pendingQuestions.questionsId, answeredBy, answeredAt: run.startedAt };
+    answer.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_ANSWERED, ...(flattened ? details : { details }) } }))
+    );
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    await fixture.whenStable();
+    expect(text()).toContain(`${expected} already answered these — the agent is writing.`);
+    if (expected === 'Another writer' && answeredBy) expect(text()).not.toContain(answeredBy);
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    expect(fixture.nativeElement.querySelector('script')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(answer).toHaveBeenCalledOnce();
+    // A genuinely new server questions block is not suppressed by the earlier acknowledgement.
+    read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: { ...waiting.pendingQuestions, questionsId: 'e'.repeat(64) } }])));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+    expect(text()).not.toContain('already answered these');
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
+  it('does not show an answered notice from an unrelated run or questions turn', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    answer.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: MKTG_RUN_ANSWERED,
+              details: { runId: 'f'.repeat(64), questionsId: waiting.pendingQuestions.questionsId, answeredBy: 'Synthetic other writer' },
+            },
+          })
+      )
+    );
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    await fixture.whenStable();
+    expect(text()).not.toContain('already answered these');
+    expect(fixture.componentInstance.runState()).toBe('questions');
+    expect(answer).toHaveBeenCalledOnce();
   });
 
   it.each([409, 412])('refreshes current state on %s without repeating answers', async (status) => {
