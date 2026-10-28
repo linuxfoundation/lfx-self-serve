@@ -425,8 +425,15 @@ export class MktgDocumentViewComponent {
     const run = this.selectedRun();
     return run?.state === 'discarded' || run?.state === 'superseded' ? run : null;
   });
-  protected readonly newerRunsLink = computed(() => `${mktgKitRootPath(this.router.url)}/documents`);
-  protected readonly newerRunsParams = computed(() => ({ project: this.projectContext.activeContext()?.slug || this.routeProject() }));
+  protected readonly newerRunsLink = computed(() => {
+    const root = `${mktgKitRootPath(this.router.url)}/documents`;
+    const run = this.closedRun();
+    return run?.replacedBy ? `${root}/${run.agentKey}/${run.documentId}` : root;
+  });
+  protected readonly newerRunsParams = computed(() => ({
+    project: this.projectContext.activeContext()?.slug || this.routeProject(),
+    ...(this.closedRun()?.replacedBy && { run: this.closedRun()?.replacedBy }),
+  }));
   protected readonly runState: Signal<MktgDocumentRunProgress['state'] | null> = this.initRunState();
 
   protected readonly runFailure = computed(() => this.selectedRun()?.failureText || this.failureText() || '');

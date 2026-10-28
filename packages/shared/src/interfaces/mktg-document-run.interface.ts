@@ -114,6 +114,10 @@ export interface MktgDocumentRunProgress {
   state: Exclude<MktgStoredDocumentRunState, 'completed'>;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
+  /** Resolved display name only; absent or null when the closure actor is unknown. */
+  closedBy?: string | null;
+  /** Opaque replacement run id for this document; absent on legacy closed records. */
+  replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */

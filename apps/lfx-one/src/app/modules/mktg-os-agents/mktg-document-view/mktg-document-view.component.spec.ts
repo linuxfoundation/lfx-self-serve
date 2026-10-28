@@ -1494,6 +1494,34 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.retryRun).not.toHaveBeenCalled();
   });
 
+  it.each(['discarded', 'superseded'] as const)('opens the exact replacement of a %s run when optional public metadata is present', async (state) => {
+    const replacedBy = 'c'.repeat(64);
+    const run = { ...started(state), closedAt: '2026-10-19T13:00:00Z', closedBy: 'Synthetic writer', replacedBy };
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    const message = query('mktg-document-view-closed-message')?.textContent?.trim();
+    if (state === 'discarded') expect(message).toBe('This run was discarded by Synthetic writer at 19 Oct 2026, 13:00; a newer run was started.');
+    else expect(message).toBe('A newer run replaced this one.');
+    const link = query('mktg-document-view-newer-run');
+    expect(link?.textContent?.trim()).toBe('Open the newer run');
+    const target = new URL(link?.getAttribute('href') ?? '', 'http://localhost');
+    expect(target.pathname).toBe('/mktg-os-agents/documents/brand-kit/living');
+    expect(target.searchParams.get('run')).toBe(replacedBy);
+    expect(target.searchParams.get('project')).toBe(PROJECT.slug);
+    expect(target.searchParams.has('revision')).toBe(false);
+  });
+
+  it.each([
+    { closedBy: null, closedAt: '2026-10-19T13:00:00Z', message: 'This run was discarded at 19 Oct 2026, 13:00; a newer run was started.' },
+    { closedBy: 'Synthetic writer', closedAt: undefined, message: 'This run was discarded by Synthetic writer; a newer run was started.' },
+    { closedBy: null, closedAt: undefined, message: 'This run was discarded; a newer run was started.' },
+  ])('omits unknown closure facts: $message', async ({ closedBy, closedAt, message }) => {
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...started('discarded'), closedBy, closedAt }] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe(message);
+    expect(query('mktg-document-view-newer-run')?.getAttribute('href')).toBe('/mktg-os-agents/documents?project=testorbit');
+  });
+
   it('settles an already open run page when the next timer read reports discard', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const run = started('writing');
