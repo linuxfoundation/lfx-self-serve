@@ -1,36 +1,96 @@
 ---
 title: Create a Survey
-description: How to create a new survey for your project in LFX Self Serve.
+description: How to create and send an NPS survey to the members of one or more groups in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
-tags: [surveys, create, nps, feedback]
-last_updated: 2026-05-22
+tags: [surveys, create, nps, feedback, reminders, email, schedule]
+last_updated: 2026-10-28
 intercom_collection: Surveys
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** personas. Use this guide to create a new survey for your project community.
+This article is for people who can manage surveys for a project, or who are a writer of the group they want to survey. If you don't see **Create Survey**, you don't have permission to create surveys there. Contact your project administrator.
 
-## Before you begin
+A survey is an NPS (Net Promoter Score) survey sent by email to the members of a group. You pick the group, pick a template, set when the survey goes out and when it closes, and write the email. You don't write the questions yourself. They come from the template.
 
-Confirm you have the correct project selected in the lens switcher. The new survey will be associated with the currently active project context.
+## Open the survey form
 
-## Steps
+There are two ways in:
 
-1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Surveys** from the left navigation.
-3. Select the option to create a new survey.
-4. Fill in the survey details, including title, description, questions, and any date or audience settings.
-5. Save or publish the survey to make it available to respondents.
+- **From the Surveys page.** Switch to the project or foundation you want, select **Surveys** in the sidebar, then select **Create Survey**.
+- **From a group.** Open the group, select its **Surveys** tab, then select **Create Survey**. The group is filled in and locked, and a banner reads "This survey will be created for" followed by the group's name. **Cancel** and a successful send both return you to the group's **Surveys** tab.
 
-## After creation
+The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing & Reminders**, **Email Draft**, and **Review & Confirm**. Select **Next** to move forward and **Previous** to go back. **Next** stays disabled until the current step is complete, so you move through the steps in order. **Cancel** leaves the form without sending anything. The form also shows a **Save as Draft** button, but it doesn't save your work yet, so finish the survey in one sitting.
 
-The survey appears on the Surveys page. Respondents can access it via the survey link.
+## Step 1: Audience & Type
 
-## Permissions
+1. Under **Target Audience**, select the group to survey. Use the **Search groups…** box to find it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
+2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
 
-Only users with maintainer, board-member, or executive-director personas can create surveys. If you do not see the create option, contact your project administrator.
+The form lets you tick more than one group, but a survey is currently created for the first group you select only, and it is named after that group, for example "Technical Advisory Committee Survey". To survey several groups, create one survey for each. The form also notes that for Board groups, surveys are sent only to voting representatives.
+
+## Step 2: Timing & Reminders
+
+**When should the survey be distributed?**
+
+- **Immediate.** The survey is sent as soon as you confirm, within a few minutes.
+- **Scheduled.** Pick a **Schedule Date**. It can't be in the past. The email goes out on that date.
+
+**Survey Cutoff Date** is the date the survey closes and stops accepting responses. It is required and must be after the send date.
+
+**How should reminders be sent?**
+
+- **Automatic.** Reminders go to people who haven't responded. Choose **Reminder Frequency**: **Every 3 days**, **Every 7 days** (the default), or **Every 14 days**. Reminders continue until the survey closes.
+- **Manual.** You don't choose a frequency. The form doesn't confirm that reminders are switched off, so don't rely on **Manual** to prevent them.
+
+## Step 3: Email Draft
+
+The survey is delivered by email. The form opens with a default subject and message that you can change.
+
+- **Subject Line** is required and can be up to 200 characters.
+- **Body** is required.
+- **Preview Email** shows the message with sample values filled in so you can check how it reads.
+
+The **Custom Variables** panel on the right lists placeholders that are replaced with each person's own details when the email is sent. Select a variable to copy it, then paste it into the subject or body. A **Copied!** note confirms the copy.
+
+| Group            | Variables                                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| **Participant**  | `{{FirstName}}`, `{{LastName}}`, `{{EmailAddress}}`                                                       |
+| **Organization** | `{{OrganizationName}}`, `{{ProjectName}}`, `{{CommitteeName}}`, `{{CommitteeType}}`, `{{MembershipTier}}` |
+| **Survey**       | `{{SurveyTemplate}}`, `{{SurveyLink}}`, `{{SurveyButton}}`, `{{CutoffDate}}`, `{{Quarter}}`, `{{Year}}`   |
+| **Sender**       | `{{ExecutiveDirectorName}}`, `{{SenderTitle}}`, `{{SenderEmail}}`                                         |
+
+Keep `{{SurveyButton}}` in the body. It becomes the **Take Survey** button that recipients select to open the survey. `{{SurveyLink}}` inserts the survey link as plain text.
+
+## Step 4: Review & Confirm
+
+The last step summarizes the survey before it is sent:
+
+- **Survey Details**: **Survey Type**, **Target Groups**, and **Total Participants**. Check **Target Groups** to confirm who the survey is going to. The **Total Participants** figure currently counts the groups you selected, not the number of people in them.
+
+If you started from a group's **Surveys** tab, the group is locked and this summary can read **Target Groups: None selected** and **Total Participants: 0**. The survey is still sent to that group. Confirm the group in the banner at the top of the form, or in the **Audience & Type** step, instead of relying on this summary.
+
+- **Distribution & Reminders**: **Distribution**, **Cutoff Date**, and **Reminders**
+- **Email Preview**: the subject and body as recipients will see them
+
+Each section has an **Edit** control that jumps back to that step.
+
+When everything looks right, select **Send Survey**. If you chose a scheduled date, the button reads **Schedule Survey** instead. A confirmation dialog opens, titled **Send Survey** or **Schedule Survey**. It reads "This survey will be sent immediately…" or "This survey will be sent on" followed by the date, and then summarizes the reminders and the cutoff date. It also mentions a number of participants across a number of groups. As on the review step, that participant number is the number of groups, not people.
+
+Select **Yes, send survey** (or **Yes, schedule survey** for a scheduled survey) to confirm, or **Cancel** to go back.
+
+After you confirm, you see "Survey sent successfully" or "Survey scheduled successfully", and you return to the Surveys page. If something goes wrong, you see "Failed to create survey. Please try again." and stay on the form.
+
+## After you send
+
+- The survey appears on the **Surveys** page. Immediate surveys show **Open**. Scheduled surveys show **Scheduled** until the send date.
+- Recipients get the email, and the survey shows up on their own **Surveys** page. See [Respond to a Survey](../respond-to-a-survey/).
+- Follow responses as they come in. See [View Survey Results](../survey-results/).
+- A survey closes on its cutoff date.
 
 ## Related
 
-- [Manage Surveys](../manage-surveys/) — edit and analyze existing surveys
-- [Votes](../../votes/) — for formal decision-making polls rather than feedback surveys
+- [Manage Surveys](../manage-surveys/): the Surveys page, tabs, filters, and statuses
+- [View Survey Results](../survey-results/): participation, NPS, and individual responses
+- [Respond to a Survey](../respond-to-a-survey/): what recipients see
+- [Surveys FAQ](../faq/)
+- [Votes](../../votes/): for formal decision-making polls rather than feedback surveys
