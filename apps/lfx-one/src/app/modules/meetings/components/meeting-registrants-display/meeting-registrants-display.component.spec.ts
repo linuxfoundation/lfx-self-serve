@@ -362,22 +362,22 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
 
   it('sends the new host flag for just that guest', async () => {
     const update = vi.fn().mockReturnValue(of(success));
-    const component = await mount(update, [registrant('ada', false), registrant('grace', false)]);
+    const component = await mount(update, [registrant('guest-a', false), registrant('guest-b', false)]);
 
-    component.onToggleHost(registrant('grace', false));
+    component.onToggleHost(registrant('guest-b', false));
 
     expect(update).toHaveBeenCalledTimes(1);
     const [meetingId, updates] = update.mock.calls[0];
     expect(meetingId).toBe('meeting-1');
     expect(updates).toHaveLength(1);
-    expect(updates[0].uid).toBe('grace');
-    expect(updates[0].changes).toMatchObject({ meeting_id: 'meeting-1', email: 'grace@acme-motors.example', first_name: 'grace', host: true });
+    expect(updates[0].uid).toBe('guest-b');
+    expect(updates[0].changes).toMatchObject({ meeting_id: 'meeting-1', email: 'guest-b@acme-motors.example', first_name: 'guest-b', host: true });
   });
 
   it('sends an occurrence-scoped guest back with the scope it already has', async () => {
     const update = vi.fn().mockReturnValue(of(success));
     // The query-service index spells the scope `occurrence` and never `occurrence_id`.
-    const scoped = { ...registrant('ada', false), occurrence: '1700000000' } as unknown as MeetingRegistrant;
+    const scoped = { ...registrant('guest-a', false), occurrence: '1700000000' } as unknown as MeetingRegistrant;
     const component = await mount(update, [scoped]);
 
     component.onToggleHost(scoped);
@@ -386,61 +386,65 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
   });
 
   it('names the host toggle after the email when the guest has no name', async () => {
-    const component = await mount(vi.fn(), []);
-    const nameless = { ...registrant('ada', false), first_name: '', last_name: '' } as MeetingRegistrant;
+    const nameless = { ...registrant('guest-a', false), first_name: '', last_name: '' } as MeetingRegistrant;
+    const namelessHost = { ...registrant('guest-b', true), first_name: '', last_name: '' } as MeetingRegistrant;
+    const component = await mount(vi.fn(), [nameless, namelessHost, registrant('guest-c', false)]);
 
-    expect(component['hostToggleLabel'](nameless)).toBe('Make ada@acme-motors.example a meeting host');
-    expect(component['hostToggleLabel']({ ...nameless, host: true })).toBe('Remove ada@acme-motors.example as meeting host');
+    const labels = component['hostToggleLabels']();
+
+    expect(labels.get('guest-a')).toBe('Make guest-a@acme-motors.example a meeting host');
+    expect(labels.get('guest-b')).toBe('Remove guest-b@acme-motors.example as meeting host');
+    expect(labels.get('guest-c')).toBe('Make guest-c Tester a meeting host');
   });
 
   it('shows the change at once and lists hosts first', async () => {
     const update = vi.fn().mockReturnValue(of(success));
-    const component = await mount(update, [registrant('ada', false), registrant('grace', false)]);
+    const component = await mount(update, [registrant('guest-a', false), registrant('guest-b', false)]);
 
-    component.onToggleHost(registrant('grace', false));
+    component.onToggleHost(registrant('guest-b', false));
 
     expect(component.registrants().map((r) => [r.uid, r.host])).toEqual([
-      ['grace', true],
-      ['ada', false],
+      ['guest-b', true],
+      ['guest-a', false],
     ]);
   });
 
   it('asks the owner of the list to reload after a successful change', async () => {
     const update = vi.fn().mockReturnValue(of(success));
-    const component = await mount(update, [registrant('ada', false)]);
+    const component = await mount(update, [registrant('guest-a', false)]);
     const reload = vi.fn();
     component.refreshRequested.subscribe(reload);
 
-    component.onToggleHost(registrant('ada', false));
+    component.onToggleHost(registrant('guest-a', false));
 
     expect(reload).toHaveBeenCalledWith(0);
   });
 
   it('does not ask for a reload when the update fails', async () => {
     const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [] }));
-    const component = await mount(update, [registrant('ada', false)]);
+    const component = await mount(update, [registrant('guest-a', false)]);
     const reload = vi.fn();
     component.refreshRequested.subscribe(reload);
 
-    component.onToggleHost(registrant('ada', false));
+    component.onToggleHost(registrant('guest-a', false));
 
     expect(reload).not.toHaveBeenCalled();
   });
 
   it('leaves the list alone when the update fails', async () => {
     const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [{ error: { message: 'nope' } }] }));
-    const component = await mount(update, [registrant('ada', false)]);
+    const component = await mount(update, [registrant('guest-a', false)]);
 
-    component.onToggleHost(registrant('ada', false));
+    component.onToggleHost(registrant('guest-a', false));
 
     expect(component.registrants()[0].host).toBe(false);
   });
 
   it('leaves the list alone when the request errors', async () => {
     const update = vi.fn().mockReturnValue(throwError(() => new Error('network')));
-    const component = await mount(update, [registrant('ada', false)]);
+    const component = await mount(update, [registrant('guest-a', false)]);
 
-    component.onToggleHost(registrant('ada', false));
+    component.onToggleHost(registrant('guest-a', false));
 
     expect(component.registrants()[0].host).toBe(false);
   });

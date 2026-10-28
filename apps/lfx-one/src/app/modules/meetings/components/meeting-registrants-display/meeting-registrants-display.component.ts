@@ -110,6 +110,8 @@ export class MeetingRegistrantsDisplayComponent {
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  // Each guest's host-toggle accessible name, by uid, so the template reads a lookup instead of building a string per render.
+  protected readonly hostToggleLabels: Signal<Map<string, string>> = this.initHostToggleLabels();
   // Rows the server hasn't confirmed yet — their uid is a placeholder, so there is nothing to update.
   protected readonly unconfirmedGuestUids: Signal<Set<string>> = computed(
     () =>
@@ -406,11 +408,6 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   // === Protected Methods (template helpers) ===
-  /** The host toggle's accessible name; falls back to the email, then `guest`, for a registrant with no name. */
-  protected hostToggleLabel(registrant: MeetingRegistrant): string {
-    const name = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'guest';
-    return registrant.host ? `Remove ${name} as meeting host` : `Make ${name} a meeting host`;
-  }
   protected isGuestSubmitting(id: string): boolean {
     return this.submittingGuestIds().has(id);
   }
@@ -678,6 +675,19 @@ export class MeetingRegistrantsDisplayComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  /** Falls back to the email, then `guest`, for a registrant with no name. */
+  private initHostToggleLabels(): Signal<Map<string, string>> {
+    return computed(
+      () =>
+        new Map(
+          this.registrants().map((registrant) => {
+            const name = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'guest';
+            return [registrant.uid, registrant.host ? `Remove ${name} as meeting host` : `Make ${name} a meeting host`] as const;
+          })
+        )
     );
   }
 
