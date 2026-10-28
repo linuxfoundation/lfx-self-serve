@@ -718,6 +718,23 @@ describe('NavbarComponent', () => {
       });
     });
 
+    it('pins a narrow-viewport hover peek when the toggle under the pointer is clicked', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.openPeek();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.classList).not.toContain('is-pinned');
+      expect(navbar.toggleLabel()).toBe('Keep sidebar open');
+
+      navbar.onToggleClick(click);
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(true);
+      expect(collapse.peekPinned()).toBe(true);
+      expect(fixture.nativeElement.classList).toContain('is-pinned');
+    });
+
     it('never collapses the mobile drawer’s navbar', async () => {
       stubViewport(true);
       const fixture = await createNavbarFixture([], [], {}, { mobile: true });

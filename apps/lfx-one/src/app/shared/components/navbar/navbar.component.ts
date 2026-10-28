@@ -104,6 +104,7 @@ import { NavMenuBase } from './nav-menu-base.directive';
     '[class.is-collapsed]': 'railVisible()',
     '[class.is-overlay]': '!mobile() && collapse.overlay()',
     '[class.is-narrow]': '!mobile() && collapse.narrow()',
+    '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
     '[class.is-animated]': '!mobile() && collapse.animated()',
   },
 })
@@ -318,14 +319,15 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * The sidebar toggle: dock open or closed on wide viewports; open (pinned) or close a peek on narrow ones. A keyboard
-   * press (no click count) keeps focus in the navbar; a pointer click drops it.
+   * The sidebar toggle: dock open or closed on wide viewports. On narrow ones it pins a peek — from the rail, or the hover
+   * peek the pointer just opened on its way to the click — and closes a pinned one. A keyboard press (no click count)
+   * keeps focus in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
     this.clearPeekOpenTimer();
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
     if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peek() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
+      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
     }
     if (this.collapse.peek()) {
