@@ -34,6 +34,8 @@ import {
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
+  LINKEDIN_IMAGE_MAX_BYTES,
+  LINKEDIN_IMAGE_TOO_LARGE_MESSAGE,
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
@@ -139,6 +141,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignLinkedInImageAssetBlock,
   CampaignMetaImageAssetBlock,
   CampaignRedditImageAssetBlock,
   CampaignCallExtension,
@@ -399,6 +402,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
   protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
+   * `null` (unknown) withholds it, as for Meta. LinkedIn has no pasted-URL path, so this one
+   * capability is the whole of the image control.
+   */
+  public readonly linkedInAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see linkedInAssetUploadEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInAssetUploadAvailable = computed<boolean>(() => this.linkedInAssetUploadEnabled() === true);
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -916,6 +929,23 @@ export class ImplementationTabComponent implements OnInit {
     ['meta-image-file-hint', 'meta-image-file-status', ...(this.metaImageUploadStatus() === 'error' ? ['meta-image-file-error'] : [])].join(' ')
   );
   private metaImageUploadSub: Subscription | null = null;
+  /**
+   * The LinkedIn ad image, set on EVERY variant at create (see `linkedInVariantsForCreate`): an
+   * upload made for this brief, and nothing else, since LinkedIn takes no image URL. The upload
+   * state mirrors the Meta fields above one for one.
+   */
+  protected readonly linkedInImageAssetId = signal('');
+  protected readonly linkedInImageAssetName = signal('');
+  protected readonly linkedInImageAssetBriefId = signal('');
+  protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly linkedInImageUploadPendingName = signal('');
+  private readonly linkedInImageUploadPendingBriefId = signal('');
+  private readonly linkedInImageUploadFailedBriefId = signal('');
+  protected readonly linkedInImageUploadError = signal('');
+  protected readonly linkedInImageFileDescribedBy = computed(() =>
+    ['linkedin-image-file-hint', 'linkedin-image-file-status', ...(this.linkedInImageUploadStatus() === 'error' ? ['linkedin-image-file-error'] : [])].join(' ')
+  );
+  private linkedInImageUploadSub: Subscription | null = null;
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -2003,6 +2033,34 @@ export class ImplementationTabComponent implements OnInit {
     return '';
   });
 
+  /**
+   * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
+   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have.
+   */
+  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = this.initLinkedInImageAssetBlock();
+  /** Whether the draft holds an uploaded LinkedIn image made for the brief now open — the only one sent. */
+  protected readonly linkedInImageAssetForThisBrief = computed(
+    () => this.linkedInImageAssetId() !== '' && this.linkedInImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly linkedInAssetWithheld = computed(
+    () => (this.linkedInImageAssetForThisBrief() || this.linkedInImageUploadStatus() === 'uploading') && !this.linkedInAssetUploadAvailable()
+  );
+  protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
+  protected readonly linkedInImageUploadStatusMessage = computed(() => {
+    if (this.linkedInImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.linkedInImageAssetForThisBrief() ? `Uploaded: ${this.linkedInImageAssetName() || 'image'}` : '';
+  });
+  protected readonly linkedInImageUploadLiveMessage = computed(() => (this.linkedInAssetUploadAvailable() ? this.linkedInImageUploadStatusMessage() : ''));
+  /**
+   * What the variant preview says about the thumbnail each dark post will carry, read from the same
+   * condition the payload is (`linkedInImageSent`), so the preview never promises an image the
+   * request leaves out.
+   */
+  protected readonly linkedInPreviewImageLabel = computed(() =>
+    this.linkedInImageSent() ? `Image: ${this.linkedInImageAssetName() || 'uploaded image'}` : ''
+  );
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -2154,6 +2212,7 @@ export class ImplementationTabComponent implements OnInit {
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
     if (this.metaImageAssetBlock() !== null) return false;
+    if (this.linkedInImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -2196,6 +2255,7 @@ export class ImplementationTabComponent implements OnInit {
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
+    if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2732,6 +2792,44 @@ export class ImplementationTabComponent implements OnInit {
     if (this.metaImageAssetId() !== '' || this.metaImageUploadStatus() !== 'idle' || this.metaImageUploadPendingName() !== '') {
       this.clearMetaImageAsset();
     }
+    this.emitDraft();
+  }
+  /**
+   * Upload the chosen LinkedIn image for this brief — `onMetaImageFileChange`'s sibling, step for
+   * step, plus LinkedIn's own 5 MB limit: campaign-service refuses a larger image at dispatch, so it
+   * is refused here before anything is stored.
+   */
+  protected onLinkedInImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearLinkedInImageAsset();
+    this.emitDraft();
+
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    if (file.size > LINKEDIN_IMAGE_MAX_BYTES) {
+      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE);
+      return;
+    }
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failLinkedInImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Forget the uploaded LinkedIn image (the stored asset stays upstream, unused). */
+  protected onLinkedInImageAssetRemove(): void {
+    this.clearLinkedInImageAsset();
     this.emitDraft();
   }
 
@@ -3357,7 +3455,7 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
-              variants: this.linkedInVariants(),
+              variants: this.linkedInVariantsForCreate(),
               adAccountId: this.linkedInAccountId(),
               ...this.biddingField('linkedin-ads'),
             },
@@ -3872,6 +3970,137 @@ export class ImplementationTabComponent implements OnInit {
     this.metaImageUploadError.set(message);
     this.metaImageUploadFailedBriefId.set(briefId);
   }
+  /**
+   * The LinkedIn variants as sent: the brief's copy, each carrying the uploaded image when one is
+   * sent (see `linkedInImageSent`). The asset replaces any `imageUrn` the plan named, since
+   * campaign-service refuses a variant carrying both.
+   */
+  private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
+    if (!this.linkedInImageSent()) return this.linkedInVariants();
+    const imageAssetId = this.linkedInImageAssetId();
+    return this.linkedInVariants().map((variant) => {
+      const sent: LinkedInCreativeVariant = { ...variant, imageAssetId };
+      delete sent.imageUrn;
+      return sent;
+    });
+  }
+
+  /** Whether the uploaded LinkedIn image goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
+  private linkedInImageSent(): boolean {
+    return this.linkedInAssetUploadAvailable() && this.linkedInImageAssetForThisBrief();
+  }
+
+  /** `initMetaImageAssetBlock`'s sibling, for the upload alone. */
+  private initLinkedInImageAssetBlock(): Signal<CampaignLinkedInImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showLinkedInSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.linkedInImageAssetId() !== '' && briefId && this.linkedInImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded LinkedIn image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.linkedInImageUploadStatus() === 'error' && briefId && this.linkedInImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The LinkedIn image upload did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.linkedInAssetWithheld()) return null;
+      if (this.linkedInAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'LinkedIn ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that LinkedIn ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followMetaImageUpload`'s sibling. */
+  private followLinkedInImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.linkedInImageUploadStatus.set('uploading');
+    this.linkedInImageUploadError.set('');
+    this.linkedInImageUploadPendingName.set(fileName);
+    this.linkedInImageUploadPendingBriefId.set(briefId);
+    this.linkedInImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failLinkedInImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.linkedInImageAssetId.set(asset.id);
+        this.linkedInImageAssetName.set(fileName);
+        this.linkedInImageAssetBriefId.set(briefId);
+        this.linkedInImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        this.failLinkedInImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeLinkedInImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.linkedInImageUploadPendingName.set(fileName);
+      this.linkedInImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('linkedin', briefId) : null;
+    if (!upload$) {
+      this.failLinkedInImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followLinkedInImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearLinkedInImageAsset(): void {
+    this.linkedInImageUploadSub?.unsubscribe();
+    this.linkedInImageUploadSub = null;
+    if (this.linkedInImageUploadStatus() === 'uploading' || this.linkedInImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('linkedin');
+    }
+    this.linkedInImageUploadPendingName.set('');
+    this.linkedInImageUploadPendingBriefId.set('');
+    this.linkedInImageAssetId.set('');
+    this.linkedInImageAssetName.set('');
+    this.linkedInImageAssetBriefId.set('');
+    this.linkedInImageUploadStatus.set('idle');
+    this.linkedInImageUploadError.set('');
+    this.linkedInImageUploadFailedBriefId.set('');
+  }
+
+  private failLinkedInImageUpload(message: string, briefId = ''): void {
+    this.linkedInImageUploadStatus.set('error');
+    this.linkedInImageUploadError.set(message);
+    this.linkedInImageUploadFailedBriefId.set(briefId);
+  }
 
   /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
@@ -4160,6 +4389,18 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaImageUploadPendingName) {
       this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
     }
+    // The LinkedIn image, on the Meta upload's terms above.
+    if (draft.linkedInImageAssetId !== undefined) {
+      this.linkedInImageAssetId.set(draft.linkedInImageAssetId);
+      this.linkedInImageAssetName.set(draft.linkedInImageAssetName ?? '');
+      this.linkedInImageAssetBriefId.set(draft.linkedInImageAssetBriefId ?? '');
+    }
+    if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
+      this.failLinkedInImageUpload(draft.linkedInImageUploadFailedMessage, draft.linkedInImageUploadFailedBriefId);
+    }
+    if (draft.linkedInImageUploadPendingName) {
+      this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -4347,6 +4588,13 @@ export class ImplementationTabComponent implements OnInit {
       metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
       metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
       metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      linkedInImageAssetId: this.linkedInImageAssetId(),
+      linkedInImageAssetName: this.linkedInImageAssetName(),
+      linkedInImageAssetBriefId: this.linkedInImageAssetBriefId(),
+      linkedInImageUploadPendingName: this.linkedInImageUploadPendingName(),
+      linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
+      linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
+      linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
     });
   }
 
