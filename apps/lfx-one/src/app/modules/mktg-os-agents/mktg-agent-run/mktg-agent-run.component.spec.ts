@@ -1398,6 +1398,8 @@ describe('MktgAgentRunComponent', () => {
       if (origin === 'generate') {
         generate.mockReturnValue(progress);
         component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled(); // The fixture seeded an active attempt; fresh Generate requires C1 consent.
+        discardPrompt()?.accept?.();
         expect(generate).toHaveBeenCalledTimes(1);
       } else {
         vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume').mockReturnValue(progress);

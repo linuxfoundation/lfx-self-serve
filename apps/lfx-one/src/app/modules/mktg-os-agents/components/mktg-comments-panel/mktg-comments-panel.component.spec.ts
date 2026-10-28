@@ -35,8 +35,8 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
-    expect(send()?.disabled).toBe(true);
-    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')?.textContent).toContain('Loading');
+    expect(send()).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')).toBeNull();
     const live = el.querySelector('[data-testid="mktg-comments-run-message"]');
     expect(live?.getAttribute('aria-live')).toBe('polite');
     expect(live?.textContent).toBe('');
