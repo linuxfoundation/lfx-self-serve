@@ -42,6 +42,7 @@ import {
   MktgBoilerplatesAsset,
   MktgFaqAsset,
   MktgFrameworkAsset,
+  MktgAssetReport,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionRow,
@@ -60,6 +61,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  describeMktgAssetReadiness,
   describeMktgRevision,
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
@@ -82,6 +84,7 @@ import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-
 import { MktgPrintService } from '@services/mktg-print.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   catchError,
@@ -109,6 +112,7 @@ import {
   Subject,
 } from 'rxjs';
 
+import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
@@ -172,6 +176,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
+  private readonly dialogService = inject(DialogService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -214,6 +219,7 @@ export class MktgDocumentViewComponent {
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
   protected readonly writer = signal(false);
+  private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
   protected readonly approvalAnnouncement = signal('');
@@ -314,6 +320,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  protected readonly viewedReport = this.initViewedReport();
+  protected readonly readiness = computed(() => describeMktgAssetReadiness(this.viewedReport()));
   /** Label context uses the stored content shape, never the transformed display rows. */
   protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
@@ -926,6 +934,43 @@ export class MktgDocumentViewComponent {
     this.showAllRevisions.update((expanded) => !expanded);
   }
 
+  protected requestApproval(): void {
+    const view = this.view();
+    const project = this.projectContext.activeContextUid();
+    if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
+    if (!view || !project || view.project !== project || this.loading()) return;
+    const report = this.viewedReport();
+    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    const selection = this.revisionParam();
+    const epoch = this.restoreEpoch;
+    const subject = this.userService.user()?.sub;
+    const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
+      header: 'Approve with open gaps?',
+      data: report,
+      modal: true,
+      width: '32rem',
+      style: { maxWidth: '90vw' },
+      draggable: false,
+      resizable: false,
+    });
+    if (!ref) return;
+    this.confirmingApproval.set(true);
+    const unregisterDestroy = this.destroyRef.onDestroy(() => ref.close());
+    ref.onClose
+      .pipe(
+        take(1),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.confirmingApproval.set(false);
+          unregisterDestroy();
+        })
+      )
+      .subscribe((confirmed: unknown) => {
+        if (confirmed === true && epoch === this.restoreEpoch && subject === this.userService.user()?.sub && this.sameView(project, view, selection))
+          this.onApprove();
+      });
+  }
+
   protected onApprove(): void {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
@@ -1140,12 +1185,25 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  private initViewedReport(): Signal<MktgAssetReport | null> {
+    return computed(() => {
+      const faq = this.faq();
+      if (!faq) return this.asset()?.report ?? this.brandKit()?.report ?? this.boilerplates()?.report ?? null;
+      const gaps = new Set(faq.report.gaps);
+      for (const { path, question } of faq.checks.unanswered) {
+        gaps.delete(path);
+        gaps.add(question);
+      }
+      return { ...faq.report, gaps: [...gaps] };
+    });
+  }
+
   private initLiveState(): Signal<string> {
     return computed(() => {
       if (this.runState() === 'failed') return this.selectedRun() || !this.unconfirmed() ? 'The run did not finish.' : 'The run could not be confirmed.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState()) return 'Generating the asset.';
-      return this.view() ? 'The asset is ready.' : '';
+      return this.view() ? this.readiness() : '';
     });
   }
 
