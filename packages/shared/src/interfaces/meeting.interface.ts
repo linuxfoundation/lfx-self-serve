@@ -632,6 +632,11 @@ export interface MeetingRegistrant {
   avatar_url: string | null;
   /** Registrant's LFID username */
   username: string | null;
+  /**
+   * The LF user the registrant is linked to, as the index stores it. Upstream treats it as immutable, so an
+   * update has to send it back as it is; leaving it out reads as a change and fails with "user_id cannot be changed".
+   */
+  user_id?: string | null;
   /** Registrant's LinkedIn profile URL */
   linkedin_profile: string | null;
   /** Creation timestamp */
@@ -816,6 +821,8 @@ export interface UpdateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /** The LF user the registrant is linked to; sent back unchanged, because upstream rejects an update that changes it. */
+  user_id?: string;
   /** User's LinkedIn profile URL */
   linkedin_profile?: string | null;
 }

@@ -1929,6 +1929,20 @@ describe('MeetingService registrant write payloads', () => {
     expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
   });
 
+  // Upstream treats `user_id` as immutable: an update that leaves it out reads as a change and fails with
+  // "user_id cannot be changed". It has to reach the wire as the caller sent it.
+  it('forwards user_id on update so a linked registrant keeps the user it has', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      user_id: 'user-123',
+    });
+
+    expect(bodyOf()).toMatchObject({ user_id: 'user-123' });
+  });
+
   // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form
   // control. All three targets are declared non-nullable, and before the rename Goa dropped the
   // undeclared key outright; omitting keeps that outcome instead of planting a null on a declared

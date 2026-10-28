@@ -156,6 +156,7 @@ const UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP = {
   host: true,
   job_title: true,
   username: true,
+  user_id: true,
   committee_uid: true,
   linkedin_profile: true,
 } as const satisfies Record<
