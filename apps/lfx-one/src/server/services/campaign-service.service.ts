@@ -71,6 +71,7 @@ import type {
   CampaignServiceCampaign,
   CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
+  CampaignServiceAccessibleAccounts,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceCreativeAsset,
@@ -2997,6 +2998,31 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}`,
+      'GET'
+    );
+  }
+
+  /**
+   * The Google Ads accounts the project's connection credential can reach (`list-google-ads-accounts`
+   * on campaign-service): account discovery, the step between a credentials-first create and the PUT
+   * that binds an account. A project with no connection of its own is answered from the LF system
+   * credential upstream, so the list can be the LF's own accounts.
+   *
+   * Upstream failures are left to the caller: campaign-service's discovery messages are fixed
+   * sentences (a 404 for no connection, a 503 for a platform failure) that never echo platform text.
+   */
+  public async listGoogleAdsAccounts(req: Request, projectSlug: string): Promise<CampaignServiceAccessibleAccounts> {
+    if (projectSlug === '') {
+      // `/projects//connection-…` 404s at the gateway, which a caller would read as "no connection".
+      throw ServiceValidationError.forField('project', 'An account discovery read requires the project it belongs to.', {
+        operation: 'list_google_ads_accounts',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccessibleAccounts>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-google-ads/accounts`,
       'GET'
     );
   }

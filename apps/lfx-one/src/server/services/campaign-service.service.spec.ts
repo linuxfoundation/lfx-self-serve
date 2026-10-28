@@ -5719,6 +5719,37 @@ describe('CampaignServiceClient.getConnection', () => {
   });
 });
 
+describe('CampaignServiceClient.listGoogleAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Google Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '1000000001', label: 'CNCF Search' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-google-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAccounts(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
 describe('CampaignServiceClient.uploadCreativeAsset', () => {
   const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);

@@ -105,6 +105,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
             getRedditMonitor: vi.fn().mockReturnValue(of(null)),
             getMetaMonitor: vi.fn().mockReturnValue(of(null)),
@@ -335,6 +336,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -583,6 +585,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
@@ -827,6 +830,82 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
    * typed 409. That discovery SUCCEEDED, so the panel's Retry must still re-run it — every Retry
    * re-checks the source — and then read the connection's account.
    */
+  describe('Google Ads account discovery', () => {
+    it('reads nothing and lists nothing while the flag is off', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+
+      expect(service['getGoogleAdsAccounts']).not.toHaveBeenCalled();
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it("lists the accounts the project's connection can reach on the Google Ads panel", async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        of([
+          { key: '1000000001', label: 'CNCF Search' },
+          { key: '1000000002', label: '1000000002' },
+        ])
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledWith('cncf');
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+      // An account with no label of its own is shown by id once, not as "id (id)".
+      expect(text('monitoring-google-account-1000000002')).toBe('1000000002');
+    });
+
+    it('says so when the connection reaches no account', async () => {
+      await setup(allConnected);
+
+      expect(text('monitoring-google-accounts-empty')).toBe('This connection reaches no Google Ads accounts.');
+      expect(el('monitoring-google-accounts-list')).toBeNull();
+    });
+
+    it('states a failed read, and retries it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'no Google Ads connection configured for this project' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('no Google Ads connection configured for this project');
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('drops the list when the cutover turns off', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-list')).not.toBeNull();
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      fixture.componentInstance['loadMonitorConnections']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+  });
+
   describe('mixed rollout, legacy discovery then a flag-ON backend', () => {
     const legacyMismatch = (): HttpErrorResponse =>
       new HttpErrorResponse({
@@ -1934,6 +2013,7 @@ describe.each([
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2081,6 +2161,7 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2127,6 +2208,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
