@@ -472,6 +472,52 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
 
+  it('keeps previously resolved revisions visible when returning to a type during its detail refetch', async () => {
+    await render();
+    await TestBed.inject(Router).navigateByUrl('/?type=faq');
+    await fixture.whenStable();
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValueOnce(pending);
+    await TestBed.inject(Router).navigateByUrl('/?type=brand-kit');
+    await fixture.whenStable();
+    const table = query('mktg-documents-revisions');
+    expect(table).not.toBeNull();
+    expect(query('mktg-documents-revision-2')).not.toBeNull();
+    expect(query('mktg-documents-detail-loading')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Loading revisions');
+    pending.next({ ...detail, revisions: [revision(3, { latest: true }), revision(2)] });
+    await fixture.whenStable();
+    expect(query('mktg-documents-revisions')).toBe(table);
+    expect(query('mktg-documents-revision-3')).not.toBeNull();
+  });
+
+  it('shows a neutral revision skeleton on the first detail read, then renders the resolved table', async () => {
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValueOnce(pending);
+    await render();
+    expect(query('mktg-documents-detail-loading')?.classList.contains('min-h-80')).toBe(true);
+    expect(query('mktg-documents-revisions')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Loading revisions');
+    pending.next(detail);
+    await fixture.whenStable();
+    expect(query('mktg-documents-detail-loading')).toBeNull();
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+  });
+
+  it('does not claim a type is empty until its held list refetch answers', async () => {
+    await render();
+    const pending = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValueOnce(pending);
+    await TestBed.inject(Router).navigateByUrl('/?type=faq');
+    await fixture.whenStable();
+    expect(query('mktg-documents-loading')?.classList.contains('min-h-80')).toBe(true);
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    pending.next(documentsResponse());
+    await fixture.whenStable();
+    expect(query('mktg-documents-loading')).toBeNull();
+    expect(query('mktg-documents-empty-living')?.textContent).toContain('No FAQ yet');
+  });
+
   it('retains loaded documents on transient refresh failure, retries and removes completed progress', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments

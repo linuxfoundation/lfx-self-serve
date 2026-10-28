@@ -642,6 +642,7 @@
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
           @if (commentScope(); as scope) {
             <lfx-mktg-comments-panel
+              class="block min-h-40"
               [scope]="scope"
               [content]="commentContent()"
               [priorVersion]="current.revision.draftVersion ?? null"
@@ -735,6 +736,7 @@
 
           @if (current.type.agentKey === frameworkKey) {
             <lfx-mktg-downstream
+              class="block min-h-48"
               [project]="current.project"
               [projectSlug]="projectSlug()"
               [refreshKey]="current.approvedCurrent?.revisionId ?? ''"

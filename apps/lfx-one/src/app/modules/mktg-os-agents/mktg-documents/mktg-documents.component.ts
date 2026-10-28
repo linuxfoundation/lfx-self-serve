@@ -107,6 +107,8 @@ export class MktgDocumentsComponent {
   protected readonly documents = signal<MktgDocumentsResponse | null>(null);
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
+  protected readonly listPending = signal(true);
+  private readonly detailCache = new Map<string, MktgDocumentDetailResponse>();
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
   private readonly reloads = signal(0);
@@ -207,6 +209,7 @@ export class MktgDocumentsComponent {
         .pipe(takeUntilDestroyed())
         .subscribe((documents) => {
           this.documents.set(documents);
+          this.listPending.set(false);
           if (documents?.runs?.length) this.startedRunsVisible.set(true);
           this.loading.set(false);
           this.scrollToSelection();
@@ -219,7 +222,7 @@ export class MktgDocumentsComponent {
             const scope = JSON.stringify([request.project, request.userSub, request.agentKey, request.documentId]);
             if (scope !== this.detailedScope) {
               this.detailedScope = scope;
-              this.detail.set(null);
+              this.detail.set(this.detailCache.get(scope) ?? null);
               if (!this.listFailed()) this.errorText.set('');
             }
           }),
@@ -244,6 +247,8 @@ export class MktgDocumentsComponent {
           takeUntilDestroyed()
         )
         .subscribe((detail) => {
+          if (detail) this.detailCache.set(this.detailedScope, detail);
+          else this.detailCache.delete(this.detailedScope);
           this.detail.set(detail);
           this.detailLoading.set(false);
           this.scrollToSelection();
@@ -295,7 +300,9 @@ export class MktgDocumentsComponent {
         const scope = JSON.stringify([request.project, request.userSub]);
         this.pendingSelectionScroll = scope === this.listedScope && request.type !== this.listedType;
         this.listedType = request.type;
+        this.listPending.set(true);
         if (scope !== this.listedScope) {
+          this.detailCache.clear();
           this.listedScope = scope;
           this.loading.set(true);
           this.documents.set(null);
