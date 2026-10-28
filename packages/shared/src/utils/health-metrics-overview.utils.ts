@@ -9,6 +9,9 @@ import {
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
+  HEALTH_METRICS_OVERVIEW_GAUGE_TINT,
+  HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
+  HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_STROKES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
 } from '../constants/health-metrics-overview.constants';
@@ -44,7 +47,7 @@ import type {
   HealthMetricsOverviewEventRowView,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewEventsView,
-  HealthMetricsOverviewGaugeSegmentView,
+  HealthMetricsOverviewGaugeCapView,
   HealthMetricsOverviewKpiView,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsView,
@@ -85,13 +88,19 @@ export function buildHealthMetricsOverviewOrgsView(
     halves: [
       buildOrgsHalf(
         'members',
-        [kpi('active', 'Active members', formatCount(period?.activeMembers)), kpi('new', 'New members', formatCount(period?.newMembers))],
+        [
+          { ...kpi('active', 'Active members', formatCount(period?.activeMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.active },
+          { ...kpi('new', 'New members', formatCount(period?.newMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.new },
+        ],
         'Member engagement',
         period?.memberEngagement ?? null
       ),
       buildOrgsHalf(
         'non-members',
-        [kpi('non-members', 'Non-members', formatCount(period?.nonMembers)), kpi('non-renewals', 'Non-renewals', formatCount(period?.nonRenewals))],
+        [
+          { ...kpi('non-members', 'Non-members', formatCount(period?.nonMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.nonMembers },
+          { ...kpi('non-renewals', 'Non-renewals', formatCount(period?.nonRenewals)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.nonRenewals },
+        ],
         'Non-member engagement',
         period?.nonMemberEngagement ?? null
       ),
@@ -113,10 +122,14 @@ export function buildHealthMetricsOverviewNpsView(nps: HealthMetricsOverviewNps,
 
   return {
     isEmpty: !period || (score === null && !responses),
-    subtitle: `Last survey: ${period?.lastUpdatedQuarter ?? NOT_AVAILABLE} · ${formatCount(responses)} of ${formatCount(period?.recipientsCount)} responded (${formatShare(period?.responseRatePct ?? null)})`,
+    meta: [
+      { label: 'Latest NPS:', value: period?.lastUpdatedQuarter ?? NOT_AVAILABLE },
+      { label: 'Audience:', value: HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE },
+      { label: 'Responses:', value: `${formatCount(responses)} of ${formatCount(period?.recipientsCount)} (${formatShare(period?.responseRatePct ?? null)})` },
+    ],
     scoreLabel: score === null ? NOT_AVAILABLE : String(Math.round(score)),
     delta: buildNpsDelta(period?.scoreChangePp ?? null, period?.previousSurveyQuarter ?? null),
-    segments: buildGaugeSegments(score),
+    ...buildGauge(score),
     needle: score === null ? null : gaugeNeedle(score),
     ariaLabel: score === null ? 'Net Promoter Score not available' : `Net Promoter Score ${Math.round(score)} on a scale from -100 to 100`,
     rows: rows.map((row) => ({
@@ -521,22 +534,28 @@ function buildOrgsHalf(
     },
   ];
   const total = levels.reduce((sum, level) => sum + (level.count ?? 0), 0);
-  const circumference = 2 * Math.PI * 46;
+  const circumference = 2 * Math.PI * 36;
   const donut: HealthMetricsOverviewDonutSegmentView[] = [];
+  // A measured level too small for a 1.5px sliver plus its 2px gap gets exactly that slot, so nothing paints over it;
+  // the larger levels split the rest of the ring by share. An unmeasured level is not drawn.
+  const minSlot = 1.5 + 2;
+  const measured = total > 0 ? levels.filter((level) => level.count !== null) : [];
+  const isSmall = (count: number): boolean => (count / total) * circumference < minSlot;
+  const small = measured.filter((level) => isSmall(level.count ?? 0)).length;
+  const largeTotal = measured.reduce((sum, level) => sum + (isSmall(level.count ?? 0) ? 0 : (level.count ?? 0)), 0);
+  const shared = circumference - minSlot * small;
   let offset = 0;
 
-  // Each ring starts a cap's width after the last one ends, so the round caps never touch.
-  for (const level of levels) {
-    const length = total > 0 ? ((level.count ?? 0) / total) * circumference : 0;
-    if (length > 0) {
-      donut.push({
-        key: level.key,
-        stroke: level.stroke,
-        dashArray: `${Math.max(length - 10, 0.1).toFixed(2)} ${circumference.toFixed(2)}`,
-        dashOffset: (-(offset + 4)).toFixed(2),
-      });
-    }
-    offset += length;
+  for (const level of measured) {
+    const count = level.count ?? 0;
+    const slot = isSmall(count) ? minSlot : (count / largeTotal) * shared;
+    donut.push({
+      key: level.key,
+      stroke: level.stroke,
+      dashArray: `${Math.max(slot - 2, 1.5).toFixed(2)} ${circumference.toFixed(2)}`,
+      dashOffset: (-offset).toFixed(2),
+    });
+    offset += slot;
   }
 
   const link = key === 'members' ? HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.members : HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.nonMembers;
@@ -545,7 +564,6 @@ function buildOrgsHalf(
     kpis,
     engagementLabel,
     donut,
-    lowPctLabel: total > 0 ? formatShare((levels[2].count ?? 0) / total, false) : NOT_AVAILABLE,
     rows: levels.map((level) => ({
       key: level.key,
       label: level.label,
@@ -557,27 +575,43 @@ function buildOrgsHalf(
   };
 }
 
-/** The design's 240° gauge, split at -50, 0 and 30; each band is trimmed so the round caps leave a gap. */
-function buildGaugeSegments(score: number | null): HealthMetricsOverviewGaugeSegmentView[] {
+/**
+ * The design's 240° gauge, split at -50, 0 and 30 with a small gap between segments and round caps at both ends.
+ * Only the segment holding the score is at full color; the rest are mixed toward white.
+ */
+function buildGauge(score: number | null): Pick<HealthMetricsOverviewNpsView, 'segments' | 'caps'> {
   const bands: [string, number, number, string][] = [
     ['very-low', -100, -50, HEALTH_METRICS_OVERVIEW_STROKES.low],
     ['low', -50, 0, HEALTH_METRICS_OVERVIEW_STROKES.low],
     ['medium', 0, 30, HEALTH_METRICS_OVERVIEW_STROKES.medium],
     ['high', 30, 100, HEALTH_METRICS_OVERVIEW_STROKES.high],
   ];
-  const gap = (6.5 * Math.PI) / 180;
-
-  return bands.map(([key, from, to, stroke]) => {
-    const start = gaugeAngle(from) - gap;
-    const end = gaugeAngle(to) + gap;
+  const gap = (1.6 * Math.PI) / 180;
+  const segments = bands.map(([key, from, to, color]) => {
+    const start = gaugeAngle(from) - (from === -100 ? 0 : gap);
+    const end = gaugeAngle(to) + (to === 100 ? 0 : gap);
     const active = score !== null && score >= from && (score < to || (to === 100 && score <= 100));
     return {
       key,
-      stroke,
-      opacity: active ? 1 : 0.22,
+      stroke: active ? color : mixWithWhite(color, HEALTH_METRICS_OVERVIEW_GAUGE_TINT),
       path: `M${gaugePoint(start, 52)} A52 52 0 ${start - end > Math.PI ? 1 : 0} 1 ${gaugePoint(end, 52)}`,
     };
   });
+  const cap = (key: string, value: number, stroke: string): HealthMetricsOverviewGaugeCapView => {
+    const angle = gaugeAngle(value);
+    return { key, x: (66 + 52 * Math.cos(angle)).toFixed(1), y: (66 - 52 * Math.sin(angle)).toFixed(1), fill: stroke };
+  };
+
+  return { segments, caps: [cap('start', -100, segments[0].stroke), cap('end', 100, segments[segments.length - 1].stroke)] };
+}
+
+/** `#RRGGBB` at `share` strength over white, e.g. 0.22 for the gauge's inactive segments. */
+function mixWithWhite(hex: string, share: number): string {
+  const channel = (offset: number): string =>
+    Math.round(parseInt(hex.slice(offset, offset + 2), 16) * share + 255 * (1 - share))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase();
 }
 
 function gaugeNeedle(score: number): { x: string; y: string } {
@@ -778,11 +812,11 @@ function formatRatePct(value: number | null | undefined): string {
   return value === null || value === undefined ? NOT_AVAILABLE : `${Math.round(value)}%`;
 }
 
-/** A 0–1 share as a whole percentage; a share under half a percent reads "<1%" unless `allowLessThanOne` is off. */
+/** A 0–1 share as a whole percentage; a share under 1% reads "<1%" unless `allowLessThanOne` is off. */
 function formatShare(value: number | null, allowLessThanOne = true): string {
   if (value === null || !Number.isFinite(value)) return NOT_AVAILABLE;
   const pct = value * 100;
-  return allowLessThanOne && pct > 0 && pct < 0.5 ? '<1%' : `${Math.round(pct)}%`;
+  return allowLessThanOne && pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
 }
 
 function clampPct(value: number): number {

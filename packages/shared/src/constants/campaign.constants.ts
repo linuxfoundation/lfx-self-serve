@@ -1047,11 +1047,11 @@ export const CAMPAIGN_BIDDING_STRATEGIES = ['automatic', 'manual'] as const;
 export const CAMPAIGN_BIDDING_PLATFORMS = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'] as const;
 
 /**
- * The bidding platforms the create flow renders a control for, in section order. X is a bidding
- * platform upstream but is not here: the create flow builds no `twitterConfig` yet, and the BFF
- * refuses `twitter-ads` until one exists. Its rule below is ready for when it does.
+ * The bidding platforms the create flow renders a control for, in section order. X's section, and
+ * so its control, exists only while `CampaignListResult.twitterCreateEnabled` is an explicit yes;
+ * every reader of this list also requires the platform to be selected.
  */
-export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform[] = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'];
 
 /**
  * campaign-service's own synchronous refusal of a `bidding` object, e.g.
@@ -1288,9 +1288,16 @@ export const MONITOR_CUTOVER_MISMATCH_MESSAGE = 'The monitor is switching data s
  * writer or a ROOT `global_marketing_ops` holder) can monitor it here. lfx-self-serve-ops#54.
  */
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RESTRICTED';
+
 /** The user-facing message of that refusal: the account is shared by every foundation, so only LF administrators can monitor it. */
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
+
+/** The BFF's own Google Ads account read is missing a credential or account setting (#4526). */
+export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
+
+/** Leads a failed read of the BFF's own Google Ads account, before the Google Ads error code when there is one (#4526). */
+export const GOOGLE_ADS_READ_FAILED_MESSAGE = 'Google Ads did not return the account data.';
 
 /**
  * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
@@ -1922,6 +1929,45 @@ export function googleAdsTrimSpace(text: string): string {
   while (start < end && isGoSpaceCode(text.charCodeAt(start))) start++;
   while (end > start && isGoSpaceCode(text.charCodeAt(end - 1))) end--;
   return text.slice(start, end);
+}
+
+/**
+ * `text` as Go's `encoding/json` decodes it: every unpaired UTF-16 surrogate replaced with U+FFFD.
+ *
+ * `JSON.stringify` escapes a lone surrogate as `\ud800`, and Go's decoder reads every such escape as
+ * U+FFFD. So `\ud800` and `\ud801` are two strings here and one string upstream, and a duplicate check
+ * run on the raw text would pass a list that `validateSitelinks` then refuses after dispatch (#3644).
+ * A well-formed pair is kept as it is. An index walk rather than a lookbehind regex, for the reason
+ * {@link googleAdsTrimSpace} gives; it returns `text` itself when there is nothing to replace.
+ */
+export function googleAdsWellFormed(text: string): string {
+  let out = '';
+  let last = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0xd800 || code > 0xdfff) continue;
+    if (code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        i++;
+        continue;
+      }
+    }
+    out += `${text.slice(last, i)}\ufffd`;
+    last = i + 1;
+  }
+  return last === 0 ? text : out + text.slice(last);
+}
+
+/**
+ * An ad extension's text as upstream judges it: decoded as Go decodes it ({@link googleAdsWellFormed}),
+ * then trimmed with Go's rules ({@link googleAdsTrimSpace}). This is the one normalisation the BFF applies
+ * to sitelinks, callouts, structured snippets and the call, promotion and price extensions before their
+ * duplicate checks and before it forwards them. Applying it once to all of them means no list can
+ * disagree with upstream about which two entries are the same.
+ */
+export function googleAdsDecodedText(text: string): string {
+  return googleAdsTrimSpace(googleAdsWellFormed(text));
 }
 
 /**
@@ -3029,6 +3075,47 @@ export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
 export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
 
 /**
+ * The largest image X takes on an authored tweet, in bytes: campaign-service's
+ * `twitter.MaxImageBytes` (`5 << 20`, X's simple-upload limit). It refuses a larger stored asset at
+ * dispatch, so the Implement tab checks it before uploading rather than storing an image the create
+ * would then fail on.
+ */
+export const TWITTER_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Shown when an X image exceeds `TWITTER_IMAGE_MAX_BYTES`. */
+export const TWITTER_IMAGE_TOO_LARGE_MESSAGE = 'X accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
+
+/**
+ * X's per-tweet cap, in WEIGHTED characters (`maxTweetWeightedChars`,
+ * `internal/platform/twitter/client.go`). campaign-service counts the COMPOSED tweet: the operator's
+ * copy plus the destination link it appends, so the copy alone has less room than this.
+ */
+export const TWITTER_MAX_TWEET_WEIGHTED_CHARS = 280;
+
+/**
+ * The fixed weight X gives any http(s) link, whatever its length, because it is wrapped to a t.co
+ * link at post time (`tcoURLWeight`). The appended destination counts this plus one space.
+ */
+export const TWITTER_TCO_URL_WEIGHT = 23;
+
+/**
+ * campaign-service's bound on the RAW size of the composed tweet (`maxTweetRawBytes`, 8 KiB), far
+ * above any real tweet. Checked before the weighted count, so the BFF never weighs an absurd body.
+ */
+export const TWITTER_MAX_TWEET_RAW_BYTES = 8 * 1024;
+
+/** How far ahead of now X's UTC-midnight start must be, in ms (`minStartLead`, five minutes). */
+export const TWITTER_MIN_START_LEAD_MS = 5 * 60 * 1000;
+
+/**
+ * Upper bound on an X daily budget (`maxBudgetUsd`, `internal/platform/twitter/client.go`), in the
+ * ad ACCOUNT's currency. Refused by the client before any request, so a larger value is a dead job
+ * rather than a refused request — the same reasoning as `MICROSOFT_MAX_BUDGET`. The floor is this
+ * app's house floor of 1, as for every other paid platform.
+ */
+export const TWITTER_MAX_BUDGET = 1_000_000_000;
+
+/**
  * The largest image Microsoft Advertising takes as an image ad extension, in bytes. campaign-service
  * refuses anything larger at dispatch (`microsoft.MaxImageBytes`: the Image `Data` field holds at
  * most 102,400 base64 characters, which is 76,800 bytes) and never resizes it. Far below
@@ -3879,6 +3966,47 @@ export const GOOGLE_ADS_CHANNEL_TYPE_ENUMS = {
  * Demand Gen on a deployment that was not ready for it.
  */
 export const GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG = ['performance-max', 'video', 'display'] as const;
+
+/**
+ * The Google criteria and ad extension fields that only the campaign-service create path reads,
+ * each with the name the operator knows it by.
+ *
+ * With the cutover dark the legacy creator (`campaign-proxy.service.ts`) serves the create, and it
+ * reads `geoTargets`, `keywords`, `headlines` and `descriptions` and nothing else Google-specific.
+ * Every field here would be dropped there while the create reports success, so the BFF refuses a
+ * non-empty one by name instead (#3692, and #3568 for the bidding plan and creative). `geoTargets` postal-code ids and `proximityTargets` have
+ * their own refusal (`canCreateWithFinerGoogleGeo`), as do `audienceSegments`.
+ *
+ * In `validateGeoPlan`, `validateCriteriaPlan` then `validateAssetPlan` order, so a request
+ * carrying several is refused by the one upstream would have judged first.
+ */
+export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
+  { field: 'excludedGeoTargets', label: 'excluded locations' },
+  { field: 'languages', label: 'languages' },
+  { field: 'adSchedules', label: 'ad schedules' },
+  { field: 'deviceBidModifiers', label: 'device bid modifiers' },
+  { field: 'excludedAgeRanges', label: 'excluded age ranges' },
+  { field: 'excludedGenders', label: 'excluded genders' },
+  { field: 'sitelinks', label: 'sitelinks' },
+  { field: 'callouts', label: 'callouts' },
+  { field: 'structuredSnippets', label: 'structured snippets' },
+  { field: 'callExtensions', label: 'call extensions' },
+  { field: 'promotions', label: 'promotions' },
+  { field: 'prices', label: 'price extensions' },
+  // The bidding plan and the per-channel creative (#3568), judged by what the cutover's own
+  // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
+  // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
+  // every field trims to nothing. A value campaign-service would never receive is not a request
+  // the legacy creator fails, so refusing it would be over-refusal.
+  { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
+  { field: 'cpcBid', label: 'max CPC bid', normalized: true },
+  { field: 'targetCpa', label: 'target CPA', normalized: true },
+  { field: 'targetRoas', label: 'target ROAS', normalized: true },
+  { field: 'conversionActions', label: 'conversion actions', normalized: true },
+  { field: 'demandGenCreative', label: 'Demand Gen creative', normalized: true },
+  { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
+  { field: 'displayCreative', label: 'Display creative', normalized: true },
+] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
  * Whether this application offers Video as a CREATABLE channel.

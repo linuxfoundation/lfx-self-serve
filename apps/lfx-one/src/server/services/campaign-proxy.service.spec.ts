@@ -330,8 +330,12 @@ describe('CampaignProxyService email delivery type', () => {
     expect(keywordPrompt).not.toMatch(/Google Search keywords/i);
   });
 
-  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
-  it('still refuses twitter-ads, which the brief generator does not serve', async () => {
+  /**
+   * X, selectable in the Plan tab behind `twitterCreateEnabled`, is served like Microsoft with no
+   * copy key, and needs no keywords either: an X-only brief skips both stages rather than paying
+   * for the Google default.
+   */
+  it('accepts an X-only brief, skipping the ad-copy and keyword stages', async () => {
     const events = await drain(
       service.streamBrief(
         req,
@@ -340,9 +344,26 @@ describe('CampaignProxyService email delivery type', () => {
       ) as AsyncGenerator<{ type: string; data: unknown }>
     );
 
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(false);
+    expect(events.find((e) => e.type === 'copy_structured')?.data).toEqual({});
+  });
+
+  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
+  it('still refuses a platform the brief generator does not know', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['tiktok-ads' as never] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
     const error = events.find((e) => e.type === 'error');
     expect(error).toBeDefined();
-    expect(String(error?.data)).toContain('twitter-ads');
+    expect(String(error?.data)).toContain('tiktok-ads');
     // The message enumerates the live set, so it names microsoft-ads as supported rather than
     // carrying a stale hand-written list.
     expect(String(error?.data)).toContain('microsoft-ads');
