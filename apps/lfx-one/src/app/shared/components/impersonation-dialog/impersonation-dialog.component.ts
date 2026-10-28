@@ -57,9 +57,9 @@ export class ImpersonationDialogComponent {
     initialValue: this.recentImpersonations() as ImpersonationSuggestion[],
   });
 
-  // The person picked from the list. The field shows their name, which is not what the start request sends, so the
-  // pick is kept here and its `targetUser` (the username) is what gets submitted for as long as the field still
-  // shows that name. The username and email are listed under the field for context.
+  // The person picked from the list — the only thing Start acts on. The field shows their name, which is not what the
+  // start request sends, so the pick is kept here and its `targetUser` (the username) is submitted for as long as the
+  // field still shows that name. The username and email are listed under the field for context.
   protected readonly picked = signal<ImpersonationSuggestion | null>(null);
   private pickedLabel = '';
 
@@ -76,7 +76,8 @@ export class ImpersonationDialogComponent {
   }
 
   public submit(): void {
-    const target = this.resolveTarget();
+    // Only a picked person can be impersonated: what is typed in the field is a search, never a target.
+    const target = this.picked()?.targetUser;
     if (!target) return;
 
     this.loading.set(true);
@@ -111,27 +112,11 @@ export class ImpersonationDialogComponent {
     this.dialogRef.close(false);
   }
 
-  /**
-   * Enter submits what is typed only when that is plainly the intended target. With suggestions showing and none
-   * matching the text exactly (a half-typed name, say), it is left to the suggestion list, because sending the
-   * fragment would impersonate whoever happens to hold it as a username.
-   */
+  // Enter starts the impersonation only once someone is picked; before that it belongs to the suggestion list.
   protected onEnter(): void {
     if (this.picked()) {
       this.submit();
-      return;
     }
-
-    const value = this.targetUserForm.controls.targetUser.value;
-    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    const suggestions = this.suggestions();
-    const matchesSuggestion = suggestions.some((entry) => [entry.targetUser, entry.username, entry.email].some((field) => field.toLowerCase() === typed));
-
-    if (suggestions.length > 0 && !matchesSuggestion) {
-      return;
-    }
-
-    this.submit();
   }
 
   // Emptying the field must cancel a lookup still in flight (switchMap) and bring the recents back.
@@ -196,16 +181,6 @@ export class ImpersonationDialogComponent {
         return [...recents, ...found];
       })
     );
-  }
-
-  private resolveTarget(): string {
-    const picked = this.picked();
-    if (picked) {
-      return picked.targetUser;
-    }
-
-    const value = this.targetUserForm.controls.targetUser.value;
-    return typeof value === 'string' ? value.trim() : '';
   }
 
   private withoutOwnIdentities(recents: RecentImpersonation[]): RecentImpersonation[] {

@@ -15,8 +15,8 @@
   <p class="text-sm text-gray-600">
     {{
       switching
-        ? 'Search for the user you want to switch to by name, email, or username.'
-        : 'Search for the user you want to view the app as by name, email, or username.'
+        ? 'Search for the user you want to switch to by name, email, or username, then select them.'
+        : 'Search for the user you want to view the app as by name, email, or username, then select them.'
     }}
   </p>
   <div class="flex flex-col gap-1" (keydown.enter)="onEnter()">
@@ -54,9 +54,7 @@
         </div>
       </ng-template>
       <ng-template #empty>
-        <p class="p-3 text-center text-sm text-gray-600" data-testid="impersonation-target-empty">
-          No matching users. You can still enter an exact username or email.
-        </p>
+        <p class="p-3 text-center text-sm text-gray-600" data-testid="impersonation-target-empty">No matching users. Try a name, email, or username.</p>
       </ng-template>
     </lfx-autocomplete>
     @if (picked(); as person) {
@@ -82,7 +80,7 @@
       size="small"
       [label]="switching ? 'Switch User' : 'Start Impersonation'"
       [loading]="loading()"
-      [disabled]="targetUserForm.controls.targetUser.invalid || loading()"
+      [disabled]="!picked() || loading()"
       (onClick)="submit()"
       data-testid="impersonation-submit-button" />
   </div>

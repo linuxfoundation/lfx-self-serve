@@ -79,6 +79,12 @@ describe('ImpersonationDialogComponent', () => {
     await fixture.whenStable();
   }
 
+  function pickTarget(target: string): void {
+    dialog().onSuggestionSelected({
+      value: { targetUser: target, username: target, email: `${target}@example.com` },
+    } as unknown as AutoCompleteSelectEvent);
+  }
+
   function dialog(): DialogHarness {
     return fixture.componentInstance as unknown as DialogHarness;
   }
@@ -94,7 +100,7 @@ describe('ImpersonationDialogComponent', () => {
 
   async function submitAs(target: string, httpError: { error?: { error?: string; code?: string } }): Promise<void> {
     startImpersonation.mockReturnValueOnce(throwError(() => httpError));
-    dialog().targetUserForm.controls.targetUser.setValue(target);
+    pickTarget(target);
     dialog().submit();
     await fixture.whenStable();
   }
@@ -132,7 +138,7 @@ describe('ImpersonationDialogComponent', () => {
     expect(status()?.textContent?.trim()).toBe('');
 
     startImpersonation.mockReturnValueOnce(NEVER);
-    dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+    pickTarget('jdoe');
     dialog().submit();
     await fixture.whenStable();
 
@@ -144,7 +150,7 @@ describe('ImpersonationDialogComponent', () => {
     expect(config.closable).toBe(true);
 
     startImpersonation.mockReturnValueOnce(NEVER);
-    dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+    pickTarget('jdoe');
     dialog().submit();
     await fixture.whenStable();
 
@@ -158,12 +164,29 @@ describe('ImpersonationDialogComponent', () => {
       expect(fixture.nativeElement.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe, jdoe, or jdoe@example.com');
     });
 
-    it('submits what was typed when nothing is picked', () => {
-      startImpersonation.mockReturnValueOnce(NEVER);
-      dialog().targetUserForm.controls.targetUser.setValue('  jdoe@example.com ');
+    it('does not submit typed text that was not picked', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('jdoe@example.com');
       dialog().submit();
+      dialog().onEnter();
 
-      expect(startImpersonation).toHaveBeenCalledWith('jdoe@example.com', false);
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    it('keeps Start disabled until a person is picked, and enables it once one is', async () => {
+      const start = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="impersonation-submit-button"] button');
+      expect(start().disabled).toBe(true);
+
+      dialog().targetUserForm.controls.targetUser.setValue('jane');
+      await fixture.whenStable();
+      expect(start().disabled).toBe(true);
+
+      pickTarget('jdoe');
+      await fixture.whenStable();
+      expect(start().disabled).toBe(false);
+
+      dialog().targetUserForm.controls.targetUser.setValue('');
+      await fixture.whenStable();
+      expect(start().disabled).toBe(true);
     });
 
     it('does not request impersonation with an empty field', () => {
@@ -223,16 +246,15 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
     });
 
-    it('drops the pick and its details, and submits the typed text, once the name is edited', async () => {
+    it('drops the pick and its details, and stops submitting, once the name is edited', async () => {
       pick(jane);
       dialog().targetUserForm.controls.targetUser.setValue('someone.else');
       await fixture.whenStable();
-      startImpersonation.mockReturnValueOnce(NEVER);
 
       dialog().submit();
 
       expect(details()).toBeUndefined();
-      expect(startImpersonation).toHaveBeenCalledWith('someone.else', false);
+      expect(startImpersonation).not.toHaveBeenCalled();
     });
 
     it('drops the pick when the field is cleared', async () => {
@@ -337,11 +359,7 @@ describe('ImpersonationDialogComponent', () => {
   });
 
   describe('Enter', () => {
-    const recent: RecentImpersonation = { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', name: 'Alex Smith', lastUsedAt: 1 };
-
-    beforeEach(async () => {
-      recents = [recent];
-      await createDialog();
+    beforeEach(() => {
       startImpersonation.mockReturnValue(NEVER);
     });
 
@@ -353,22 +371,12 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).not.toHaveBeenCalled();
     });
 
-    it('submits text that exactly matches a suggestion', () => {
-      dialog().targetUserForm.controls.targetUser.setValue('ASmith');
+    it('starts the impersonation once a person is picked', () => {
+      pickTarget('asmith');
 
       dialog().onEnter();
 
-      expect(startImpersonation).toHaveBeenCalledWith('ASmith', false);
-    });
-
-    it('submits typed text when nothing is suggested', async () => {
-      dialog().onSearchComplete({ query: 'zz' } as AutoCompleteCompleteEvent);
-      await fixture.whenStable();
-      dialog().targetUserForm.controls.targetUser.setValue('zz.exact');
-
-      dialog().onEnter();
-
-      expect(startImpersonation).toHaveBeenCalledWith('zz.exact', false);
+      expect(startImpersonation).toHaveBeenCalledWith('asmith', false);
     });
   });
 
@@ -422,7 +430,7 @@ describe('ImpersonationDialogComponent', () => {
       await createDialog({ switching: true });
       startImpersonation.mockReturnValue(NEVER);
 
-      dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+      pickTarget('jdoe');
       dialog().submit();
 
       expect(startImpersonation).toHaveBeenCalledWith('jdoe', true);
