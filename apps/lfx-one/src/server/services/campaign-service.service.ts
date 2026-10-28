@@ -561,6 +561,17 @@ export function canCreateMicrosoftSchedule(): boolean {
 }
 
 /**
+ * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Meta Instagram/DSA flag. The
+ * legacy creator never reads the three keys, and the flag says the deployed campaign-service
+ * enforces the EU disclosure rule (linuxfoundation/lfx-v2-campaign-service#414) that the form's required inputs mirror.
+ */
+export function canCreateMetaInstagramDsa(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInstagramDsa);
+}
+
+/**
  * Whether this deployment's create path can carry Google `audienceSegments` at all — the
  * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
  * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
@@ -870,6 +881,7 @@ export class CampaignServiceClient {
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
         twitterCreateEnabled: canCreateTwitter(),
+        metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -938,6 +950,7 @@ export class CampaignServiceClient {
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
       twitterCreateEnabled: canCreateTwitter(),
+      metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),

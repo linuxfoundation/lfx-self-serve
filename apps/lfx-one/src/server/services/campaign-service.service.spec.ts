@@ -4723,6 +4723,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       microsoftScheduleEnabled: false,
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
     });
@@ -4877,6 +4878,37 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
       expect(result.biddingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Meta Instagram/DSA capability needs the create cutover AND its own flag: the legacy creator
+   * never reads the three keys, and the flag says campaign-service enforces the EU disclosure rule.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, metaDsa: true }, true],
+    [{ create: true, briefs: true, jobs: true, metaDsa: false }, false],
+    [{ create: false, briefs: true, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: false, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: true, jobs: false, metaDsa: true }, false],
+  ])('reports the meta instagram/dsa capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaInstagramDsa) return flags.metaDsa;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaInstagramDsaEnabled).toBe(expected);
+      // Its own key, not the Microsoft schedule one: that flag is off in every row.
+      expect(result.microsoftScheduleEnabled).toBe(false);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5186,6 +5218,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       microsoftScheduleEnabled: false,
       // OFF with every flag off: X create needs the create cutover AND its own flag.
       twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
     });

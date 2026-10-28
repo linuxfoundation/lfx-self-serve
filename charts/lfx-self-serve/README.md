@@ -201,6 +201,7 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`            | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` | Applies the flight dates to Microsoft Ads, sent as `microsoftConfig.startDate` / `endDate`. Requires [campaign-service #409](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/409) deployed (v1.0.21 drops the dates silently) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                    | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`     | Offers X (`twitter-ads`) in the create flow, sent as `twitterConfig` (budget, flight dates, an authored promoted-only tweet, optional image). A product decision rather than a release wait: campaign-service creates X campaigns from v1.0.21. Requires the create pipeline on; see `values.yaml`                                                                                                                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` | Collects the Meta Instagram account id and EU/EEA DSA beneficiary/payor, sent as `metaConfig.instagramUserId` / `dsaBeneficiary` / `dsaPayor`, and blocks Create until they are filled in where Meta needs them. Requires [campaign-service #414](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/414) deployed and the create pipeline on; see `values.yaml`                                                                                                                                  | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH`  | Replaces the Implement tab's typed postal-code geo target id with a search of Google's geo target table. Requires [campaign-service #411](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/411) released and deployed (older releases have no suggest route) and the create pipeline on; see `values.yaml`                                                                                                                                                                                      | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`      | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                                                                                                                                       | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS`      | Offers the brief's stored image library in each Google creative image slot — upload, or pick a stored image that fits the slot — sent as `{ imageAssetId }` entries beside pasted image URLs. NOT about URL signing: Google's dispatch POSTs the stored bytes to `assets:mutate`. Requires a campaign-service from v1.0.21 and the create pipeline on; see `values.yaml`                                                                                                                                       | No       | `"true"` |
@@ -227,7 +228,7 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._TWITTER_CREATE`, `..._INSIGHTS`,
+The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._TWITTER_CREATE`, `..._INSIGHTS`,
 `..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`, `..._META_ASSETS`) and `..._MONITOR`
 -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
@@ -237,7 +238,7 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._TWITTER_CREATE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._GOOGLE_GEO_SEARCH`, `..._META_INSTAGRAM_DSA`, `..._TWITTER_CREATE` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
   are about the create pipeline only; each of the flags outside the enable order carries its own note in `values.yaml`.
@@ -409,6 +410,16 @@ the legacy creator never reads Microsoft dates. Off (the default), the form send
 and keeps its "ignores the flight dates" warning, and a create request carrying either key is
 refused with a 400. On, the form sends the flight dates on `microsoftConfig` exactly as it does on
 `metaConfig`.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` is another of the Bidding kind: does the deployed
+campaign-service enforce the Meta launch-readiness rules from
+[campaign-service #414](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/414)? That
+release refuses with a 400 an EU-targeted Meta create without both `dsaBeneficiary` and `dsaPayor`,
+a one-sided pair, and a non-numeric `instagramUserId`. Keep it **off until #414 is released and
+deployed**, and keep the create pipeline on. Off (the default), the Meta section shows none of the
+three inputs and a create request carrying any of the keys is refused with a 400. On, the form asks
+for the Instagram account id when an Instagram placement is enabled and for both disclosures when an
+EU or EEA country is targeted, and Create stays blocked until they are valid.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` is a tenth, of the same kind: does the deployed
 campaign-service have `GET /projects/{project_id}/google-ads/geo-targets` from
@@ -775,10 +786,16 @@ as long as the twin route is deployed, which is why step 1 precedes it.
 
 #### AI Service Configuration
 
-| Parameter                  | Description                              | Required | Default |
-| -------------------------- | ---------------------------------------- | -------- | ------- |
-| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
-| `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
+| Parameter                  | Description                                                                                                                                                                           | Required | Default             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------- |
+| `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible)                                                                                                                                              | **Yes**  | -                   |
+| `environment.AI_MODEL`     | Model sent to the proxy — a short name its `model_list` publishes. Unset or empty falls back to the code default. `temperature` is sent only to models known to accept it (see below) | No       | `claude-sonnet-4-5` |
+| `environment.AI_API_KEY`   | API key for AI service                                                                                                                                                                | **Yes**  | -                   |
+
+`AI_MODEL` makes a model swap a values change rather than a release. The server logs the resolved
+model and its sampling mode once at startup (`ai_model_config`). Claude Opus 4.7 or later, any
+5-series Claude model and any name the server does not recognise are sent no sampling parameter,
+because those models answer a non-default `temperature` with a `400`.
 
 #### Guild AI Integration
 

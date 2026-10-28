@@ -254,6 +254,25 @@ export enum ServerFeatureFlag {
   CampaignServiceTwitterCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE',
 
   /**
+   * Offers the Meta Instagram account id and the EU Digital Services Act beneficiary/payor in the
+   * create flow, sent as `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+   *
+   * A CAPABILITY flag, like `CampaignServiceMicrosoftSchedule`: it says the DEPLOYED campaign-service
+   * applies the launch-readiness rules (linuxfoundation/lfx-v2-campaign-service#414) — it refuses with a 400 a Meta create whose
+   * geo targets include an EU country without both disclosures, or that carries a one-sided pair
+   * or a malformed Instagram id. With it on, the form asks for the Instagram id when an Instagram
+   * placement is enabled and for both disclosures when an EU or EEA country is targeted, and blocks Create
+   * until they are filled in.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`); the capability the client
+   * sees (`CampaignListResult.metaInstagramDsaEnabled`) needs both. With it off the form shows none
+   * of the three inputs and sends none of the keys, and the create route refuses a request that
+   * carries any of them. Turning it back off strands nothing: campaigns already created keep their
+   * disclosures. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaInstagramDsa = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA',
+
+  /**
    * Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
    * table, served by `GET /api/campaigns/google/geo-targets`.
    *
