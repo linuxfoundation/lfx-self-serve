@@ -145,6 +145,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -192,6 +193,7 @@ import {
   VALID_CAMPAIGN_TOGGLE_STATUSES,
   googleAdsEchoed,
   googleAdsToLower,
+  googleAdsDecodedText,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
@@ -229,6 +231,7 @@ import {
   canCreateWithAudienceSegments,
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
+  canCreateWithGoogleCriteria,
   canSearchGoogleGeoTargets,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -836,6 +839,28 @@ export class CampaignController {
         return;
       }
 
+      // The rest of the Google criteria and ad extensions, refused, not dropped, on the same terms as
+      // the postal-code ids above (#3692). The legacy creator reads none of them, so a create carrying
+      // `deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }]` would serve on mobile anyway and
+      // report success. Every guard that judges these fields sits behind `cutoverOn` below, so this
+      // is the only check they get with the cutover dark — a supported state during a safe deploy
+      // or a rollback. The form never sends them in that state (`googleCreativeAvailable` hides
+      // every one of these sections); this protects the endpoint.
+      const unservedGoogleCriteria = this.unservedGoogleCriteriaField(body);
+      if (unservedGoogleCriteria !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedGoogleCriteria.field,
+            `Google ${unservedGoogleCriteria.label} cannot be applied while campaign creation is not served by campaign-service on this deployment; omit ${unservedGoogleCriteria.field}`,
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
       // Microsoft flight dates are refused, not dropped, on the same terms as `bidding` above.
       // Neither creator that would serve them reads the keys — the legacy one never did, and a
       // campaign-service without linuxfoundation/lfx-v2-campaign-service#409 ignores them — so
@@ -941,6 +966,11 @@ export class CampaignController {
       }
 
       const configEnvelope = this.createConfigEnvelope(body);
+
+      // The channel the Google config resolved to, read ONCE for every channel fence below rather
+      // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
+      // `buildGoogleAdsConfig` put there, and each fence checks it is a string before using it.
+      const googleChannel: unknown = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
 
       // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
       // being left to `createCampaigns`.
@@ -1192,15 +1222,14 @@ export class CampaignController {
             return;
           }
 
-          const googleProximityChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (rawProximityTargets.length > 0 && typeof googleProximityChannel === 'string') {
+          if (rawProximityTargets.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld, and checked BEFORE the cap because `validateGeoPlan`
             // checks it before it calls `validateProximityTargets`. Demand Gen attaches location
             // criteria at the ad group level, where upstream has not verified that a proximity
             // criterion is accepted, so it refuses rather than creating a paid campaign to find out.
-            if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(googleProximityChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(googleChannel)) {
               refuseProximity(
-                `Google Ads does not accept radius targets on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleProximityChannel as GoogleCampaignChannel] ?? googleProximityChannel} campaigns, which target locations at the ad group level. Remove the radius targets or pick a different channel, then create again.`
+                `Google Ads does not accept radius targets on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns, which target locations at the ad group level. Remove the radius targets or pick a different channel, then create again.`
               );
               return;
             }
@@ -1250,7 +1279,6 @@ export class CampaignController {
           }
 
           const languages = this.googleUpperCodeList(rawLanguages);
-          const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
           if (languages.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
             // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
@@ -1307,15 +1335,14 @@ export class CampaignController {
             return;
           }
 
-          const googleScheduleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (rawAdSchedules.length > 0 && typeof googleScheduleChannel === 'string') {
+          if (rawAdSchedules.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
             // create on any non-location criterion, ad schedules included. Performance Max is NOT
             // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
             // and upstream keeps them there alongside languages.
-            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleScheduleChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleChannel)) {
               refuseAdSchedules(
-                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleScheduleChannel as GoogleCampaignChannel] ?? googleScheduleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
+                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
               );
               return;
             }
@@ -1375,16 +1402,15 @@ export class CampaignController {
             }
           }
 
-          const googleDeviceChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (devices.length > 0 && typeof googleDeviceChannel === 'string') {
+          if (devices.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld, and on one channel FEWER than ad schedules.
             // `validateCriteriaPlan` fails the whole Demand Gen create on any of these criteria, then
             // SPLITS Performance Max in two: it keeps the languages and ad schedules Google documents
             // as Performance Max campaign criteria, and refuses device bid modifiers, because that
             // channel's automated bidding owns the bid and sets no device adjustment.
-            if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleDeviceChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleChannel)) {
               refuseDevices(
-                `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleDeviceChannel as GoogleCampaignChannel] ?? googleDeviceChannel} campaigns. Remove them or pick a different channel, then create again.`
+                `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove them or pick a different channel, then create again.`
               );
               return;
             }
@@ -1415,8 +1441,7 @@ export class CampaignController {
         // asymmetry is upstream's and it is about what a repeat costs: a repeated device carries a
         // second bid modifier, one of which Google would silently drop, while a repeated exclusion
         // asks twice for the one thing it already said.
-        const demographicChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-
+        //
         // Age ranges first. The channel fence here is the second half of Performance Max's split: it
         // takes demographics as asset-group signals, which this client does not create, so a
         // campaign-level exclusion there is refused rather than created somewhere the operator
@@ -1425,7 +1450,7 @@ export class CampaignController {
           body?.excludedAgeRanges,
           'excluded age ranges',
           'age range names',
-          demographicChannel,
+          googleChannel,
           (entry) => this.googleExcludedAgeRangeRefusal(entry)
         );
         if (ageRangeRefusal) {
@@ -1437,7 +1462,7 @@ export class CampaignController {
         // age ranges: `validateExcludedGenders` checks `maxDemographicExclusions` against its own
         // length, so a request at the cap on BOTH lists is accepted — which is why this is a second
         // call and not a second field folded into the first.
-        const genderRefusal = this.googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', demographicChannel, (entry) =>
+        const genderRefusal = this.googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', googleChannel, (entry) =>
           this.googleExcludedGenderRefusal(entry)
         );
         if (genderRefusal) {
@@ -1462,7 +1487,6 @@ export class CampaignController {
           return;
         }
         const segments = this.googleAudienceSegmentList(rawAudienceSegments);
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (segments.length > 0 && typeof googleChannel === 'string') {
           if (segments.length > GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) {
             refuse(
@@ -1501,7 +1525,6 @@ export class CampaignController {
           refuse('Google Ads sitelinks must be a list of objects with text fields.');
           return;
         }
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search, counting every entry. The UI never sends this.
@@ -1543,7 +1566,6 @@ export class CampaignController {
           return;
         }
         const callouts = this.googleCalloutList(rawCallouts);
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (callouts.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search. The UI never sends this — its section and payload gate on the same list.
@@ -1586,7 +1608,6 @@ export class CampaignController {
           refuse('Google Ads structured snippets must be a list of objects with a header and a list of values.');
           return;
         }
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search, counting every entry. The UI never sends this.
@@ -1621,7 +1642,6 @@ export class CampaignController {
       // three copies of it. The per-entry rules live in `campaign-google-assets.utils`, the one copy
       // the Implementation tab's add guard also judges by.
       if (cutoverOn && platforms.includes('google-ads')) {
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         const assetRefusal =
           this.googleAssetListRefusal(body?.callExtensions, googleChannel, {
             plural: 'call extensions',
@@ -5101,6 +5121,31 @@ export class CampaignController {
   }
 
   /**
+   * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
+   * cannot honour it (see `createCampaign`), else `null`.
+   *
+   * Only a NON-EMPTY value counts: absent, `null` and an empty list ask for nothing, and the legacy
+   * creator serves those requests exactly as asked, so refusing one would be over-refusal. Any other
+   * present value — a malformed non-list included — is a request for something the legacy creator
+   * cannot do, and is named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
+   */
+  private unservedGoogleCriteriaField(body: CampaignCreateRequest): (typeof GOOGLE_CUTOVER_ONLY_CREATE_FIELDS)[number] | null {
+    if (canCreateWithGoogleCriteria()) return null;
+    // The legacy creator's own platform default (`campaign-proxy.service.ts`): an omitted or empty
+    // `platforms` list is a Google create there, so it is one here too, or exactly that request
+    // would slip past every refusal below.
+    const platforms = Array.isArray(body?.platforms) && body.platforms.length > 0 ? body.platforms : ['google-ads'];
+    if (!platforms.includes('google-ads')) return null;
+    const raw = body as unknown as Record<string, unknown>;
+    return (
+      GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find(({ field }) => {
+        const value = raw[field];
+        return value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0);
+      }) ?? null
+    );
+  }
+
+  /**
    * `metaConfig.instagramUserId`, `dsaBeneficiary` or `dsaPayor` when this deployment cannot honour
    * them, else `null`. `in`, as for the Microsoft dates below: an explicit `null` is still the field.
    */
@@ -5378,7 +5423,7 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '');
+      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '');
       return { text: field('text'), description1: field('description1'), description2: field('description2'), finalUrl: field('finalUrl') };
     });
   }
@@ -5686,7 +5731,7 @@ export class CampaignController {
    */
   private googleCalloutList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c));
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsDecodedText(c));
   }
 
   /**
@@ -5774,9 +5819,9 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const header = typeof fields['header'] === 'string' ? googleAdsTrimSpace(fields['header']) : '';
+      const header = typeof fields['header'] === 'string' ? googleAdsDecodedText(fields['header']) : '';
       const rawValues = Array.isArray(fields['values']) ? (fields['values'] as unknown[]) : [];
-      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsTrimSpace(v));
+      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsDecodedText(v));
       return { header, values };
     });
   }
@@ -5950,9 +5995,9 @@ export class CampaignController {
     );
   }
 
-  /** One field of a shape-checked raw entry, trimmed with Go's rules, or `''` when absent or null. */
+  /** One field of a shape-checked raw entry, decoded and trimmed as Go does ({@link googleAdsDecodedText}), or `''` when absent or null. */
   private assetText(fields: Record<string, unknown>, name: string): string {
-    return typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '';
+    return typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '';
   }
 
   /** One numeric field of a shape-checked raw entry, or `0` — upstream's own "unset" — when absent or null. */

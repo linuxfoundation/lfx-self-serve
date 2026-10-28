@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
+  HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_STROKES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
 } from '../constants/health-metrics-overview.constants';
@@ -85,13 +86,19 @@ export function buildHealthMetricsOverviewOrgsView(
     halves: [
       buildOrgsHalf(
         'members',
-        [kpi('active', 'Active members', formatCount(period?.activeMembers)), kpi('new', 'New members', formatCount(period?.newMembers))],
+        [
+          { ...kpi('active', 'Active members', formatCount(period?.activeMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.active },
+          { ...kpi('new', 'New members', formatCount(period?.newMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.new },
+        ],
         'Member engagement',
         period?.memberEngagement ?? null
       ),
       buildOrgsHalf(
         'non-members',
-        [kpi('non-members', 'Non-members', formatCount(period?.nonMembers)), kpi('non-renewals', 'Non-renewals', formatCount(period?.nonRenewals))],
+        [
+          { ...kpi('non-members', 'Non-members', formatCount(period?.nonMembers)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.nonMembers },
+          { ...kpi('non-renewals', 'Non-renewals', formatCount(period?.nonRenewals)), tip: HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS.nonRenewals },
+        ],
         'Non-member engagement',
         period?.nonMemberEngagement ?? null
       ),
