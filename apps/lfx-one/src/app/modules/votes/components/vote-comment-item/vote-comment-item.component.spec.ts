@@ -46,7 +46,9 @@ describe('VoteCommentItemComponent', () => {
   it('renders each paragraph of the comment', () => {
     const el = render(view({ paragraphs: ['First paragraph', 'Second paragraph'] }));
 
-    const paragraphs = [...el.querySelectorAll('lfx-expandable-text.comment-text p')].map((p) => p.textContent?.trim());
+    const row = byTestId(el, 'vote-results-comment');
+    expect(row).not.toBeNull();
+    const paragraphs = [...row!.querySelectorAll('p')].map((p) => p.textContent?.trim());
     expect(paragraphs).toEqual(['First paragraph', 'Second paragraph']);
   });
 

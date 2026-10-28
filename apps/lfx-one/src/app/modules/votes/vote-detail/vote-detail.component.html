@@ -107,7 +107,7 @@
                           @for (response of recentComments(); track response.previewKey) {
                             <lfx-vote-comment-item
                               [response]="response"
-                              [anonymous]="isPseudoAnonymous() || audience() === 'voter'"
+                              [anonymous]="commentsAnonymous()"
                               [showBallotLink]="showNamedBallotLinks()"
                               (viewBallot)="onViewBallot($event)" />
                           }
@@ -177,7 +177,7 @@
                         [commentResults]="commentResults()"
                         [(pageState)]="commentPaginatorState"
                         [showBallotLinks]="showNamedBallotLinks()"
-                        [anonymous]="isPseudoAnonymous() || audience() === 'voter'"
+                        [anonymous]="commentsAnonymous()"
                         [anonymousReason]="commentAnonymityReason()"
                         (viewBallot)="onViewBallot($event)" />
                     }

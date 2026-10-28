@@ -225,6 +225,8 @@ export class VoteDetailComponent {
   );
   /** Non-basic details require verified manager access or a successful, non-removed invitation lookup (#4330). */
   protected readonly showVoteDetails: Signal<boolean> = this.initShowVoteDetails();
+  /** Shared privacy gate for the Overview preview and the Comments tab. */
+  protected readonly commentsAnonymous: Signal<boolean> = computed(() => this.isPseudoAnonymous() || this.audience() === 'voter');
   /** Why comments render without names: the vote is pseudo-anonymous, or the viewer is not a manager (#4330). */
   protected readonly commentAnonymityReason: Signal<VoteCommentAnonymityReason> = computed(() =>
     this.isPseudoAnonymous() ? 'pseudo_anonymous' : 'voter_view'

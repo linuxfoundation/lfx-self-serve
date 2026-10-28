@@ -338,7 +338,7 @@ describe('VoteDetailComponent', () => {
 
       expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
       expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
-      expect(testId(fixture, 'vote-detail-you-voted')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-you-voted')?.textContent?.trim()).toBe('Your vote is included in these results.');
     });
 
     it('fetches final results for a participant when the ended status arrives in another case', async () => {
@@ -1229,7 +1229,7 @@ describe('VoteDetailComponent', () => {
       ],
     });
     const items = (fixture: ComponentFixture<VoteDetailComponent>): HTMLElement[] =>
-      [...fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-overview-comment"] lfx-vote-comment-item')] as HTMLElement[];
+      [...fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-overview-comment"] [data-testid="vote-results-comment"]')] as HTMLElement[];
     const meta = (fixture: ComponentFixture<VoteDetailComponent>): Element | null =>
       testId(fixture, 'vote-detail-overview-comment')?.querySelector('[data-testid="vote-results-comment-meta"]') ?? null;
 
