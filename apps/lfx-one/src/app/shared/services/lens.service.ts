@@ -113,14 +113,14 @@ export class LensService {
    * Hybrid personas merge foundation + project into the 'Projects' entry — clicking it returns to the
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
    *
-   * Org Lens lands on the selected organization's overview, the address its menu links use. The bare `/org` redirects to
-   * the legacy `/org/overview`, which only the first default selection rewrites — so with an organization already
-   * selected the menu's Dashboard item never matched the page.
+   * Org Lens lands on the selected organization's overview, the address its menu links use (`orgLensLandingLink`). The
+   * bare `/org` redirects to the legacy `/org/overview`, which only the first default selection rewrites — so with an
+   * organization already selected the menu's Dashboard item never matched the page.
    */
   public switchLens(lens: Lens): void {
     const target = this.switchTarget(lens);
     if (this.setLens(target)) {
-      this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLink('overview') : [LENS_DEFAULT_ROUTES[target]]);
+      this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLandingLink() : [LENS_DEFAULT_ROUTES[target]]);
     }
   }
 

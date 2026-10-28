@@ -22,6 +22,7 @@ describe('OrgLensNavigationService', () => {
   let selectedAccount: WritableSignal<Account>;
   /** Derived exactly as `AccountContextService` derives it (slug, else SFID; reserved names fall back). */
   let selectedUrlSegment: Signal<string | null>;
+  let isAddressedSelection: WritableSignal<boolean>;
   let service: OrgLensNavigationService;
   let router: Router;
   let navigate: MockInstance<Router['navigate']>;
@@ -30,9 +31,10 @@ describe('OrgLensNavigationService', () => {
   beforeEach(() => {
     selectedAccount = signal<Account>(acme);
     selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
+    isAddressedSelection = signal(false);
     currentUrl = '/';
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment } }],
+      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment, isAddressedSelection } }],
     });
     router = TestBed.inject(Router);
     Object.defineProperty(router, 'url', { get: () => currentUrl });
@@ -53,6 +55,28 @@ describe('OrgLensNavigationService', () => {
     it('falls back to the legacy page address while nothing is selected', () => {
       selectedAccount.set(placeholder);
       expect(service.orgLensLink('memberships', 'cncf')).toEqual(['/org', 'memberships', 'cncf']);
+    });
+  });
+
+  describe('orgLensLandingLink', () => {
+    it("addresses the overview of a selection carrying the index slug, the menu's Dashboard link", () => {
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'acme-inc', 'overview']);
+    });
+
+    it('addresses a uid-only selection once it is pinned, by an address or by the org list', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_A });
+      isAddressedSelection.set(true);
+      expect(service.orgLensLandingLink()).toEqual(['/org', UID_A, 'overview']);
+    });
+
+    it('lands an unconfirmed uid-only stub restored from the cookie on the legacy overview, for the org list to re-address', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_A });
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
+    });
+
+    it('lands on the legacy overview while nothing is selected', () => {
+      selectedAccount.set(placeholder);
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
     });
   });
 

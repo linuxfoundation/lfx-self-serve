@@ -34,7 +34,7 @@ describe('meetupsLensGuard', () => {
         { provide: CookieRegistryService, useValue: { registerCookie } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: Router, useValue: { navigate } },
-        { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn() } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLandingLink: vi.fn() } },
         {
           provide: PersonaService,
           useValue: {

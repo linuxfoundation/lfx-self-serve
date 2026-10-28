@@ -43,7 +43,7 @@ describe('LensService — menu lens preview', () => {
     };
     const navigate = vi.fn();
     const events = new Subject<RouterEvent>();
-    const orgLensLink = vi.fn((page: string) => ['/org', 'acme', page]);
+    const orgLensLandingLink = vi.fn(() => ['/org', 'acme', 'overview']);
     TestBed.configureTestingModule({
       providers: [
         LensService,
@@ -51,7 +51,7 @@ describe('LensService — menu lens preview', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: Router, useValue: { navigate, events } },
-        { provide: OrgLensNavigationService, useValue: { orgLensLink } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLandingLink } },
         {
           provide: PersonaService,
           useValue: {
@@ -68,21 +68,15 @@ describe('LensService — menu lens preview', () => {
       ],
     });
     const lens = TestBed.inject(LensService);
-    return { lens, cookies, navigate, events, boardRole, projectRole, orgLensLink };
+    return { lens, cookies, navigate, events, boardRole, projectRole };
   }
 
-  it("lands a switch to Org Lens on the selected organization's overview, the address its menu links use", () => {
-    const { lens, navigate, orgLensLink } = setup('me');
+  it("lands a switch to Org Lens on its landing link, the selected organization's overview", () => {
+    const { lens, navigate } = setup('me');
 
     lens.switchLens('org');
     expect(lens.activeLens()).toBe('org');
     expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
-
-    // Nothing selected yet: the legacy address, which the default selection rewrites once it lands.
-    orgLensLink.mockReturnValueOnce(['/org', 'overview']);
-    lens.switchLens('me');
-    lens.switchLens('org');
-    expect(navigate).toHaveBeenLastCalledWith(['/org', 'overview']);
   });
 
   it("lands a switch to any other lens on that lens's default route", () => {
