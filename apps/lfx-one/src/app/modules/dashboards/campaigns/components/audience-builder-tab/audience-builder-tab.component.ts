@@ -77,6 +77,7 @@ import type {
   AudienceSuppressionList,
   AudienceWriteDispatchContext,
   CampaignAudience,
+  CampaignEmailStage,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -136,6 +137,11 @@ export class AudienceBuilderTabComponent {
   /** The brief's event name and scraped dates: a year fallback for an edition discovery returned undated. */
   public readonly briefEventName = input('');
   public readonly briefEventDates = input('');
+  /**
+   * The email stage the operator picked, passed to the QA panel so a Post-Event send's audit sets
+   * the current-registrants check aside (lfx-v2-campaign-service#244). Blank when none is known.
+   */
+  public readonly emailStage = input<CampaignEmailStage | ''>('');
   /**
    * The identity of the event the parent's brief is for (slug, then name, then URL), normalized.
    *
