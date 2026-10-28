@@ -536,18 +536,20 @@ function buildOrgsHalf(
   const total = levels.reduce((sum, level) => sum + (level.count ?? 0), 0);
   const circumference = 2 * Math.PI * 36;
   const donut: HealthMetricsOverviewDonutSegmentView[] = [];
+  // A zero share keeps its own 1.5px sliver and 2px gap; the other levels split the rest of the ring by share.
+  const zeroSlot = 1.5 + 2;
+  const shared = circumference - zeroSlot * levels.filter((level) => !level.count).length;
   let offset = 0;
 
-  // Each segment stops 2px short of the next, and even a zero share keeps a 1.5px sliver, as the design draws it.
   for (const level of total > 0 ? levels : []) {
-    const length = ((level.count ?? 0) / total) * circumference;
+    const slot = level.count ? (level.count / total) * shared : zeroSlot;
     donut.push({
       key: level.key,
       stroke: level.stroke,
-      dashArray: `${Math.max(length - 2, 1.5).toFixed(2)} ${circumference.toFixed(2)}`,
+      dashArray: `${Math.max(slot - 2, 1.5).toFixed(2)} ${circumference.toFixed(2)}`,
       dashOffset: (-offset).toFixed(2),
     });
-    offset += length;
+    offset += slot;
   }
 
   const link = key === 'members' ? HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.members : HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.nonMembers;

@@ -113,14 +113,18 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
     expect(nonMembers.rows[0].pctLabel).toBe('<1%');
   });
 
-  it('draws every level on the 36px ring, 2px short of the next and never shorter than 1.5px', () => {
+  it('draws every level on the 36px ring, 2px short of the next, giving a zero share its own visible 1.5px sliver', () => {
     const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
     const circumference = 2 * Math.PI * 36;
+    const shared = circumference - 3.5;
+    // Each segment's start on the ring and its drawn length; the zero Low level must not sit under another segment.
+    const spans = donut.map((segment) => ({ start: 0 - Number(segment.dashOffset) + 0, length: Number(segment.dashArray.split(' ')[0]) }));
 
     expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium', 'low']);
-    expect(donut[0]).toMatchObject({ dashArray: `${((64 / 228) * circumference - 2).toFixed(2)} ${circumference.toFixed(2)}`, dashOffset: '0.00' });
-    expect(donut[1].dashOffset).toBe((-(64 / 228) * circumference).toFixed(2));
-    expect(donut[2].dashArray.startsWith('1.50 ')).toBe(true);
+    expect(spans[0]).toEqual({ start: 0, length: Number(((64 / 228) * shared - 2).toFixed(2)) });
+    expect(spans[2].length).toBe(1.5);
+    expect(spans[2].start).toBeGreaterThanOrEqual(spans[1].start + spans[1].length);
+    expect(spans[2].start + spans[2].length).toBeLessThan(circumference);
   });
 
   it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
