@@ -46,8 +46,14 @@ export class LinkedinPostService {
   public save(body: { setup?: LinkedinSetup; profile?: LinkedinProfile }): Observable<{ profile: LinkedinStoredProfile }> {
     return this.http.put<{ profile: LinkedinStoredProfile }>(`${LINKEDIN_API}/profile`, body).pipe(take(1));
   }
-  public startForDocument(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
-    return this.create(intake, project, answers, setup).pipe(
+  public startForDocument(
+    intake: MktgAgentIntake,
+    project: string,
+    answers: Record<string, string>,
+    setup?: LinkedinSetup,
+    discard?: string
+  ): Observable<LinkedinGeneration> {
+    return this.create(intake, project, answers, setup, discard).pipe(
       tap((run) => {
         if (setup) {
           const value = { setup: { ...setup }, savedAt: Date.now() };
@@ -74,9 +80,15 @@ export class LinkedinPostService {
     return `${this.user.user()?.sub ?? ''}:${project}:${documentId}`;
   }
 
-  private create(intake: MktgAgentIntake, project: string, answers: Record<string, string>, setup?: LinkedinSetup): Observable<LinkedinGeneration> {
+  private create(
+    intake: MktgAgentIntake,
+    project: string,
+    answers: Record<string, string>,
+    setup?: LinkedinSetup,
+    discard?: string
+  ): Observable<LinkedinGeneration> {
     const owner = this.user.user()?.sub;
-    return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}) }).pipe(
+    return this.http.post<LinkedinGeneration>(intake.endpoints.generate, { project, answers, ...(setup ? { setup } : {}), ...(discard && { discard }) }).pipe(
       take(1),
       tap((run) => {
         if (!owner || owner !== this.user.user()?.sub || !MKTG_DOCUMENT_ID_REGEX.test(run.documentId))
