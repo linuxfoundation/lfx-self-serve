@@ -251,8 +251,10 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
 
   /**
-   * Offers a stored-image LIBRARY in the Google creative section — images uploaded to the brief and
-   * named by asset id in the Google creative fields, instead of pasted image URLs.
+   * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
+   * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
+   * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
+   * `performanceMaxCreative.marketingImages` and the rest).
    *
    * A CAPABILITY flag like `CampaignServiceRedditAssets`, but it asserts something DIFFERENT, and
    * the difference matters enough to state rather than inherit. It does NOT say URL signing is
@@ -260,8 +262,9 @@ export enum ServerFeatureFlag {
    * `assets:mutate`, so no URL ever leaves the service and the signing settings are irrelevant to
    * it (`internal/dispatch/googleads_creative_assets.go` and `googleads_image_ref.go` hold no signer
    * reference; the only signing gate in the repo is Reddit's `checkRedditAssetChoice`). What it says
-   * is that the DEPLOYED campaign-service resolves Google creative asset ids at all — an older one
-   * ignores the unknown keys, dispatches a campaign with no images and reports success.
+   * is that the DEPLOYED campaign-service resolves Google creative asset ids, which every release
+   * from v1.0.21 does (lfx-v2-campaign-service#394). An older one types those arrays as strings and
+   * cannot decode an object entry, so its Google create fails rather than launching without the image.
    *
    * It is a SIBLING of the Reddit flag rather than a widening of it so the two can ship
    * independently: they assert different upstream capabilities, and one flag would mean Reddit asset
@@ -270,18 +273,14 @@ export enum ServerFeatureFlag {
    * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
    * no creative key at all, so the capability the client sees
    * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
-   * controls stay hidden, and the upload route accepts a request only on the Reddit flag's
-   * authority.
-   *
-   * NOTHING READS IT YET. At this commit the Google creative interfaces carry image URLs only,
-   * with no asset-id key for a stored image to go in, so the library controls this WILL gate do
-   * not exist and turning it on changes nothing an operator can see. What it already does is admit
-   * an upload into the brief's library on its own authority, which is why it is worth setting on a
-   * deployment staging images ahead of the control.
-   * It does NOT gate the brief's asset list, get, plan and delete routes: those are addressed by a
-   * campaign-service brief and gate on `CampaignServiceBriefs` like every other brief route, so a
-   * deployment running Reddit uploads alone can still read and prune the same library. The pasted
-   * image URL is unaffected either way. OFF by default. Same accepted values as the flags above.
+   * controls are hidden, Create is blocked while a stored image is still held, and the create route
+   * refuses a request carrying a Google `imageAssetId` rather than dropping it; the upload route
+   * still admits an upload on any other asset flag's authority. It does NOT gate the brief's asset
+   * list, get, plan and delete routes: those are addressed by a campaign-service brief and gate on
+   * `CampaignServiceBriefs` like every other brief route, so a deployment running Reddit uploads
+   * alone can still read and prune the same library. The pasted image URL is unaffected either way.
+   * ON in the chart, like the Meta sibling, because nothing has to be configured on campaign-service
+   * first; same accepted values as the flags above.
    */
   CampaignServiceGoogleAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS',
 
@@ -305,6 +304,26 @@ export enum ServerFeatureFlag {
    * above.
    */
   CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
+
+  /**
+   * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
+   * `linkedInConfig.variants[].imageAssetId` (the same image on every variant).
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
+   * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
+   * URN as each dark post's article thumbnail (`internal/dispatch/linkedin_creative.go`,
+   * `resolveLinkedInImages`). What it says is that the DEPLOYED campaign-service resolves LinkedIn
+   * asset ids, which every release from v1.0.21 does. Its own flag so LinkedIn uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.linkedInAssetUploadEnabled`) needs both. With it off the LinkedIn upload
+   * control is hidden and the create route refuses a request carrying a LinkedIn `imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the

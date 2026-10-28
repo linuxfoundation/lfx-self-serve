@@ -1946,8 +1946,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -1985,8 +1987,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2035,8 +2039,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2070,8 +2076,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2101,8 +2109,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: true,
+            googleAudienceSegmentsEnabled: true,
           })
         );
 
@@ -2112,9 +2122,51 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as {
           briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
           briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
         };
         expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBe(true);
         expect(c.briefCampaignsBiddingEnabled()).toBe(false);
+        // Per caller, read from the same answer: a root caller's yes reaches the Implement tab.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBe(true);
+      });
+
+      /** The LinkedIn upload capability, read from its own key on the same terms as the one above. */
+      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: true,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBeNull();
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
@@ -2138,11 +2190,14 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as {
           briefCampaignsBiddingEnabled(): boolean | null;
           briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
           briefCampaignsCapabilityRead(): string;
         };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
         // Unknown too, which the tab treats as off: no Microsoft dates, and the warning stays.
         expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Unknown, so the tab hides the audience section and blocks a draft that holds segments.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
         expect(c.briefCampaignsCapabilityRead()).toBe('failed');
@@ -2196,8 +2251,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2245,8 +2302,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         load();
@@ -2265,8 +2324,10 @@ describe('CampaignsComponent brief persistence', () => {
           googleAssetUploadEnabled: false,
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          googleAudienceSegmentsEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2301,8 +2362,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2338,8 +2401,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2370,8 +2435,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2415,8 +2482,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2461,8 +2530,10 @@ describe('CampaignsComponent brief persistence', () => {
           googleAssetUploadEnabled: false,
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          googleAudienceSegmentsEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2507,8 +2578,10 @@ describe('CampaignsComponent brief persistence', () => {
           googleAssetUploadEnabled: false,
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          googleAudienceSegmentsEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2537,8 +2610,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
 
@@ -2569,8 +2644,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2591,8 +2668,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2622,8 +2701,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2637,6 +2718,8 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
         expect((c as unknown as { briefCampaignsMicrosoftScheduleEnabled(): boolean | null }).briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Per caller AND per foundation: a root answer for one foundation must not carry to the next.
+        expect((c as unknown as { briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null }).briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
@@ -2663,8 +2746,10 @@ describe('CampaignsComponent brief persistence', () => {
           googleAssetUploadEnabled: false,
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          googleAudienceSegmentsEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2700,8 +2785,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2737,8 +2824,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2777,8 +2866,10 @@ describe('CampaignsComponent brief persistence', () => {
           googleAssetUploadEnabled: false,
           metaCreativeEnabled: false,
           metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          googleAudienceSegmentsEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2848,8 +2939,10 @@ describe('CampaignsComponent brief persistence', () => {
             googleAssetUploadEnabled: false,
             metaCreativeEnabled: false,
             metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            googleAudienceSegmentsEnabled: false,
           })
         );
         load();
@@ -11203,7 +11296,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean, microsoftScheduleEnabled = false): Observable<CampaignListResult> =>
+  const capability = (biddingEnabled: boolean, microsoftScheduleEnabled = false, googleAudienceSegmentsEnabled = false): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11216,8 +11309,10 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
+      googleAudienceSegmentsEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11307,6 +11402,16 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
     expect(q(shown)).not.toBeNull();
     expect(q(hidden)).toBeNull();
+  });
+
+  /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
+  it.each([[true], [false]])('hands a google audience segments capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, enabled));
+
+    page().onProceedToImplementation({ ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
   });
 
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {

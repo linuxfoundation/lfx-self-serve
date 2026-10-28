@@ -1240,6 +1240,17 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
+/**
+ * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
+ * caller is not a ROOT writer or ROOT campaign manager. Every foundation's Google Ads connection
+ * points at one shared LF customer and a user list cannot yet be mapped to a project, so a non-root
+ * operator could otherwise target another foundation's list (linuxfoundation/lfx-v2-campaign-service#411).
+ */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE =
+  'Google audience segments can only be added by LF administrators, because every foundation shares one Google Ads account. Remove the audience segments and create again.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -1315,24 +1326,23 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 };
 
 /**
- * How many countries the Implementation tab's picker will add to one campaign.
+ * Upstream's bound on the TARGETED Google Ads geo list (`geo.go`'s `maxGeoTargets`, 60).
  *
- * This is THIS APPLICATION'S bound, not upstream's, and the two are no longer the same number:
- * `geo.go`'s `maxGeoTargets` was raised from 30 to 60 in campaign-service #239, while the picker
- * still offers exactly the {@link GOOGLE_ADS_GEO_TARGET_MAP} countries — 30 of them — so a
- * UI-built request cannot reach even this bound, let alone upstream's.
+ * The list holds country codes AND raw geo target constant ids together — the Implementation tab
+ * puts the countries picked from {@link GOOGLE_ADS_GEO_TARGET_MAP} and the postal-code ids typed
+ * beside them into the one `geoTargets` array, because that is the one list upstream's
+ * `resolveGeoList` reads both spellings from. So the bound is the combined count, and it is
+ * upstream's own number rather than the 30 it used to be: that 30 dated from when every entry had
+ * to be a key of the 30-entry country map, and a list longer than it could only repeat a country.
+ * Once postal ids ride in the same list, keeping 30 would refuse creates upstream accepts.
  *
- * Keeping the stricter number costs nothing REACHABLE: every entry the geo guard accepts must be a
- * key of that 30-entry map, so a list longer than 30 can only be one that repeats a country. Such a
- * list is refused here and would be accepted upstream (which checks its cap BEFORE de-duplication,
- * then collapses the repeat), which is a narrow over-refusal on a request no picker produces. It is
- * recorded here rather than silently fixed because raising this value changes what the picker's own
- * clamp means, which is a separate change from the one this constant serves.
+ * Checked BEFORE de-duplication upstream, so the guard that mirrors it counts the submitted
+ * entries, not the surviving ones.
  *
- * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} carries upstream's real per-list bound, and the
- * exclusion list is judged against that rather than against this one.
+ * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS} is the same number for the exclusion list, which
+ * upstream counts separately.
  */
-export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 60;
 
 /**
  * Upstream's own bound on ONE Google Ads geo target list (`geo.go`'s `maxGeoTargets`, 60).
@@ -1363,6 +1373,27 @@ export const GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS = 60;
  * refuse it for the wrong reason.
  */
 export const GOOGLE_ADS_GEO_TARGET_ID_PATTERN = /^[0-9]+$/;
+
+/**
+ * The fewest digits a Google Ads POSTAL-CODE geo target constant id has.
+ *
+ * Postal-code criteria in Google's geo-targets table carry seven-digit ids (`9031945`); countries
+ * carry four (`2840`) and regions five. A shorter numeric entry in the postal-code box is therefore
+ * far more likely to be a ZIP or postcode typed as itself than the id it should have been looked up
+ * as. That entry is still well-formed and upstream still accepts it — it names SOME criterion, or
+ * nothing — so this drives a non-blocking warning only, never a refusal.
+ */
+export const GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS = 7;
+
+/**
+ * A plain decimal number as typed into the radius sub-form: optional sign, digits, optional
+ * fraction (`-33.8688`, `25`, `.5`, `-33.`).
+ *
+ * Checked BEFORE `Number()`, which also accepts `0x1A`, `0b11` and `1e2` — finite, in range, and
+ * shown back on the chip as a value the operator never typed. The wire takes decimal degrees, and
+ * so does the form.
+ */
+export const GOOGLE_ADS_DECIMAL_NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)$/;
 
 /**
  * Upstream's bound on the proximity list (`geo.go`'s `maxProximityTargets`).
@@ -2013,6 +2044,139 @@ export const GOOGLE_ADS_MIN_SNIPPET_VALUES = 3;
  * because it repeats a value is NOT refused.
  */
 export const GOOGLE_ADS_MAX_SNIPPET_VALUES = 10;
+
+/**
+ * Upstream's own bound on a Google Ads call-extension list (`assets_extended.go`'s
+ * `maxCallExtensions`), checked on the raw slice before any entry is inspected — the same shape as
+ * {@link GOOGLE_ADS_MAX_CALLOUTS}.
+ *
+ * Upstream calls this "a bound on this request's payload, not an upstream limit", and so does this
+ * mirror: Google's own per-campaign ceiling is higher. Refusing past it here refuses exactly what
+ * campaign-service refuses, which is the only line this constant exists to hold.
+ */
+export const GOOGLE_ADS_MAX_CALL_EXTENSIONS = 20;
+
+/**
+ * Upstream's ceiling on the characters of a call extension's phone number
+ * (`assets_extended.go`'s `maxPhoneNumberRunes`), in RUNES.
+ *
+ * A payload ceiling, not a format rule: Google validates the number against its country and
+ * neither upstream nor this app tries to, so the only other checks are the loose character set and
+ * the digit floor below.
+ */
+export const GOOGLE_ADS_MAX_PHONE_NUMBER_RUNES = 35;
+
+/**
+ * The fewest digits upstream accepts in a phone number (`assets_extended.go`'s `minPhoneDigits`).
+ *
+ * Four is below any real number anywhere, which is the point: it catches an empty or
+ * punctuation-only "number" without taking a position on national formats.
+ */
+export const GOOGLE_ADS_MIN_PHONE_DIGITS = 4;
+
+/**
+ * Every character a call extension's phone number may contain (`assets_extended.go`'s
+ * `phoneAllowedRE`). Letters are refused because Google rejects vanity numbers on call assets.
+ */
+export const GOOGLE_ADS_PHONE_NUMBER_PATTERN = /^[0-9+\-(). ]+$/;
+
+/**
+ * Upstream's own bound on a Google Ads promotion list (`assets_extended.go`'s
+ * `maxPromotionExtensions`) — a payload bound, as {@link GOOGLE_ADS_MAX_CALL_EXTENSIONS} is.
+ */
+export const GOOGLE_ADS_MAX_PROMOTIONS = 20;
+
+/**
+ * Upstream's bound on what a promotion says is on sale (`maxPromotionTargetRunes`), in RUNES.
+ * Count it with the spread — see {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES}.
+ */
+export const GOOGLE_ADS_MAX_PROMOTION_TARGET_RUNES = 25;
+
+/** Upstream's bound on a promotion's coupon code (`maxPromotionCodeRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PROMOTION_CODE_RUNES = 20;
+
+/**
+ * How a human percentage becomes Google's `PromotionAsset.percent_off` (`percentOffScale`), where
+ * 1,000,000 means 100%: 25% is 250,000.
+ *
+ * Mirrored only so a percentage that ROUNDS to zero is refused here as it is upstream. The wire
+ * carries the human percentage (`discountPercent: 25`); campaign-service does the scaling.
+ */
+export const GOOGLE_ADS_PERCENT_OFF_SCALE = 10_000;
+
+/**
+ * Upstream's own bound on a Google Ads price-extension list (`maxPriceExtensions`) — a payload
+ * bound, at half the count of {@link GOOGLE_ADS_MAX_PROMOTIONS}.
+ */
+export const GOOGLE_ADS_MAX_PRICE_EXTENSIONS = 10;
+
+/**
+ * How many rows one price extension must carry (`minPriceOfferings`), and the most it may
+ * (`maxPriceOfferings`). These two ARE Google's own: a price table of two rows or of nine is refused
+ * by Google, not just by campaign-service.
+ */
+export const GOOGLE_ADS_MIN_PRICE_OFFERINGS = 3;
+export const GOOGLE_ADS_MAX_PRICE_OFFERINGS = 8;
+
+/** Upstream's bound on a price row's header (`maxPriceHeaderRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PRICE_HEADER_RUNES = 25;
+
+/** Upstream's bound on a price row's description (`maxPriceDescRunes`), in RUNES. */
+export const GOOGLE_ADS_MAX_PRICE_DESCRIPTION_RUNES = 25;
+
+/**
+ * The ceiling on any money amount a promotion or price row carries, in whole currency units —
+ * upstream's `validateMoney` reuses the campaign budget's own `maxBudget` for it.
+ */
+export const GOOGLE_ADS_MAX_ASSET_AMOUNT = 1_000_000_000;
+
+/**
+ * The shape every Google enum name has (`assets_extended.go`'s `enumShapeRE`): upper-case ASCII,
+ * digits and underscores, starting with a letter.
+ *
+ * A SHAPE test and never a membership test, for the reason {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}
+ * gives for snippet headers: Google adds occasions, price types, qualifiers and units without
+ * campaign-service's involvement, and a hardcoded list would refuse a create Google accepts. The
+ * Implementation tab's selects offer the lists below; the BFF judges only this shape.
+ */
+export const GOOGLE_ADS_ENUM_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+
+/** The ISO 4217 shape upstream's `currencyCodeRE` checks, after it upper-cases the code. */
+export const GOOGLE_ADS_CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
+/**
+ * The language-tag shape upstream's `languageCodeRE` checks — loose on purpose, so `en`, `pt-BR`
+ * and `zh-Hant` all pass.
+ */
+export const GOOGLE_ADS_ASSET_LANGUAGE_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+
+/**
+ * The `YYYY-MM-DD` shape upstream's `campaignDateRE` checks on a promotion's serving and redemption
+ * dates, before it parses them as calendar dates. ASCII digits only, as Go's `\d` is.
+ */
+export const GOOGLE_ADS_ASSET_DATE_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+/**
+ * Google's `PriceExtensionType` names, for the Implementation tab's type select. The BFF does not
+ * test membership — see {@link GOOGLE_ADS_ENUM_NAME_PATTERN}.
+ */
+export const GOOGLE_ADS_PRICE_TYPES = [
+  'BRANDS',
+  'EVENTS',
+  'LOCATIONS',
+  'NEIGHBORHOODS',
+  'PRODUCT_CATEGORIES',
+  'PRODUCT_TIERS',
+  'SERVICES',
+  'SERVICE_CATEGORIES',
+  'SERVICE_TIERS',
+] as const;
+
+/** Google's `PriceExtensionPriceQualifier` names, optional on a price extension. */
+export const GOOGLE_ADS_PRICE_QUALIFIERS = ['FROM', 'UP_TO', 'AVERAGE'] as const;
+
+/** Google's `PriceExtensionPriceUnit` names, optional on each price row. */
+export const GOOGLE_ADS_PRICE_UNITS = ['PER_HOUR', 'PER_DAY', 'PER_WEEK', 'PER_MONTH', 'PER_YEAR', 'PER_NIGHT'] as const;
 
 /**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
@@ -2771,6 +2935,17 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
+
+/**
+ * The largest image LinkedIn takes as a dark post's article thumbnail, in bytes. campaign-service
+ * refuses anything larger at dispatch (`linkedin.MaxImageBytes`, the decimal reading of the single
+ * image ad spec's "5 MB"), so the Implement tab checks it before uploading rather than storing an
+ * image the create would then fail on.
+ */
+export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
+
+/** Shown when a LinkedIn image exceeds `LINKEDIN_IMAGE_MAX_BYTES`. */
+export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
 
 /**
  * The creative-asset type the leading bytes of an image actually are, or `null`.
@@ -3678,8 +3853,9 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
- * The Google channels that accept campaign ad extensions — callouts, and the six other extension
- * types this application does not collect yet.
+ * The Google channels that accept campaign ad extensions — the six this application collects
+ * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
+ * does not collect yet.
  *
  * Search and nothing else, and upstream is categorical about it: `validateAssetPlan`
  * (`internal/platform/googleads/assets.go`) refuses the whole extension set with "supported on
@@ -3692,6 +3868,43 @@ export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', '
  * kind is decided by the channel.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
+
+/**
+ * The Google channels that accept audience segments — Search and nothing else.
+ *
+ * Upstream attaches audience criteria to the ad group the Search cascade builds, and refuses them
+ * on every other channel rather than dropping them (`internal/platform/googleads/campaign.go`:
+ * "audience segments are not supported on %s"): Demand Gen's ad group takes no criteria and
+ * Performance Max has no ad group to hang them on. A separate list from
+ * {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} although it holds the same one channel, because the two
+ * fences are upstream's for different reasons and either could move without the other.
+ */
+export const GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS = ['search'] as const;
+
+/**
+ * Upstream's own bound on a Google Ads audience segment list (`targeting.go`'s
+ * `maxAudienceSegments`), checked against the RAW list before any entry — so a list that is only
+ * over the cap because it repeats a segment is refused on the cap, as {@link GOOGLE_ADS_MAX_CALLOUTS} is.
+ */
+export const GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS = 20;
+
+/**
+ * The one audience segment shape upstream attaches: a Customer Match or remarketing user list the
+ * advertiser already built, named by its full resource name, `customers/{customerId}/userLists/{id}`
+ * with both ids all ASCII digits (`audienceCriterionField` in `targeting.go`). The customer id is
+ * written without dashes — `123-456-7890` is the Google Ads UI's display form and is refused.
+ *
+ * This client creates no audiences and has no listing of them, so the resource name is the input.
+ */
+export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLists\/[0-9]+$/;
+
+/**
+ * A well-formed custom audience resource name, recognized only so it can be refused with its real
+ * reason. Upstream parses the shape and then refuses it ("custom audiences are not supported for
+ * SEARCH campaigns; only userLists are accepted"), so naming it here keeps an operator from hunting
+ * for a typo in a resource name that is perfectly well formed.
+ */
+export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
@@ -3715,6 +3928,11 @@ export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
  *   not a per-array allowance; logos are capped per array and never count toward the marketing
  *   total. Stating the combined cap on each field is the permissive direction — the upstream
  *   preflight still enforces the real sum.
+ * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
+ *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
+ *   the BFF forwards an asset ref only in a field that has one.
  *
  * Ordering is the order a section renders in: the ad's words first, then its images, because the
  * copy is what an operator writes and the images are what they paste links to.
@@ -3736,11 +3954,32 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 20,
       hint: 'One image URL per line. At least one marketing or square marketing image is required. The cap of 20 is shared across all four marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 20 },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'tallPortraitImages', label: 'Tall portrait images (9:16)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required. A Demand Gen ad with no logo is refused.' },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'tallPortraitImages',
+      label: 'Tall portrait images (9:16)',
+      kind: 'list',
+      max: 20,
+      image: { ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 },
+    },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required. A Demand Gen ad with no logo is refused.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
   ],
   'performance-max': [
     { control: 'headlines', label: 'Headlines', kind: 'list', min: 3, max: 15, width: 30 },
@@ -3790,11 +4029,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       min: 1,
       max: 20,
       hint: 'One image URL per line. Required here, unlike on Demand Gen. The cap of 20 is shared across all three marketing shapes.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', min: 1, max: 20, hint: 'Also required.' },
-    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20 },
-    { control: 'logoImages', label: 'Logo images (1:1)', kind: 'list', min: 1, max: 5, hint: 'Required.' },
-    { control: 'landscapeLogoImages', label: 'Landscape logo images (4:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 20,
+      hint: 'Also required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'portraitImages', label: 'Portrait images (4:5)', kind: 'list', max: 20, image: { ratioW: 4, ratioH: 5, minWidth: 480, minHeight: 600 } },
+    {
+      control: 'logoImages',
+      label: 'Logo images (1:1)',
+      kind: 'list',
+      min: 1,
+      max: 5,
+      hint: 'Required.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
+    {
+      control: 'landscapeLogoImages',
+      label: 'Landscape logo images (4:1)',
+      kind: 'list',
+      max: 5,
+      image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 },
+    },
     {
       control: 'youtubeVideoIds',
       label: 'YouTube video IDs',
@@ -3822,12 +4084,34 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'list',
       max: 15,
       hint: 'One image URL per line. Google requires each marketing array when the other is absent. The cap of 15 is shared across both.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
-    { control: 'squareMarketingImages', label: 'Square marketing images (1:1)', kind: 'list', max: 15 },
-    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5 },
-    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5 },
+    {
+      control: 'squareMarketingImages',
+      label: 'Square marketing images (1:1)',
+      kind: 'list',
+      max: 15,
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5, image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 } },
+    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
+
+/**
+ * How far a stored image's aspect ratio may sit from its Google slot's target, as a fraction of the
+ * target — campaign-service's `demandGenAspectTolerance`, which every Google slot is held to (Google
+ * documents ±1%). Measured as `ShapeRule.ratioDrift` measures it: `|got - want| / want`.
+ */
+export const GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE = 0.01;
+
+/**
+ * The most bytes one Google creative image may carry — campaign-service's `googleads.MaxImageBytes`
+ * (5 MiB), which every Google slot states and both the fetch and the stored-asset paths enforce
+ * before anything is created. Tighter than {@link CREATIVE_ASSET_MAX_BYTES}, the library's own
+ * upload cap: an image the library accepts for Reddit or Meta can still be too large for Google.
+ */
+export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
