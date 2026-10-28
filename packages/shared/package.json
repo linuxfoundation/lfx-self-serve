@@ -64,7 +64,7 @@
     "@fullcalendar/core": "^6.1.19",
     "@types/sanitize-html": "^2.16.0",
     "typescript": "5.8.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "@angular/core": "^20.3.15",
