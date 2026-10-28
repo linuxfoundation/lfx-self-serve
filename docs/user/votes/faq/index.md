@@ -42,4 +42,4 @@ Make sure you have the correct project selected in the lens switcher. Polls are 
 
 ## Who do I contact if there is an error with a vote result?
 
-Contact LFX support via in-app messaging. Include the poll name, the project, and a description of the discrepancy.
+Contact LFX support. Include the poll name, the project, and a description of the discrepancy.

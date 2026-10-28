@@ -4,7 +4,7 @@ description: Frequently asked questions about mailing lists in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, faq, subscribe]
-last_updated: 2026-08-17
+last_updated: 2026-10-27
 intercom_collection: Mailing Lists
 ---
 
@@ -34,4 +34,4 @@ Open the mailing list detail page and navigate to the manage or settings view. U
 
 ## Who do I contact if a mailing list is set up incorrectly?
 
-Contact LFX support via in-app messaging. Include the list name and the project it belongs to.
+Contact LFX support. Include the list name and the project it belongs to.

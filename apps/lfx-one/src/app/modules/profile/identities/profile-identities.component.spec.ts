@@ -4,12 +4,13 @@
 import { CUSTOM_ELEMENTS_SCHEMA, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
+import { IDENTITY_ALREADY_CONNECTED_MESSAGE, IDENTITY_ALREADY_CONNECTED_STATUS, IDENTITY_ALREADY_CONNECTED_SUMMARY } from '@lfx-one/shared/constants';
 import { EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileIdentitiesComponent } from './profile-identities.component';
 
@@ -91,6 +92,127 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     // Regression guard: `typeof params['error'] === 'string'` alone is true for '' — the
     // truthiness check must survive alongside it, or a bare ?error= starts toasting/clearing.
     const { add } = await setup({ error: '' });
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  // #4124: only the social-connect callback emits already_linked; it owns the inline conflict
+  // banner rather than a toast, so the customer-reported banner text maps to that flow alone.
+  it('shows the conflict banner for error=already_linked and shows no toast', async () => {
+    const { fixture, add } = await setup({ error: 'already_linked' });
+    expect(fixture.componentInstance.conflictBanner()).toBe(true);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('hides the conflict banner after dismissConflictBanner()', async () => {
+    const { fixture } = await setup({ error: 'already_linked' });
+    fixture.componentInstance.dismissConflictBanner();
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+});
+
+/**
+ * #4327: a social reconnect whose subject is already this account's lands with
+ * success=identity_already_connected. It is a truthful no-op notice — never the conflict banner,
+ * never the "linked successfully" copy — shown once in the browser only.
+ */
+describe('ProfileIdentitiesComponent — already-connected social identity (#4327)', () => {
+  async function setup(
+    queryParams: Record<string, string>,
+    platform: 'browser' | 'server' = 'browser'
+  ): Promise<{
+    fixture: ComponentFixture<ProfileIdentitiesComponent>;
+    add: ReturnType<typeof vi.fn>;
+    refreshUserIdentities: ReturnType<typeof vi.fn>;
+  }> {
+    const add = vi.fn();
+    const refreshUserIdentities = vi.fn();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileIdentitiesComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(false),
+            identitiesRefresh$: EMPTY,
+            getIdentities: vi.fn(() => of([])),
+            getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+            refreshUserIdentities,
+          },
+        },
+        { provide: MessageService, useValue: { add } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileIdentitiesComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, add, refreshUserIdentities };
+  }
+
+  let replaceState: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    replaceState = vi.spyOn(window.history, 'replaceState').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    replaceState.mockRestore();
+  });
+
+  it('shows one already-connected notice, refreshes once, and consumes the callback params', async () => {
+    const { fixture, add, refreshUserIdentities } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'success',
+      summary: IDENTITY_ALREADY_CONNECTED_SUMMARY,
+      detail: IDENTITY_ALREADY_CONNECTED_MESSAGE,
+    });
+    expect(refreshUserIdentities).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledExactlyOnceWith(window.history.state, '', window.location.pathname);
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+
+  it('never uses the new-link or another-account copy', async () => {
+    const { add } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS });
+
+    const detail = add.mock.calls[0][0].detail as string;
+    expect(detail).not.toMatch(/linked successfully|verified|another account|already linked/i);
+  });
+
+  it('stays silent during SSR — no toast, refresh, or cleanup', async () => {
+    const { add, refreshUserIdentities } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS }, 'server');
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it('ignores an unknown success marker', async () => {
+    const { fixture, add, refreshUserIdentities } = await setup({ success: 'identity_something_else' });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+
+  it('keeps the existing identity_linked success notice', async () => {
+    const { add, refreshUserIdentities } = await setup({ success: 'identity_linked' });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
+    expect(refreshUserIdentities).toHaveBeenCalledOnce();
+  });
+
+  it('keeps error=already_linked on the conflict banner', async () => {
+    const { fixture, add } = await setup({ error: 'already_linked' });
+
+    expect(fixture.componentInstance.conflictBanner()).toBe(true);
     expect(add).not.toHaveBeenCalled();
   });
 });

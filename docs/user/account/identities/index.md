@@ -4,7 +4,7 @@ description: Link, verify, and remove the GitHub, social, and email identities u
 audience: [all]
 product_area: Account
 tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 intercom_collection: Account
 ---
 
@@ -34,13 +34,14 @@ Your primary email is always listed, with a **Primary** badge. If you also sign 
 
 The profile sidebar and the **Primary** badge use your current primary email. Changing it in **Edit profile** refreshes both displays without signing out and back in.
 
-> **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the code-entry step whether or not the address is already linked elsewhere. If no code arrives, the address may belong to another LFX account — use **contact support** in the code step for help. Social-account conflicts still show a conflict message after provider sign-in.
+> **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the code-entry step whether or not the address is already linked elsewhere. If no code arrives, the address may belong to another LFX account — use **contact support** in the code step for help. Social-account conflicts still show a conflict message after provider sign-in. Signing in again with a social account that is already yours shows **Already connected** instead.
 
 ## Add an identity
 
 1. Select **Add identity**.
 2. Choose a provider:
    - For a social account (for example GitHub, Google, or LinkedIn), select **Continue with _[provider]_** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
+   - If that social account is already connected to your own account, LFX confirms **This identity is already connected to your account.** instead of linking it again, and refreshes your identities. Nothing new is linked.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. If the address can be added, a 6-digit code is sent to it; enter that code and select **Verify email**. Use **Resend Code** if needed. If no code arrives, the address may already be linked to another LFX account — select **contact support** in the code step.
    - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If verification instead reports that the address is already linked to an LFX account, select **contact support**.
 
@@ -48,10 +49,12 @@ The profile sidebar and the **Primary** badge use your current primary email. Ch
 
 1. Find the account under **Unverified identities**.
 2. Select **Verify**.
-   - For a social account, select **Continue with _[provider]_** to confirm through the provider.
+   - For a social account, select **Continue with _[provider]_** to confirm through the provider. If the account is already connected to yours, LFX confirms **This identity is already connected to your account.** and refreshes your identities. That message is not a new verification. If the row still shows under **Unverified identities** after the refresh, contact support rather than signing in again.
    - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**. If the address is already connected to your account, LFX confirms **This email is already connected to your account.** and refreshes your identities.
 
 If an unverified identity is not yours, select **This is not me** to reject it.
+
+To verify an email identity, use its own **Verify** action and enter the code sent to that inbox. Signing in to LinkedIn proves access to LinkedIn; an **Already connected** notice is not proof that the email identity was verified. Check the email row after the refresh and, if it remains unverified, verify it with its own code.
 
 ## Remove an identity
 

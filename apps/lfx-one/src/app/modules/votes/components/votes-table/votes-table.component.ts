@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -53,6 +53,7 @@ import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -83,6 +84,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
+    NgTemplateOutlet,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -186,6 +188,11 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
+  protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
+  protected readonly actionButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'whitespace-nowrap min-h-[44px]' : 'whitespace-nowrap'));
+  protected readonly moreButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'min-w-[44px] min-h-[44px]' : ''));
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();

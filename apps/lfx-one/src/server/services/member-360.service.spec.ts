@@ -1,11 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEMBER_360_FINALIZE_TOOL, MEMBER_360_REDACTED_SUMMARY, MEMBER_360_INVALID_RESULT } from '@lfx-one/shared/constants';
+import {
+  MEMBER_360_FINALIZE_TOOL,
+  MEMBER_360_FINALIZE_RECEIPT_ID,
+  MEMBER_360_PARTIAL_SUMMARY_PREFIX,
+  MEMBER_360_REDACTED_SUMMARY,
+  MEMBER_360_INVALID_RESULT,
+  MEMBER_360_MAX_BYTES,
+} from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
+import type { Member360FinalizeReceipt } from '@lfx-one/shared/interfaces';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { getMktgSessionOutcome, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
 import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,6 +79,35 @@ function finalized(envelope: unknown): string {
         { type: 'tool-result', toolCallId: 'final', output: { envelope_json: JSON.stringify(envelope) } },
       ],
     },
+  });
+}
+function projectedFinalize(receipt: unknown, anthropic = false): string {
+  const messages = anthropic
+    ? [
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'final', name: MEMBER_360_FINALIZE_TOOL, input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'final', content: [{ type: 'text', text: JSON.stringify(receipt) }] }] },
+      ]
+    : [
+        { type: 'tool-call', toolCallId: 'final', toolName: MEMBER_360_FINALIZE_TOOL },
+        { type: 'tool-result', toolCallId: 'final', output: { type: 'json', value: receipt } },
+      ];
+  return JSON.stringify({ type: 'llm_start', payload: { messages } });
+}
+function finalizeReceipt(envelope = member360Fixture()): Member360FinalizeReceipt {
+  return {
+    finalize_receipt: MEMBER_360_FINALIZE_RECEIPT_ID,
+    ok: true,
+    sha256: envelope.content_sha256,
+    rows: { ranking: envelope.tabs.member_ranking.length, evidence: envelope.tabs.evidence.length },
+    partial: false,
+    violations: [],
+  };
+}
+function rootFinal(envelope: unknown): string {
+  return JSON.stringify({
+    type: 'runtime_done',
+    task: { entity_type: 'EntTaskAgent', parent_task_id: null },
+    content: { type: 'text', text: JSON.stringify(envelope) },
   });
 }
 const req = {} as Request;
@@ -191,6 +228,154 @@ describe('Member 360 entitlement and generation', () => {
     expect(stored).not.toHaveProperty('contract');
     expect(stored.member360.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.member360.tabs)).digest('hex'));
     expect(stored.content_sha256).toBe(createHash('sha256').update(valid.summary_markdown).digest('hex'));
+  });
+  it.each([false, true])('accepts a receipt-bound root final envelope with Anthropic receipt: %s', async (anthropic) => {
+    const envelope = member360Fixture();
+    // Non-schema key order must still hash the original tabs, not zod's reconstruction.
+    envelope.tabs = {
+      method: envelope.tabs.method,
+      evidence: envelope.tabs.evidence,
+      summary: envelope.tabs.summary,
+      member_ranking: envelope.tabs.member_ranking,
+      actions_by_team: envelope.tabs.actions_by_team,
+      category_detail: envelope.tabs.category_detail,
+    };
+    envelope.tabs.member_ranking[0].key_contact = 'opaque-contact-1, owner@example.test';
+    envelope.summary_markdown += '\nContact opaque-contact-1, owner@example.test.';
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    const service = new Member360Service();
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    await service.result(req, 'session-1', 'sample-project');
+    const directBundle = mocks.recordGeneration.mock.calls[0][3];
+    mocks.recordGeneration.mockClear();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope), anthropic), rootFinal(envelope)]);
+    expect(await service.result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    const stored = mocks.recordGeneration.mock.calls[0][3];
+    expect(stored).toEqual(directBundle);
+    expect(stored.member360.version).toBe(1);
+    expect(stored).not.toHaveProperty('tabs');
+    expect(stored).not.toHaveProperty('contract');
+    expect(stored.member360.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.member360.tabs)).digest('hex'));
+    expect(stored.content_sha256).toBe(createHash('sha256').update(stored.document_markdown).digest('hex'));
+    expect(JSON.stringify(stored)).not.toContain('owner@example.test');
+    expect(JSON.stringify(stored)).not.toContain('opaque-contact-1');
+    expect(logger.info).toHaveBeenCalledWith(req, 'member_360_result', 'Accepted the receipt-bound final envelope', {
+      source: 'receipt_bound_final',
+      receipts: 1,
+    });
+  });
+  it.each(['data', 'string'])('accepts a receipt-bound notification %s carrier', async (shape) => {
+    const envelope = member360Fixture();
+    const text = JSON.stringify(envelope);
+    mocks.getRawEventPayloads.mockResolvedValue([
+      projectedFinalize(finalizeReceipt(envelope)),
+      JSON.stringify({ type: 'agent_notification_message', content: shape === 'string' ? text : { type: 'text', data: text } }),
+    ]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+  });
+  it('rejects a root final envelope that does not match the paired receipt hash', async () => {
+    const envelope = member360Fixture();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), sha256: '0'.repeat(64) }), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'hash' });
+  });
+  it('prefers direct finalized output over a newer receipt-bound carrier', async () => {
+    const direct = member360Fixture();
+    const newer = { ...direct, version: 2 };
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(newer)), rootFinal(newer), finalized(direct)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration.mock.calls[0][3].member360.version).toBe(1);
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'member_360_result', 'Accepted the receipt-bound final envelope', expect.anything());
+  });
+  it.each(['schema', 'scope', 'integrity', 'size'])('rejects a receipt-bound candidate failing %s validation', async (check) => {
+    const envelope = member360Fixture();
+    if (check === 'schema') Object.assign(envelope, { kind: 'invalid' });
+    if (check === 'scope') envelope.project_name = 'Other Foundation';
+    // A matching receipt cannot make tampered tabs pass the recomputed integrity check.
+    if (check === 'integrity') envelope.content_sha256 = '0'.repeat(64);
+    if (check === 'size') envelope.summary_markdown = 'x'.repeat(MEMBER_360_MAX_BYTES + 1);
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope)), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      req,
+      'member_360_result',
+      expect.stringContaining('Rejected envelope'),
+      expect.objectContaining({ source: 'receipt_bound_final' })
+    );
+  });
+  it.each([{ ok: false }, { ok: 'true' }, { finalize_receipt: 'other/v1' }, { sha256: 'f'.repeat(63) }, { sha256: 'F'.repeat(64) }, { sha256: null }])(
+    'ignores an invalid finalize receipt %j',
+    async (override) => {
+      const envelope = member360Fixture();
+      mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), ...override }), rootFinal(envelope)]);
+      expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+      expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['partial', 'ranking', 'evidence'])('rejects a receipt-bound envelope with mismatched %s', async (check) => {
+    const envelope = member360Fixture();
+    const receipt = finalizeReceipt(envelope);
+    if (check === 'partial') receipt.partial = true;
+    if (check === 'ranking') receipt.rows.ranking += 1;
+    if (check === 'evidence') receipt.rows.evidence += 1;
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(receipt), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Rejected envelope receipt binding', {
+      source: 'receipt_bound_final',
+      check: check === 'partial' ? 'partial' : 'rows',
+    });
+  });
+  it.each([
+    { partial: 'false' },
+    { partial: undefined },
+    { rows: { ranking: 0.5, evidence: 0 } },
+    { rows: { ranking: 0, evidence: -1 } },
+    { rows: { ranking: '0', evidence: 0 } },
+    { rows: null },
+  ])('ignores a malformed partial/rows receipt %j', async (override) => {
+    const envelope = member360Fixture();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), ...override }), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', expect.anything());
+  });
+  it('accepts a matching partial receipt while keeping receipt discovery at debug', async () => {
+    const envelope = member360Fixture();
+    envelope.summary_markdown = `${MEMBER_360_PARTIAL_SUMMARY_PREFIX} ${envelope.summary_markdown}`;
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), partial: true }), rootFinal(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', { receipts: 1 });
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', expect.anything());
+  });
+  it('keeps receipt-only sessions pending without surfacing receipts in activity', async () => {
+    const payloads = [projectedFinalize(finalizeReceipt(), true)];
+    expect(getMktgSessionOutcome(payloads)).toEqual({ ended: false, replyText: '' });
+    expect(mktgFailureAfterQuestions(payloads, isMember360Question)).toBeNull();
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result).toEqual({ status: 'pending', activity: [] });
+    expect(JSON.stringify(result.activity)).not.toContain('finalize_receipt');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it.each(['tool', 'child', 'reasoning', 'user', 'transcript', 'nested'])('ignores a receipt-matching envelope carried by %s events', async (carrier) => {
+    const envelope = member360Fixture();
+    const text = JSON.stringify(envelope);
+    const root = JSON.parse(rootFinal(envelope));
+    const events: Record<string, unknown> = {
+      tool: { ...root, task: { entity_type: 'EntTaskTool' } },
+      child: { ...root, task: { entity_type: 'EntTaskAgent', parent_task_id: 'root-task' } },
+      reasoning: { type: 'agent_notification_message', content: { type: 'application/guild-reasoning-progress', data: text } },
+      user: { type: 'user_message', content: { type: 'text', text } },
+      transcript: { type: 'llm_start', payload: { messages: [{ role: 'assistant', content: [{ type: 'text', text }] }] } },
+      nested: { type: 'other', content: root },
+    };
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope)), JSON.stringify(events[carrier])]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('pending');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
   it.each([false, true])('stores valid contact-free tabs after pending; summary contracts: %s', async (shortSummary) => {
     const envelope = member360Fixture();

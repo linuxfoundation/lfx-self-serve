@@ -494,10 +494,20 @@ export class ProjectSelectorComponent {
       }
     }
 
-    const foundationUidSet = new Set(sortedFoundations.map((f) => f.uid));
+    // Favorited projects are pinned flat directly under the favorited foundations, so a star is never
+    // buried below the nested foundation block (GH-2995, #4397). They are excluded from nesting below,
+    // and favorited foundations are emitted as header rows only: their unstarred children fall through
+    // to the flat tail rather than sitting above the starred projects.
+    const favoritedUids = this.favoriteProjectsService.state().data;
+    const favoritedFoundations = sortedFoundations.filter((f) => favoritedUids.has(f.uid));
+    const otherFoundations = sortedFoundations.filter((f) => !favoritedUids.has(f.uid));
+    const favoritedProjects = sortedProjects.filter((p) => favoritedUids.has(p.uid));
+    const unpinnedProjects = sortedProjects.filter((p) => !favoritedUids.has(p.uid));
+
+    const foundationUidSet = new Set(otherFoundations.map((f) => f.uid));
     const childrenByFoundationUid = new Map<string, LensItem[]>();
     const nestedProjectUids = new Set<string>();
-    for (const project of sortedProjects) {
+    for (const project of unpinnedProjects) {
       const parentUid = parentByProjectUid.get(project.uid);
       if (parentUid && foundationUidSet.has(parentUid)) {
         const bucket = childrenByFoundationUid.get(parentUid);
@@ -511,17 +521,20 @@ export class ProjectSelectorComponent {
     }
 
     const result: DisplayLensItem[] = [];
-    for (const foundation of sortedFoundations) {
+    const pushFoundation = (foundation: LensItem): void => {
       result.push(this.toDisplayItem(foundation, false, selectedUid));
-      const children = childrenByFoundationUid.get(foundation.uid);
-      if (children) {
-        for (const project of children) {
-          result.push(this.toDisplayItem(project, true, selectedUid));
-        }
+      for (const project of childrenByFoundationUid.get(foundation.uid) ?? []) {
+        result.push(this.toDisplayItem(project, true, selectedUid));
       }
-    }
+    };
 
-    for (const project of sortedProjects) {
+    favoritedFoundations.forEach(pushFoundation);
+    for (const project of favoritedProjects) {
+      result.push(this.toDisplayItem(project, false, selectedUid));
+    }
+    otherFoundations.forEach(pushFoundation);
+
+    for (const project of unpinnedProjects) {
       if (!nestedProjectUids.has(project.uid)) {
         result.push(this.toDisplayItem(project, false, selectedUid));
       }

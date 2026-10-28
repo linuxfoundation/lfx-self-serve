@@ -3,12 +3,14 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
+import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeDetail } from '@lfx-one/shared/interfaces';
+import { TooltipModule } from 'primeng/tooltip';
 
 /** Expandable detail sub-table for one All Employees row — up to five sections, empty ones hidden. */
 @Component({
   selector: 'lfx-org-people-all-employees-detail',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, TooltipModule],
   templateUrl: './all-employees-detail.component.html',
 })
 export class AllEmployeesDetailComponent {
@@ -16,6 +18,8 @@ export class AllEmployeesDetailComponent {
   public readonly loading = input<boolean>(false);
   public readonly error = input<boolean>(false);
   public readonly retry = output<void>();
+
+  protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
 
   protected readonly hasAnyDetail: Signal<boolean> = computed(() => this.initHasAnyDetail());
 

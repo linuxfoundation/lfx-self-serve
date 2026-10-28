@@ -5,7 +5,8 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { ActivatedRoute, Router } from '@angular/router';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, merge, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -14,15 +15,13 @@ import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
+import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
-import {
-  EMPTY_ORG_TRAINEES_RESPONSE,
-  ORG_TRAINEE_DEFAULT_TIME_WINDOW,
-  ORG_TRAINEE_TIME_WINDOW_OPTIONS,
-  ORG_TRAINEES_INITIAL_LIMIT,
-} from '@lfx-one/shared/constants';
+import { EMPTY_ORG_TRAINEES_RESPONSE, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS, ORG_TRAINEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
 import type {
   OrgDropdownOption,
+  OrgLensTimeRange,
+  OrgLensTimeRangeOption,
   OrgTraineeDetailRow,
   OrgTraineeExpandedRowVm,
   OrgTraineeRowVm,
@@ -30,14 +29,12 @@ import type {
   OrgTraineeSortColumn,
   OrgTraineeSortDirection,
   OrgTraineeStatsBaseline,
-  OrgTraineeTimeWindow,
-  OrgTraineeTimeWindowOption,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { TraineesService } from '../../services/trainees.service';
 
-/** Trainees tab body — search + foundation + course + time-window filter trio, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
+/** Trainees tab body — search + foundation + course + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
 @Component({
   selector: 'lfx-org-people-trainees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
@@ -47,9 +44,11 @@ export class TraineesComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(TraineesService);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_TRAINEES_INITIAL_LIMIT;
-  protected readonly timeWindowOptions: OrgTraineeTimeWindowOption[] = [...ORG_TRAINEE_TIME_WINDOW_OPTIONS];
+  protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Trainees', 'Courses Enrolled', 'Certifications', 'Completion Rate'];
 
@@ -57,7 +56,8 @@ export class TraineesComponent {
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
     course: new FormControl<string>('', { nonNullable: true }),
-    timeWindow: new FormControl<OrgTraineeTimeWindow>(ORG_TRAINEE_DEFAULT_TIME_WINDOW, { nonNullable: true }),
+    // Follows `?range=` (shared with every People tab and Code Contributions); the BFF reads only this range's rows.
+    timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
   });
 
   // WritableSignals — keep grouped per component-organization.md (writables → computed/toSignal).
@@ -74,14 +74,25 @@ export class TraineesComponent {
   protected readonly fetchError = this.fetchErrorState.asReadonly();
 
   // Mirror reactive form into a signal; debounce ~150ms so per-keystroke filtering doesn't thrash through the computed graph.
-  private readonly filterValues = toSignal(this.filterForm.valueChanges.pipe(debounceTime(150)), {
-    initialValue: this.filterForm.getRawValue(),
-  });
+  // A selection cleared for a new range skips the debounce, so the response never renders behind it.
+  private readonly selectionsPruned$ = new Subject<void>();
+  private readonly filterValues = toSignal(
+    merge(this.filterForm.valueChanges.pipe(debounceTime(150)), this.selectionsPruned$.pipe(map(() => this.filterForm.getRawValue()))),
+    { initialValue: this.filterForm.getRawValue() }
+  );
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
     distinctUntilChanged()
   );
+
+  // The range refetches undebounced, once per distinct value.
+  private readonly timeRange$ = this.filterForm.controls.timeRange.valueChanges.pipe(
+    startWith(this.filterForm.controls.timeRange.value),
+    distinctUntilChanged()
+  );
+  // The range as a signal, undebounced like the read, so the filtering state follows the picked range at once.
+  private readonly timeRange: Signal<OrgLensTimeRange> = toSignal(this.timeRange$, { initialValue: this.filterForm.controls.timeRange.value });
 
   protected readonly response: Signal<OrgTraineesResponse> = this.initResponse();
 
@@ -126,6 +137,8 @@ export class TraineesComponent {
       this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
       this.expansion.set({});
     });
+
+    syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
   }
 
   protected onSort(column: OrgTraineeSortColumn): void {
@@ -187,8 +200,6 @@ export class TraineesComponent {
     const q = (values.search ?? '').trim().toLowerCase();
     const foundationId = values.foundation ?? '';
     const courseId = values.course ?? '';
-    const timeWindow: OrgTraineeTimeWindow = values.timeWindow ?? ORG_TRAINEE_DEFAULT_TIME_WINDOW;
-    const cutoff = timeWindowCutoff(timeWindow);
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings.
     const personIndex = new Map<string, { name: string; title: string | null }>();
@@ -196,11 +207,8 @@ export class TraineesComponent {
       personIndex.set(t.personKey, { name: t.name, title: t.title });
     }
 
+    // The details are already the range's (the BFF windows them), so only the client-side trio filters here.
     return this.response().details.filter((row) => {
-      if (cutoff !== null) {
-        if (!row.activityTs) return false;
-        if (row.activityTs < cutoff) return false;
-      }
       if (foundationId && row.foundationId !== foundationId) return false;
       if (courseId && row.courseId !== courseId) return false;
       if (q) {
@@ -215,7 +223,7 @@ export class TraineesComponent {
   }
 
   private initStats(): OrgTraineeStatsBaseline {
-    // Stats always reflect the currently-filtered details so the four cards stay in sync with what the table shows (Items 5+6 of the locked design — including the default 12mo time window).
+    // Stats always reflect the currently-filtered details so the four cards stay in sync with what the table shows (Items 5+6 of the locked design), within the range the BFF read.
     const details = this.filteredDetails();
     const trainees = new Set<string>();
     const courseKeys = new Set<string>();
@@ -328,8 +336,7 @@ export class TraineesComponent {
     const hasSearch = (values.search ?? '').trim().length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasCourse = !!(values.course ?? '');
-    const timeWindow: OrgTraineeTimeWindow = values.timeWindow ?? ORG_TRAINEE_DEFAULT_TIME_WINDOW;
-    const hasTimeFilter = timeWindow !== ORG_TRAINEE_DEFAULT_TIME_WINDOW;
+    const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
     return hasSearch || hasFoundation || hasCourse || hasTimeFilter;
   }
 
@@ -374,22 +381,25 @@ export class TraineesComponent {
 
   private initResponse(): Signal<OrgTraineesResponse> {
     return toSignal(
-      combineLatest([this.orgUid$, toObservable(this.retryTrigger)]).pipe(
+      combineLatest([this.orgUid$, this.timeRange$, toObservable(this.retryTrigger)]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid]) => {
+        switchMap(([orgUid, timeRange]) => {
           if (!orgUid) {
             this.loadingState.set(false);
-            return of(EMPTY_ORG_TRAINEES_RESPONSE);
+            return of({ ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange });
           }
-          return this.dataService.getTrainees(orgUid).pipe(
-            tap(() => this.loadingState.set(false)),
+          return this.dataService.getTrainees(orgUid, timeRange).pipe(
+            tap((res) => {
+              this.dropSelectionsAbsentFrom(res);
+              this.loadingState.set(false);
+            }),
             catchError(() => {
               this.fetchErrorState.set(true);
               this.loadingState.set(false);
-              return of(EMPTY_ORG_TRAINEES_RESPONSE);
+              return of({ ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange });
             })
           );
         })
@@ -398,8 +408,20 @@ export class TraineesComponent {
     );
   }
 
+  /** A new range rebuilds both dropdowns, and filtering on a foundation or course it no longer lists would hide every row. */
+  private dropSelectionsAbsentFrom(res: OrgTraineesResponse): void {
+    const { foundation, course } = this.filterForm.getRawValue();
+    const patch: { foundation?: string; course?: string } = {};
+    if (foundation && !res.foundationOptions.some((option) => option.foundationId === foundation)) patch.foundation = '';
+    if (course && !res.courseOptions.some((option) => option.courseId === course)) patch.course = '';
+    if (patch.foundation === undefined && patch.course === undefined) return;
+    this.filterForm.patchValue(patch);
+    this.selectionsPruned$.next();
+  }
+
   private resetAllState(): void {
-    this.filterForm.reset({ search: '', foundation: '', course: '', timeWindow: ORG_TRAINEE_DEFAULT_TIME_WINDOW });
+    // The range is page-level URL state, not per-org, so an org switch keeps it.
+    this.filterForm.patchValue({ search: '', foundation: '', course: '' });
     this.sortColumn.set('courses');
     this.sortDirection.set(-1);
     this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
@@ -480,25 +502,4 @@ function minActivityTs(rows: OrgTraineeDetailRow[]): string | null {
     if (rows[i].activityTs < min) min = rows[i].activityTs;
   }
   return min || null;
-}
-
-/** ISO cutoff for window; null for 'all'. Lex-comparable to activity_ts. */
-function timeWindowCutoff(window: OrgTraineeTimeWindow): string | null {
-  if (window === 'all') return null;
-  const now = new Date();
-  switch (window) {
-    case '3m':
-      now.setUTCMonth(now.getUTCMonth() - 3);
-      break;
-    case '6m':
-      now.setUTCMonth(now.getUTCMonth() - 6);
-      break;
-    case '12m':
-      now.setUTCMonth(now.getUTCMonth() - 12);
-      break;
-    case '2y':
-      now.setUTCFullYear(now.getUTCFullYear() - 2);
-      break;
-  }
-  return now.toISOString();
 }

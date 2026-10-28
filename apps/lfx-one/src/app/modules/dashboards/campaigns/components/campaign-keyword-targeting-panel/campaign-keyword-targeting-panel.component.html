@@ -129,6 +129,17 @@
     </div>
   }
 
+  <!-- A removal the operator confirmed but that was not sent: an alert, so it is announced where it appears. -->
+  @if (notSentReason(); as reason) {
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'optimization-campaign-targeting-not-sent-' + campaignId()">
+      <span class="font-medium">{{ notSentLabel }}.</span> {{ reason }}
+    </p>
+  }
+
+  @if (heldReason(); as reason) {
+    <p class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-targeting-held-' + campaignId()">{{ reason }}</p>
+  }
+
   <div class="flex flex-wrap items-center gap-2">
     <lfx-button
       label="Remove selected"

@@ -125,6 +125,8 @@ export class VoteCastDrawerComponent {
   );
   protected readonly reviewNotice = 'Your vote has been recorded.';
   protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
+  // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
+  protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
@@ -427,6 +429,14 @@ export class VoteCastDrawerComponent {
           choice_text: choice.text,
         })),
       }));
+    });
+  }
+
+  private initDrawerPt(): Signal<Record<string, unknown>> {
+    return computed(() => {
+      const hasBallot = !this.loadingVote() && this.questions().length > 0;
+      const restricted = this.impersonating() && (!this.readOnly() || this.ballotPrivacyRestricted());
+      return { footer: { class: hasBallot && !restricted ? 'border-t border-slate-200' : 'hidden' } };
     });
   }
 

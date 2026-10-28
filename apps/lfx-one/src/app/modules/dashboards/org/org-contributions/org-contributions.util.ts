@@ -1,13 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CONTRIBUTIONS_PROJECT_SCOPE_PHRASE, ORG_LENS_TIME_RANGE_DAYS } from '@lfx-one/shared/constants';
 import type {
-  ContributionsDateRange,
   ContributionSource,
+  OrgCommitFilters,
   OrgContributionCommitRow,
   OrgContributionCommitRowVm,
   OrgContributionRepoRow,
   OrgContributionRepoRowVm,
+  OrgLensTimeRange,
+  OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
 
 import { avatarColorClass } from '@lfx-one/shared/utils';
@@ -85,24 +88,36 @@ export function decorateCommitFeedRow(row: OrgContributionCommitRow): OrgContrib
 
 /**
  * Exact window the KPI strip and tables aggregate over, in UTC — mirrors the BFF predicates
- * (`activity_ts >= DATEADD(..., CURRENT_TIMESTAMP())`) so reviewers can match filters against source records.
+ * (`activity_ts::date >= DATEADD(day, -N, CURRENT_DATE())`) so reviewers can match filters against source records.
  */
-export function describeContributionsWindow(range: ContributionsDateRange, now: Date = new Date()): string {
+export function describeContributionsWindow(range: OrgLensTimeRange, now: Date = new Date()): string {
   if (range === 'all') {
     return 'across all recorded history';
   }
   const start = new Date(now.getTime());
-  if (range === '12mo') {
-    // `setUTCMonth` overflows into the next month when the target month is shorter (Feb 29 → Mar 1),
-    // while `DATEADD(month, -12, ...)` clamps to the month end. Clamp the same way, or the caption
-    // is off by a day on exactly the dates someone would be reconciling against source records.
-    const day = start.getUTCDate();
-    start.setUTCDate(1);
-    start.setUTCMonth(start.getUTCMonth() - 12);
-    const lastDayOfTargetMonth = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).getUTCDate();
-    start.setUTCDate(Math.min(day, lastDayOfTargetMonth));
-  } else {
-    start.setUTCDate(start.getUTCDate() - (range === '90d' ? 90 : 30));
-  }
+  start.setUTCDate(start.getUTCDate() - ORG_LENS_TIME_RANGE_DAYS[range]);
   return `from ${formatLongDateUtc(start.toISOString())} to ${formatLongDateUtc(now.toISOString())} (UTC)`;
+}
+
+/**
+ * Counting rule under the KPI strip for the active filters, ending with the exact window from
+ * {@link describeContributionsWindow}, so the figures can be matched to source data.
+ */
+export function describeContributionsCaption(filters: OrgCommitFilters, companyName: string, window: string): string {
+  const scope = CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[filters.projectScope];
+  if (filters.metric === 'code') {
+    return `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with ${companyName}${scope}, ${window}. Bots excluded.`;
+  }
+  const branch = filters.commitScope === 'merged' ? 'only commits on the main branch' : 'on any branch (including pull-request commits not yet merged)';
+  return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
+}
+
+/** Who the People -> Contributors tab counts, worded like {@link describeContributionsCaption}. */
+export function describeContributorsTooltip(projectScope: OrgProjectScope, companyName: string, window: string): string {
+  return (
+    `People with at least one code contribution (commit, pull request, review or comment) credited to ${companyName}` +
+    `${CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[projectScope]}, ${window}. ` +
+    'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
+    'Declared project maintainers count as Maintainers; everyone else counts as Contributors. Bots excluded.'
+  );
 }

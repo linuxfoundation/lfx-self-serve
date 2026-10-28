@@ -139,7 +139,14 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
   // Nav mode (unlike curated) runs the sidebar-relative panel alignment on popover show, which
   // reads `window.matchMedia` — absent in jsdom. Reporting no match takes the early return, so the
   // geometry path stays out of an ordering test.
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setFavorites([]);
+  });
+
+  function setFavorites(uids: string[]): void {
+    favoriteProjectsServiceStub.state.set({ data: new Set(uids), loading: false, readOnly: false, error: null });
+  }
 
   async function build(hybrid: boolean): Promise<void> {
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -227,6 +234,36 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
     await build(true);
 
     expect(nestedSlugs()).toEqual(['alpha-project']);
+  });
+
+  it('pins a starred un-nested project above the foundation block on the All tab (#4397)', async () => {
+    setFavorites(['p2']);
+    await build(true);
+
+    expect(renderedSlugs()).toEqual(['zeta-project', 'alpha-foundation', 'alpha-project', 'zeta-foundation']);
+  });
+
+  it('pins a starred nested project flat and out of its parent on the All tab (#4397)', async () => {
+    setFavorites(['p1']);
+    await build(true);
+
+    expect(nestedSlugs()).toEqual([]);
+    expect(renderedSlugs()).toEqual(['alpha-project', 'alpha-foundation', 'zeta-foundation', 'zeta-project']);
+  });
+
+  it('lists starred foundations, then starred projects, then the rest on the All tab (#4397)', async () => {
+    setFavorites(['f2', 'p2']);
+    await build(true);
+
+    expect(renderedSlugs()).toEqual(['zeta-foundation', 'zeta-project', 'alpha-foundation', 'alpha-project']);
+  });
+
+  it('keeps unstarred children of a starred foundation below the starred projects (#4397)', async () => {
+    setFavorites(['f1', 'p2']);
+    await build(true);
+
+    expect(nestedSlugs()).toEqual([]);
+    expect(renderedSlugs()).toEqual(['alpha-foundation', 'zeta-project', 'zeta-foundation', 'alpha-project']);
   });
 
   it('flattens the All tab while searching so a match is not hidden under its parent', async () => {

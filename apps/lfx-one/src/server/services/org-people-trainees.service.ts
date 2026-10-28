@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgTraineesRawCache,
+  OrgLensTimeRange,
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
   OrgTraineeCourseOption,
@@ -22,13 +23,22 @@ import type {
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  orgLensTimeRangeDays,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
-/** Trainees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
+/** Trainees tab data access — one GET per range that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
 export class OrgPeopleTraineesService {
   private readonly snowflakeService: SnowflakeService;
 
@@ -36,20 +46,23 @@ export class OrgPeopleTraineesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + details + filter dropdowns. Four parallel Snowflake queries; stats are recomputed client-side from filtered details so the server ships none. */
-  public async getTrainees(accountId: string): Promise<OrgTraineesResponse> {
+  /**
+   * The range's trainees, details and filter dropdowns: four parallel Snowflake queries over enrollments and certificates
+   * dated in the range; stats are recomputed client-side from the filtered details so the server ships none.
+   */
+  public async getTrainees(accountId: string, range: OrgLensTimeRange): Promise<OrgTraineesResponse> {
     if (!accountId) {
-      return { ...EMPTY_ORG_TRAINEES_RESPONSE };
+      return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v2`: the stored value is now the compact projection below (GH-1906), with the
-    // course- and foundation-level columns lifted out of the per-(person, course) detail rows — a
-    // `v1` entry is a different shape entirely and must miss.
+    // `people-trainees:v4:{range}` (lfx-self-serve#4159): ORG_PEOPLE_TRAINING now holds enrollments of any age, so the
+    // read is windowed per range here instead of shipping every row for the client to filter; a `v2` entry (the whole,
+    // 12-month-capped history) must miss. `v4` reads identity from current-employee rows only; a `v3` entry may not have.
     const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCompactCache(
       accountId,
-      'people-trainees:v2',
+      `people-trainees:v4:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchTraineesRaw(accountId),
+      () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
     );
 
@@ -95,6 +108,7 @@ export class OrgPeopleTraineesService {
 
     return {
       accountId,
+      timeRange: range,
       trainees,
       details,
       foundationOptions,
@@ -102,22 +116,32 @@ export class OrgPeopleTraineesService {
     };
   }
 
-  private async fetchTraineesRaw(accountId: string): Promise<{
+  private async fetchTraineesRaw(
+    accountId: string,
+    range: OrgLensTimeRange
+  ): Promise<{
     traineeRows: OrgPeopleAllTraineeRow[];
     detailRows: OrgPeopleTrainingRow[];
     foundationRows: TraineeFoundationOptionRow[];
     courseRows: TraineeCourseOptionRow[];
   }> {
+    const inRange = trainingRangePredicate(range);
     const [traineeRows, detailRows, foundationRows, courseRows] = await Promise.all([
-      this.fetchTraineeRows(accountId),
-      this.fetchDetailRows(accountId),
-      this.fetchFoundationOptions(accountId),
-      this.fetchCourseOptions(accountId),
+      this.fetchTraineeRows(accountId, inRange),
+      this.fetchDetailRows(accountId, inRange),
+      this.fetchFoundationOptions(accountId, inRange),
+      this.fetchCourseOptions(accountId, inRange),
     ]);
     return { traineeRows, detailRows, foundationRows, courseRows };
   }
 
-  private async fetchTraineeRows(accountId: string): Promise<OrgPeopleAllTraineeRow[]> {
+  /**
+   * Identity of everyone with a training row in the range. ORG_PEOPLE_TRAINING has no name columns, and ORG_PEOPLE_ALL
+   * counts only the last 12 months of enrollments, so identity comes from the all-time, all-projects ranges row, which
+   * every current employee with a course signal has (lf-dbt test). Only the current-employee row: a former employee's
+   * row carries a personal address the People tabs must never send.
+   */
+  private async fetchTraineeRows(accountId: string, inRange: string): Promise<OrgPeopleAllTraineeRow[]> {
     const query = `
       SELECT
         PERSON_KEY,
@@ -126,15 +150,24 @@ export class OrgPeopleTraineesService {
         NAME,
         TITLE,
         EMAIL
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
-      WHERE ACCOUNT_ID = ? AND COURSES_COUNT > 0
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
+      WHERE ACCOUNT_ID = ?
+        AND TIME_RANGE = 'all'
+        AND PROJECT_SCOPE = 'all'
+        AND IS_FORMER = FALSE
+        AND PERSON_KEY IN (
+          SELECT PERSON_KEY
+          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+          WHERE ACCOUNT_ID = ?
+            ${inRange}
+        )
       ORDER BY NAME ASC NULLS LAST
     `;
-    const result = await this.snowflakeService.execute<OrgPeopleAllTraineeRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrgPeopleAllTraineeRow>(query, [accountId, accountId]);
     return result.rows;
   }
 
-  private async fetchDetailRows(accountId: string): Promise<OrgPeopleTrainingRow[]> {
+  private async fetchDetailRows(accountId: string, inRange: string): Promise<OrgPeopleTrainingRow[]> {
     const query = `
       SELECT
         PERSON_KEY,
@@ -147,37 +180,48 @@ export class OrgPeopleTraineesService {
         FOUNDATION_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
+        ${inRange}
       ORDER BY PERSON_KEY ASC, ACTIVITY_TS DESC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<OrgPeopleTrainingRow>(query, [accountId]);
     return result.rows;
   }
 
-  private async fetchFoundationOptions(accountId: string): Promise<TraineeFoundationOptionRow[]> {
+  private async fetchFoundationOptions(accountId: string, inRange: string): Promise<TraineeFoundationOptionRow[]> {
     const query = `
       SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
         AND FOUNDATION_ID IS NOT NULL
         AND FOUNDATION_NAME IS NOT NULL
+        ${inRange}
       ORDER BY FOUNDATION_NAME ASC
     `;
     const result = await this.snowflakeService.execute<TraineeFoundationOptionRow>(query, [accountId]);
     return result.rows;
   }
 
-  private async fetchCourseOptions(accountId: string): Promise<TraineeCourseOptionRow[]> {
+  private async fetchCourseOptions(accountId: string, inRange: string): Promise<TraineeCourseOptionRow[]> {
     const query = `
       SELECT DISTINCT COURSE_ID, COURSE_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
         AND COURSE_ID IS NOT NULL
         AND COURSE_NAME IS NOT NULL
+        ${inRange}
       ORDER BY COURSE_NAME ASC
     `;
     const result = await this.snowflakeService.execute<TraineeCourseOptionRow>(query, [accountId]);
     return result.rows;
   }
+}
+
+/**
+ * `ACTIVITY_TS` (enrollment or certificate date) on or after N days before today; empty for all time. Inline, not bound —
+ * the day count comes from the allow-listed range — so the planner can fold it.
+ */
+function trainingRangePredicate(range: OrgLensTimeRange): string {
+  return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
 }
 
 /**

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { CompactSeatRow, SeatCommittee } from '../interfaces/org-lens-cache.interface';
-import type { OrgAllEmployeeRow } from '../interfaces/org-people.interface';
+import type { OrgAllEmployeeCountedRow } from '../interfaces/org-people.internal.interface';
 
 /**
  * Stored column lists for the compact per-caller Org Lens caches (GH-1906).
@@ -44,9 +44,10 @@ export const ORG_SEATS_CACHE_SEAT_KEYS = [
 ] as const satisfies readonly (keyof CompactSeatRow)[];
 
 /**
- * Columns of an `org-people-dir` row, in `toWireRow`'s own field order. The exact list is what
+ * Columns of an `org-people-dir` row, in `toStoredRow`'s own field order. The exact list is what
  * asserts the merge-only fields (`emails`, `mergedFrom`) are never stored, and the matching order is
- * what makes a cache hit serialize byte-for-byte like the miss that populated it.
+ * what makes a cache hit serialize byte-for-byte like the miss that populated it. Every code count is
+ * stored, so one entry serves every commit scope and metric (lfx-self-serve#4164).
  */
 export const ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS = [
   'personKey',
@@ -65,7 +66,10 @@ export const ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS = [
   'boardSeatsCount',
   'committeeSeatsCount',
   'commitsCount',
+  'mergedCommitsCount',
+  'codeActivitiesCount',
   'eventsCount',
   'coursesCount',
   'engagedFoundationIds',
-] as const satisfies readonly (keyof OrgAllEmployeeRow)[];
+  'isFormer',
+] as const satisfies readonly (keyof OrgAllEmployeeCountedRow)[];

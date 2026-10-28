@@ -10,9 +10,6 @@ export type OrgEventAttendeeSortColumn = 'name' | 'role' | 'events' | 'lastAtten
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgEventAttendeeSortDirection = 1 | -1;
 
-/** Time-window filter buckets — anchored on `EVENT_END_DATE`; `all` collapses to `IS_PAST_EVENT = TRUE` per Item 2 R2.4 lock. */
-export type OrgEventAttendeeTimeWindow = '3m' | '6m' | '12m' | '2y' | 'all';
-
 /** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS` — finest grain the BFF returns; client groups by `(personKey, eventId)` for the expanded row. */
 export interface OrgEventAttendeeDetailRow {
   personKey: string;
@@ -32,7 +29,7 @@ export interface OrgEventAttendeeDetailRow {
   eventEndDate: string | null;
   /** Per-event speaker flag — drives the per-event Role pill in the expanded sub-table. */
   isSpeaker: boolean;
-  /** `TRUE` when the event has already happened — Item 2 R2.4 collapses "All time" to this predicate. */
+  /** Warehouse flag: the event ended before the model's build date. The tab checks `eventEndDate` against today instead, so a stale build cannot count a running event. */
   isPastEvent: boolean;
 }
 
@@ -112,12 +109,6 @@ export interface OrgEventAttendeeExpandedRowVm {
   startLabel: string;
   /** ISO timestamp used as the primary sort key inside the sub-table — `eventEndDate` (matches the parent row's Last Attended semantic). */
   sortTs: string | null;
-}
-
-/** Event Attendees time-window dropdown option — label rendered as-is in `<lfx-select>`. */
-export interface OrgEventAttendeeTimeWindowOption {
-  label: string;
-  value: OrgEventAttendeeTimeWindow;
 }
 
 // Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.
