@@ -3500,6 +3500,27 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
       });
 
+      it('does not put back a hand-included list removed while the draft lookup loads', async () => {
+        await render();
+        (fixture.componentInstance as unknown as { add: (id: string, name: string) => boolean }).add('401', 'Opt-in 401');
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        click('campaigns-audience-remove-401');
+
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'a removed list came back as the pick').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it("shows a Build-tab draft's opt-in list with its size and link in Include", async () => {
+        await draftWith([{ ...optIn('401', 'lf_newsletter_opt_in', 4000), hubspotUrl: 'https://app.hubspot.com/l/401' }]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-include-link-401"]')?.getAttribute('href')).toBe('https://app.hubspot.com/l/401');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')?.parentElement?.textContent).toContain('4,000');
+      });
+
       it('stops calling a removed opt-in list added, and offers it again', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
         expect(host().querySelector('[data-testid="campaigns-audience-opt-in-added-401"]'), 'fixture precondition').not.toBeNull();

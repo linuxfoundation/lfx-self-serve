@@ -1356,6 +1356,12 @@ export class AudienceBuilderTabComponent {
     return edition === '' ? this.excludeIds() : [...this.excludeIds(), `registrants:${edition}`];
   });
 
+  /** Every list the draft's opt-in lookup found, for the size and link indexes. */
+  private readonly optInLookupLists = computed<readonly AudienceDiscoveredList[]>(() => {
+    const lookup = this.optIns();
+    return [...lookup.added, ...lookup.pending, ...lookup.others];
+  });
+
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
   private readonly sizeIndex = computed(() => {
     const sizes = new Map<string, number>();
@@ -1369,6 +1375,8 @@ export class AudienceBuilderTabComponent {
     this.suppressionLists().forEach((list) => note(list.listId, list.size));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.size)));
     this.searchResults().forEach((list) => note(list.listId, list.size));
+    // A Build-tab draft's opt-in lists come from its own lookup, never `discoveredLists`.
+    this.optInLookupLists().forEach((list) => note(list.listId, list.size));
     return sizes;
   });
 
@@ -1385,6 +1393,7 @@ export class AudienceBuilderTabComponent {
     this.suppressionLists().forEach((list) => note(list.listId, list.hubspotUrl));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.hubspotUrl)));
     this.searchResults().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.optInLookupLists().forEach((list) => note(list.listId, list.hubspotUrl));
     return urls;
   });
 
@@ -2478,6 +2487,11 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onRemoveInclusion(listId: string): void {
+    // Taken out while a draft's lookup is loading: the lookup does not own it yet, so nothing else
+    // records the choice, and a pick of that list would put it straight back. Offered instead.
+    if (this.optIns().status === 'loading') {
+      this.optInsDeclined.add(listId);
+    }
     const next = new Map(this.inclusion());
     next.delete(listId);
     this.inclusion.set(next);
