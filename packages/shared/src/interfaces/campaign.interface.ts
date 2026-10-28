@@ -1038,6 +1038,13 @@ export interface CampaignImplementationDraft {
   metaPixelId?: string;
   metaGeoTargets?: string[];
   /**
+   * The Meta Instagram account id and EU DSA beneficiary/payor, as typed. Optional on the same
+   * present-only rule as the fields above: absent means the draft predates them.
+   */
+  metaInstagramUserId?: string;
+  metaDsaBeneficiary?: string;
+  metaDsaPayor?: string;
+  /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
    * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
@@ -1854,6 +1861,22 @@ export interface MetaCampaignCreateRequest {
   objective?: MetaObjective;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
+  /**
+   * The Instagram account id (IGSID, numeric) campaign-service binds to each ad creative as
+   * `instagram_user_id` when an Instagram placement is enabled. Meta will not publish an Instagram
+   * placement without it. Sent ONLY when `CampaignListResult.metaInstagramDsaEnabled` is an explicit
+   * yes; the create route refuses it while the capability is off.
+   */
+  instagramUserId?: string;
+  /**
+   * EU Digital Services Act "advertiser": who the ads benefit, set on the ad set as
+   * `dsa_beneficiary`. Sent together with {@link dsaPayor} or not at all, and REQUIRED with it when
+   * `geoTargets` include an EU country (`META_DSA_TERRITORIES`). At most
+   * `META_DSA_NAME_MAX_LENGTH` characters, one line. Same capability gate as {@link instagramUserId}.
+   */
+  dsaBeneficiary?: string;
+  /** EU DSA "payer": who pays for the ads, set on the ad set as `dsa_payor`. Same rules as {@link dsaBeneficiary}. */
+  dsaPayor?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -5275,6 +5298,16 @@ export interface CampaignListResult {
    * which sends no dates and keeps the "ignores the flight dates" warning.
    */
   microsoftScheduleEnabled: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` flag says the deployed campaign-service
+   * refuses an EU-targeted Meta create without the disclosures (linuxfoundation/lfx-v2-campaign-service#414). Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which hides the
+   * inputs and sends none of the three keys.
+   */
+  metaInstagramDsaEnabled: boolean;
   /**
    * Whether THIS caller may send Google audience segments (`audienceSegments`) on a create.
    *

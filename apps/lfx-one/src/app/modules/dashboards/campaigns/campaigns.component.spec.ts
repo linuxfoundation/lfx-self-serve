@@ -1950,6 +1950,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -1993,6 +1994,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2047,6 +2049,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2086,6 +2089,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2121,6 +2125,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: true,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: true,
             googleGeoSearchEnabled: false,
           })
@@ -2160,6 +2165,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleAudienceSegmentsEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleGeoSearchEnabled: false,
           })
         );
@@ -2201,6 +2207,7 @@ describe('CampaignsComponent brief persistence', () => {
             googleAudienceSegmentsEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleGeoSearchEnabled: false,
           })
         );
@@ -2308,6 +2315,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2361,6 +2369,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2385,6 +2394,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
         });
@@ -2425,6 +2435,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2466,6 +2477,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2502,6 +2514,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2551,6 +2564,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2601,6 +2615,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
         });
@@ -2651,6 +2666,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
         });
@@ -2685,6 +2701,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2721,6 +2738,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2747,6 +2765,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2782,6 +2801,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2829,6 +2849,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
         });
@@ -2870,6 +2891,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2911,6 +2933,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -2955,6 +2978,7 @@ describe('CampaignsComponent brief persistence', () => {
           microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
           microsoftScheduleEnabled: false,
+          metaInstagramDsaEnabled: false,
           googleAudienceSegmentsEnabled: false,
           googleGeoSearchEnabled: false,
         });
@@ -3030,6 +3054,7 @@ describe('CampaignsComponent brief persistence', () => {
             microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
             microsoftScheduleEnabled: false,
+            metaInstagramDsaEnabled: false,
             googleAudienceSegmentsEnabled: false,
             googleGeoSearchEnabled: false,
           })
@@ -11389,7 +11414,8 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     biddingEnabled: boolean,
     microsoftScheduleEnabled = false,
     googleAudienceSegmentsEnabled = false,
-    googleGeoSearchEnabled = false
+    googleGeoSearchEnabled = false,
+    metaInstagramDsaEnabled = false
   ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
@@ -11407,6 +11433,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       microsoftAssetUploadEnabled: false,
       biddingEnabled,
       microsoftScheduleEnabled,
+      metaInstagramDsaEnabled,
       googleAudienceSegmentsEnabled,
       googleGeoSearchEnabled,
     });
@@ -11498,6 +11525,17 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
     expect(q(shown)).not.toBeNull();
     expect(q(hidden)).toBeNull();
+  });
+
+  /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
+  it.each([[true], [false]])('hands a meta instagram/dsa capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, enabled));
+
+    page().onProceedToImplementation(brief as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['metaInstagramDsaEnabled']()).toBe(enabled);
+    expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
   });
 
   /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
