@@ -230,6 +230,14 @@ describe('TrainingEnrollComponent', () => {
     expect(query('training-enroll-hero')).toBeNull();
   });
 
+  it('keeps the body for a period that only certified, with no enrollment or revenue', async () => {
+    await render(enrollment({}, { totals: { enrollments: 0, certifications: 40, revenueUsd: 0 } }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('training-enroll-hero')).not.toBeNull();
+    expect(text('training-enroll-side-certifications-value')).toBe('40');
+  });
+
   it('shows the error state and still settles when the read fails', async () => {
     await render(new Error('boom'));
 

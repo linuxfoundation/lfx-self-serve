@@ -29,11 +29,12 @@ function period(overrides: Partial<HealthMetricsEventsAtAGlancePeriod> = {}): He
   };
 }
 
-function glance(): HealthMetricsEventsAtAGlance {
+function glance(overrides: Partial<HealthMetricsEventsAtAGlance> = {}): HealthMetricsEventsAtAGlance {
   return {
     periods: [period(), period({ range: 'COMPLETED_YEAR_2', registrations: 8000, changes: null })],
     upcomingEvents: 3,
     hasEvents: true,
+    ...overrides,
   };
 }
 
@@ -42,7 +43,7 @@ describe('EventsAtAGlanceComponent', () => {
   let lifecycle: string[];
   let verdicts: boolean[];
 
-  async function render(status: HealthMetricsEventsAtAGlanceStatus = 'ready'): Promise<void> {
+  async function render(status: HealthMetricsEventsAtAGlanceStatus = 'ready', value: HealthMetricsEventsAtAGlance = glance()): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [EventsAtAGlanceComponent],
       providers: [
@@ -54,7 +55,7 @@ describe('EventsAtAGlanceComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsAtAGlanceComponent);
-    fixture.componentRef.setInput('glance', glance());
+    fixture.componentRef.setInput('glance', value);
     fixture.componentRef.setInput('status', status);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
@@ -141,6 +142,23 @@ describe('EventsAtAGlanceComponent', () => {
     expect(verdicts).toEqual([false, true]);
     expect(query('events-at-a-glance-headline')).toBeNull();
     expect(query('events-at-a-glance-tiles')).toBeNull();
+  });
+
+  it('settles empty, with no body, for a zero-filled period with nothing upcoming', async () => {
+    const quiet = period({ events: 0, pastEvents: 0, registrations: 0 });
+    await render('ready', glance({ periods: [quiet], upcomingEvents: 0 }));
+
+    expect(verdicts).toEqual([true]);
+    expect(query('events-at-a-glance-control')).toBeNull();
+    expect(query('events-at-a-glance-headline')).toBeNull();
+  });
+
+  it('keeps the body for a quiet year to date that has events upcoming', async () => {
+    const quiet = period({ events: 0, pastEvents: 0, registrations: 0 });
+    await render('ready', glance({ periods: [quiet], upcomingEvents: 2 }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('events-at-a-glance-headline')).not.toBeNull();
   });
 
   it('holds the skeleton and reports a read in flight while loading, then settles when it lands', async () => {

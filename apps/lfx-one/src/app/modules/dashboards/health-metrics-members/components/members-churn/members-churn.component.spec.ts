@@ -80,7 +80,7 @@ describe('MembersChurnComponent', () => {
   // `departures` answers the first departures read; `followUp` (a value or a stream) every one after it.
   async function render(
     churn: HealthMetricsMembersChurn | Observable<HealthMetricsMembersChurn> = CHURN,
-    departures: HealthMetricsMembersChurnDepartures = DEPARTURES,
+    departures: HealthMetricsMembersChurnDepartures | Observable<HealthMetricsMembersChurnDepartures> = DEPARTURES,
     queryParams: Record<string, string> = {},
     followUp?: HealthMetricsMembersChurnDepartures | Observable<HealthMetricsMembersChurnDepartures>
   ): Promise<void> {
@@ -89,7 +89,7 @@ describe('MembersChurnComponent', () => {
     getMembersChurnDepartures = vi
       .fn()
       .mockReturnValue(isObservable(next) ? next : of(next))
-      .mockReturnValueOnce(of(departures));
+      .mockReturnValueOnce(isObservable(departures) ? departures : of(departures));
     navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
 
     await TestBed.configureTestingModule({
@@ -337,6 +337,17 @@ describe('MembersChurnComponent', () => {
     expect(verdicts).toEqual([true, true]);
     expect(query('members-churn-hero')).toBeNull();
     expect(text('members-churn-meta')).not.toBe('—');
+  });
+
+  it('does not settle empty for a year without churn whose departures read failed, keeping that error on screen', async () => {
+    await render(
+      { years: [churnYear(2026, { lostCount: 0 })], tiers: [] },
+      throwError(() => new Error('gateway timeout'))
+    );
+
+    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+    expect(verdicts).toEqual([false]);
+    expect(query('members-churn-departures-error')).not.toBeNull();
   });
 
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {

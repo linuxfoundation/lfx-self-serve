@@ -121,8 +121,8 @@ export class MembersBoardAttendanceComponent {
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED || this.responseScope() !== this.scope())
   );
   protected readonly noMeetings = computed(() => this.totalRecords() === 0 && this.trend().length === 0);
-  /** No meeting was recorded in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noMeetings());
+  /** No cohort met in the period; the shell shows the section's empty state instead, and a quiet cohort keeps its own note. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response()));
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.summary().latestTone));
   protected readonly chartLabel = computed(
     () => `Attendance at the latest ${this.trend().length} ${this.meetingNoun()}s, oldest first. The following table lists the same values.`
@@ -227,7 +227,7 @@ export class MembersBoardAttendanceComponent {
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersBoardNote(response.cohorts.board) : '');
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               // Judged on every cohort, not the selected one, so an empty cohort never hides the pills to switch back.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && Object.values(response.cohorts).every((cohort) => !cohort?.meetingsInRangeCount));
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response));
             })
           )
         )
@@ -297,4 +297,10 @@ export class MembersBoardAttendanceComponent {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardPage));
     return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   }
+}
+
+/** No cohort met in the period, and the selected cohort's meetings agree, so a missing summary never hides real rows. */
+function isEmptyScope(response: HealthMetricsMembersBoardAttendance): boolean {
+  const noCohortMet = Object.values(response.cohorts).every((cohort) => !cohort?.meetingsInRangeCount);
+  return noCohortMet && response.totalRecords === 0 && response.trend.length === 0;
 }

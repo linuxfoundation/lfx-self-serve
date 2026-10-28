@@ -381,6 +381,25 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).toBeNull();
   });
 
+  it('settles empty, with no body, when every row was invited only in another period, and re-settles on that period', async () => {
+    const earlier = repRow({
+      periods: [
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+      ],
+    });
+    await render(response({ rows: [earlier] }));
+
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
+    fixture.detectChanges();
+
+    expect(verdicts).toEqual([true, false]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).not.toBeNull();
+  });
+
   it('keeps the no-match state for a search that filters a measured scope down to nothing', async () => {
     await render();
 

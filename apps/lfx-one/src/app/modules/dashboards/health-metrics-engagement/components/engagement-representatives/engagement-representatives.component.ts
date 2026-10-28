@@ -41,6 +41,7 @@ import type {
   HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementRepRowView,
   HealthMetricsEngagementRepresentatives,
+  HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -108,8 +109,8 @@ export class EngagementRepresentativesComponent {
   protected readonly countLabel: Signal<string> = this.initCountLabel();
   /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
    * with zero matches over a non-empty scope is a real measured zero. */
-  /** The foundation has no representative; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response()));
+  /** No representative was invited in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response(), this.chrome.selectedRange()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -253,7 +254,7 @@ export class EngagementRepresentativesComponent {
               );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response));
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response, this.chrome.selectedRange()));
             })
           )
         )
@@ -270,7 +271,7 @@ export class EngagementRepresentativesComponent {
 
     this.countsChange.emit(selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange()));
     // A period change re-projects the table, moving the section's height.
-    this.settled.emit(isEmptyScope(this.response()));
+    this.settled.emit(isEmptyScope(this.response(), this.chrome.selectedRange()));
   }
 
   private syncUrl(filter: HealthMetricsEngagementRepFilter): void {
@@ -293,7 +294,7 @@ export class EngagementRepresentativesComponent {
   }
 }
 
-/** No representative at all; unmeasured counts only caption the rows with a dash, so they never empty it. */
-function isEmptyScope(response: HealthMetricsEngagementRepresentatives): boolean {
-  return response.rows.length === 0;
+/** No representative invited in the period, as the unfiltered table shows it; unmeasured counts only caption the rows. */
+function isEmptyScope(response: HealthMetricsEngagementRepresentatives, range: HealthMetricsRange): boolean {
+  return filterHealthMetricsEngagementRepRows(response.rows, 'all', '', range).length === 0;
 }

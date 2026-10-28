@@ -13,7 +13,12 @@ import { combineLatest } from 'rxjs';
 import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceStatus,
+  HealthMetricsEventsAtAGlanceView,
+  HealthMetricsRange,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * `#kpi` — reach across every event in the period. The Events tab owns the read, since the same
@@ -44,15 +49,24 @@ export class EventsAtAGlanceComponent {
   protected readonly view: Signal<HealthMetricsEventsAtAGlanceView> = computed(() =>
     buildHealthMetricsEventsAtAGlanceView(this.glance(), this.chrome.selectedRange())
   );
-  /** The period was never measured; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => this.status() === 'ready' && !this.view().measured);
+  /** The period was never measured or held nothing; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => this.status() === 'ready' && isEmptyPeriod(this.glance(), this.chrome.selectedRange()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
       // A period change re-projects the loaded read, so it re-settles like a landed read.
       combineLatest([toObservable(this.status), toObservable(this.chrome.selectedRange)])
         .pipe(takeUntilDestroyed())
-        .subscribe(([status]) => (status === 'loading' ? this.reading.emit() : this.settled.emit(status === 'ready' && !this.view().measured)));
+        .subscribe(([status]) =>
+          status === 'loading' ? this.reading.emit() : this.settled.emit(status === 'ready' && isEmptyPeriod(this.glance(), this.chrome.selectedRange()))
+        );
     }
   }
+}
+
+/** The period was never measured, or held no event, registration or upcoming event; the read zero-fills a quiet one. */
+function isEmptyPeriod(glance: HealthMetricsEventsAtAGlance, range: HealthMetricsRange): boolean {
+  const period = glance.periods.find((candidate) => candidate.range === range);
+  const upcoming = range === 'YTD' ? glance.upcomingEvents : 0;
+  return !period || (!period.events && !period.pastEvents && !period.registrations && !upcoming);
 }

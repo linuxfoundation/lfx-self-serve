@@ -194,8 +194,8 @@ export class TrainingEnrollComponent {
   }
 }
 
-/** Unmeasured, or nothing enrolled or earned in the period. */
+/** Unmeasured, or nothing enrolled, certified or earned in the period. */
 function isEmptyPeriod(response: HealthMetricsTrainingEnrollment, range: HealthMetricsL2Range): boolean {
   const totals = response.periods[range]?.totals;
-  return !response.measured || !(totals?.enrollments || totals?.revenueUsd);
+  return !response.measured || !(totals?.enrollments || totals?.certifications || totals?.revenueUsd);
 }

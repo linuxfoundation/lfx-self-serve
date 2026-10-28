@@ -91,7 +91,9 @@ export class TrainingCoursesComponent {
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   /** No course had a learner in the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.scopeTotal());
+  protected readonly empty = computed(
+    () => !this.loading() && !this.loadFailed() && (!this.scopeTotal() || (this.type() === 'all' && !this.search() && this.totalRecords() === 0))
+  );
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
   protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
@@ -163,8 +165,11 @@ export class TrainingCoursesComponent {
 
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
-              // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && !response.scopeTotal);
+              // Held until a foundation is seen, so an unread section cannot release the shell's deep link. The scope counts every
+              // year, so the unfiltered period's own count decides.
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && (!response.scopeTotal || (query.type === 'all' && !query.search && response.totalRecords === 0)));
+              }
             })
           )
         )

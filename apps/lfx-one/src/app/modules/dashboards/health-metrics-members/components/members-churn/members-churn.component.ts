@@ -119,7 +119,7 @@ export class MembersChurnComponent {
     buildHealthMetricsMembersChurnView(this.response(), this.range(), this.mode())
   );
   /** The period was never measured or lost no member; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.departuresFailed() && isEmptyView(this.view()));
   protected readonly departureRows: Signal<HealthMetricsMembersChurnDepartureRowView[]> = computed(() =>
     buildHealthMetricsMembersChurnDepartureRows(this.departures().rows)
   );
@@ -269,7 +269,8 @@ export class MembersChurnComponent {
   private settle(foundationSeen: boolean, churn: HealthMetricsMembersChurn = this.response()): void {
     if (!foundationSeen || this.churnPending || this.departuresPending) return;
 
-    this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsMembersChurnView(churn, this.range(), this.mode())));
+    // A failure of either read keeps its error on screen, so neither settles empty.
+    this.settled.emit(!this.loadFailed() && !this.departuresFailed() && isEmptyView(buildHealthMetricsMembersChurnView(churn, this.range(), this.mode())));
   }
 
   /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */

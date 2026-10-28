@@ -233,6 +233,15 @@ describe('TrainingCoursesComponent', () => {
     expect(query('training-courses-search')).toBeNull();
   });
 
+  // The scope total counts every year, so an unfiltered period read with no row is still an empty period.
+  it('settles empty, with no body, when the unfiltered period has no course though other years do', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }));
+
+    expect(verdicts).toEqual([true]);
+    expect(query('training-courses-controls')).toBeNull();
+    expect(query('training-courses-table')).toBeNull();
+  });
+
   it('keeps the controls and the table, with a no-match row spanning every column, when a filter matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnType: 'certifications' });
     const cell = query('training-courses-no-match') as HTMLTableCellElement | null;
@@ -250,6 +259,7 @@ describe('TrainingCoursesComponent', () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnSearch: 'zeta' });
 
     expect(query('training-courses-no-match')?.textContent?.trim()).toBe('No course matches “zeta”.');
+    expect(verdicts).toEqual([false]);
   });
 
   it('uses the ellipsis character in the search placeholder', async () => {

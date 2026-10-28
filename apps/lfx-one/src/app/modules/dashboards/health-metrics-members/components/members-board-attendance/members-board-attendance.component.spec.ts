@@ -292,9 +292,21 @@ describe('MembersBoardAttendanceComponent', () => {
   });
 
   it('does not settle empty for a cohort with no meeting while the other cohort met, keeping the pills to switch back', async () => {
-    await render(response({ cohorts: { board: cohort({ meetingsInRangeCount: 4 }), voting_members: null }, trend: [], rows: [], totalRecords: 0 }));
+    const votingOnly = { board: cohort({ meetingsInRangeCount: 0 }), voting_members: cohort({ meetingsInRangeCount: 4 }) };
+    await render(response({ cohorts: votingOnly, trend: [], rows: [], totalRecords: 0 }));
 
     expect(verdicts).toEqual([false]);
+    expect(query('members-board-cohort-pills')).not.toBeNull();
+    expect(text('members-board-empty')).toContain('No board meetings in this period');
+    expect(query('members-board-hero')).toBeNull();
+  });
+
+  it('keeps the body for rows and a trend the cohort summaries leave unmeasured', async () => {
+    await render(response({ cohorts: { board: null, voting_members: null } }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('members-board-hero')).not.toBeNull();
+    expect(query('members-board-empty')).toBeNull();
   });
 
   it('separates a failed read from an empty one, settling it without a note', async () => {

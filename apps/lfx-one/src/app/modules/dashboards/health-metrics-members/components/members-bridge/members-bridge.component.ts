@@ -114,7 +114,8 @@ export class MembersBridgeComponent {
             tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersBridgeView(response, this.chrome.selectedRange()).measured);
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersBridgeView(response, this.chrome.selectedRange()).yearMeasured);
             })
           )
         )
@@ -128,6 +129,6 @@ export class MembersBridgeComponent {
     this.drawerVisible.set(false);
     if (this.loadFailed() || this.loading()) return;
 
-    this.settled.emit(!this.view().measured);
+    this.settled.emit(!this.view().yearMeasured);
   }
 }

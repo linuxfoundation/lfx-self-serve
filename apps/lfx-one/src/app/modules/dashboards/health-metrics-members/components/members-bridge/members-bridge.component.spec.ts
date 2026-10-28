@@ -197,11 +197,22 @@ describe('MembersBridgeComponent', () => {
     expect(query('members-bridge-label-upgrade')).not.toBeNull();
   });
 
-  it('says the period has no bridge while other years have one', async () => {
+  it('says the period has no bridge while other years have one, settling it empty', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_3');
 
+    expect(verdicts).toEqual([false, true]);
+    expect(query('members-bridge-chart')).toBeNull();
+    expect(query('members-bridge-year-unmeasured')).not.toBeNull();
+  });
+
+  // The verdict follows the selected year, while the section keeps its own note for the measured scope.
+  it('settles empty when the read lands with a bridge only for another year, keeping its note', async () => {
+    await render({ steps: year(2025, [40, 3, 0, 1, 1, 42]) });
+
+    expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
     expect(query('members-bridge-chart')).toBeNull();
     expect(query('members-bridge-year-unmeasured')).not.toBeNull();
   });
