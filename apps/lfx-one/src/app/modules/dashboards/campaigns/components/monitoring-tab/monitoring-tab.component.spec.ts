@@ -931,6 +931,36 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el('monitoring-google-accounts')).toBeNull();
     });
 
+    it('asks again on a fresh foundation load, since a refusal can come from an outage the root check failed closed on', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadForActiveFoundation']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts'].mock.calls.length).toBeGreaterThan(calls);
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('clears a previous error when a load is skipped for a caller known to be restricted', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-error')).not.toBeNull();
+
+      fixture.componentInstance['googleRestricted'].set(true);
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+    });
+
     it('does not ask again once the caller is known to be refused, since the refusal is about the caller', async () => {
       await setup(allConnected);
       service['getGoogleAdsAccounts'].mockReturnValue(

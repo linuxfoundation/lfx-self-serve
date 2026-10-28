@@ -201,8 +201,8 @@ export class MonitoringTabComponent implements OnInit {
   private googleAccountsSub: Subscription | null = null;
   /**
    * Set once the discovery read is refused as shared-account-restricted. The refusal is about the
-   * caller (root-only, as the Google Ads monitor), not the foundation, so later loads skip a read
-   * that can only answer 403 again.
+   * caller (root-only, as the Google Ads monitor), so loads skip a read that would answer 403 again
+   * until `resetGoogleAccounts` clears it on a fresh context.
    */
   private googleAccountsRefused = false;
   /**
@@ -423,6 +423,7 @@ export class MonitoringTabComponent implements OnInit {
     // be refused again: no request, and nothing shown, as for the refusal itself.
     if (this.googleAccountsRefused || this.googleRestricted()) {
       this.googleAccountsLoading.set(false);
+      this.googleAccountsError.set(null);
       this.googleAccountOptions.set(null);
       return;
     }
@@ -1582,6 +1583,9 @@ export class MonitoringTabComponent implements OnInit {
   /** Drop the Google Ads account list and cancel its read: the foundation or the picker source changed. */
   private resetGoogleAccounts(): void {
     this.googleAccountsSub?.unsubscribe();
+    // Re-checked on a fresh context: the root checks fail closed on an upstream error, so a refusal
+    // remembered from an outage must not outlive the foundation or source it was answered for.
+    this.googleAccountsRefused = false;
     this.googleAccountsLoading.set(false);
     this.googleAccountsError.set(null);
     this.googleAccountOptions.set(null);
