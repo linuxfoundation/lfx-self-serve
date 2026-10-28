@@ -608,8 +608,9 @@ describe('OrgLensEventsService company-email scoping', () => {
     await service.getEventAttendees(REQ, ACCOUNT, EVENT);
 
     // Both surfaces retry unscoped here, and both retries read core tables only. Flagging one would
-    // let a missing core table call recordSuccess() and reset the pod-wide breaker — the exact gap
-    // c1f8cc729 narrowed the option to close, one layer up from where the service spec can see it.
+    // let a missing core table call recordSuccess() and reset the pod-wide breaker — the gap that
+    // naming the object in `expectMissingObject` closes, pinned at `execute` level in
+    // `snowflake.service.spec.ts`.
     const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
     expect(unscopedCalls).toHaveLength(2);
     for (const [, , options] of unscopedCalls) {

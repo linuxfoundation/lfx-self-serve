@@ -125,8 +125,9 @@ export class OrgLensEventsService {
     const scopedQuery = buildListQuery('scoped');
 
     // Started before the read, not after it: the staff check is an upstream round trip that depends
-    // on nothing in the rows, and its per-request memo is always cold here because `/lens/events`
-    // mounts only `requireOrgLensAccess`. Awaiting it after the rows put that trip in series with
+    // on nothing in the rows, and its per-request memo lives on this service's own private
+    // `PersonaDetectionService`, so nothing upstream has warmed it whatever the route mounts —
+    // an lf-staff middleware would not change that. Awaiting it after the rows put that trip in series with
     // Valkey or Snowflake on every list response, cache hits included. `checkLFStaff` catches and
     // resolves `false`, so an early return that never awaits this promise cannot reject unhandled.
     const includeGoal = this.callerIsLFStaff(req);
@@ -181,11 +182,15 @@ export class OrgLensEventsService {
           err: scopedError,
           account_id: accountId,
         });
+        let platinum: OrgEventRow[];
         try {
-          return this.toEventsResponse(req, await platinumRows(), pageSize, offset, await includeGoal);
+          platinum = await platinumRows();
         } catch (platinumError) {
           return emptyEvents(platinumError);
         }
+        // Outside the `try`, like the other two exits: a staff-check rejection here would otherwise be
+        // logged and reported as a Snowflake failure and empty the whole list.
+        return this.toEventsResponse(req, platinum, pageSize, offset, await includeGoal);
       }
 
       logger.warning(req, 'get_org_lens_events', 'Address table unavailable, retrying unscoped', {
@@ -565,12 +570,13 @@ export class OrgLensEventsService {
 const EMAIL_WHITESPACE = `CHR(9) || CHR(10) || CHR(13) || CHR(160) || ' '`;
 
 /**
- * One normalization, used everywhere an address is compared, grouped or counted. NOT used by the
- * blankness guards — the coverage CTE and `REGISTRANT_HAS_ADDRESS` each write their own
- * `NULLIF(TRIM(…, EMAIL_WHITESPACE), '')`, because this expression is declared after the first of
- * them and `REGISTRANT_EMAIL_KEY` after the second. They agree today only because `LOWER` never
- * turns a non-empty string empty; anything added here that `TRIM` cannot do (stripping a zero-width
- * space, say) has to be mirrored into both guards or a blank key slips past them.
+ * One normalization, used everywhere an address is compared, grouped or counted — and by the two
+ * blankness guards as well, so there is exactly one definition to change. It is a hoisted function
+ * declaration and `EMAIL_WHITESPACE` is declared above it, so every call site below can reach it.
+ *
+ * Routing the guards through it is equivalent today, because `LOWER` never turns a non-empty string
+ * empty. The point is that it stays equivalent: anything added here that `TRIM` cannot do (stripping
+ * a zero-width space, say) now reaches the guards too, instead of having to be mirrored into them.
  */
 function normalizedEmail(column: string): string {
   return `LOWER(TRIM(${column}, ${EMAIL_WHITESPACE}))`;
@@ -594,7 +600,7 @@ const COMPANY_EMAIL_COVERAGE_CTE = `company_email_coverage AS (
         SELECT COUNT(*) AS COVERAGE_ROWS
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
         WHERE ACCOUNT_ID = ?
-          AND NULLIF(TRIM(EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL
+          AND NULLIF(${normalizedEmail('EMAIL')}, '') IS NOT NULL
       )`;
 
 /**
@@ -622,8 +628,9 @@ const COMPANY_EMAIL_JOINS = `CROSS JOIN company_email_coverage cov
  * rather than as "none on record". So zero coverage falls back to the unfiltered set, which is exactly
  * what shipped before this rule existed. Partial coverage is not detectable here and is not guarded.
  *
- * Both the per-event count and the drawer embed this one predicate, so the two can never disagree about
- * who qualifies — including on the fallback path.
+ * Both the per-event count and the drawer embed this one predicate, so within one spelling the two
+ * cannot disagree about who qualifies, including on the zero-coverage arm. Across spellings they can:
+ * the drawer has no platinum tier, which is the known gap recorded on `registrationCountsCte`.
  *
  * KNOWN GAP, NOT CLOSED HERE. A zero-coverage result is unfiltered, and it IS cached. Refusing the
  * write (as an earlier revision did) meant every list load and every drawer open for such an org ran
@@ -661,7 +668,7 @@ const COMPANY_EMAIL_QUALIFIES = `(ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0)
  * disagree again. Giving it a synthesized identity instead needs a registration-level key this query
  * does not select. Revisit with the platinum measure in #4409, where the grain can carry one.
  */
-const REGISTRANT_HAS_ADDRESS = `NULLIF(TRIM(er.EMAIL, ${EMAIL_WHITESPACE}), '') IS NOT NULL`;
+const REGISTRANT_HAS_ADDRESS = `NULLIF(${normalizedEmail('er.EMAIL')}, '') IS NOT NULL`;
 
 /**
  * The identity of a registrant, for counting and for grouping. Addresses reach the fact table in
