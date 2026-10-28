@@ -528,25 +528,6 @@ export class MktgDocumentRunService {
     };
   }
 
-  /** Questions are project-writer data, never inferred from creator identity or a caller-provided capability. */
-  private async publicProgress(
-    req: Request,
-    run: MktgStartedRunRecord,
-    reply = run.failureText,
-    activity?: MktgRunActivity[]
-  ): Promise<MktgDocumentRunProgress | null> {
-    let writer = false;
-    if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
-      try {
-        const project = await this.projects.getProjectById(req, run.project, true);
-        writer = project.writer === true && project.uid === run.project;
-      } catch (err) {
-        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted because writer access could not be verified', { project: run.project, err });
-      }
-    }
-    return mktgRunProgress(run, reply, activity, getEffectiveSub(req) ?? undefined, writer);
-  }
-
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
   public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
@@ -624,6 +605,25 @@ export class MktgDocumentRunService {
     } catch (error) {
       logger.warning(req, 'mktg_run_answers_resume', 'Answers accepted; tracking renewal failed, do not resend', { project, err: error });
     }
+  }
+
+  /** Questions are project-writer data, never inferred from creator identity or a caller-provided capability. */
+  private async publicProgress(
+    req: Request,
+    run: MktgStartedRunRecord,
+    reply = run.failureText,
+    activity?: MktgRunActivity[]
+  ): Promise<MktgDocumentRunProgress | null> {
+    let writer = false;
+    if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
+      try {
+        const project = await this.projects.getProjectById(req, run.project, true);
+        writer = project.writer === true && project.uid === run.project;
+      } catch (err) {
+        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted because writer access could not be verified', { project: run.project, err });
+      }
+    }
+    return mktgRunProgress(run, reply, activity, getEffectiveSub(req) ?? undefined, writer);
   }
 
   /** Retirement cannot delay or fail the durable ACK; every asynchronous failure is isolated. */

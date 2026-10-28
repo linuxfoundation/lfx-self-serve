@@ -1669,43 +1669,6 @@ export class MktgAgentsController {
     }
   }
 
-  /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
-  private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
-    const oneLine = title
-      .replace(/[\r\n]+/g, ' ')
-      .trim()
-      .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS);
-    if (read.text === null) {
-      return { title: oneLine, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS[read.reason ?? 'no-text'] };
-    }
-    return { title: oneLine, read: true, words: countFoundationMessageWords(read.text), truncated: read.truncated, text: read.text };
-  }
-
-  /** The upload's file name from its URI-encoded header: one line, no control characters, or '' when missing or undecodable. */
-  private readUploadFileName(req: Request): string {
-    const raw = req.headers[FOUNDATION_MESSAGE_FILE_NAME_HEADER.toLowerCase()];
-    try {
-      const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : '';
-      return (
-        decoded
-          // eslint-disable-next-line no-control-regex -- the point is to strip control characters
-          .replace(/[\u0000-\u001f\u007f]/g, ' ')
-          .trim()
-          .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS)
-      );
-    } catch {
-      return '';
-    }
-  }
-
-  /** Detached from the response: a stalled snapshot must never delay an accepted Generate ACK. */
-  private recordLastIntake(req: Request, input: MktgLastIntakeStart): void {
-    void this.lastIntake.recordStartBestEffort(req, input).catch(() => {
-      // Defensive collaborator boundary; never log the rejected error or the validated input body.
-      logger.warning(req, 'mktg_last_intake_write', 'Run accepted, but scalar intake history could not be saved');
-    });
-  }
-
   /** Record the ACK through the catalog-aware domain service. */
   /** Project-writer continuation for a kit run, deliberately separate from creator-token session writes. */
   public async runAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -1749,6 +1712,43 @@ export class MktgAgentsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
+  private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
+    const oneLine = title
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+      .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS);
+    if (read.text === null) {
+      return { title: oneLine, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS[read.reason ?? 'no-text'] };
+    }
+    return { title: oneLine, read: true, words: countFoundationMessageWords(read.text), truncated: read.truncated, text: read.text };
+  }
+
+  /** The upload's file name from its URI-encoded header: one line, no control characters, or '' when missing or undecodable. */
+  private readUploadFileName(req: Request): string {
+    const raw = req.headers[FOUNDATION_MESSAGE_FILE_NAME_HEADER.toLowerCase()];
+    try {
+      const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : '';
+      return (
+        decoded
+          // eslint-disable-next-line no-control-regex -- the point is to strip control characters
+          .replace(/[\u0000-\u001f\u007f]/g, ' ')
+          .trim()
+          .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS)
+      );
+    } catch {
+      return '';
+    }
+  }
+
+  /** Detached from the response: a stalled snapshot must never delay an accepted Generate ACK. */
+  private recordLastIntake(req: Request, input: MktgLastIntakeStart): void {
+    void this.lastIntake.recordStartBestEffort(req, input).catch(() => {
+      // Defensive collaborator boundary; never log the rejected error or the validated input body.
+      logger.warning(req, 'mktg_last_intake_write', 'Run accepted, but scalar intake history could not be saved');
+    });
   }
 
   /** Reuse the same domain validators and renderers as the private per-agent answers endpoints. */
