@@ -152,13 +152,13 @@ test.describe('Marketing OS new run Sources', () => {
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     const answer = page.getByTestId(`mktg-documents-open-started-${runId}`);
     await expect(answer).toHaveText('Answer the questions');
-    await expect(answer).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await expect(answer).toHaveAttribute('href', new RegExp(`${base}/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}&run=${runId}$`));
     await answer.click();
     await expect(questions).toContainText('Which synthetic goal?');
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     const waiting = page.getByTestId(`mktg-documents-nav-${type.agentKey}`);
     await expect(waiting).toContainText('Needs answers');
-    await expect(waiting).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await expect(waiting).toHaveAttribute('href', new RegExp(`${base}/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}&run=${runId}$`));
     await waiting.click();
     await expect(questions).toContainText('Which synthetic goal?');
     await page.evaluate((url) => {
