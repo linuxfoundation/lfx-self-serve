@@ -3239,6 +3239,15 @@ export class AudienceBuilderTabComponent {
       this.optIns.set({ ...lookup, added: [], pending: [], others: uniqueLists([...lookup.added, ...lookup.pending, ...lookup.others]) });
       return;
     }
+    const excludedPending = lookup.pending.filter((list) => this.exclusion().has(list.listId));
+    if (excludedPending.length > 0) {
+      this.optIns.set({
+        ...lookup,
+        pending: lookup.pending.filter((list) => !this.exclusion().has(list.listId)),
+        others: uniqueLists([...excludedPending, ...lookup.others]),
+      });
+      return this.reconcileOptInOwnership();
+    }
     const left = lookup.added.filter((list) => !included.has(list.listId));
     left.forEach((list) => this.optInsDeclined.add(list.listId));
     if (left.length > 0) {
@@ -3766,11 +3775,15 @@ export class AudienceBuilderTabComponent {
     // Include waits for nothing: one the earlier draft of this page added stays owned (shown as
     // added, withdrawn with that draft's list); one the operator included by hand is offered.
     // A pick the operator removed after the draft added it is their choice: offered, never re-added.
+    // A pick marked Exclude is offered too: it would never join Include, so it must not read as pending.
     const included = this.inclusion();
-    const waiting = added.filter((list) => !included.has(list.listId) && !this.optInsDeclined.has(list.listId));
-    const declined = added.filter((list) => !included.has(list.listId) && this.optInsDeclined.has(list.listId));
+    const excluded = this.exclusion();
+    const offeredOnly = (list: AudienceDiscoveredList): boolean => this.optInsDeclined.has(list.listId) || excluded.has(list.listId);
+    const waiting = added.filter((list) => !included.has(list.listId) && !offeredOnly(list));
+    const declined = added.filter((list) => !included.has(list.listId) && offeredOnly(list));
     const handPicked = added.filter((list) => included.has(list.listId) && !ownedIds.has(list.listId));
-    this.optIns.set({ status: 'done', added: stillOwned, pending: waiting, others: uniqueLists([...handPicked, ...declined, ...others]), missing });
+    // An owned list is shown once, as added, even when a larger list of its signal appeared.
+    this.optIns.set({ status: 'done', added: stillOwned, pending: waiting, others: offered(uniqueLists([...handPicked, ...declined, ...others])), missing });
     if (this.draftListId() !== null) {
       this.addPendingOptIns();
     }

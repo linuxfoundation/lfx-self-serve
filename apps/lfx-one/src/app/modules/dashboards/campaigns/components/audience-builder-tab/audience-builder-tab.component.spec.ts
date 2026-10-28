@@ -3608,6 +3608,28 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an abandoned lookup dropped the ownership').toBeNull();
       });
 
+      it('offers an opt-in marked Exclude instead of holding it as pending', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)], [], false);
+        (fixture.componentInstance as unknown as { onExcludeList: (l: { listId: string; name: string }) => void }).onExcludeList({
+          listId: '401',
+          name: 'LF Newsletter',
+        });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-pending-401"]'), 'an excluded opt-in read as pending').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]')).not.toBeNull();
+      });
+
+      it('shows a carried opt-in once when a larger list of its signal appears on a re-draft', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000), optIn('402', 'lf_newsletter_opt_in', 9000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'the owned list also showed under Also found').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]')).not.toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 
