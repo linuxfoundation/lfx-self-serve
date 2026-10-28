@@ -145,7 +145,7 @@ export class SurveyResultsDrawerComponent {
     const scope = this.resyncScope();
     if (!survey || !scope) return;
     this.closeAdminMenu();
-    const data: SurveyResyncDialogData = { survey, committeeUid: scope.committeeUid };
+    const data: SurveyResyncDialogData = { survey, committeeUids: scope.committeeUids };
     this.dialogService
       .open(SurveyResyncDialogComponent, {
         header: 'Resync recipients',

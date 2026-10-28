@@ -76,4 +76,13 @@ describe('SurveyReminderDialogComponent', () => {
     expect(component['overCap']()).toBe(true);
     expect(sendSurveyReminders).not.toHaveBeenCalled();
   });
+
+  it('reports a too-large survey as a confirmed failure, not an unconfirmed send', async () => {
+    const { component, add, close } = await mount(throwError(() => new HttpErrorResponse({ status: 422 })));
+
+    component['send']();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: "Couldn't send reminder", detail: expect.stringContaining('Nothing was sent') }));
+    expect(close).not.toHaveBeenCalled();
+  });
 });

@@ -135,7 +135,7 @@ export class SurveyReminderDialogComponent {
 
   private isUnconfirmedSend(error: unknown): boolean {
     if (!(error instanceof HttpErrorResponse) || isBffTransportFailure(error)) return true;
-    return ![400, 403, 404, 429].includes(error.status);
+    return ![400, 403, 404, 422, 429].includes(error.status);
   }
 
   private sendErrorMessage(error: unknown, unconfirmed: boolean): string {
@@ -145,6 +145,8 @@ export class SurveyReminderDialogComponent {
     switch ((error as HttpErrorResponse).status) {
       case 403:
         return "You don't have permission to send reminders for this survey.";
+      case 422:
+        return 'This survey has too many responses to check reminder recipients. Nothing was sent.';
       case 429:
         return 'Too many reminders were sent just now. Please try again in a minute.';
       default:

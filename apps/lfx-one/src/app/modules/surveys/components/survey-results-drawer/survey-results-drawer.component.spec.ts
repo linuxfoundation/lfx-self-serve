@@ -152,7 +152,7 @@ describe('SurveyResultsDrawerComponent', () => {
 
     const manager = await mount(true, of(ROWS), open);
     current = manager.fixture;
-    expect(manager.component['resyncScope']()).toEqual({ committeeUid: 'c-1' });
+    expect(manager.component['resyncScope']()).toEqual({ committeeUids: ['c-1'] });
 
     const viewer = await mount(false, of(ROWS), open);
     current = viewer.fixture;
