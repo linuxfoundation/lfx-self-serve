@@ -4276,6 +4276,94 @@ describe('AudienceBuilderTabComponent', () => {
       expect(discoverAudience, 'the retry re-ran discovery').toHaveBeenCalledTimes(1);
     });
 
+    it('unticks a vanished registrants row even when a failed load came between', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, { ...REGISTRANTS, listId: '9001', willCreate: undefined }] }));
+      await discover();
+      const tab = fixture.componentInstance as unknown as { excludeIds: () => readonly string[]; reloadSuppressionRows: () => void };
+      getAudienceSuppressionLists.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      tab.reloadSuppressionRows();
+      fixture.detectChanges();
+
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      click('campaigns-audience-suppression-retry');
+
+      expect(tab.excludeIds(), 'the old registrants id survived the failed load').not.toContain('9001');
+    });
+
+    it('matches a partial-standard reuse whose recorded ids keep the standing list as itself', async () => {
+      const OPT_OUT: AudienceSuppressionList = { ...GDPR, key: 'global_opt_out', listId: '202', name: 'Global Opt-out' };
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-8',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-8/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, OPT_OUT], standardList: STANDING }));
+      await discover('brief-1');
+      toggleStandardRow('global_opt_out');
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['300', '201'],
+          audience: { ...AUDIENCE, platformMasterListId: '501' },
+        })
+      );
+
+      click('audience-last-sent-use-em-8');
+
+      expect(host().querySelector('[data-testid="audience-last-sent-use-em-8"]')?.textContent).toContain('Same lists used for this email');
+    });
+
+    it('treats a newly ticked registrants list still to be created as a change from the recorded audience', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      await discover('brief-1');
+      click('audience-suppression-grid-toggle-current_registrants');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['300'], standardSuppression: STANDING, audience: AUDIENCE })
+      );
+      click('campaigns-audience-use-direct');
+      const tab = fixture.componentInstance as unknown as { attachedMasterId: () => string | null };
+      expect(tab.attachedMasterId(), 'fixture precondition').toBe('101');
+
+      click('audience-suppression-grid-toggle-current_registrants');
+
+      expect(tab.attachedMasterId(), 'a pending registrants exclusion read as already recorded').toBeNull();
+    });
+
+    it('counts the standing list in place of the standard rows once it exists', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover();
+      previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 5100, count: 5100, reason: '' }));
+
+      click('campaigns-audience-suppression-count-run');
+
+      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: ['300'] });
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent).toContain('5,100');
+    });
+
+    it('asks before a draft for another event page replaces a Build-tab list drafted for the first', async () => {
+      await render();
+      typeEventUrl('https://events.example.org/a');
+      click('campaigns-audience-event-generate');
+      (fixture.debugElement.query(By.directive(AudienceCustomBuilderComponent)).componentInstance as AudienceCustomBuilderComponent).created.emit({
+        listId: '7777',
+        name: 'Event A audience',
+        hubspotUrl: 'https://app.hubspot.com/x/7777',
+      });
+      fixture.detectChanges();
+
+      typeEventUrl('https://events.example.org/b');
+      click('campaigns-audience-event-generate');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-start-over-draft"]'), "B's draft kept A's list without asking").not.toBeNull();
+      click('campaigns-audience-start-over-confirm');
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-7777"]')).toBeNull();
+    });
+
     it('does not write the event URL back into the input being typed in', async () => {
       await render();
       const control = (fixture.componentInstance as unknown as { eventUrlControl: { setValue: (v: string, o?: unknown) => void } }).eventUrlControl;

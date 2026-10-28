@@ -77,8 +77,8 @@
         @if (pendingStartOver() === 'draft') {
           <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" role="alert" data-testid="campaigns-audience-start-over-draft">
             <p class="text-xs text-gray-800">
-              The lists discovered below are for a different event page. Drafting from this one starts over: the discovered lists, your selection and the
-              suppression ticks are cleared, so one event drives the draft, the registrants suppression and QA.
+              The lists selected below are for a different event page. Drafting from this one starts over: the discovered or drafted lists, your selection and
+              the suppression ticks are cleared, so one event drives the draft, the registrants suppression and QA.
             </p>
             <div class="flex flex-wrap gap-2">
               <button
@@ -559,7 +559,7 @@
           [attachedExclusionIds]="recordedExclusions()"
           [standingExpansion]="standingExpansion()"
           [attachedIncludeIds]="attachedIncludeIds()"
-          [pendingExclusionIds]="excludeIds()"
+          [pendingExclusionIds]="comparableExcludeIds()"
           (addList)="onAddListBrief($event)"
           (excludeList)="onExcludeList($event)"
           (addMasterList)="onAddMasterList($event)"
