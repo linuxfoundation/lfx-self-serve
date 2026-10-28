@@ -1746,8 +1746,8 @@ describe('CampaignController.createCampaign cutover', () => {
     eventSlug: 'kubecon',
     registrationUrl: 'https://example.com',
     budgetUsd: 300,
-    startDate: '2026-01-01',
-    endDate: '2026-02-01',
+    // No flight dates by default, matching the form while the Microsoft-schedule capability is off
+    // — see the `flight dates` block below for both sides of that capability.
     geoTargets: ['US'],
     keywords: [{ text: 'kubernetes', matchType: 'Exact' }],
     ...overrides,
@@ -2026,15 +2026,133 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * `microsoftConfig` declares no scheduling fields, so dates on the wire are silently discarded.
-   * Sending them implied a flight the operator never gets.
+   * Microsoft flight dates (linuxfoundation/lfx-v2-campaign-service#409). With the capability on,
+   * `startDate` / `endDate` reach campaign-service UNTOUCHED, as Meta's do: the service judges the
+   * format and fails the job on a bad one. With it off, the request is refused rather than the keys
+   * dropped, because both creators that would serve it ignore them and would create no flight.
    */
-  it('sends no flight dates, which microsoftConfig does not carry', async () => {
-    await createWithMicrosoft();
+  describe('flight dates', () => {
+    const flagsWith = (schedule: boolean, cutover: boolean): void => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === ServerFeatureFlag.CampaignServiceMicrosoftSchedule ? schedule : cutover));
+    };
 
-    const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
-    expect(sent).not.toHaveProperty('startDate');
-    expect(sent).not.toHaveProperty('endDate');
+    it.each([
+      ['both dates', { startDate: '2026-01-01', endDate: '2026-02-01' }],
+      ['a start date alone', { startDate: '2026-01-01' }],
+      ['an end date alone', { endDate: '2026-02-01' }],
+      ['a date campaign-service will refuse, which is its call', { startDate: '2026-02-31' }],
+    ])('forwards %s untouched when the capability is on', async (_label, dates) => {
+      flagsWith(true, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(dates) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent['startDate']).toBe((dates as Record<string, unknown>)['startDate']);
+      expect(sent['endDate']).toBe((dates as Record<string, unknown>)['endDate']);
+      expect('startDate' in sent).toBe('startDate' in dates);
+      expect('endDate' in sent).toBe('endDate' in dates);
+    });
+
+    it.each([
+      ['the schedule flag is off', false, true],
+      ['the create cutover is dark', true, false],
+      ['both are off', false, false],
+    ])('refuses a request carrying Microsoft dates when %s, creating nothing', async (_label, scheduleFlag, cutover) => {
+      flagsWith(scheduleFlag, cutover);
+      createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+      legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+      await controller.createCampaign(
+        buildReq(
+          { platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig({ startDate: '2026-01-01', endDate: '2026-02-01' }) },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.statusCode).toBe(400);
+      expect(error.toResponse()['errors']).toEqual([
+        {
+          field: 'microsoftConfig.startDate',
+          message: 'Microsoft flight dates are not enabled on this deployment; omit startDate and endDate from microsoftConfig',
+          code: 'FIELD_VALIDATION_ERROR',
+        },
+      ]);
+    });
+
+    it.each([
+      ['an end date alone', { endDate: '2026-02-01' }, 'microsoftConfig.endDate'],
+      ['an explicit null start date, rather than reading it as absent', { startDate: null }, 'microsoftConfig.startDate'],
+    ])('refuses %s while the capability is off, naming the field', async (_label, dates, field) => {
+      flagsWith(false, true);
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig(dates) }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+      expect(error.toResponse()['errors'][0].field).toBe(field);
+    });
+
+    it('lets a Microsoft request without dates through unchanged when the flag is off', async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq({ platforms: ['microsoft-ads'], microsoftConfig: microsoftConfig() }, { project: 'tlf', brief_id: 'b-1' }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
+      expect(sent).not.toHaveProperty('startDate');
+      expect(sent).not.toHaveProperty('endDate');
+      expect(sent['budget']).toBe(300);
+    });
+
+    it("leaves Meta's dates alone when the Microsoft flag is off", async () => {
+      flagsWith(false, true);
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+      await controller.createCampaign(
+        buildReq(
+          {
+            platforms: ['meta-ads'],
+            metaConfig: {
+              budgetUsd: 250,
+              lifetimeBudget: false,
+              startDate: '2026-01-01',
+              endDate: '2026-02-01',
+              geoTargets: ['US'],
+              variants: [{ primaryText: 'p', headline: 'h' }],
+            },
+          },
+          { project: 'tlf', brief_id: 'b-1' }
+        ),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      const sent = envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>;
+      expect(sent['startDate']).toBe('2026-01-01');
+      expect(sent['endDate']).toBe('2026-02-01');
+    });
   });
 
   /**

@@ -941,6 +941,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
+  /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
   /**
    * Where `loadCreateCapabilitiesFor`'s read stands, so the Implementation tab can tell "still
    * checking" from "the check failed" while any capability it set is still `null`. ONE read fills
@@ -2501,6 +2503,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaCreativeEnabled.set(null);
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
+        this.briefCampaignsMicrosoftScheduleEnabled.set(null);
         this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
@@ -4598,6 +4601,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+          this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
           this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
@@ -4616,6 +4620,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCreativeEnabled.set(null);
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
+          this.briefCampaignsMicrosoftScheduleEnabled.set(null);
           this.briefCampaignsCapabilityRead.set('failed');
         },
       });
@@ -4680,6 +4685,7 @@ export class CampaignsComponent {
     this.briefCampaignsMetaCreativeEnabled.set(null);
     this.briefCampaignsMetaAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
+    this.briefCampaignsMicrosoftScheduleEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
     this.briefCampaignsCapabilityRead.set('unknown');
 
@@ -4714,6 +4720,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
+            this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
             this.briefCampaignsCapabilityRead.set('ready');
           }
         },
@@ -4738,6 +4745,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCreativeEnabled.set(null);
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
+            this.briefCampaignsMicrosoftScheduleEnabled.set(null);
             this.briefCampaignsCapabilityRead.set('failed');
           }
         },
