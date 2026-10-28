@@ -204,6 +204,8 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly waitingQuestions = signal(false);
+  protected readonly startedOverWaiting = signal(false);
   private readonly hasVersion = signal(false);
   protected readonly sourcesEditing = signal(false);
   protected readonly sourcesLoading = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
@@ -308,7 +310,9 @@ export class MktgAgentRunComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
-  protected readonly showIntakeForm = computed(() => !this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()));
+  protected readonly showIntakeForm = computed(
+    () => !this.waitingQuestions() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
+  );
   protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${mktgSentenceCaseLabel(this.assetName)}`));
   protected readonly submitReason = computed(() => {
     if (this.sourcesLoading()) return 'Wait for your sources to load.';
@@ -333,6 +337,7 @@ export class MktgAgentRunComponent {
   protected readonly submitDisabled = computed(
     () =>
       !this.intakeValid() ||
+      this.waitingQuestions() ||
       this.phase() === 'running' ||
       !!this.navigation() ||
       this.documentsBusy() ||
@@ -694,6 +699,16 @@ export class MktgAgentRunComponent {
   protected onDropPriorFiles(): void {
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
+  }
+
+  protected onContinueWaiting(): void {
+    // Removing entry-only mode uses the same restoration path as a plain run URL.
+    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  protected onStartOverWaiting(): void {
+    this.waitingQuestions.set(false);
+    this.startedOverWaiting.set(true); // Do not clear, reserve or overwrite the waiting attempt.
   }
 
   protected onSubmit(): void {
@@ -1258,6 +1273,8 @@ export class MktgAgentRunComponent {
     this.consumedFreshProject = null;
     this.consumedFreshSubject = null;
     this.freshMode.set(fresh);
+    this.waitingQuestions.set(false);
+    this.startedOverWaiting.set(false);
     this.hasVersion.set(false);
     this.generationSub?.unsubscribe();
     this.generationSub = null;
@@ -1302,7 +1319,10 @@ export class MktgAgentRunComponent {
     this.priorDocumentCount.set(0);
     this.priorLogoCount.set(0);
     if (!context) return;
-    if (fresh) return; // No token consumption, attempt restore/resume or prepare on a fresh visit.
+    if (fresh) {
+      this.waitingQuestions.set(!!this.runAttempts.load(context.uid, this.agent.id)?.pendingQuestions);
+      return; // Offer recovery without consuming a token or starting/resuming a run.
+    }
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {

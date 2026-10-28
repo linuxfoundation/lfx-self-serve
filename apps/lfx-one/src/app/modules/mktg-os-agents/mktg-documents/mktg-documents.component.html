@@ -87,8 +87,12 @@
           <div class="px-3 pt-3 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-nav-family">{{ family.name }}</div>
           @for (item of family.items; track item.type.agentKey) {
             <a
-              [routerLink]="[]"
-              [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
+              [routerLink]="item.badge === 'Needs answers' && item.type.catalogAgentId ? ['..', item.type.catalogAgentId] : []"
+              [queryParams]="
+                item.badge === 'Needs answers' && item.type.catalogAgentId
+                  ? { project: projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null }
+                  : { type: item.type.agentKey, project: projectSlug() }
+              "
               queryParamsHandling="merge"
               class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
               [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
@@ -278,7 +282,7 @@
                   {{
                     documents()?.progressUnavailable
                       ? 'Run progress is unavailable. Refresh to check whether a document is being written.'
-                      : 'A recorded run is listed above. Open its document to follow progress or retry it.'
+                      : 'A recorded run is listed above: use its Open link to follow progress, answer its questions or retry it.'
                   }}
                 </p>
               </div>
@@ -326,7 +330,7 @@
                 {{
                   documents()?.progressUnavailable
                     ? 'Run progress is unavailable. Refresh to check the last known runs.'
-                    : 'A recorded run is listed above. Open its document to follow progress or retry it.'
+                    : 'A recorded run is listed above: use its Open link to follow progress, answer its questions or retry it.'
                 }}
               </p>
             } @else {

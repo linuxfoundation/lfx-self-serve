@@ -457,6 +457,8 @@ describe('MktgAgentRunComponent', () => {
       expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
       expect(component['intakeForm'].get('github_url')?.value).toBe('');
       expect(query('mktg-run-source-website_url')?.textContent).toContain('From last time');
+      expect(query('mktg-run-waiting-notice')).toBeNull();
+      expect(query('mktg-run-start')).not.toBeNull();
       expect(generate).not.toHaveBeenCalled();
       expect(consume).not.toHaveBeenCalled();
       expect(prepare).not.toHaveBeenCalled();
@@ -777,6 +779,46 @@ describe('MktgAgentRunComponent', () => {
       oldResponse.next(history);
       expect(component['intakeForm'].get('website_url')?.value).toBe('https://other-subject.example');
       expect(generate).not.toHaveBeenCalled();
+    });
+
+    it.each(['continue', 'start-over'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const request = { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: history.answers };
+      const pending: MktgRunQuestionsPending = {
+        attempt: { session: { agentId, sessionId: 'synthetic-waiting', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        questionsId: 'abc12345',
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+      };
+      attempts.save({ request, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
+      const saved = attempts.load(PROJECT_1.uid, agentId);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-run-waiting-notice')?.textContent).toContain('This run is waiting for your answers.');
+      expect(query('mktg-run-sources')).toBeNull();
+      expect(component['showIntakeForm']()).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      if (choice === 'continue') {
+        query('mktg-run-waiting-continue')?.querySelector('button')?.click();
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { mode: null }, replaceUrl: true }));
+        queryParams.next(convertToParamMap({})); // Router mock: emit the accepted plain-route navigation.
+        await fixture.whenStable();
+        expect(component['phase']()).toBe('questions');
+        expect(component['questionsPending']()).toEqual(pending);
+        expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
+        expect(query('mktg-run-questions-return-note')?.textContent).toContain('Documents › Started runs › Open.');
+      } else {
+        query('mktg-run-waiting-start-over')?.click();
+        await fixture.whenStable();
+        expect(query('mktg-run-waiting-continue')).toBeNull();
+        expect(query('mktg-run-sources')).not.toBeNull();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-run-waiting-notice')?.textContent).toContain('the waiting one stays listed under Documents › Started runs.');
+        expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
+      }
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
     });
 
     it('does not consume a questions token in fresh mode, then resumes that same block when fresh mode is removed', async () => {

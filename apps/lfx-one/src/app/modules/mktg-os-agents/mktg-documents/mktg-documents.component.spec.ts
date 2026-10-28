@@ -381,7 +381,9 @@ describe('MktgDocumentsComponent', () => {
     await render('/?type=' + type.agentKey);
     expect(query('mktg-documents-empty-runs')).toBeNull();
     expect(query('mktg-documents-pending-run')).not.toBeNull();
-    expect(query('mktg-documents-pending-run')?.textContent).toContain(state === 'unavailable' ? 'unavailable' : 'recorded run');
+    expect(query('mktg-documents-pending-run')?.textContent).toContain(
+      state === 'unavailable' ? 'unavailable' : 'use its Open link to follow progress, answer its questions or retry it.'
+    );
   });
 
   it('shows a run type’s runs, or says there are none yet', async () => {
@@ -402,7 +404,12 @@ describe('MktgDocumentsComponent', () => {
     if (state === 'questions') {
       expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
       expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
-      expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Needs answers');
+      const entry = query('mktg-documents-nav-brand-kit');
+      expect(entry?.textContent).toContain('Needs answers');
+      expect(entry?.getAttribute('href')).toBe(`/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(query('mktg-documents-pending-document')?.textContent).toContain('use its Open link to follow progress, answer its questions or retry it.');
+    } else {
+      expect(query('mktg-documents-nav-brand-kit')?.getAttribute('href')).toContain('type=brand-kit');
     }
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
@@ -561,6 +568,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Waiting for your answers');
     expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Paused');
     expect(query('mktg-documents-nav-member-360')?.textContent).not.toContain('Needs answers');
+    expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toContain('type=member-360');
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {
