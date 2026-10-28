@@ -295,6 +295,13 @@ export class CampaignsComponent {
   protected readonly carriedTwitterDraft = signal<CampaignTwitterDraft | null>(null);
 
   /**
+   * Set when Planning discards its generated brief (New Brief, Cancel), so the next proceed is a
+   * new generation for which the X fields must not carry, even for the same event. Cleared by that
+   * proceed.
+   */
+  private twitterCarryDiscarded = false;
+
+  /**
    * The extension lists of the brief last handed to Implementation, exactly as the GENERATOR
    * produced them — before {@link briefWithCarriedExtensions} substituted anything into them.
    *
@@ -2789,6 +2796,12 @@ export class CampaignsComponent {
     }
   }
 
+  /** Planning discarded its brief: see `twitterCarryDiscarded`. */
+  protected onPlanningBriefDiscarded(): void {
+    this.carriedTwitterDraft.set(null);
+    this.twitterCarryDiscarded = true;
+  }
+
   /**
    * Hand a brief to the Implementation tab.
    *
@@ -2835,7 +2848,8 @@ export class CampaignsComponent {
       googleSitelinks: brief.googleSitelinks?.map((sitelink) => ({ ...sitelink })),
     };
     // The X fields survive a same-event proceed (see `carriedTwitterDraft`); read BEFORE the clear.
-    this.carriedTwitterDraft.set(this.twitterDraftToCarry(brief));
+    this.carriedTwitterDraft.set(this.twitterCarryDiscarded ? null : this.twitterDraftToCarry(brief));
+    this.twitterCarryDiscarded = false;
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
     this.selectedTab.set('implementation');

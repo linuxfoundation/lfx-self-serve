@@ -49,6 +49,7 @@ import type { MockInstance } from 'vitest';
 import { CampaignsComponent } from './campaigns.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
+import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -11610,30 +11611,141 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
   });
 
-  /**
-   * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
-   * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
-   * generator produces replaces them. A different event's X fields must not follow.
-   */
-  it('keeps the typed X fields across a same-event proceed, and drops them for another event', async () => {
-    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
-    const withTwitter = { ...brief, selectedPlatforms: ['google-ads', 'twitter-ads'] } as unknown as CampaignBriefOutput;
+  // === X fields across a refine ===
 
-    page().onProceedToImplementation(withTwitter);
+  const withTwitter = { ...brief, selectedPlatforms: ['google-ads', 'twitter-ads'] } as unknown as CampaignBriefOutput;
+  const tweetAsset = { id: 'asset-x', mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true };
+
+  function chooseTweetImage(): void {
+    const input = q('implementation-twitter-image-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File([new Uint8Array(16)], 'tweet.png', { type: 'image/png' })] });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  /** Proceed, then type the two X fields as the operator would. */
+  async function proceedAndTypeX(b: CampaignBriefOutput = withTwitter): Promise<void> {
+    page().onProceedToImplementation(b);
     await settle();
     tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
     tab()['campaignForm'].controls['twitterBudget'].setValue('42');
     await settle();
+  }
+
+  /** Back to Planning, which tears the Implementation tab down: the refine round trip. */
+  async function leaveForPlanning(): Promise<void> {
+    (fixture.componentInstance as unknown as { selectTab(t: string, owner: string): void }).selectTab('planning', 'paid-marketing');
+    await settle();
+  }
+
+  /**
+   * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
+   * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
+   * generator produces replaces them. A different event's X fields must not follow. Implement is
+   * torn down between proceeds, as a refine from Planning does, so the image is restored from the
+   * carry rather than left standing on a live mount.
+   */
+  it('keeps the typed X fields and image across a same-event proceed, and drops them for another event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    await leaveForPlanning();
 
     page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
     await settle();
     expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
     expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('42');
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    expect(tab()['twitterImageAssetName']()).toBe('tweet.png');
+    expect(tab()['twitterImageAssetBriefId']()).toBe('brief-1');
+    await leaveForPlanning();
 
     const otherEvent = { ...withTwitter, eventDetails: { ...withTwitter.eventDetails, slug: 'other-event-2026', name: 'Other Event' } } as CampaignBriefOutput;
     page().onProceedToImplementation(otherEvent);
     await settle();
     expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['twitterImageAssetId']()).toBe('');
+  });
+
+  /**
+   * Start Over discards the brief, so a carry made by an earlier refine must go with it: the carry
+   * is what the next proceed reads once Start Over has cleared the draft.
+   */
+  it('drops a carried X draft on Start Over, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+
+    (fixture.componentInstance as unknown as { resetToPlanning(): void }).resetToPlanning();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /** New Brief discards the generated brief too, so the brief generated next is not a refine of it. */
+  it('drops the typed X fields after New Brief, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+
+    // The paid planner, not the email one: both are mounted.
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email');
+    expect(paid).toBeDefined();
+    (paid as PlanningTabComponent).reset();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
+   * A refine re-saves the brief, and the save clears the brief id until it answers, so the carried
+   * pending upload is parked on mount. When the save hands the same id back, the upload must be
+   * resumed, holding Create, rather than left parked with Create free to send no image.
+   */
+  it("resumes a pending X upload once a refine's delayed save returns the same brief id", async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    const service = TestBed.inject(CampaignService);
+    const upload = new Subject<typeof tweetAsset>();
+    vi.spyOn(service, 'uploadCreativeAsset').mockReturnValue(upload as never);
+    const resume = vi
+      .spyOn(service, 'resumeCreativeAssetUpload')
+      .mockImplementation(((owner: string, id: string) => (owner === 'twitter' && id === 'brief-1' ? upload : null)) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    await leaveForPlanning();
+
+    const save = new Subject<unknown>();
+    vi.spyOn(service, 'persistBrief').mockReturnValue(save as never);
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['twitterImageUploadPendingName']()).toBe('tweet.png');
+    expect(resume).not.toHaveBeenCalled();
+
+    save.next({ enabled: true, briefId: 'brief-1', etag: '"2"', created: false, approved: true });
+    save.complete();
+    await settle();
+    expect(resume).toHaveBeenCalledWith('twitter', 'brief-1');
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    expect(tab()['canSubmit']()).toBe(false);
+
+    upload.next(tweetAsset);
+    upload.complete();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
   });
 
   /** The per-caller audience capability travels the same path: the real page reads it and binds it. */

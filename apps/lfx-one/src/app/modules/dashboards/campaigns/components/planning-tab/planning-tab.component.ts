@@ -169,6 +169,13 @@ export class PlanningTabComponent implements OnInit {
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
 
   /**
+   * The generated brief was discarded (`reset()`: Cancel, New Brief, a foundation or stage switch),
+   * so the next proceed is a new generation, not a refine of this one. The page uses it to stop
+   * carrying the typed X fields onto that brief.
+   */
+  public readonly briefDiscarded = output<void>();
+
+  /**
    * A brief RESTORED from campaign-service, as opposed to one just generated.
    *
    * A separate output rather than a flag on the one above, because the difference is not a
@@ -912,6 +919,7 @@ export class PlanningTabComponent implements OnInit {
 
   // === Public Methods ===
   public reset(): void {
+    this.briefDiscarded.emit();
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
     // Belt-and-suspenders alongside the unsubscribe() above -- see the generateGeneration field

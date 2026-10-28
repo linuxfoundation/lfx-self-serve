@@ -3251,6 +3251,17 @@ export class ImplementationTabComponent implements OnInit {
       untracked(() => this.emitDraft());
     });
 
+    // A same-event refine restores a pending X upload while `persistBrief` has the brief id
+    // cleared, so `resumeTwitterImageUpload` parks it. The save hands the same id back without a
+    // remount, so the parked upload is resumed here once its brief is the open one again.
+    effect(() => {
+      const briefId = this.briefPersistence().briefId ?? '';
+      const pendingName = this.twitterImageUploadPendingName();
+      const pendingBriefId = this.twitterImageUploadPendingBriefId();
+      if (!briefId || pendingName === '' || pendingBriefId !== briefId || this.twitterImageUploadStatus() !== 'idle') return;
+      untracked(() => this.resumeTwitterImageUpload(pendingName, pendingBriefId));
+    });
+
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
     // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
     // targets, targeting profile). Moving those three onto the form is what makes their restore
