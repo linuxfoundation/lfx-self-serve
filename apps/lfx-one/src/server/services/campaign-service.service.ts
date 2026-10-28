@@ -550,6 +550,20 @@ export function canCreateWithFinerGoogleGeo(): boolean {
 }
 
 /**
+ * Whether a Google create may carry the criteria and ad extension fields in
+ * `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` — excluded locations, languages, ad schedules, device bid
+ * modifiers, demographic exclusions and the six extension lists.
+ *
+ * Needs only the campaign-service create path: upstream reads all of them, and each has its own
+ * BFF guard on that path. The LEGACY creator reads none of them, so with the cutover dark a create
+ * carrying any would serve without it while reporting success — `deviceBidModifiers` set to stop
+ * mobile serving, and the campaign serves on mobile anyway (#3692).
+ */
+export function canCreateWithGoogleCriteria(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
  *
  * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.

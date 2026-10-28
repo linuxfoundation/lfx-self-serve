@@ -72,8 +72,22 @@ describe('OverviewOrgsCardComponent', () => {
     expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-orgs-members"] svg circle')).toHaveLength(4);
   });
 
+  it('gives every KPI label its PCC tooltip', async () => {
+    await render();
+
+    const tip = (testId: string): string | null =>
+      fixture.nativeElement.querySelector(`[data-testid="${testId}"] lfx-overview-info-tip [role="img"]`)?.getAttribute('aria-label') ?? null;
+    expect(tip('overview-orgs-members-kpis-active')).toContain('Total active members in SFDC');
+    expect(tip('overview-orgs-members-kpis-new')).toContain('Total number of members added in the selected time period');
+    expect(tip('overview-orgs-non-members-kpis-non-members')).toContain('do not have a membership');
+    expect(tip('overview-orgs-non-members-kpis-non-renewals')).toContain('Members who chose not to continue');
+  });
+
   it('links each half into its section', async () => {
     await render();
+
+    expect(text('overview-orgs-members-explore')).toBe('Explore Members');
+    expect(text('overview-orgs-non-members-explore')).toBe('Explore Non-Member Participation');
 
     expect(fixture.nativeElement.querySelector('[data-testid="overview-orgs-members-explore"]').getAttribute('href')).toContain('/members#list');
     expect(fixture.nativeElement.querySelector('[data-testid="overview-orgs-non-members-explore"]').getAttribute('href')).toContain('/non-members#orgs');
