@@ -224,7 +224,7 @@ JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
 The remaining flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._MICROSOFT_SCHEDULE`, `..._INSIGHTS`,
-`..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`) and `..._MONITOR`
+`..._KEYWORD_ACTIONS`, `..._HUBSPOT_UTM`, the creative-asset flags (`..._REDDIT_ASSETS`, `..._GOOGLE_ASSETS`, `..._META_ASSETS`) and `..._MONITOR`
 -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
 matters to an operator deciding whether an override is needed:
