@@ -22,6 +22,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { LensService } from './lens.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { PersonaService } from './persona.service';
 import { WriterGrantsService } from './writer-grants.service';
 
@@ -42,6 +43,7 @@ describe('LensService — menu lens preview', () => {
     };
     const navigate = vi.fn();
     const events = new Subject<RouterEvent>();
+    const orgLensLink = vi.fn((page: string) => ['/org', 'acme', page]);
     TestBed.configureTestingModule({
       providers: [
         LensService,
@@ -49,6 +51,7 @@ describe('LensService — menu lens preview', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: Router, useValue: { navigate, events } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink } },
         {
           provide: PersonaService,
           useValue: {
@@ -65,8 +68,29 @@ describe('LensService — menu lens preview', () => {
       ],
     });
     const lens = TestBed.inject(LensService);
-    return { lens, cookies, navigate, events, boardRole, projectRole };
+    return { lens, cookies, navigate, events, boardRole, projectRole, orgLensLink };
   }
+
+  it("lands a switch to Org Lens on the selected organization's overview, the address its menu links use", () => {
+    const { lens, navigate, orgLensLink } = setup('me');
+
+    lens.switchLens('org');
+    expect(lens.activeLens()).toBe('org');
+    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+
+    // Nothing selected yet: the legacy address, which the default selection rewrites once it lands.
+    orgLensLink.mockReturnValueOnce(['/org', 'overview']);
+    lens.switchLens('me');
+    lens.switchLens('org');
+    expect(navigate).toHaveBeenLastCalledWith(['/org', 'overview']);
+  });
+
+  it("lands a switch to any other lens on that lens's default route", () => {
+    const { lens, navigate } = setup('org');
+
+    lens.switchLens('project');
+    expect(navigate).toHaveBeenCalledWith(['/project/overview']);
+  });
 
   it('previews a lens menu without moving the active lens, persisting it or navigating', () => {
     const { lens, cookies, navigate } = setup('me');

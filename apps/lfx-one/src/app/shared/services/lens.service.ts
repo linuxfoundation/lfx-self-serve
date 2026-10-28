@@ -19,6 +19,7 @@ import { filter, of, switchMap, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { PersonaService } from './persona.service';
 import { WriterGrantsService } from './writer-grants.service';
 
@@ -32,6 +33,7 @@ export class LensService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly router = inject(Router);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
 
   /** Client-side counterpart to `ServerFeatureFlag.MarketingOpsFga` (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
@@ -110,11 +112,15 @@ export class LensService {
    * Switch the active lens from a UI control and navigate to its default route.
    * Hybrid personas merge foundation + project into the 'Projects' entry — clicking it returns to the
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
+   *
+   * Org Lens lands on the selected organization's overview, the address its menu links use. The bare `/org` redirects to
+   * the legacy `/org/overview`, which only the first default selection rewrites — so with an organization already
+   * selected the menu's Dashboard item never matched the page.
    */
   public switchLens(lens: Lens): void {
     const target = this.switchTarget(lens);
     if (this.setLens(target)) {
-      this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
+      this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLink('overview') : [LENS_DEFAULT_ROUTES[target]]);
     }
   }
 

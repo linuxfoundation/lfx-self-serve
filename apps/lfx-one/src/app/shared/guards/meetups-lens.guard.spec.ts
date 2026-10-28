@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CookieRegistryService } from '../services/cookie-registry.service';
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { LensService } from '../services/lens.service';
+import { OrgLensNavigationService } from '../services/org-lens-navigation.service';
 import { PersonaService } from '../services/persona.service';
 import { WriterGrantsService } from '../services/writer-grants.service';
 import { meetupsLensGuard } from './meetups-lens.guard';
@@ -33,6 +34,7 @@ describe('meetupsLensGuard', () => {
         { provide: CookieRegistryService, useValue: { registerCookie } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: Router, useValue: { navigate } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn() } },
         {
           provide: PersonaService,
           useValue: {
