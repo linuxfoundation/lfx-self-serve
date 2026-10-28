@@ -173,7 +173,15 @@ describe('Marketing kit plan of record', () => {
   });
   it('registered types with an unavailable agent read Coming soon instead of Not run yet or a run count', () => {
     const asset = MKTG_KIT_FAMILIES[1].assets[0];
-    expect(resolveMktgKitAsset(asset, listing([document('aeo-geo')]))).toMatchObject({ state: 'coming-soon', badge: 'Coming soon', monthlyCount: null });
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'aeo-geo');
+    if (!agent) throw new Error('Missing synthetic catalog agent');
+    const status = agent.status;
+    agent.status = 'coming-soon';
+    try {
+      expect(resolveMktgKitAsset(asset, listing([document('aeo-geo')]))).toMatchObject({ state: 'coming-soon', badge: 'Coming soon', monthlyCount: null });
+    } finally {
+      agent.status = status;
+    }
   });
   it('renders exact board state labels, with approval reserved for its real producer', () => {
     expect(describeMktgKitAsset({ state: 'approved', version: 3, monthlyCount: null })).toBe('Approved · v3');
