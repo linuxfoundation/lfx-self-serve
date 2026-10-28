@@ -97,6 +97,7 @@ import {
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
@@ -2262,8 +2263,9 @@ export class ImplementationTabComponent implements OnInit {
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
     // Meta's sibling of the hold above, on the same terms.
     if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
-    // And Google's, for an upload into one of its image slots.
-    if (this.googleCreativeSections().length > 0 && this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading') return false;
+    // And Google's, for an upload into an image slot of a section still on screen — an upload for a
+    // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
+    if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach()) return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2835,8 +2837,10 @@ export class ImplementationTabComponent implements OnInit {
       this.failGoogleImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, '', slotKey);
       return;
     }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      this.failGoogleImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE, '', slotKey);
+    // Google's own cap, tighter than the library's: an image stored at 6 MB would be refused at
+    // dispatch, so it is refused before it is uploaded.
+    if (file.size > GOOGLE_CREATIVE_IMAGE_MAX_BYTES) {
+      this.failGoogleImageUpload(`Google takes images of up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB. Choose a smaller file.`, '', slotKey);
       return;
     }
     const briefId = this.briefPersistence().briefId ?? '';
@@ -4078,6 +4082,12 @@ export class ImplementationTabComponent implements OnInit {
     this.followGoogleImageUpload(upload$, briefId, fileName, slotKey);
   }
 
+  /** Whether the running Google upload is for a slot in a channel the request would carry. */
+  private googleImageUploadInReach(): boolean {
+    const groupName = this.googleImageUploadSlot().split('.')[0];
+    return this.googleCreativeChannelsInReach().some((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel] === groupName);
+  }
+
   /** Forget the Google upload — running, parked or failed. Held images are untouched. */
   private clearGoogleImageUpload(): void {
     this.googleImageUploadSub?.unsubscribe();
@@ -4166,7 +4176,12 @@ export class ImplementationTabComponent implements OnInit {
         return "No longer in the brief's library.";
       case 'misfit': {
         const shape = this.googleImageShape(slotKey);
-        return asset && shape ? `${asset.width}x${asset.height} does not fit. This slot needs ${googleCreativeImageRequirement(shape)}.` : '';
+        if (!asset || !shape) return '';
+        const what =
+          asset.width && asset.height
+            ? `${asset.width}x${asset.height}, ${Math.ceil(asset.byteSize / 1024)} KB,`
+            : `At ${Math.ceil(asset.byteSize / 1024)} KB it`;
+        return `${what} does not fit. This slot needs ${googleCreativeImageRequirement(shape)}.`;
       }
       default:
         return '';
@@ -5270,7 +5285,8 @@ export class ImplementationTabComponent implements OnInit {
         };
       }
       const forThisBrief = held.filter(({ image }) => image.briefId === (briefId ?? ''));
-      const withheld = (forThisBrief.length > 0 || this.googleImageUploadStatus() === 'uploading') && !this.googleAssetUploadAvailable();
+      const uploadingInReach = this.googleImageUploadStatus() === 'uploading' && inReach.has(this.googleImageUploadSlot().split('.')[0]);
+      const withheld = (forThisBrief.length > 0 || uploadingInReach) && !this.googleAssetUploadAvailable();
       if (withheld) {
         if (this.googleCreativeEnabled() === false || this.googleAssetUploadEnabled() === false) {
           return {

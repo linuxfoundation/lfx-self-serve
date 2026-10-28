@@ -9824,7 +9824,7 @@ describe('ImplementationTabComponent google stored images', () => {
 
     const slot = c['googleImageSlots']()[SLOT];
     expect(slot.options.map((o: { value: string }) => o.value)).toEqual([WIDE_LOGO]);
-    expect(slot.requirement).toBe('4:1 (within 1%), at least 512x128 px');
+    expect(slot.requirement).toBe('4:1 (within 1%), at least 512x128 px, up to 5 MB');
     expect(c['googleImageSlots']()['displayCreative.squareLogoImages'].options.map((o: { value: string }) => o.value)).toEqual([SQUARE_LOGO]);
   });
 
@@ -9982,6 +9982,33 @@ describe('ImplementationTabComponent google stored images', () => {
 
     c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
     f.detectChanges();
+    expect(c['googleImageAssetBlock']()).toBeNull();
+  });
+
+  /** campaign-service's Google dispatcher holds at most 5 MiB per image, under the library's 10 MiB. */
+  it('neither offers nor accepts an image over the Google byte cap, and refuses one before upload', async () => {
+    const big = { ...asset('66666666-0000-4000-8000-000000000006', 1200, 300), byteSize: 6 * 1024 * 1024 };
+    listCreativeAssets.mockReturnValue(of({ assets: [...LIBRARY, big], count: 5, countLimit: 50, bytesUsed: 1, bytesLimit: 1e9 }));
+    const { c } = await mount(true, { googleImageAssets: { [SLOT]: [{ id: big.id, name: '', briefId: BRIEF_ID }] } });
+
+    expect(c['googleImageSlots']()[SLOT].options.map((o: { value: string }) => o.value)).toEqual([WIDE_LOGO]);
+    expect(c['googleImageAssetBlock']()?.kind).toBe('misfit');
+    expect(c['googleImageSlots']()[SLOT].held[0].problem).toContain('up to 5 MB');
+
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(6 * 1024 * 1024)], 'big.png', { type: 'image/png' }));
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    expect(c['googleImageSlots']()[SLOT].error).toContain('up to 5 MB');
+  });
+
+  it('stops holding Create for a running upload once its section is un-ticked', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const { f, c } = await mount(true);
+    c['onGoogleImageUpload'](SLOT, new File([new Uint8Array(16)], 'l.png', { type: 'image/png' }));
+    expect(c['googleImageUploadInReach']()).toBe(true);
+
+    c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
+    f.detectChanges();
+    expect(c['googleImageUploadInReach']()).toBe(false);
     expect(c['googleImageAssetBlock']()).toBeNull();
   });
 

@@ -3982,6 +3982,14 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
 export const GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE = 0.01;
 
 /**
+ * The most bytes one Google creative image may carry — campaign-service's `googleads.MaxImageBytes`
+ * (5 MiB), which every Google slot states and both the fetch and the stored-asset paths enforce
+ * before anything is created. Tighter than {@link CREATIVE_ASSET_MAX_BYTES}, the library's own
+ * upload cap: an image the library accepts for Reddit or Meta can still be too large for Google.
+ */
+export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
  * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
  *
  * Demand Gen and Display each require a marketing image OR a square marketing image, refusing a

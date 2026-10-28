@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE } from '../constants/campaign.constants';
+import { GOOGLE_CREATIVE_IMAGE_MAX_BYTES, GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE } from '../constants/campaign.constants';
 import type { GoogleCreativeImageShape, StoredCreativeAsset } from '../interfaces/campaign.interface';
 
 /**
@@ -21,21 +21,26 @@ export function googleCreativeImageDrift(asset: Pick<StoredCreativeAsset, 'width
 
 /**
  * Whether a stored image meets a Google slot's shape — `ShapeRule.fits` over the dimensions the
- * library recorded at upload.
+ * library recorded at upload — and its byte cap, `GOOGLE_CREATIVE_IMAGE_MAX_BYTES`, which upstream's
+ * `SlotSpec.Eligible` checks first and which an image of any shape can fail.
  *
  * `unknown` is its own answer, as upstream's classifier keeps it: an asset stored before
  * campaign-service recorded dimensions has none, and "not measured" is not "the wrong shape". The
  * Implement tab neither offers such an image nor blocks one already held, and campaign-service
  * still decodes the bytes and checks the shape before anything is created.
  */
-export function googleCreativeImageFit(asset: Pick<StoredCreativeAsset, 'width' | 'height'>, shape: GoogleCreativeImageShape): 'fits' | 'misfit' | 'unknown' {
+export function googleCreativeImageFit(
+  asset: Partial<Pick<StoredCreativeAsset, 'width' | 'height' | 'byteSize'>>,
+  shape: GoogleCreativeImageShape
+): 'fits' | 'misfit' | 'unknown' {
+  if (asset.byteSize !== undefined && asset.byteSize > GOOGLE_CREATIVE_IMAGE_MAX_BYTES) return 'misfit';
   if (!asset.width || !asset.height) return 'unknown';
   if (asset.width < shape.minWidth || asset.height < shape.minHeight) return 'misfit';
   return googleCreativeImageDrift(asset, shape) <= GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE ? 'fits' : 'misfit';
 }
 
 /**
- * A Google slot's shape as a sentence, e.g. `1.91:1 (within 1%), at least 600x314 px`.
+ * A Google slot's shape as a sentence, e.g. `1.91:1 (within 1%), at least 600x314 px, up to 5 MB`.
  *
  * The 1.91:1 marketing ratio is stated upstream as 191:100 and rendered in the form Google and the
  * catalogue labels use; every other ratio is already in lowest terms.
@@ -43,7 +48,7 @@ export function googleCreativeImageFit(asset: Pick<StoredCreativeAsset, 'width' 
 export function googleCreativeImageRequirement(shape: GoogleCreativeImageShape): string {
   const ratio = shape.ratioH === 100 ? `${shape.ratioW / 100}:1` : `${shape.ratioW}:${shape.ratioH}`;
   const tolerance = Math.round(GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE * 100);
-  return `${ratio} (within ${tolerance}%), at least ${shape.minWidth}x${shape.minHeight} px`;
+  return `${ratio} (within ${tolerance}%), at least ${shape.minWidth}x${shape.minHeight} px, up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB`;
 }
 
 /**

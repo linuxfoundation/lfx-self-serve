@@ -27,6 +27,13 @@ describe('googleCreativeImageFit', () => {
     expect(googleCreativeImageFit({ width: 127, height: 127 }, SQUARE_LOGO)).toBe('misfit');
   });
 
+  /** campaign-service holds at most 5 MiB per Google image, whatever its shape. */
+  it('refuses an image over the Google byte cap even on the exact shape', () => {
+    expect(googleCreativeImageFit({ width: 1200, height: 628, byteSize: 5 * 1024 * 1024 }, LANDSCAPE)).toBe('fits');
+    expect(googleCreativeImageFit({ width: 1200, height: 628, byteSize: 5 * 1024 * 1024 + 1 }, LANDSCAPE)).toBe('misfit');
+    expect(googleCreativeImageFit({ byteSize: 6 * 1024 * 1024 }, LANDSCAPE)).toBe('misfit');
+  });
+
   /** Absent dimensions mean NOT MEASURED (an asset stored before they were recorded), never 0x0. */
   it('reports an image with no recorded dimensions as unknown', () => {
     expect(googleCreativeImageFit({}, LANDSCAPE)).toBe('unknown');
@@ -36,8 +43,10 @@ describe('googleCreativeImageFit', () => {
 
 describe('googleCreativeImageRequirement', () => {
   it('states the ratio, its tolerance and the minimum size', () => {
-    expect(googleCreativeImageRequirement(LANDSCAPE)).toBe('1.91:1 (within 1%), at least 600x314 px');
-    expect(googleCreativeImageRequirement({ ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 })).toBe('9:16 (within 1%), at least 600x1067 px');
+    expect(googleCreativeImageRequirement(LANDSCAPE)).toBe('1.91:1 (within 1%), at least 600x314 px, up to 5 MB');
+    expect(googleCreativeImageRequirement({ ratioW: 9, ratioH: 16, minWidth: 600, minHeight: 1067 })).toBe(
+      '9:16 (within 1%), at least 600x1067 px, up to 5 MB'
+    );
   });
 });
 
