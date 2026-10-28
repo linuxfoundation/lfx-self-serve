@@ -739,8 +739,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
-    // Removing entry-only mode uses the same restoration path as a plain run URL.
-    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (this.waitingQuestions()) {
+      // Removing entry-only mode uses the same restoration path as a plain run URL.
+      this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.router.navigate(this.waitingRunLink(), { queryParams: this.waitingRunParams() });
   }
 
   protected onStartOverWaiting(): void {
@@ -873,7 +877,10 @@ export class MktgAgentRunComponent {
           this.discardedRunId = runId;
           action();
         },
-        () => this.keepExistingRun()
+        (reason) => {
+          this.keepExistingRun();
+          if (reason === ConfirmEventType.REJECT) this.onContinueWaiting();
+        }
       ),
     });
   }
