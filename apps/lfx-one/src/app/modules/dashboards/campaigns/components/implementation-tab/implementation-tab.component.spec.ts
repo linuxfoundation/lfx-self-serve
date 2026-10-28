@@ -7957,9 +7957,8 @@ describe('ImplementationTabComponent google sitelinks', () => {
   /**
    * Every box in the sub-form is reachable by a screen reader on its own terms: each carries an
    * `aria-label` — a placeholder is not an accessible name and vanishes as soon as the operator
-   * types. The ids are
-   * asserted against the message elements actually rendered, so a rename on either side fails the
-   * test rather than leaving `aria-describedby` pointing at nothing.
+   * types. The ids are asserted against the message elements actually rendered, so a rename on
+   * either side fails the test rather than leaving `aria-describedby` pointing at nothing.
    */
   it('names every box and points each at whichever of its messages is rendered', () => {
     const c = seedChannel(fixture, { includeSearch: true });
