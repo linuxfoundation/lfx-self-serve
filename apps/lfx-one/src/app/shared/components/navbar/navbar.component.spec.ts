@@ -732,6 +732,21 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('leaves the first Escape to an open navbar tooltip, closing on the next', async () => {
+        const { collapse } = await createPeekFixture();
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(true);
+
+        tooltip.remove();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('keeps a pinned peek open as the pointer leaves, and closes it on an outside click', async () => {
         const { fixture, panel, collapse } = await createPeekFixture();
         collapse.openPeek(true);

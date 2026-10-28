@@ -527,8 +527,11 @@ export class NavbarComponent extends NavMenuBase {
         if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());
       };
+      // An open navbar tooltip takes the first Escape (an interactive role card returns focus to its trigger); the next
+      // one closes the peek.
       const onKey = (event: KeyboardEvent): void => {
-        if (event.key === 'Escape' && this.collapse.peek() && !this.navbarMenuOpen()) this.morph(() => this.collapse.closePeek(), 'keyboard');
+        if (event.key !== 'Escape' || !this.collapse.peek() || this.navbarMenuOpen() || doc.querySelector('.lfxn-tooltip')) return;
+        this.morph(() => this.collapse.closePeek(), 'keyboard');
       };
       // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
       const onFocusOut = (event: FocusEvent): void => {
