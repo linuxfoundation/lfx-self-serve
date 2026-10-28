@@ -218,7 +218,7 @@ describe('One rule for every family action', () => {
       commands: ['foundation-setup'],
       queryParams: { mode: 'new' },
       sentence: 'Nothing in the kit yet; create the messaging framework to start.',
-      hint: 'Opens the Messaging Framework Agent run page in Positioning & brand.',
+      hint: 'Opens the messaging framework run page in Positioning & brand.',
     });
     const view = built(family());
     view.rows[1].document = null;
@@ -231,7 +231,7 @@ describe('One rule for every family action', () => {
     expect(step?.header).toEqual(resolveMktgFamilyActions(view, context).header);
     expect(step?.commands).toEqual(['documents', 'foundation-message', 'living']);
     expect(step?.sentence).toBe('The messaging framework is drafted; approve it so boilerplates, FAQ and the brand kit can be created.');
-    expect(step?.hint).toBe('Opens the messaging framework document in Positioning & brand.');
+    expect(step?.hint).toBe('Opens the framework document in Positioning & brand.');
   });
   it('presents review and rebuild and hides steps when none are actionable', () => {
     const view = built(family());

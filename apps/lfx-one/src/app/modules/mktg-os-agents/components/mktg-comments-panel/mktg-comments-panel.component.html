@@ -17,7 +17,7 @@
       <p class="text-sm text-gray-500" data-testid="mktg-comments-empty">No comments yet. To ask for a change, hover a field and choose Comment.</p>
     }
   }
-  @if (!comments.loaded() || comments.loading() || comments.loadError() || openCount() > 0) {
+  @if (comments.loaded() && !comments.loadError() && openCount() > 0) {
     <lfx-button
       [label]="sendLabel()"
       size="small"
