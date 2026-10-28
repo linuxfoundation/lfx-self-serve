@@ -461,9 +461,8 @@ export class MeetingComposerFormService {
 
   /**
    * Replaces the guest list and re-derives the pending registrant changes from it.
-   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` is
-   * always empty today — the composer has no guest-edit affordance, so nothing produces a `'modified'`
-   * guest; it stays wired so adding that affordance is a change to the Guests section alone.
+   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` holds
+   * the saved guests flagged `'modified'`, which today is only a Meeting Host toggle from the Guests section.
    */
   public setGuests(next: MeetingRegistrantWithState[]): void {
     this.guests.set(next);

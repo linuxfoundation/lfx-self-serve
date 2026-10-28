@@ -307,6 +307,43 @@ export class ComposerGuestsComponent {
     }
   }
 
+  /** The host toggle's tooltip text; its accessible name adds the guest, see {@link hostToggleAriaLabel}. */
+  protected hostToggleTooltip(guest: MeetingRegistrantWithState): string {
+    return guest.host ? 'Remove host' : 'Make host';
+  }
+
+  protected hostToggleAriaLabel(guest: MeetingRegistrantWithState): string {
+    return `${guest.host ? 'Remove host from' : 'Make host'} ${this.guestLabel(guest)}`;
+  }
+
+  /**
+   * Flips a guest's Meeting Host flag in place.
+   * @description A saved guest becomes `'modified'`, which `setGuests` turns into an update on save; a guest
+   * that was never saved stays `'new'` and carries the flag into its create. Matched by the same
+   * `uid`/`tempId` identity the remove handler uses, so a keyless row can't flip another keyless row.
+   */
+  protected onToggleHost(guest: MeetingRegistrantWithState): void {
+    const key = guest.uid || guest.tempId || null;
+    const host = !guest.host;
+
+    this.formService.updateGuests((current) =>
+      current.map((candidate) => {
+        const isTarget = key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key;
+
+        if (!isTarget) {
+          return candidate;
+        }
+
+        return { ...candidate, host, state: candidate.state === 'new' ? 'new' : 'modified' };
+      })
+    );
+
+    void this.liveAnnouncer.announce(
+      `${this.guestLabel(guest)} ${host ? 'is now a meeting host' : 'is no longer a meeting host'}. Save the meeting to apply.`,
+      'polite'
+    );
+  }
+
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
     const label = this.guestLabel(guest);
     // When editing, Undo appears above the list; focus goes to a neighbouring row, so say Undo is there.

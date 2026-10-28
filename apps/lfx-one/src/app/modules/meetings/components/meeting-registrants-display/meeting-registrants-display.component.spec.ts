@@ -317,3 +317,93 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     expect(component.guestsCollapsed()).toBe(true);
   });
 });
+
+describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
+  const registrant = (uid: string, host: boolean) =>
+    ({
+      uid,
+      meeting_id: 'meeting-1',
+      email: `${uid}@acme-motors.example`,
+      first_name: uid,
+      last_name: 'Tester',
+      host,
+      type: 'direct',
+    }) as unknown as MeetingRegistrant;
+
+  const success = { summary: { successful: 1, failed: 0 }, successes: [], failures: [] };
+
+  async function mount(updateMeetingRegistrants: ReturnType<typeof vi.fn>, registrants: MeetingRegistrant[]) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getChangedFields: (guest: MeetingRegistrant) => ({ host: guest.host }),
+            updateMeetingRegistrants,
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1' });
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  it('sends the new host flag for just that guest', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('ada', false), registrant('grace', false)]);
+
+    component.onToggleHost(registrant('grace', false));
+
+    expect(update).toHaveBeenCalledWith('meeting-1', [{ uid: 'grace', changes: { host: true } }]);
+  });
+
+  it('shows the change at once and lists hosts first', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('ada', false), registrant('grace', false)]);
+
+    component.onToggleHost(registrant('grace', false));
+
+    expect(component.registrants().map((r) => [r.uid, r.host])).toEqual([
+      ['grace', true],
+      ['ada', false],
+    ]);
+  });
+
+  it('leaves the list alone when the update fails', async () => {
+    const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [{ error: { message: 'nope' } }] }));
+    const component = await mount(update, [registrant('ada', false)]);
+
+    component.onToggleHost(registrant('ada', false));
+
+    expect(component.registrants()[0].host).toBe(false);
+  });
+
+  it('leaves the list alone when the request errors', async () => {
+    const update = vi.fn().mockReturnValue(throwError(() => new Error('network')));
+    const component = await mount(update, [registrant('ada', false)]);
+
+    component.onToggleHost(registrant('ada', false));
+
+    expect(component.registrants()[0].host).toBe(false);
+  });
+
+  it('ignores a guest the server has not confirmed yet', async () => {
+    const update = vi.fn();
+    const component = await mount(update, []);
+
+    component.onToggleHost(registrant('optimistic-1', false));
+
+    expect(update).not.toHaveBeenCalled();
+  });
+});

@@ -101,6 +101,10 @@ export class MeetingRegistrantsDisplayComponent {
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
   private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
+  // Host flags the organizer just changed — applied over the displayed list so the badge and sort order
+  // update at once, without waiting for the async refetch (works for managed and self-managed modes).
+  private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
+  protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
@@ -343,6 +347,45 @@ export class MeetingRegistrantsDisplayComponent {
 
   public onRequestResendInvite(registrant: MeetingRegistrant): void {
     this.inviteResend.confirmAndResend(this.confirmationService, this.meeting().id, registrant);
+  }
+
+  /** Saves a Meeting Host change for one guest straight away; there is no wider form to submit. */
+  public onToggleHost(registrant: MeetingRegistrant): void {
+    const uid = registrant.uid;
+    if (!uid || uid.startsWith('optimistic-') || this.hostUpdatingUids().has(uid)) return;
+
+    const host = !registrant.host;
+    const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'The guest';
+    const setUpdating = (updating: boolean): void =>
+      this.hostUpdatingUids.update((uids) => {
+        const next = new Set(uids);
+        if (updating) {
+          next.add(uid);
+        } else {
+          next.delete(uid);
+        }
+        return next;
+      });
+
+    setUpdating(true);
+    this.meetingService
+      .updateMeetingRegistrants(this.meeting().id, [{ uid, changes: this.meetingService.getChangedFields({ ...registrant, host, state: 'modified' }) }])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          setUpdating(false);
+          if (response.summary.successful > 0) {
+            this.hostOverrides.update((map) => new Map(map).set(uid, host));
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: `${label} is ${host ? 'now' : 'no longer'} a meeting host` });
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.failures[0]?.error?.message || 'Failed to update host' });
+          }
+        },
+        error: () => {
+          setUpdating(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update host. Please try again.' });
+        },
+      });
   }
 
   // === Protected Methods (template helpers) ===
@@ -638,7 +681,16 @@ export class MeetingRegistrantsDisplayComponent {
         const email = r.email?.trim().toLowerCase();
         return !email || !fetchedEmails.has(email);
       });
-      return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+      const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+
+      const overrides = this.hostOverrides();
+      if (!overrides.size) {
+        return merged;
+      }
+
+      return merged
+        .map((r) => (overrides.has(r.uid) ? { ...r, host: overrides.get(r.uid) as boolean } : r))
+        .sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
     });
   }
 
