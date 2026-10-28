@@ -3566,6 +3566,48 @@ describe('AudienceBuilderTabComponent', () => {
         expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived its drafted list after a failed lookup').toBeNull();
       });
 
+      it('moves the opt-ins to the replacement list a same-page re-draft creates', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        createDraftedList('8888');
+        click('campaigns-audience-remove-7777');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-8888"]')).not.toBeNull();
+        expect(
+          host().querySelector('[data-testid="campaigns-audience-remove-401"]'),
+          'the replacement draft lost its opt-in with the earlier list'
+        ).not.toBeNull();
+
+        click('campaigns-audience-remove-8888');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the opt-in outlived the replacement draft list').toBeNull();
+      });
+
+      it('does not re-add an opt-in the operator removed while a same-page re-draft was looking up', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        click('campaigns-audience-remove-401');
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an explicit removal was undone').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-add-401"]'), 'and it is offered by hand').not.toBeNull();
+      });
+
+      it('still withdraws the carried opt-ins when the re-draft lookup settles after Start over', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        click('campaigns-audience-event-generate');
+        (fixture.componentInstance as unknown as { eventDraftActive: { set: (v: boolean) => void } }).eventDraftActive.set(false);
+        completeDiscovery(discovered({ lists: [optIn('401', 'lf_newsletter_opt_in', 4000)] }));
+        (fixture.componentInstance as unknown as { eventDraftActive: { set: (v: boolean) => void } }).eventDraftActive.set(true);
+        fixture.detectChanges();
+
+        click('campaigns-audience-remove-7777');
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'an abandoned lookup dropped the ownership').toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 
