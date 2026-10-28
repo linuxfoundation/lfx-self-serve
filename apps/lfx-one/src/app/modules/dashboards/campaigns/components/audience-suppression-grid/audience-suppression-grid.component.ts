@@ -100,7 +100,12 @@ export class AudienceSuppressionGridComponent {
     }
     const resolved = lists.filter((list) => !list.unresolved);
     const selectedCount = resolved.filter((list) => list.selected).length;
+    // Several terms can resolve to one list, and upstream applies the standing list when every
+    // resolved LIST is excluded -- so the messages go by distinct ids, the checkbox by rows.
+    const selectedIds = new Set(resolved.filter((list) => list.selected).map((list) => list.listId));
+    const idsCovered = resolved.length > 0 && resolved.every((list) => selectedIds.has(list.listId));
     return {
+      idsCovered,
       lists,
       resolvedKeys: resolved.map((list) => list.key),
       resolvedCount: resolved.length,

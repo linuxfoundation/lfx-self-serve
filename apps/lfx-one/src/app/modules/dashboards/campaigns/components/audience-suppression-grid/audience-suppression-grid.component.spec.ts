@@ -211,4 +211,34 @@ describe('AudienceSuppressionGridComponent', () => {
     expect(checkbox('audience-suppression-grid-toggle-current_registrants')?.disabled).toBe(false);
     expect(host().querySelector('[data-testid="audience-suppression-grid-will-create-current_registrants"]')).not.toBeNull();
   });
+
+  it('warns that a current-registrants row the portal could not resolve cannot be applied', () => {
+    render([
+      suppression({
+        key: 'current_registrants',
+        label: 'Current registrants',
+        listId: '',
+        name: '',
+        hubspotUrl: '',
+        size: undefined,
+        category: 'current_registrants',
+      }),
+    ]);
+
+    expect(host().querySelector('[data-testid="audience-suppression-grid-unresolved-current_registrants"]')).not.toBeNull();
+    expect(checkbox('audience-suppression-grid-toggle-current_registrants')?.disabled).toBe(true);
+  });
+
+  it('describes the standing list, not one-by-one, when an unticked term shares a ticked list id', () => {
+    // Two terms resolve to list 201. Unticking one leaves the row checkbox indeterminate, yet every
+    // resolved LIST is still excluded, so upstream still applies the standing list.
+    fixture.componentRef.setInput('lists', [suppression(), suppression({ key: 'lf_events_gdpr_alias', label: 'GDPR alias' })]);
+    fixture.componentRef.setInput('selectedKeys', new Set(['lf_events_gdpr']));
+    fixture.componentRef.setInput('standardList', null);
+    fixture.detectChanges();
+
+    expect(checkbox('audience-suppression-grid-toggle-standard')?.indeterminate).toBe(true);
+    expect(host().querySelector('[data-testid="audience-suppression-standard-partial"]'), 'promised one-by-one exclusions').toBeNull();
+    expect(host().querySelector('[data-testid="audience-suppression-standard-will-create"]')).not.toBeNull();
+  });
 });

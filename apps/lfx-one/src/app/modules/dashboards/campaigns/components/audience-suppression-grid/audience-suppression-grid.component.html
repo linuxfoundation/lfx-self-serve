@@ -60,6 +60,12 @@
                         [attr.data-testid]="'audience-suppression-grid-will-create-' + list.key">
                         Created in HubSpot when you attach or compose
                       </span>
+                    } @else if (list.unresolved) {
+                      <span
+                        class="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700 ring-1 ring-amber-200"
+                        [attr.data-testid]="'audience-suppression-grid-unresolved-' + list.key">
+                        Not found in this portal — cannot be applied
+                      </span>
                     } @else {
                       <span>{{ list.sizeText }}</span>
                     }
@@ -106,7 +112,7 @@
               <p class="text-xs text-gray-500">
                 GDPR, global opt-out and portfolio hygiene lists, applied as one shared list that every email in this project reuses.
               </p>
-              @if (std.allSelected) {
+              @if (std.idsCovered) {
                 @if (standardList(); as standing) {
                   <p class="text-xs text-gray-600" data-testid="audience-suppression-standard-standing">
                     Applied through the shared list
@@ -130,7 +136,7 @@
                   </p>
                 }
               }
-              @if (std.partlySelected) {
+              @if (std.partlySelected && !std.idsCovered) {
                 <p class="text-xs text-amber-700" data-testid="audience-suppression-standard-partial">
                   Only some are ticked, so they are applied one by one instead of through the shared list.
                 </p>
