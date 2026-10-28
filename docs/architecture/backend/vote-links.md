@@ -19,7 +19,7 @@ A voter can open a personalized link, `https://app.lfx.dev/votes/{vote_uid}#vote
 
 ## Flow
 
-1. `auth.middleware.ts` classifies single-segment `/votes/:id` as optional-auth SSR (`/votes/create`, `/votes/:id/edit`, `/votes/:id/present` stay `required`). Anonymous SSR renders the shell; the fragment is invisible to it.
+1. `auth.middleware.ts` classifies single-segment `/votes/:id` as optional-auth SSR (`/votes/create`, `/votes/:id/edit`, `/votes/:id/present` stay `required`). The fragment is invisible to the server, so for an anonymous server render `voteAnonymousSsrMatchGuard` mounts the neutral chrome-less ballot page (its loading state) ahead of the authenticated shell, whose server-side `authGuard` assumes Express already authenticated the request. Signed-in visitors get today's shell.
 2. In the browser, `voteTokenMatchGuard` (`canMatch`) matches the top-level `votes/:id` route only when `window.location.hash` carries `vote_token`. Every other `/votes/*` URL is unchanged.
 3. `VoteLinkBallotComponent` reads the token, calls `replaceState`, and posts it to `POST /public/api/votes/link-ballot`. The page sets `<meta name="referrer" content="no-referrer">`, and the server sends `Referrer-Policy: no-referrer` for `/votes/*`.
 4. Submit uses `POST /public/api/votes/link-responses` (first ballot) or `PUT` (update), chosen from `ballot.already_voted`. A `400 vote is not awaiting response` on POST flips to PUT once; a `400 vote is not responded` on PUT flips to POST once.
@@ -32,4 +32,6 @@ A voter can open a personalized link, `https://app.lfx.dev/votes/{vote_uid}#vote
 
 ## Send ballots now
 
-`POST /api/votes/:uid/send-ballots` (writer-only via `assertVoteWrite`) re-resolves the members who haven't voted from the voters index, sends their `vote_response` uids to `bulk_resend` with `personalized_links: true` in batches of `VOTE_SEND_BALLOTS_BATCH_SIZE`, and returns `{ sent, skipped }`. ITX rejects a whole call if any recipient is invalid, so a rejected batch counts as skipped and the rest still go out; the call fails only when nothing was sent. It logs counts and the actor only. The UI (`lfx-vote-send-ballots`) disables the action for `VOTE_SEND_BALLOTS_COOLDOWN_MS` after a send.
+`POST /api/votes/:uid/send-ballots` (writer-only via `assertVoteWrite`) re-resolves the members who haven't voted from the voters index, sends their `vote_response` uids to `bulk_resend` with `personalized_links: true` in batches of `VOTE_SEND_BALLOTS_BATCH_SIZE`, and returns `{ sent, skipped }`. ITX rejects a whole call if any recipient is invalid, so a rejected batch counts as skipped and the rest still go out; the call fails only when nothing was sent. It logs counts and the actor only. A rejected batch (4xx) counts as skipped and the rest go out; a timeout or 5xx stops the run, since that batch may already be queued, and the unsent remainder counts as skipped. The UI (`lfx-vote-send-ballots`) disables the action for `VOTE_SEND_BALLOTS_COOLDOWN_MS` after a send. That cooldown is a UX guard only, per component instance: the BFF has no per-vote cooldown beyond `voteWriteRateLimiter`.
+
+`isBrowserCredentialUrlPath` also treats a `/votes/:id` URL with a `vote_token` fragment as a credential URL, so Segment, Plausible and the startup Intercom boot stay off for it.

@@ -43,6 +43,7 @@ import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
@@ -248,6 +249,14 @@ export const routes: Routes = [
     path: 'votes/:id',
     pathMatch: 'full',
     canMatch: [voteTokenMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of `/votes/:id` renders the same chrome-less page (its loading state) rather than the authenticated
+  // shell, which the server-side `authGuard` would otherwise wave through for a logged-out visitor.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
   },
   {

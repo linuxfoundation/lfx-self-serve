@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, PLATFORM_ID, signal } from '@angular/core';
+import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -20,6 +20,7 @@ import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { LensService } from './shared/services/lens.service';
 
@@ -136,6 +137,28 @@ describe('Login-free vote link route (#4363)', () => {
   it('does not match the create segment', () => {
     expect(matchWith('browser', '#vote_token=synthetic', ['votes', 'create'])).toBe(false);
     window.location.hash = '';
+  });
+
+  it('renders the neutral page, not the authenticated shell, for an anonymous server render of /votes/:id', () => {
+    const anonymousRoute = routes.find((route) => route.path === 'votes/:id' && route.canMatch?.includes(voteAnonymousSsrMatchGuard))!;
+    expect(routes.indexOf(anonymousRoute)).toBeLessThan(routes.indexOf(shellRoute));
+
+    const matches = (platformId: string, auth: unknown, parts = ['votes', 'abc123']) => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PLATFORM_ID, useValue: platformId },
+          { provide: REQUEST_CONTEXT, useValue: auth === undefined ? null : { auth } },
+        ],
+      });
+      return TestBed.runInInjectionContext(() => voteAnonymousSsrMatchGuard(anonymousRoute, segments(...parts)) as boolean);
+    };
+
+    expect(matches('server', { authenticated: false })).toBe(true);
+    expect(matches('server', { authenticated: true })).toBe(false);
+    expect(matches('server', undefined)).toBe(false);
+    expect(matches('browser', { authenticated: false })).toBe(false);
+    expect(matches('server', { authenticated: false }, ['votes', 'create'])).toBe(false);
   });
 
   it('leaves the authenticated permalink and presenter routes untouched', () => {

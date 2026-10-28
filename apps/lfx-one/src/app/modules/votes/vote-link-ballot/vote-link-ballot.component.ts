@@ -8,16 +8,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
-import { VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest } from '@lfx-one/shared/interfaces';
+import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
+import { VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
 import { normalizePollStatus } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
-
-export type VoteLinkState = 'loading' | 'ready' | 'not-open' | 'submitted' | 'updated' | 'invalid' | 'ended' | 'removed' | 'error';
-
-const NOT_AWAITING_RESPONSE = 'not awaiting response';
-const NOT_RESPONDED = 'not responded';
 
 /**
  * Login-free ballot page (#4363). The vote link token lives only in this component's `token` signal: it is read once
@@ -50,7 +45,6 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   protected readonly abstainedLast = signal<boolean>(false);
 
   protected readonly showUpdatePrompt = computed(() => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing());
-  protected readonly showForm = computed(() => this.state() === 'ready' && !this.showUpdatePrompt());
 
   public ngOnInit(): void {
     // The page is token-mode only; the referrer must never carry this URL anywhere.
@@ -106,12 +100,12 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
         error: (err: unknown) => {
           const message = this.errorText(err);
           if (mayRetry && err instanceof HttpErrorResponse && err.status === 400) {
-            if (!update && message.includes(NOT_AWAITING_RESPONSE)) {
+            if (!update && message.includes(VOTE_LINK_NOT_AWAITING_RESPONSE)) {
               this.updateMode.set(true);
               this.send(body, true, false);
               return;
             }
-            if (update && message.includes(NOT_RESPONDED)) {
+            if (update && message.includes(VOTE_LINK_NOT_RESPONDED)) {
               this.updateMode.set(false);
               this.send(body, false, false);
               return;
@@ -171,7 +165,10 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     return typeof body?.error === 'string' ? body.error.toLowerCase() : '';
   }
 
-  /** Reads `vote_token` from the URL fragment, then removes the fragment from the address bar and history entry. */
+  /**
+   * Reads `vote_token` from the URL fragment, then removes the fragment from the address bar and history entry.
+   * The router's own `url` still holds the original fragment for the life of the page; nothing may read it unsanitized.
+   */
   private consumeFragmentToken(): string | null {
     const token = new URLSearchParams(window.location.hash.replace(/^#/, '')).get(VOTE_LINK_TOKEN_FRAGMENT_PARAM);
     window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);

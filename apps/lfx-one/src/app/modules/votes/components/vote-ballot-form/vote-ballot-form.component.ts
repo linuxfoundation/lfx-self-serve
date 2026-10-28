@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal, untracked } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
@@ -92,12 +92,10 @@ export class VoteBallotFormComponent {
   });
 
   public constructor() {
-    // Rebuild whenever the ballot (or the prefill) changes; untracked so form mutations never re-trigger the effect.
-    effect(() => {
-      const ballot = this.ballot();
-      const prefill = this.prefill();
-      untracked(() => this.build(ballot, prefill));
-    });
+    // Rebuild whenever the ballot (or the prefill) changes.
+    toObservable(computed(() => ({ ballot: this.ballot(), prefill: this.prefill() })))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ ballot, prefill }) => this.build(ballot, prefill));
 
     this.form.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bump());
     this.commentForm.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bump());

@@ -118,8 +118,14 @@ export const VOTE_SEND_BALLOTS_COOLDOWN_MS = 2 * 60 * 1000;
 /** Recipients per bulk_resend call when sending ballots; ITX rejects a whole call if any recipient is invalid, so batches bound the blast radius. */
 export const VOTE_SEND_BALLOTS_BATCH_SIZE = 100;
 
-/** Upper bound on a vote link token's length — real tokens are well under 1 KiB; anything larger is rejected before it is forwarded. */
-export const VOTE_LINK_TOKEN_MAX_LENGTH = 4096;
+/** Upper bound on a vote link token's length — matches the voting service's `vote_token` maxLength; anything larger is rejected before it is forwarded. */
+export const VOTE_LINK_TOKEN_MAX_LENGTH = 1024;
 
 /** Fragment parameter that carries the vote link token (`/votes/{uid}#vote_token=...`). */
 export const VOTE_LINK_TOKEN_FRAGMENT_PARAM = 'vote_token';
+
+/** Upstream 400 message (lowercased substring) when a first submission hits a ballot that already has a response: switch to update. */
+export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
+
+/** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
+export const VOTE_LINK_NOT_RESPONDED = 'not responded';

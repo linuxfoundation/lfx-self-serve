@@ -764,8 +764,9 @@ export class VoteService {
    * Emails every eligible non-responder a personalized ballot link via POST /votes/{uid}/bulk_resend with
    * `personalized_links: true`, using the manager's bearer token (the gateway enforces `vote:{uid}#writer`).
    * Recipients are re-resolved server-side from the index (awaiting, not removed) so the client never chooses them.
-   * Sent in batches because ITX rejects a whole call when any recipient is invalid; a rejected batch counts as
-   * skipped and the rest still go out. Throws only when nothing could be sent. Logs counts only.
+   * Sent in batches because ITX rejects a whole call when any recipient is invalid; a validation-rejected batch counts as
+   * skipped and the rest still go out; a timeout/5xx stops the run (the batch may already be queued) and the unsent
+   * remainder counts as skipped. Throws only when nothing could be sent. Logs counts only.
    */
   public async sendVoteBallots(req: Request, voteUid: string): Promise<SendVoteBallotsResponse> {
     await assertVoteWrite(req, voteUid, 'send_vote_ballots');
@@ -789,9 +790,18 @@ export class VoteService {
         });
         sent += batch.length;
       } catch (error) {
-        skipped += batch.length;
         firstError ??= error;
-        logger.warning(req, 'send_vote_ballots', 'bulk_resend batch rejected', { vote_uid: voteUid, batch_size: batch.length });
+        logger.warning(req, 'send_vote_ballots', 'bulk_resend batch failed', { vote_uid: voteUid, batch_size: batch.length });
+        const rejected =
+          error instanceof BaseApiError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408 && error.statusCode !== 429;
+        if (rejected) {
+          // ITX validation rejection: nothing in this batch was queued, so the remaining batches can still go out.
+          skipped += batch.length;
+          continue;
+        }
+        // Timeout, rate limit or 5xx: the batch may already have been queued, so stop here rather than risk double sends.
+        skipped += recipientIds.length - start;
+        break;
       }
     }
 

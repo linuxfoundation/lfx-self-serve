@@ -2389,6 +2389,17 @@ describe('VoteService', () => {
       expect(result).toEqual({ sent: 3, skipped: VOTE_SEND_BALLOTS_BATCH_SIZE });
     });
 
+    it('stops after a timeout or 5xx, reporting the unsent remainder as skipped, so a possibly-queued batch is never re-sent', async () => {
+      const uids = Array.from({ length: VOTE_SEND_BALLOTS_BATCH_SIZE * 2 + 5 }, (_, i) => ({ uid: `r-${i}` }));
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue(uids);
+      proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new MicroserviceError('unavailable', 503, 'UNAVAILABLE', {}));
+
+      const result = await service.sendVoteBallots(req, CANONICAL_UID);
+
+      expect(result).toEqual({ sent: VOTE_SEND_BALLOTS_BATCH_SIZE, skipped: VOTE_SEND_BALLOTS_BATCH_SIZE + 5 });
+      expect(bulkResendCalls()).toHaveLength(2);
+    });
+
     it('throws when nothing could be sent', async () => {
       vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue([{ uid: 'r-1' }]);
       const upstream = new MicroserviceError('down', 503, 'UNAVAILABLE', {});

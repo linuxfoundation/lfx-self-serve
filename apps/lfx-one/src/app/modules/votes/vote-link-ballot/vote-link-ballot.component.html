@@ -11,7 +11,8 @@
     @switch (state()) {
       @case ('loading') {
         <div class="flex flex-col items-center gap-3 py-12" role="status" aria-live="polite" data-testid="vote-link-loading">
-          <i class="fa-light fa-spinner-third fa-spin text-2xl text-slate-400" aria-hidden="true"></i>
+          <!-- Pure CSS: the Font Awesome kit is deferred, so a first-paint spinner must not depend on it. -->
+          <span class="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" aria-hidden="true"></span>
           <p class="text-sm text-slate-600">Loading your ballot…</p>
         </div>
       }

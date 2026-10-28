@@ -1226,3 +1226,6 @@ export interface VoteMailingListReminderListOption {
   /** `{group_name} ({address})` — the radio wrapper's label is a plain string. */
   label: string;
 }
+
+/** Page states of the login-free vote link ballot page (#4363). */
+export type VoteLinkState = 'loading' | 'ready' | 'not-open' | 'submitted' | 'updated' | 'invalid' | 'ended' | 'removed' | 'error';

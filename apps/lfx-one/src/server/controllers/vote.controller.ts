@@ -24,7 +24,6 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
-import { getEffectiveUsername } from '../utils/auth-helper';
 import { VoteService } from '../services/vote.service';
 
 /**
@@ -704,7 +703,7 @@ export class VoteController {
   }
 
   /**
-   * POST /votes/:uid/send-ballots — emails a personalized ballot link to every non-responder (#4363).
+   * POST /api/votes/:uid/send-ballots — emails a personalized ballot link to every non-responder (#4363).
    * The service writer-checks and re-resolves recipients; the client sends no body. Logs the count and actor only.
    */
   public async sendVoteBallots(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -722,7 +721,7 @@ export class VoteController {
         vote_uid: uid,
         sent: result.sent,
         skipped: result.skipped,
-        actor: getEffectiveUsername(req) ?? undefined,
+        actor: req.oidc?.user?.['sub'],
       });
 
       res.json(result);
