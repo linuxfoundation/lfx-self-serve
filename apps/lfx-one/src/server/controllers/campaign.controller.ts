@@ -44,6 +44,7 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  GoogleAdsAccountOption,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   MicrosoftCampaignCreateRequest,
@@ -190,6 +191,7 @@ import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-m
 import {
   asResumeRefusal,
   CampaignServiceClient,
+  canCreateMicrosoftSchedule,
   canCreateWithBidding,
   canUseGoogleCreativeAssets,
   canUseMetaCreativeAssets,
@@ -688,6 +690,27 @@ export class CampaignController {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
+        );
+        return;
+      }
+
+      // Microsoft flight dates are refused, not dropped, on the same terms as `bidding` above.
+      // Neither creator that would serve them reads the keys — the legacy one never did, and a
+      // campaign-service without linuxfoundation/lfx-v2-campaign-service#409 ignores them — so
+      // either would create the campaign with no flight while the request set one. The form never
+      // sends them in that state (`microsoftScheduleEnabled` withholds them). Forwarded untouched
+      // otherwise, as Meta's are: campaign-service judges the format and fails the job on a bad one.
+      const unservedMicrosoftScheduleField = this.unservedMicrosoftScheduleField(body);
+      if (unservedMicrosoftScheduleField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedMicrosoftScheduleField,
+            'Microsoft flight dates are not enabled on this deployment; omit startDate and endDate from microsoftConfig',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
         );
         return;
       }
@@ -1389,10 +1412,10 @@ export class CampaignController {
       // comparison is STRICT on both sides, so a one-day campaign entered as the same date twice
       // is refused, which is the likeliest way an operator trips this.
       //
-      // Only these two are checked. LinkedIn takes no flight window on this path, and
-      // `buildMicrosoftConfig` deliberately DROPS `startDate`/`endDate` because `microsoftConfig`
-      // declares no scheduling fields — so a window that never reaches the wire must not be
-      // judged here.
+      // Only these two are checked. LinkedIn takes no flight window on this path, and Microsoft's
+      // (`microsoftConfig.startDate`/`endDate`, linuxfoundation/lfx-v2-campaign-service#409) is
+      // left to campaign-service: either date may be sent alone, and a bad one fails the platform
+      // job there, so this predicate is not its rule to borrow.
       //
       // Google DOES carry one (`googleFlightWindow`) and is still excluded, because its test is a
       // DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
@@ -3116,6 +3139,50 @@ export class CampaignController {
     res.json(accounts);
   }
 
+  /**
+   * The Google Ads accounts the project's connection can reach, from campaign-service's account
+   * discovery, in the Meta/Reddit option shape. campaign-service only: there is no legacy list to
+   * fall back to, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404 as if it
+   * were not mounted — the HubSpot monitor route's gating.
+   *
+   * Root-only, as the Google Ads monitor is: a project with no connection of its own is answered
+   * from the LF system credential upstream, so the list is then every account the LF can reach.
+   */
+  public async getGoogleAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_accounts';
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
+      return;
+    }
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsAccounts(req, projectSlug);
+      // `accounts` is required upstream; reading its absence as an empty list would say the
+      // connection reaches nothing, so an unreadable body fails the read instead.
+      if (!Array.isArray(payload?.accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads account list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const accounts: GoogleAdsAccountOption[] = payload.accounts
+        .filter((a) => typeof a?.id === 'string' && a.id !== '')
+        .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
+      logger.success(req, operation, startTime, { count: accounts.length });
+      res.json(accounts);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rawDays = String(req.query['days'] ?? '30');
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
@@ -4397,6 +4464,23 @@ export class CampaignController {
       // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
       // campaign-service would refuse it rather than read it as automatic.
       if (config !== null && typeof config === 'object' && 'bidding' in config) return `${key}.bidding`;
+    }
+    return null;
+  }
+
+  /**
+   * `microsoftConfig.startDate` or `endDate` when this deployment cannot honour them, else `null`.
+   *
+   * `in`, as for bidding: an explicit `startDate: null` is still the field. Off means either the
+   * legacy creator serves (it never reads the dates) or campaign-service predates
+   * linuxfoundation/lfx-v2-campaign-service#409 (it drops them) — a campaign with no flight either way.
+   */
+  private unservedMicrosoftScheduleField(body: CampaignCreateRequest): string | null {
+    if (canCreateMicrosoftSchedule()) return null;
+    const config: unknown = body?.microsoftConfig;
+    if (config === null || typeof config !== 'object') return null;
+    for (const key of ['startDate', 'endDate'] as const) {
+      if (key in config) return `microsoftConfig.${key}`;
     }
     return null;
   }
@@ -6134,17 +6218,10 @@ export class CampaignController {
   private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.microsoftConfig) return null;
 
-    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, startDate, endDate, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest & {
-      startDate?: string;
-      endDate?: string;
-    };
-    // Dropped, not forwarded. `microsoftConfig` declares NO scheduling fields (unlike `metaConfig`),
-    // so `unmarshalPlatformConfig` would silently discard these — putting keys on the wire that
-    // imply a flight the campaign never gets. Named here rather than left to `...rest` because a
-    // direct caller can still send them: the legacy request shape carries dates for every other
-    // platform, so they arrive by habit.
-    void startDate;
-    void endDate;
+    // `startDate` / `endDate` travel in `rest`, untouched as Meta's are. They reach this point only
+    // when the deployment can honour them: `createCampaign` refuses either key first otherwise
+    // (`unservedMicrosoftScheduleField`), rather than dropping a flight the operator set.
+    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest;
 
     // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
     // the same test during dispatch, so failing here reports it as a refusal instead of a job

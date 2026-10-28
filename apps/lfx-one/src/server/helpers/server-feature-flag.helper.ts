@@ -210,6 +210,28 @@ export enum ServerFeatureFlag {
   CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
 
   /**
+   * Applies the create flow's flight dates to Microsoft Ads, sent as `startDate` and `endDate`
+   * (`"YYYY-MM-DD"`) on `microsoftConfig` — the same keys and format `metaConfig` carries.
+   *
+   * A CAPABILITY flag, like `CampaignServiceBidding`: it says the DEPLOYED campaign-service
+   * understands the two keys and sets them on the Microsoft ad group
+   * (linuxfoundation/lfx-v2-campaign-service#409). An older one drops the unknown keys — Go's
+   * decoder ignores them — and creates the campaign with no flight, so the dates would be silently
+   * lost and the job would report success. Turn it on only once #409 is deployed in the target
+   * environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator does
+   * not read Microsoft dates either, which is why the capability the client sees
+   * (`CampaignListResult.microsoftScheduleEnabled`) needs both. With it off the form sends no
+   * Microsoft dates and keeps its "ignores the flight dates" warning, and the create route refuses
+   * a request that carries either key rather than dropping it.
+   *
+   * Turning it back off strands nothing: campaigns already created keep their flight, and new
+   * creates have none again. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceMicrosoftSchedule = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE',
+
+  /**
    * Offers an image UPLOAD in the Reddit section of the create flow, sent as
    * `redditConfig.imageAssetId` instead of a pasted `imageUrl` (decision D3).
    *
@@ -484,7 +506,9 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm.
+   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm, but
+   * `/google/accounts` — campaign-service account discovery for the project's Google Ads connection,
+   * listed on the Monitor tab's Google panel — is campaign-service-only too, and root-only.
    *
    * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
    * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either
