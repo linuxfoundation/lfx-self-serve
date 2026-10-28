@@ -303,8 +303,12 @@ export class MktgAgentsController {
       const messages = await this.guildService.getHistory(req, validSessionId);
       const payloads = await this.guildService.getRawEventPayloads(req, validSessionId);
       const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
-      const redact = createMember360Redactor(contacts);
-      const response: MktgHistoryResponse = { messages: messages.map((message) => ({ ...message, text: redact(message.text) })) };
+      // Contact masks and the caller's raw subject are server-only inputs.
+      // Project only the chat DTO: no upstream identity/contact records or extras.
+      const redact = createMember360Redactor([...contacts, userId]);
+      const response: MktgHistoryResponse = {
+        messages: messages.map(({ id, sender, text, timestamp }) => ({ id, sender, text: redact(text), timestamp })),
+      };
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
       res.json(response);
     } catch (error) {

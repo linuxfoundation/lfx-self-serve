@@ -209,6 +209,7 @@ describe('Member360RunComponent', () => {
     expect(retained.classList.contains('p-button-outlined')).toBe(false);
   });
   it('submits only tracker ids after upload, keeping no parsed cells in the form', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await render();
     await fixture.componentInstance['upload']([new File(['email\nsynthetic@example.test'], 'tracker.csv')]);
     fixture.detectChanges();
@@ -216,6 +217,7 @@ describe('Member360RunComponent', () => {
     await fixture.whenStable();
     expect(run.generate).toHaveBeenCalledWith(expect.objectContaining({ trackerIds: ['a'.repeat(64)] }));
     expect(JSON.stringify(run.generate.mock.calls)).not.toContain('"trackers"');
+    expect(navigate).toHaveBeenCalledOnce();
   });
 
   it('explains an unavailable comparison instead of a generic server error', async () => {

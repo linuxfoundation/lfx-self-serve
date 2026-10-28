@@ -47,6 +47,24 @@ describe('private parsed Member 360 tracker store', () => {
     expect(record.expiresAt).toBeLessThanOrEqual(Date.now() + MEMBER_360_TRACKER_TTL_MS);
     expect(record.creatorHash).not.toContain('synthetic-creator');
   });
+  it('keeps an interrupted intake usable for six hours and rejects it at expiry', async () => {
+    const now = 1_800_000_000_000;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      expect(MEMBER_360_TRACKER_TTL_MS).toBe(6 * 60 * 60 * 1000);
+      const service = new Member360TrackerStoreService();
+      const receipt = await service.save(req, 'project-one', tracker);
+      clock.mockReturnValue(now + 2 * 60 * 60 * 1000);
+      expect(await service.load(req, 'project-one', [receipt.trackerId])).toEqual([tracker]);
+      clock.mockReturnValue(now + 6 * 60 * 60 * 1000);
+      await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject({
+        validationErrors: [expect.objectContaining({ field: 'trackerIds', message: expect.stringContaining('expired') })],
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('refuses another project or creator and expired, missing or malformed records without quoting rows', async () => {
     const service = new Member360TrackerStoreService();
     const receipt = await service.save(req, 'project-one', tracker);

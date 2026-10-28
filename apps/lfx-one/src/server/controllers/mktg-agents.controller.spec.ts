@@ -291,8 +291,17 @@ describe('MktgAgentsController', () => {
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
   });
 
-  it('redacts private contacts and emails from history before responding', async () => {
-    guildMocks.getHistory.mockResolvedValue([{ id: 'event-1', sender: 'agent', text: 'Ask synthetic-contact via synthetic@example.test', timestamp: '10:00' }]);
+  it('keeps display names but excludes known contacts, emails, caller subjects and raw record extras from history', async () => {
+    guildMocks.getHistory.mockResolvedValue([
+      {
+        id: 'event-1',
+        sender: 'agent',
+        text: 'Synthetic Staff: ask synthetic-contact via synthetic@example.test (auth0|user-1)',
+        timestamp: '10:00',
+        rawContacts: [{ email: 'private-record@example.test', sub: 'auth0|private-record' }],
+        subject: 'auth0|user-1',
+      },
+    ]);
     guildMocks.getRawEventPayloads.mockResolvedValue([
       JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'synthetic-contact' }] } }),
     ]);
@@ -301,8 +310,12 @@ describe('MktgAgentsController', () => {
     await controller.history({ body: { sessionId: 'session-1', ownerToken: 'synthetic-token' } } as Request, { json } as unknown as Response, next);
     expect(next).not.toHaveBeenCalled();
     expect(json).toHaveBeenCalledWith({
-      messages: [{ id: 'event-1', sender: 'agent', text: 'Ask [contact redacted] via [contact redacted]', timestamp: '10:00' }],
+      messages: [
+        { id: 'event-1', sender: 'agent', text: 'Synthetic Staff: ask [contact redacted] via [contact redacted] ([contact redacted])', timestamp: '10:00' },
+      ],
     });
+    expect(JSON.stringify(json.mock.calls)).not.toContain('private-record');
+    expect(JSON.stringify(json.mock.calls)).not.toContain('auth0|');
   });
 
   describe('last intake GET', () => {
