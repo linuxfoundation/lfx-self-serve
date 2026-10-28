@@ -98,9 +98,14 @@ const BASE_RESPONSE: OrgContributionsResponse = {
       commitUrl: null,
     },
   ],
+  foundationOptions: [
+    { foundationId: 'fdn-cncf', foundationName: 'CNCF' },
+    { foundationId: 'fdn-pytorch', foundationName: 'PyTorch Foundation' },
+  ],
   projectOptions: [
-    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, parentSlug: null },
-    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, parentSlug: null },
+    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, foundationId: 'fdn-cncf' },
+    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, foundationId: 'fdn-cncf' },
+    { slug: 'pytorch', projectId: 'proj-pytorch', name: 'PyTorch', commits: 12, foundationId: 'fdn-pytorch' },
   ],
   employeeOptions: [{ id: 'emp-ana', displayName: 'Ana Ramirez', commits: 1240 }],
   totalRecords: 2,
@@ -321,4 +326,25 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
       }
     });
   }
+});
+
+// lfx-self-serve#4559 — the Foundation filter means what it means on People → Contributors: one exact foundation id.
+test.describe('Org Lens Code Contributions — foundation filter (S4)', () => {
+  test('S4: picking a foundation sends it, lists only its projects and keeps it in the URL', async ({ page }) => {
+    await gotoContributions(page);
+    await waitForContributionsLoaded(page);
+
+    const filtered = page.waitForRequest(
+      (request) => new URL(request.url()).pathname.endsWith('/lens/contributions') && new URL(request.url()).searchParams.get('foundation') === 'fdn-cncf'
+    );
+    await page.locator('[data-test="org-contributions-foundation-filter"]').click();
+    await page.getByRole('option', { name: 'CNCF', exact: true }).click();
+    await filtered;
+    await expect(page).toHaveURL(/[?&]foundation=fdn-cncf(&|$)/);
+
+    await page.getByTestId('org-contributions-projects-filter').locator('.p-multiselect').click();
+    await expect(page.getByRole('option').filter({ hasText: 'Kubernetes' })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('option').filter({ hasText: 'Prometheus' })).toBeVisible();
+    await expect(page.getByRole('option').filter({ hasText: 'PyTorch' })).toHaveCount(0);
+  });
 });
