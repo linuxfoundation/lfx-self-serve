@@ -52,6 +52,9 @@ figcaption {
 }
 
 .kit-data-table {
+  /* Move a complete contrast/palette table to the next sheet when it fits
+     there, rather than leaving only its last few rows on a continuation. */
+  break-inside: avoid;
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;

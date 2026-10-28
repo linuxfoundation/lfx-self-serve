@@ -302,6 +302,7 @@ describe('Family export slot', () => {
     expect(cover?.textContent).toContain('28 Oct 2026');
     expect(cover?.querySelectorAll('dd')).toHaveLength(4);
     expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
+    expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(cover?.classList.contains('h-screen')).toBe(false);
     expect(cover?.querySelector('.flex-1')).toBeNull();

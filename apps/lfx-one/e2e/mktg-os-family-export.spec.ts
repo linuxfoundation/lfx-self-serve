@@ -159,6 +159,7 @@ test('Download PDF prints all four approved assets with one family cover and con
   const cover = page.getByTestId('family-export-print-cover');
   await expect(cover).toBeVisible();
   await expect(page.getByTestId('family-export-print-title')).toBeVisible();
+  await expect(page.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
   await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
   const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
   expect(coverColors.ground).toBe('rgb(255, 255, 255)');
@@ -183,6 +184,7 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
+  await expect(printDocument.locator('lfx-mktg-brand-kit-print [data-testid="kit-print-contrast"]')).toHaveCSS('break-inside', 'avoid');
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first()).toHaveCSS('aspect-ratio', '16 / 9');
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('SVG supplied');
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('V1.0');

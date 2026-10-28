@@ -59,6 +59,9 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(ending?.textContent).toContain('Watch-outs');
   kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
   expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
+  const contrast = root.querySelector('[data-testid="kit-print-contrast"]');
+  if (!contrast) throw new Error('Missing synthetic contrast table');
+  expect(getComputedStyle(contrast).breakInside).toBe('avoid');
   const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
   expect(specimens).toHaveLength(kit.chapters.type.scale.length);
   expect(specimens[0].style.fontSize).toBe('32pt');
