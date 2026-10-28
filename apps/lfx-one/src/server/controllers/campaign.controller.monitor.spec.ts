@@ -23,6 +23,7 @@ const {
   svcTwitter,
   svcHubSpot,
   svcConnection,
+  svcGoogleAccounts,
   legacyMeta,
   legacyReddit,
   legacyGoogle,
@@ -43,6 +44,7 @@ const {
   svcTwitter: vi.fn(),
   svcHubSpot: vi.fn(),
   svcConnection: vi.fn(),
+  svcGoogleAccounts: vi.fn(),
   legacyMeta: vi.fn(),
   legacyReddit: vi.fn(),
   legacyGoogle: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getTwitterAdsAccountMonitor = svcTwitter;
       public getHubSpotAccountMonitor = svcHubSpot;
       public getConnection = svcConnection;
+      public listGoogleAdsAccounts = svcGoogleAccounts;
       public getGoogleAdsKeywords = svcKeywords;
       public getGoogleAdsAudience = svcAudience;
     },
@@ -485,6 +488,99 @@ describe('CampaignController.getHubSpotMonitor', () => {
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(503);
     expect(error.toResponse()['error']).toBe('HubSpot metrics are temporarily unavailable. Please try again shortly.');
+  });
+});
+
+describe('CampaignController.getGoogleAdsAccounts', () => {
+  it('answers 404 while the flag is off, reading nothing', async () => {
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(404);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it("maps campaign-service's accounts onto the Meta/Reddit option shape, labelling an unlabelled one by its id", async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({
+      accounts: [{ id: '1000000001', label: 'CNCF Search' }, { id: '1000000002', label: '' }, { id: '1000000003' }],
+    });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: ' tlf ' }), res, vi.fn());
+
+    expect(svcGoogleAccounts).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(res.json).toHaveBeenCalledWith([
+      { key: '1000000001', label: 'CNCF Search' },
+      { key: '1000000002', label: '1000000002' },
+      { key: '1000000003', label: '1000000003' },
+    ]);
+  });
+
+  it('answers an empty list as an empty list', async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({ accounts: [] });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('requires a project', async () => {
+    flag(true);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({}), buildRes(), next);
+
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-root caller before any upstream call, whatever the flag says', async () => {
+    flag(true);
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.toResponse()['code']).toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['absent', {}],
+    ['not an array', { accounts: null }],
+  ])('fails the read with a 502 when accounts is %s, never an empty list', async (_case, payload) => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+  });
+
+  it("passes campaign-service's own failure through with its status", async () => {
+    flag(true);
+    const upstream = MicroserviceError.fromMicroserviceResponse(
+      404,
+      'Not Found',
+      { name: 'NotFound', message: 'no Google Ads connection configured for this project' },
+      'LFX_V2_CAMPAIGN_SERVICE',
+      '/p'
+    );
+    svcGoogleAccounts.mockRejectedValueOnce(upstream);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect(nextError(next)).toBe(upstream);
   });
 });
 

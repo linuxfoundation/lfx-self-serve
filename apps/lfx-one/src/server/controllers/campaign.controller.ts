@@ -44,6 +44,7 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  GoogleAdsAccountOption,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   MicrosoftCampaignCreateRequest,
@@ -3096,6 +3097,50 @@ export class CampaignController {
   public getMetaAccounts(_req: Request, res: Response): void {
     const accounts = META_ACCOUNTS.map((a) => ({ key: a.accountId, label: a.label }));
     res.json(accounts);
+  }
+
+  /**
+   * The Google Ads accounts the project's connection can reach, from campaign-service's account
+   * discovery, in the Meta/Reddit option shape. campaign-service only: there is no legacy list to
+   * fall back to, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404 as if it
+   * were not mounted — the HubSpot monitor route's gating.
+   *
+   * Root-only, as the Google Ads monitor is: a project with no connection of its own is answered
+   * from the LF system credential upstream, so the list is then every account the LF can reach.
+   */
+  public async getGoogleAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_accounts';
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
+      return;
+    }
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsAccounts(req, projectSlug);
+      // `accounts` is required upstream; reading its absence as an empty list would say the
+      // connection reaches nothing, so an unreadable body fails the read instead.
+      if (!Array.isArray(payload?.accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads account list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const accounts: GoogleAdsAccountOption[] = payload.accounts
+        .filter((a) => typeof a?.id === 'string' && a.id !== '')
+        .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
+      logger.success(req, operation, startTime, { count: accounts.length });
+      res.json(accounts);
+    } catch (error) {
+      next(error);
+    }
   }
 
   public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {

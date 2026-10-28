@@ -484,7 +484,9 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm.
+   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm, but
+   * `/google/accounts` — campaign-service account discovery for the project's Google Ads connection,
+   * listed on the Monitor tab's Google panel — is campaign-service-only too, and root-only.
    *
    * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
    * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either

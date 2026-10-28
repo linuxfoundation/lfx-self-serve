@@ -64,6 +64,7 @@ import {
   CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
   GenerateEmailCopyResult,
+  GoogleAdsAccountOption,
   HubSpotEmailMonitorResponse,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -481,6 +482,15 @@ export class CampaignService {
 
   public getMetaAccounts(projectSlug: string): Observable<MetaAccountOption[]> {
     return this.http.get<MetaAccountOption[]>('/api/campaigns/meta/accounts', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The Google Ads accounts the project's connection can reach, from campaign-service's account
+   * discovery. 404 while the server's monitor cutover flag is off, and a 403 for a non-root caller:
+   * with no connection of its own, the project is answered from the LF's shared account.
+   */
+  public getGoogleAdsAccounts(projectSlug: string): Observable<GoogleAdsAccountOption[]> {
+    return this.http.get<GoogleAdsAccountOption[]>('/api/campaigns/google/accounts', { params: { project: projectSlug } });
   }
 
   public getMetaMonitorData(
