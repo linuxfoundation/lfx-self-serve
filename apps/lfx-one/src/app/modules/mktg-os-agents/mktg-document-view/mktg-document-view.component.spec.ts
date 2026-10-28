@@ -1434,6 +1434,24 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')?.textContent).not.toContain('revision');
   });
 
+  it.each(['writing', 'questions', 'storing'] as const)('explains that the stored current revision remains below the %s run', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.getDocument.mockReturnValue(of({ ...detail, runs: [started(state)] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-current-during-run')?.textContent?.trim()).toBe('Writing a new version — the current one stays below until it lands.');
+    expect(query('mktg-document-view-run')?.firstElementChild).toBe(query('mktg-document-view-current-during-run'));
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+  });
+
+  it.each(['failed', 'empty'] as const)('does not imply a preserved current revision for a %s run', async (kind) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    store.getDocument.mockReturnValue(
+      of({ ...detail, revisions: kind === 'empty' ? [] : detail.revisions, runs: [started(kind === 'failed' ? 'failed' : 'writing')] })
+    );
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-current-during-run')).toBeNull();
+  });
+
   it('keeps a Started run with no stored revision in the generating state', async () => {
     const runId = 'b'.repeat(64);
     store.getDocument.mockReturnValue(

@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
-import { MKTG_DOCUMENT_TYPES } from '../../../packages/shared/src/constants/mktg-document-store.constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
@@ -18,6 +18,7 @@ test.describe('Marketing OS new run Sources', () => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
     if (!type) throw new Error('Missing waiting-run fixture type');
     const runId = 'b'.repeat(64);
+    let activeRunId = runId;
     let releaseAck: () => void = () => undefined;
     const ack = new Promise<void>((resolve) => {
       releaseAck = resolve;
@@ -27,7 +28,9 @@ test.describe('Marketing OS new run Sources', () => {
     await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
       await ack;
       acknowledged = true;
-      return route.fulfill({ json: { sessionId: 'synthetic-waiting-session', ownerToken: 'synthetic-proof', runId } });
+      const generation = sources.generated.length;
+      activeRunId = generation === 1 ? runId : 'd'.repeat(64);
+      return route.fulfill({ json: { sessionId: `synthetic-waiting-session-${generation}`, ownerToken: `synthetic-proof-${generation}`, runId: activeRunId } });
     });
     await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
       route.fulfill({
@@ -41,6 +44,11 @@ test.describe('Marketing OS new run Sources', () => {
       })
     );
     await sources.open();
+    // Retain the helper's synthetic approved prerequisite while adding this scenario's active run.
+    const listing = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+      path: MKTG_DOCUMENTS_API_PATH,
+      project: DOCUMENT_PROJECT.uid,
+    });
     await page.getByTestId('mktg-run-start').getByRole('button').click();
     await expect.poll(() => sources.generated.length).toBe(1);
     await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Starting the agent — stay on this page for a few seconds.');
@@ -49,15 +57,14 @@ test.describe('Marketing OS new run Sources', () => {
     await page.route('**/api/mktg-agents/documents?*', (route) =>
       route.fulfill({
         json: {
-          project: DOCUMENT_PROJECT.uid,
-          groups: [],
+          ...listing,
           runs: acknowledged
             ? [
                 {
                   project: DOCUMENT_PROJECT.uid,
                   agentKey: type.agentKey,
                   documentId: 'living',
-                  runId,
+                  runId: activeRunId,
                   state: askQuestions ? 'questions' : 'writing',
                   startedAt: new Date().toISOString(),
                 },
@@ -94,6 +101,12 @@ test.describe('Marketing OS new run Sources', () => {
     await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
     await expect(questions).toContainText('Which synthetic goal?');
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
+    const answer = page.getByTestId(`mktg-documents-open-started-${runId}`);
+    await expect(answer).toHaveText('Answer the questions');
+    await expect(answer).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await answer.click();
+    await expect(questions).toContainText('Which synthetic goal?');
+    await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     const waiting = page.getByTestId(`mktg-documents-nav-${type.agentKey}`);
     await expect(waiting).toContainText('Needs answers');
     await expect(waiting).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
@@ -108,9 +121,26 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-agent-run-form')).toBeHidden();
     await page.getByTestId('mktg-run-waiting-continue').getByRole('button').click();
     await expect(questions).toContainText('Which synthetic goal?');
-    await expect(page.getByTestId('mktg-run-questions-return-note')).toContainText('Documents › Started runs › Open.');
+    await expect(page.getByTestId('mktg-run-questions-return-note')).toContainText('Documents › Started runs › Answer the questions.');
     expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
     expect(sources.generated).toHaveLength(1);
+    await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
+    await page.getByTestId('mktg-run-waiting-start-over').click();
+    const title = `Discard the ${mktgSentenceCaseLabel(type.itemLabel)} run?`;
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep it', exact: true }).click();
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
+    expect(sources.generated).toHaveLength(1);
+    await page.getByTestId('mktg-run-waiting-start-over').click();
+    await page.getByRole('button', { name: 'Discard and start over', exact: true }).click();
+    await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toHaveCount(0);
+    expect(sources.generated).toHaveLength(1); // Discard reveals Sources; it never POSTs by itself.
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    await expect(questions).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    expect(sources.generated).toHaveLength(2); // Exactly ONE new Generate, no second confirmation in this visit.
+    expect(sources.generated[1]['answers']).toEqual(sources.generated[0]['answers']);
     await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
   });
   for (const mount of ['project', 'foundation'] as const) {

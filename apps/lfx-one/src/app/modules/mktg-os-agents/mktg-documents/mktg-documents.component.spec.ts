@@ -7,7 +7,7 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_STARTED_RUN_POLL_WINDOW_MS } from '@lfx-one/shared/constants';
+import { MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_STARTED_RUN_POLL_WINDOW_MS } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
@@ -17,6 +17,7 @@ import {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -100,6 +101,7 @@ describe('MktgDocumentsComponent', () => {
   }
 
   beforeEach(async () => {
+    window.localStorage.clear();
     // jsdom has no layout; non-layout cases use a desktop container width.
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1024);
     store = {
@@ -382,7 +384,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-empty-runs')).toBeNull();
     expect(query('mktg-documents-pending-run')).not.toBeNull();
     expect(query('mktg-documents-pending-run')?.textContent).toContain(
-      state === 'unavailable' ? 'unavailable' : 'use its Open link to follow progress, answer its questions or retry it.'
+      state === 'unavailable' ? 'unavailable' : 'use its Started runs link to follow progress, answer its questions or retry it.'
     );
   });
 
@@ -399,16 +401,21 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
-    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.textContent?.trim()).toBe('Open');
-    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
+    const startedLink = query('mktg-documents-open-started-' + 'b'.repeat(64));
     if (state === 'questions') {
+      expect(startedLink?.textContent?.trim()).toBe('Answer the questions');
+      expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
       expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
       expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
       const entry = query('mktg-documents-nav-brand-kit');
       expect(entry?.textContent).toContain('Needs answers');
-      expect(entry?.getAttribute('href')).toBe(`/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
-      expect(query('mktg-documents-pending-document')?.textContent).toContain('use its Open link to follow progress, answer its questions or retry it.');
+      expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(query('mktg-documents-pending-document')?.textContent).toContain(
+        'use its Started runs link to follow progress, answer its questions or retry it.'
+      );
     } else {
+      expect(startedLink?.textContent?.trim()).toBe('Open');
+      expect(startedLink?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
       expect(query('mktg-documents-nav-brand-kit')?.getAttribute('href')).toContain('type=brand-kit');
     }
     if (state === 'failed') {
@@ -560,6 +567,36 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
   });
 
+  it('routes both Documents entries to private questions while the server still reports writing', async () => {
+    const intake = MKTG_AGENT_INTAKES[BRAND_KIT.catalogAgentId ?? ''];
+    if (!intake) throw new Error('Missing synthetic intake');
+    const attempt = {
+      runId: startedRun().runId,
+      priorVersion: 0,
+      session: { agentId: intake.agentId, sessionId: 'synthetic-waiting', ownerToken: 'synthetic-proof' },
+    };
+    TestBed.inject(MktgRunAttemptService).save({
+      request: { agentId: intake.agentId, intake, projectUid: PROJECT.uid, answers: {} },
+      state: 'questions',
+      attempt,
+      updatedAt: new Date().toISOString(),
+      pendingQuestions: {
+        attempt,
+        questionsId: 'c'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: '', basis: [] }],
+      },
+    });
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+    await render('/?type=brand-kit&mode=new&questions=old&generation=old&revision=old&run=old');
+    const row = query('mktg-documents-open-started-' + startedRun().runId);
+    const nav = query('mktg-documents-nav-brand-kit');
+    expect(row?.textContent?.trim()).toBe('Answer the questions');
+    expect(nav?.textContent).toContain('Needs answers');
+    const expected = `/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}`;
+    expect(row?.getAttribute('href')).toBe(expected);
+    expect(nav?.getAttribute('href')).toBe(expected);
+  });
+
   it('labels a Member 360 questions run as paused in the started list and navigation', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
@@ -569,6 +606,8 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Paused');
     expect(query('mktg-documents-nav-member-360')?.textContent).not.toContain('Needs answers');
     expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toContain('type=member-360');
+    expect(query('mktg-documents-open-started-' + run.runId)?.textContent?.trim()).toBe('Open');
+    expect(query('mktg-documents-open-started-' + run.runId)?.getAttribute('href')).toContain('run=' + run.runId);
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {
