@@ -406,6 +406,11 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   // === Protected Methods (template helpers) ===
+  /** The host toggle's accessible name; falls back to the email, then `guest`, for a registrant with no name. */
+  protected hostToggleLabel(registrant: MeetingRegistrant): string {
+    const name = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'guest';
+    return registrant.host ? `Remove ${name} as meeting host` : `Make ${name} a meeting host`;
+  }
   protected isGuestSubmitting(id: string): boolean {
     return this.submittingGuestIds().has(id);
   }

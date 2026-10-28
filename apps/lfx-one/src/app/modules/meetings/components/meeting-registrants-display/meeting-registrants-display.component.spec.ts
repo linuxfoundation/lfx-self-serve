@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrantWithState, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -341,7 +341,8 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
           provide: MeetingService,
           useValue: {
             createRegistrantFormGroup: () => new FormGroup({}),
-            getChangedFields: (guest: MeetingRegistrant) => ({ host: guest.host }),
+            // The real builder, so these tests see the body that is actually sent.
+            getChangedFields: (guest: MeetingRegistrantWithState) => MeetingService.prototype.getChangedFields.call({}, guest),
             updateMeetingRegistrants,
           },
         },
@@ -365,7 +366,31 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
 
     component.onToggleHost(registrant('grace', false));
 
-    expect(update).toHaveBeenCalledWith('meeting-1', [{ uid: 'grace', changes: { host: true } }]);
+    expect(update).toHaveBeenCalledTimes(1);
+    const [meetingId, updates] = update.mock.calls[0];
+    expect(meetingId).toBe('meeting-1');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].uid).toBe('grace');
+    expect(updates[0].changes).toMatchObject({ meeting_id: 'meeting-1', email: 'grace@acme-motors.example', first_name: 'grace', host: true });
+  });
+
+  it('sends an occurrence-scoped guest back with the scope it already has', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    // The query-service index spells the scope `occurrence` and never `occurrence_id`.
+    const scoped = { ...registrant('ada', false), occurrence: '1700000000' } as unknown as MeetingRegistrant;
+    const component = await mount(update, [scoped]);
+
+    component.onToggleHost(scoped);
+
+    expect(update.mock.calls[0][1][0].changes.occurrence_id).toBe('1700000000');
+  });
+
+  it('names the host toggle after the email when the guest has no name', async () => {
+    const component = await mount(vi.fn(), []);
+    const nameless = { ...registrant('ada', false), first_name: '', last_name: '' } as MeetingRegistrant;
+
+    expect(component['hostToggleLabel'](nameless)).toBe('Make ada@acme-motors.example a meeting host');
+    expect(component['hostToggleLabel']({ ...nameless, host: true })).toBe('Remove ada@acme-motors.example as meeting host');
   });
 
   it('shows the change at once and lists hosts first', async () => {

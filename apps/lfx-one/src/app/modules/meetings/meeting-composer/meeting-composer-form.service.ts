@@ -1088,7 +1088,9 @@ export class MeetingComposerFormService {
           kept.push({
             ...guest,
             ...(guest.state === 'new' ? this.groupAttribution(member) : {}),
-            ...(restore ? { state: 'existing' as const } : {}),
+            // A restored guest keeps a host change made before they were queued for deletion, so it has to
+            // stay `modified` for `setGuests` to queue the update; `originalData` is the saved copy.
+            ...(restore ? { state: guest.originalData && !!guest.host !== !!guest.originalData.host ? ('modified' as const) : ('existing' as const) } : {}),
           });
           return kept;
         }

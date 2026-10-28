@@ -179,6 +179,38 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.registrantUpdates().toUpdate).toHaveLength(0);
       expect(formService.registrantUpdates().toAdd).toHaveLength(1);
     });
+
+    it('withdraws Undo, which would otherwise take the host change back', () => {
+      formService.setGuests([directGuest]);
+      component['removalBatch'].set({ before: [], suppressedBefore: new Set(), committeeKey: '', labels: [], focusTrackId: null, signature: '' });
+
+      component['onToggleHost'](directGuest);
+
+      expect(component['removalBatch']()).toBeNull();
+    });
+
+    it('keeps a promoted group guest queued for the update when their group is deselected and reselected', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      component['onToggleHost'](saved);
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('modified');
+      expect(formService.guests()[0].host).toBe(true);
+      expect(formService.registrantUpdates().toUpdate.map((update) => update.uid)).toEqual(['registrant-1']);
+    });
+
+    it('restores an unchanged group guest as existing', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('existing');
+    });
   });
 
   /**

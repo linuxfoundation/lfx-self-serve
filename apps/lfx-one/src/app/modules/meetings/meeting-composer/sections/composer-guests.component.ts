@@ -329,6 +329,10 @@ export class ComposerGuestsComponent {
       })
     );
 
+    // Undo restores the list as it was before the removals, so it would take this host change back with it.
+    // `guestListSignature` leaves `host` out, so the batch would still look current.
+    this.removalBatch.set(null);
+
     void this.liveAnnouncer.announce(
       `${this.guestLabel(guest)} ${host ? 'is now a meeting host' : 'is no longer a meeting host'}. Save the meeting to apply.`,
       'polite'

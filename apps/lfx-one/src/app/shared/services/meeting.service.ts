@@ -827,7 +827,10 @@ export class MeetingService {
       host: registrant.host || false,
       job_title: registrant.job_title || null,
       org_name: registrant.org_name || null,
-      occurrence_id: registrant.occurrence_id || null,
+      // A listed guest comes from the query-service index, which spells the scope `occurrence` and never
+      // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
+      // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
+      occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
       avatar_url: registrant.avatar_url || null,
       username: registrant.username || null,
       linkedin_profile: registrant.linkedin_profile || null,

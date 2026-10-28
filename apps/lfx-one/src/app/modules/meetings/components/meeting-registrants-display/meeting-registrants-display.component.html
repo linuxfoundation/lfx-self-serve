@@ -199,11 +199,7 @@
             type="button"
             class="flex-shrink-0 rounded-md p-2 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
             [class]="registrant.host ? 'text-blue-600' : 'text-gray-400'"
-            [attr.aria-label]="
-              registrant.host
-                ? 'Remove ' + registrant.first_name + ' ' + registrant.last_name + ' as meeting host'
-                : 'Make ' + registrant.first_name + ' ' + registrant.last_name + ' a meeting host'
-            "
+            [attr.aria-label]="hostToggleLabel(registrant)"
             [attr.aria-pressed]="!!registrant.host"
             [attr.data-testid]="'registrant-display-host-toggle-' + registrant.uid"
             [pTooltip]="registrant.host ? 'Remove host' : 'Make host'"
