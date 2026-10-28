@@ -168,6 +168,7 @@ export async function setupKit(
   page: Page,
   options: {
     loaded?: boolean;
+    listing?: MktgDocumentsResponse;
     approvedFramework?: boolean;
     writer?: boolean;
     status?: number;
@@ -259,7 +260,7 @@ export async function setupKit(
       if (!isProjectRead(route)) return rejectUnexpected(route);
       if (options.hold) await options.hold;
       const status = options.status ?? (writer ? 200 : 403);
-      const listing = kitDocuments(options.loaded);
+      const listing = options.listing ?? kitDocuments(options.loaded);
       if (options.approvedFramework) {
         const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'foundation-message');
         if (!type) throw new Error('Missing synthetic framework type');
@@ -289,6 +290,13 @@ export async function setupKit(
   await page.route(
     (url) => url.pathname === documentPath,
     (route) => (isProjectRead(route) ? kitJson(route, framework) : rejectUnexpected(route))
+  );
+  await page.route(
+    (url) => url.pathname === `${documentPath}/comments`,
+    (route) => {
+      if (!isProjectRead(route) || new URL(route.request().url()).searchParams.get('revision') !== framework.revision.id) return rejectUnexpected(route);
+      return kitJson(route, { revisionId: framework.revision.id, threads: [] });
+    }
   );
   // The framework asset view specifically reads the optional print-brand revision.
   await page.route(

@@ -79,8 +79,15 @@
         (started)="rebuildStarted()"
         (changed)="kit.retry()" />
     }
+    <p
+      role="status"
+      class="text-gray-500"
+      [class.py-8]="kit.loading()"
+      [class.sr-only]="!kit.loading()"
+      data-testid="mktg-family-loading"
+      [textContent]="kit.loading() ? 'Loading family assets…' : ''"></p>
     @if (kit.loading()) {
-      <p role="status" class="py-8 text-gray-500" data-testid="mktg-family-loading">Loading family assets…</p>
+      <!-- The status above stays mounted across every read state. -->
     } @else if (kit.error()) {
       <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-family-error">
         <p>{{ kit.error() }}</p>

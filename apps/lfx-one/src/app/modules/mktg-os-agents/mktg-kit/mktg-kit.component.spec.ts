@@ -26,7 +26,7 @@ describe('Marketing kit home', () => {
     documents.set({});
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
-      providers: [provideRouter([]), { provide: ProjectContextService, useValue: { activeContext: context } }],
+      providers: [provideRouter([]), { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true) } }],
     });
     TestBed.overrideComponent(MktgKitComponent, {
       set: {
@@ -87,6 +87,44 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');
     expect(root.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).not.toBeNull();
     expect(root.textContent).toContain('No assets in this state');
+  });
+  it('includes never-run one-offs in Not run yet, without inventing an approval state for prior runs', async () => {
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    root.querySelector<HTMLButtonElement>('[data-testid="filter-pill-missing"]')?.click();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-linkedin-post"]')?.textContent).toContain('Not run yet');
+    expect(root.querySelector('[data-testid="mktg-kit-asset-member-360"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-aeo-geo"]')).toBeNull();
+    families.update((items) =>
+      items.map((item) => ({
+        ...item,
+        rows: item.rows.map((row) =>
+          row.asset.agentKey === 'linkedin-post'
+            ? {
+                ...row,
+                state: null,
+                monthlyCount: 1,
+                document: {
+                  agentKey: 'linkedin-post',
+                  documentId: 'run-synthetic',
+                  revisionCount: 1,
+                  latestRevisionId: 'synthetic',
+                  approvedCurrent: null,
+                  createdAt: '2026-10-10T12:00:00Z',
+                  updatedAt: null,
+                },
+              }
+            : row
+        ),
+      }))
+    );
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-linkedin-post"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-testid="filter-pill-all"]')?.click();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-linkedin-post"]')?.textContent).toContain('1 this month');
   });
   it('restores URL state and pushes user filters without a redundant root breadcrumb', async () => {
     const router = TestBed.inject(Router);

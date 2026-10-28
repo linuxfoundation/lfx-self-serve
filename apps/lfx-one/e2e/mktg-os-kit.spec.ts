@@ -1,11 +1,40 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import { MKTG_KIT_FAMILIES } from '../../../packages/shared/src/constants';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { expect } from '@playwright/test';
-import { kitTest as test, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { kitTest as test, kitDocuments, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing kit home content', () => {
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
+  test('Not run yet filters include never-run one-offs but not unavailable agents', async ({ page }) => {
+    await setupKit(page);
+    await openKit(page);
+    await page.getByTestId('filter-pill-missing').click();
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-asset-member-360')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-kit-asset-aeo-geo')).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('kit-one-off-missing.png'), fullPage: true });
+  });
+  test('prior-run one-offs have a last-run label and belong to All only', async ({ page }) => {
+    const listing = kitDocuments(true);
+    for (const group of listing.groups)
+      if (group.type.agentKey === 'linkedin-post') for (const document of group.documents) document.createdAt = '2026-09-10T12:00:00Z';
+    await page.clock.setFixedTime(new Date('2026-10-23T12:00:00Z'));
+    await setupKit(page, { listing });
+    await openKit(page);
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sep');
+    for (const state of ['missing', 'draft', 'approved', 'needs-rebuild']) {
+      await page.getByTestId(`filter-pill-${state}`).click();
+      await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toHaveCount(0);
+    }
+    await page.getByTestId('filter-pill-all').click();
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Last run 10 Sep');
+    await page.screenshot({ path: test.info().outputPath('kit-prior-one-off.png'), fullPage: true });
+  });
   test('loads real drafts and run counts, filters rows without hiding any family', async ({ page }) => {
     await setupKit(page, { loaded: true });
     await openKit(page);

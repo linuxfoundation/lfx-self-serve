@@ -41,7 +41,7 @@ export interface MktgKitFamily {
 
 export interface MktgKitAssetRow {
   asset: MktgKitAsset;
-  /** Run assets have a count instead of a living-document workflow state. */
+  /** Already-run one-offs have no approval state; never-run and unavailable ones still have states. */
   state: MktgKitAssetState | null;
   version: number | null;
   monthlyCount: number | null;

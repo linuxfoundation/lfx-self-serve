@@ -118,6 +118,8 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(root.textContent).toContain('You need write access');
     expect(button('slides')?.disabled).toBe(true);
+    expect(root.querySelector('[data-testid="family-export-slides"]')?.parentElement?.getAttribute('role')).toBe('note');
+    expect(root.querySelector('[data-testid="family-export-pdf"]')?.parentElement?.getAttribute('role')).toBe('note');
     expect(api.run).not.toHaveBeenCalled();
   });
 
@@ -187,6 +189,20 @@ describe('Family export slot', () => {
     expect(print.print).not.toHaveBeenCalled();
   });
 
+  it('unsupported families show the title and one line, without buttons, PDF or Drive notes', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('familyId', 'social-community');
+    await fixture.whenStable();
+    expect(root.querySelector('h2')?.textContent).toBe('Export the whole family');
+    expect(root.querySelector('[data-testid="family-export-unsupported"]')?.textContent).toBe('This family has no assets supported by the exporter yet.');
+    expect(root.querySelectorAll('section p')).toHaveLength(1);
+    expect(root.querySelector('lfx-button')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-note"]')).toBeNull();
+    expect(root.textContent).not.toContain('Drive');
+    writer.set(false);
+    await fixture.whenStable();
+    expect(root.querySelectorAll('section p')).toHaveLength(1);
+  });
   it('does not call browser or API operations during SSR', async () => {
     TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
     const { button } = await setup();

@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { TooltipModule } from 'primeng/tooltip';
+import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
@@ -37,7 +38,7 @@ import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-fra
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [TooltipModule, DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
+  imports: [TooltipModule, TooltipHostFocusDirective, DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })

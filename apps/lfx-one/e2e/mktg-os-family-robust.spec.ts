@@ -84,7 +84,7 @@ test.describe('Marketing family responsive structure', () => {
           }
         }
         await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
-        await expect(page.getByTestId('mktg-family-exports').getByRole('button')).toHaveCount(2);
+        await expect(page.getByTestId('mktg-family-exports').getByRole('button')).toHaveCount(familyId === MKTG_KIT_POSITIONING_FAMILY_ID ? 2 : 0);
         const table = await page.getByTestId('mktg-family-assets').boundingBox();
         const exports = await page.getByTestId('mktg-family-exports').boundingBox();
         expect(table).not.toBeNull();
