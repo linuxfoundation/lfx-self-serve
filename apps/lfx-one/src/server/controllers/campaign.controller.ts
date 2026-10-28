@@ -213,6 +213,7 @@ import {
   canCreateMicrosoftSchedule,
   canCreateWithAudienceSegments,
   canCreateWithBidding,
+  canCreateWithFinerGoogleGeo,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
   canUseMetaCreativeAssets,
@@ -756,6 +757,27 @@ export class CampaignController {
         return;
       }
 
+      // Postal-code ids and radius targets are refused, not dropped, on the same terms as `bidding`
+      // above — and dropping them is worse than dropping a bid. The legacy creator resolves
+      // `geoTargets` through the 30-country map and skips every other entry, and never reads
+      // `proximityTargets`, so a postal-only or radius-only campaign would be created with NO
+      // location limit. The form never sends them in that state (`googleCreativeEnabled` hides both
+      // controls and the create is blocked while any are held); this protects the endpoint.
+      const unservedGoogleGeoField = this.unservedGoogleGeoField(body);
+      if (unservedGoogleGeoField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedGoogleGeoField,
+            'Google postal-code and radius targeting is not enabled on this deployment; target countries instead',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
       // Microsoft flight dates are refused, not dropped, on the same terms as `bidding` above.
       // Neither creator that would serve them reads the keys — the legacy one never did, and a
       // campaign-service without linuxfoundation/lfx-v2-campaign-service#409 ignores them — so
@@ -930,13 +952,13 @@ export class CampaignController {
       // `GOOGLE_ADS_GEO_TARGET_MAP` is the same 30 (verified code-for-code), so no COUNTRY CODE this
       // guard rejects is one the dispatcher would accept.
       //
-      // Upstream's `resolveGeoEntry` has since also accepted a raw NUMERIC geo target constant id in
-      // this list — how a caller addresses a city, region, metro or postal code — which this guard
-      // and `buildGoogleAdsConfig`'s `META_GEO_CODE_PATTERN` shape test both still refuse. That is a
-      // real residual over-refusal, and it is unreachable today: the Implementation tab's country
-      // picker is the only producer of this list and emits alpha-2 codes only. Lifting it means
-      // widening the builder's shape test and the picker together, so it is tracked separately
-      // rather than half-done here. The EXCLUSION list below, which is new, takes both spellings.
+      // Upstream's `resolveGeoEntry` also accepts a raw NUMERIC geo target constant id in this list —
+      // how a caller addresses a city, region, metro or postal code — and the Implementation tab now
+      // sends one for every postal-code target the operator adds, after the country chips. Such an
+      // id is judged the way upstream judges it: for its canonical SHAPE only, never against the
+      // country map. Whether 9031945 names a real postal code needs Google, and upstream's own
+      // comment declines that lookup ("a well-formed id naming nothing is refused by Google at the
+      // criteria mutate"), so this guard cannot do better than the shape either.
       //
       // The shape test in `buildGoogleAdsConfig` is not enough on its own. It admits any two-letter
       // code, so `PT` or `ZA` — well-formed, assigned, and offered nowhere in this map — passes the
@@ -944,13 +966,30 @@ export class CampaignController {
       // creation failed" with the real reason only in the pod log. Naming the code here is the
       // whole point of the guard; the builder stays shape-only so the two judgements do not drift.
       //
-      // The count cap is upstream's too, and is checked BEFORE de-duplication there, so this one is
-      // too: a list that is only over the cap because it repeats a code is still refused, which is
-      // what the dispatcher does.
+      // The count cap is upstream's too, counted across BOTH spellings together because upstream
+      // counts the one list, and is checked BEFORE de-duplication there, so this one is too: a list
+      // that is only over the cap because it repeats an entry is still refused, which is what the
+      // dispatcher does.
       if (cutoverOn && platforms.includes('google-ads')) {
         const googleGeoTargets = (configEnvelope['googleAdsConfig'] as { geoTargets?: unknown } | undefined)?.geoTargets;
         if (Array.isArray(googleGeoTargets)) {
-          const unsupported = googleGeoTargets.filter((g): g is string => typeof g === 'string' && !(g in GOOGLE_ADS_GEO_TARGET_MAP));
+          const entries = googleGeoTargets.filter((g): g is string => typeof g === 'string');
+          // A numeric entry that is not the canonical spelling of a positive id — `02840`, `0`, a
+          // 21-digit run — is refused by upstream before any mutate, with its own message, so it is
+          // named here with that message rather than reported as an unsupported country.
+          const nonCanonical = entries.find((g) => GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g) && !isCanonicalGoogleAdsResourceId(g));
+          if (nonCanonical !== undefined) {
+            next(
+              ServiceValidationError.forField(
+                'geoTargets',
+                `Google Ads location ${googleAdsEchoed(nonCanonical)} is not the canonical spelling of a positive geo target constant id. Use the id with no leading zeros and create again.`,
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+
+          const unsupported = entries.filter((g) => !GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g) && !(g in GOOGLE_ADS_GEO_TARGET_MAP));
           if (unsupported.length > 0) {
             next(
               ServiceValidationError.forField(
@@ -964,9 +1003,10 @@ export class CampaignController {
 
           if (googleGeoTargets.length > GOOGLE_ADS_MAX_GEO_TARGETS) {
             next(
+              // `geoTargets`, not `countryCode`: the list now holds postal-code ids as well as countries.
               ServiceValidationError.forField(
-                'countryCode',
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
+                'geoTargets',
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries and postal codes together on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -4638,6 +4678,27 @@ export class CampaignController {
   }
 
   /**
+   * `geoTargets` or `proximityTargets` when a Google create carries a postal-code id or a radius target
+   * this deployment cannot honour (see `createCampaign`), else `null`.
+   *
+   * A numeric `geoTargets` entry is judged after Go's trim, as the builder judges it, so a padded id
+   * cannot slip past. An EMPTY `proximityTargets` list carries nothing to drop and is let through.
+   */
+  private unservedGoogleGeoField(body: CampaignCreateRequest): string | null {
+    if (canCreateWithFinerGoogleGeo()) return null;
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('google-ads')) return null;
+    const geoTargets: unknown = body?.geoTargets;
+    if (Array.isArray(geoTargets) && geoTargets.some((g) => typeof g === 'string' && GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(googleAdsTrimSpace(g)))) {
+      return 'geoTargets';
+    }
+    const proximityTargets: unknown = body?.proximityTargets;
+    if (proximityTargets !== undefined && proximityTargets !== null && !(Array.isArray(proximityTargets) && proximityTargets.length === 0)) {
+      return 'proximityTargets';
+    }
+    return null;
+  }
+
+  /**
    * `microsoftConfig.startDate` or `endDate` when this deployment cannot honour them, else `null`.
    *
    * `in`, as for bidding: an explicit `startDate: null` is still the field. Off means either the
@@ -5003,7 +5064,12 @@ export class CampaignController {
     // A MALFORMED code is refused like the sibling refuses it. Dropping it silently would leave
     // the campaign untargeted while the operator believes they picked a market — the same
     // wrong-market defect, reached by a different road.
-    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
+    //
+    // A numeric entry passes the shape test as well: it is a raw geo target constant id, which is how
+    // the Implementation tab sends a postal-code target, and upstream's `resolveGeoEntry` tells the two
+    // spellings apart by exactly this shape. Whether the id is canonical is `createCampaign`'s call,
+    // made by name before this config is dispatched.
+    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g) || GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g))) return null;
 
     // A SINGLE NON-SEARCH channel gets the WHOLE budget: there is no Search campaign to fund, so
     // the split does not apply. campaign-service creates the campaign with no ad and no keywords
