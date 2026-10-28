@@ -5,13 +5,11 @@
   class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
   aria-labelledby="family-export-title"
   data-testid="family-export-actions">
-  <h2 id="family-export-title" class="text-base font-bold">Export the whole family</h2>
+  <h2 id="family-export-title" class="text-base font-bold">Export the family</h2>
   @if (!target()) {
     <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
   } @else {
-    <p class="text-sm text-gray-500">
-      Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
-    </p>
+    <p class="text-sm text-gray-500">{{ slidesNote }}</p>
     <lfx-button
       label="Download PDF"
       [disabled]="!canPrint()"
@@ -28,9 +26,6 @@
       [fluid]="true"
       data-testid="family-export-slides"
       (onClick)="export()" />
-    @if (canExport() && !canPrint()) {
-      <p class="text-xs text-gray-500" data-testid="family-export-pdf-reason">PDF is available once the messaging framework or the brand kit is approved.</p>
-    }
     @if (!writer()) {
       <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
     } @else if (checking()) {
@@ -101,14 +96,58 @@
     </p>
   }
 </section>
-<!-- Only existing print renderings, in exporter order; never a second on-screen asset view. -->
+<!-- Print renderings in exporter order, with one family cover and contents. -->
 <div [class]="printOnlyClass" data-testid="family-export-print-document">
   @if (printView(); as document) {
+    @let frameworkNumber = '01';
+    @let kitNumber = '02';
+    @let boilerplatesNumber = '03';
+    @let faqNumber = '04';
+    <section
+      class="lfx-family-print-cover grid gap-[18pt] rounded-[10pt] p-[0.55in] font-[family-name:var(--mfp-font)] break-inside-avoid break-after-page [overflow-wrap:anywhere]"
+      [style.--mfp-font]="document.brand.fontStack"
+      [style.--mfp-dark]="document.brand.dark"
+      [style.--mfp-accent]="document.brand.accent"
+      [style.--mfp-ink]="document.brand.ink"
+      aria-label="Family cover"
+      data-testid="family-export-print-cover">
+      <p class="text-[9.5pt] uppercase tracking-[0.18em]">{{ document.projectName }}</p>
+      @if (document.brand.logoOnLight; as logo) {
+        <img
+          class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="family-export-print-logo" />
+      }
+      <div class="flex flex-col gap-[14pt]">
+        <span class="h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]"></span>
+        <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="family-export-print-title">{{ familyName() }} kit</h1>
+        <p class="text-[11pt]">Approved current · {{ document.printedAt | date: 'd MMM y' }}</p>
+      </div>
+      <div class="h-px bg-[color:var(--mfp-ink)] opacity-20" aria-hidden="true"></div>
+      <dl class="grid grid-cols-[28pt_1fr] gap-y-[4pt] text-[9.5pt]" data-testid="family-export-print-contents">
+        <dt class="opacity-60">{{ frameworkNumber }}</dt>
+        <dd>Messaging framework{{ document.framework ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ kitNumber }}</dt>
+        <dd>Brand kit{{ document.kit ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ boilerplatesNumber }}</dt>
+        <dd>Boilerplates{{ document.boilerplates ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ faqNumber }}</dt>
+        <dd>FAQ{{ document.faq ? '' : ' — no approved current' }}</dd>
+      </dl>
+    </section>
     @if (document.framework; as framework) {
-      <lfx-mktg-framework-print [view]="framework" />
+      <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" />
     }
     @if (document.kit; as kit) {
       <lfx-brand-kit-view [view]="kit" />
+    }
+    @if (document.boilerplates; as boilerplates) {
+      <lfx-mktg-boilerplates-print [view]="boilerplates" [number]="boilerplatesNumber" [projectName]="document.projectName" />
+    }
+    @if (document.faq; as faq) {
+      <lfx-mktg-faq-print [view]="faq" [number]="faqNumber" [projectName]="document.projectName" />
     }
   }
 </div>

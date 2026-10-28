@@ -42,6 +42,7 @@ import {
   MktgBoilerplatesAsset,
   MktgFaqAsset,
   MktgFrameworkAsset,
+  MktgAssetReport,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
@@ -59,6 +60,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  describeMktgAssetReadiness,
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
@@ -84,6 +86,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import {
@@ -111,6 +114,7 @@ import {
   Subject,
 } from 'rxjs';
 
+import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -174,10 +178,12 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     MktgRunActivityComponent,
     MktgRunProgressComponent,
   ],
+  providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
+  private readonly dialogService = inject(DialogService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -219,6 +225,7 @@ export class MktgDocumentViewComponent {
   protected readonly restoringId = signal<string | null>(null);
   protected readonly showAllRevisions = signal(false);
   protected readonly writer = signal(false);
+  private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
   protected readonly approvalAnnouncement = signal('');
@@ -315,8 +322,10 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
+  protected readonly viewedReport = this.initViewedReport();
+  protected readonly readiness = computed(() => describeMktgAssetReadiness(this.viewedReport()));
   /** Label context uses the stored content shape, never the transformed display rows. */
-  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.brandKit());
+  protected readonly commentContent = computed(() => this.asset()?.content ?? this.boilerplates()?.content ?? this.faq()?.content ?? this.brandKit());
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -528,6 +537,7 @@ export class MktgDocumentViewComponent {
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.redirectedRun = '';
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -829,6 +839,7 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
+    if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && this.runParam() && cycle.detail.progressUnavailable && !this.view()) {
@@ -851,6 +862,8 @@ export class MktgDocumentViewComponent {
     this.loading.set(true);
     this.view.set(null);
     const failedNavigation = () => {
+      if (this.redirectedRun !== run.runId || cycle.detail.project !== this.projectContext.activeContextUid()) return;
+      this.redirectedRun = '';
       this.publicReads.next({ ...cycle, view: null });
       this.loading.set(false);
       this.errorText.set('The run page could not be opened. Open this run from Documents.');
@@ -1039,6 +1052,43 @@ export class MktgDocumentViewComponent {
 
   protected onToggleAllRevisions(): void {
     this.showAllRevisions.update((expanded) => !expanded);
+  }
+
+  protected requestApproval(): void {
+    const view = this.view();
+    const project = this.projectContext.activeContextUid();
+    if (!isPlatformBrowser(this.platformId) || this.confirmingApproval() || !this.mayApprove() || this.writePending()) return;
+    if (!view || !project || view.project !== project || this.loading()) return;
+    const report = this.viewedReport();
+    if (!report || (!report.sources_failed.length && !report.gaps.length)) return this.onApprove();
+    const selection = this.revisionParam();
+    const epoch = this.restoreEpoch;
+    const subject = this.userService.user()?.sub;
+    const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
+      header: 'Approve with open gaps?',
+      data: report,
+      modal: true,
+      width: '32rem',
+      style: { maxWidth: '90vw' },
+      draggable: false,
+      resizable: false,
+    });
+    if (!ref) return;
+    this.confirmingApproval.set(true);
+    const unregisterDestroy = this.destroyRef.onDestroy(() => ref.close());
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => false)))
+      .pipe(
+        take(1),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => {
+          this.confirmingApproval.set(false);
+          unregisterDestroy();
+        })
+      )
+      .subscribe((confirmed: unknown) => {
+        if (confirmed === true && epoch === this.restoreEpoch && subject === this.userService.user()?.sub && this.sameView(project, view, selection))
+          this.onApprove();
+      });
   }
 
   protected onApprove(): void {
@@ -1245,6 +1295,19 @@ export class MktgDocumentViewComponent {
       const selected = (MKTG_STARTED_RUN_ID_REGEX.test(selector) ? selector : '') || this.handoffRunId();
       if (selected) return runs.find((run) => run.runId === selected) ?? null;
       return this.localProgress() ? null : (runs[0] ?? null);
+    });
+  }
+
+  private initViewedReport(): Signal<MktgAssetReport | null> {
+    return computed(() => {
+      const faq = this.faq();
+      if (!faq) return this.asset()?.report ?? this.brandKit()?.report ?? this.boilerplates()?.report ?? null;
+      const gaps = new Set(faq.report.gaps);
+      for (const { path, question } of faq.checks.unanswered) {
+        gaps.delete(path);
+        gaps.add(question);
+      }
+      return { ...faq.report, gaps: [...gaps] };
     });
   }
 

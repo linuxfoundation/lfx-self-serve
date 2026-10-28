@@ -226,6 +226,66 @@ export interface CreativeAssetLibrary {
   bytesLimit: number;
 }
 
+/**
+ * Where one file of a library upload stands.
+ *
+ * Every file an operator picks ends in exactly one of the four outcomes — `uploaded`, `present`
+ * (identical bytes were already stored, so nothing was added), `refused` (the file can never be
+ * stored as it is) or `failed` (it might be on another try) — or in `cancelled`. None is ever
+ * dropped from the list: a file that was skipped without saying so is the one an operator later
+ * hunts for in six ad managers.
+ */
+export type CreativeAssetQueueItemStatus = 'waiting' | 'uploading' | 'uploaded' | 'present' | 'refused' | 'failed' | 'cancelled';
+
+/** Why a file was refused. `quota` is campaign-service's 409; the rest are checked before sending. */
+export type CreativeAssetQueueRefusal = 'type' | 'size' | 'quota' | 'subfolder' | 'other';
+
+/** One file of a library upload, as `CampaignService` reports it. */
+export interface CreativeAssetQueueItem {
+  /** Unique within the queue — two files can share a name when picked from different folders. */
+  id: string;
+  /**
+   * The brief the file is stored against. The queue is one serial lane across briefs, so a pick on
+   * a second brief waits its turn rather than erasing what the first brief's run reported.
+   */
+  briefId: string;
+  projectSlug: string;
+  name: string;
+  byteSize: number;
+  status: CreativeAssetQueueItemStatus;
+  /** Set only on `refused`. */
+  refusal: CreativeAssetQueueRefusal | null;
+  /** The outcome as a sentence for the operator; empty while waiting or uploading. */
+  message: string;
+  /** The stored asset's id on `uploaded` and `present`; empty otherwise. */
+  assetId: string;
+}
+
+/** How one library upload outcome reads: its label and its badge's Tailwind classes. */
+export interface CreativeAssetQueueStatusView {
+  label: string;
+  badge: string;
+}
+
+/** A library upload item as the upload list renders it, its outcome's label and badge resolved. */
+export interface CreativeAssetQueueRow extends CreativeAssetQueueItem {
+  statusLabel: string;
+  statusBadge: string;
+  retryable: boolean;
+}
+
+/** The library upload's read of the brief's quota. `error` keeps no library: a guessed headroom would mislead. */
+export interface CreativeAssetLibraryQuotaState {
+  status: 'loading' | 'ready' | 'error';
+  library: CreativeAssetLibrary | null;
+}
+
+/** One quota read tagged with the brief it was for, so a re-read can keep showing that brief's last answer. */
+export interface CreativeAssetLibraryQuotaRead {
+  briefId: string;
+  quota: CreativeAssetLibraryQuotaState;
+}
+
 /** One platform image slot and the stored assets that fill it, best fit first. */
 export interface CreativeSlotAssignment {
   slotKey: string;
@@ -6694,6 +6754,13 @@ export interface AudienceListRef {
 
 export type AudienceQaVerdict = 'PASS' | 'NEEDS VERIFY' | 'FAIL';
 
+/**
+ * One check's verdict. `NOT APPLICABLE` is check-level only and only the current-registrants
+ * check returns it -- for a Post-Event send, whose intended audience IS this edition's attendees
+ * (lfx-v2-campaign-service#244). `overall` never takes it.
+ */
+export type AudienceQaCheckVerdict = AudienceQaVerdict | 'NOT APPLICABLE';
+
 export type AudienceQaSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
 
 export interface AudienceQaFinding {
@@ -6722,9 +6789,17 @@ export interface AudienceQaChecks {
   /**
    * Is this edition's own registration list suppressed rather than included? Absent when the
    * request named no event or the event name could not decide it — absent is "not checked",
-   * never a pass.
+   * never a pass. `NOT APPLICABLE` (with `note`) when the request's stage was Post-Event.
    */
-  currentRegistrants?: AudienceQaCheck;
+  currentRegistrants?: AudienceQaStageScopedCheck;
+}
+
+/** A check whose question depends on the send's stage, so it can also be `NOT APPLICABLE`. */
+export interface AudienceQaStageScopedCheck {
+  verdict: AudienceQaCheckVerdict;
+  findings: AudienceQaFinding[];
+  /** Why the check does not apply; set only with `NOT APPLICABLE`. */
+  note?: string;
 }
 
 export interface AudienceQaCandidate {
@@ -6768,7 +6843,7 @@ export type AudienceQaReport = Extract<AudienceQaResult, { needsDisambiguation: 
 export interface AudienceQaCheckRow {
   key: keyof AudienceQaChecks;
   name: string;
-  verdict: AudienceQaVerdict;
+  verdict: AudienceQaCheckVerdict;
   findings: readonly AudienceQaFinding[];
   note: string | null;
 }
@@ -6780,6 +6855,11 @@ export interface AudienceQaRunRequest {
   targetsCa?: boolean;
   /** This edition's event name; enables the current-registrants check. */
   eventName?: string;
+  /**
+   * The send's email stage. `Post-Event` marks the current-registrants check NOT APPLICABLE --
+   * that send is FOR this edition's attendees. Absent or any other stage runs it as before.
+   */
+  stage?: CampaignEmailStage;
   /**
    * Suppression lists the send applies on top of the list. Custom lists and directly attached
    * lists carry none of their own, so without these QA judges them on their filters alone.

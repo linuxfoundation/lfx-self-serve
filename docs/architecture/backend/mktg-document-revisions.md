@@ -171,11 +171,11 @@ export. No personal identity is written into export records.
 
 The Family page eagerly checks last export independently of its document-list read.
 A failed check disables export rather than guessing Create. Download PDF composes
-the existing approved framework print and kit book, in exporter order, using the
-family print body class and each rendering's named page size. Boilerplates and FAQ
-are provisionally omitted from PDF because no print layouts exist; the UI says so.
-Slides still exports those approved assets. Neither export changes the on-screen
-asset rendering or grants Google Drive access.
+the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
+with one family cover and contents. The family print body class selects a shared
+portrait layout; the kit's landscape artwork scales to fit portrait pages, rather
+than mixing named page sizes. Slides exports the same supported approved assets.
+Neither export changes the on-screen asset rendering or grants Google Drive access.
 
 ### Asset approval UI
 
@@ -474,7 +474,14 @@ that revision. `POST` to the same path takes `project`, `revisionId`,
 revision membership and the source JSON's own field paths. The Brand Kit uses
 a stable JSON field key internally and captures its verbatim stored string as
 the agent's passage; caller-supplied passages, authors and timestamps are
-rejected. Framework and Boilerplates use their contract's field paths.
+rejected. Framework and Boilerplates use their contract's field paths. FAQ uses
+only answer paths `faq[g][1][q][1]`, resolved against the stored grouped tuples;
+a null answer is a valid target, but missing indexes, group names, questions and
+source labels are not. FAQ allows at most 30 comments per send, matching its agent
+form. The server renders them as `revision: { mode: 'redraft', prior_version,
+previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
+stored approved framework. The agent publishes a supplied answer with source
+label Notes; the host never edits the answer or its source itself.
 
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different

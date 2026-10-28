@@ -27,17 +27,19 @@
       @if (publicQuestions(); as pending) {
         <lfx-mktg-run-questions [questions]="pending.questions" [projectName]="projectName()" [busy]="answersSending()" (answered)="onPublicAnswers($event)" />
       }
-      <lfx-button
-        label="Refresh progress"
-        [text]="true"
-        [disabled]="answersSending()"
-        (onClick)="onRefreshProgress()"
-        data-testid="mktg-run-progress-questions-refresh" />
+      <div class="contents" data-testid="mktg-run-progress-questions-refresh">
+        <lfx-button
+          label="Refresh"
+          [text]="true"
+          [disabled]="answersSending()"
+          (onClick)="onRefreshProgress()"
+          data-testid="mktg-document-view-refresh-progress" />
+      </div>
     }
     @if (answersError()) {
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
     }
-    @if (warning()) {
+    @if (warning() && runState() !== 'questions') {
       <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
     @if (visibleRunActivity(); as activity) {

@@ -620,11 +620,16 @@ describe('MktgDocumentsComponent', () => {
     visibility.mockRestore();
   });
 
-  it('ignores stale private questions while the server reports writing', async () => {
+  it.each([
+    { state: 'writing', sameRun: true },
+    { state: 'writing', sameRun: false },
+    { state: 'failed', sameRun: true },
+  ] as const)('uses only server state despite private questions ($state, same run: $sameRun)', async ({ state, sameRun }) => {
     const intake = MKTG_AGENT_INTAKES[BRAND_KIT.catalogAgentId ?? ''];
     if (!intake) throw new Error('Missing synthetic intake');
+    const run = startedRun(state);
     const attempt = {
-      runId: startedRun().runId,
+      runId: sameRun ? run.runId : 'c'.repeat(64),
       priorVersion: 0,
       session: { agentId: intake.agentId, sessionId: 'synthetic-waiting', ownerToken: 'synthetic-proof' },
     };
@@ -639,15 +644,15 @@ describe('MktgDocumentsComponent', () => {
         questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: '', basis: [] }],
       },
     });
-    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=brand-kit&mode=new&questions=old&generation=old&revision=old&run=old');
-    const row = query('mktg-documents-open-started-' + startedRun().runId);
+    const row = query('mktg-documents-open-started-' + run.runId);
     const nav = query('mktg-documents-nav-brand-kit');
     expect(row?.textContent?.trim()).toBe('Open');
-    expect(nav?.textContent).toContain('Writing');
+    expect(row?.getAttribute('href')).toContain(`run=${run.runId}`);
     expect(nav?.textContent).not.toContain('Needs answers');
-    expect(row?.getAttribute('href')).toBe(`/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}&run=${attempt.runId}`);
     expect(nav?.getAttribute('href')).toContain('type=brand-kit');
+    if (state === 'writing') expect(nav?.textContent).toContain('Writing');
   });
 
   it('keeps a LinkedIn questions row on its document filter and Open action', async () => {

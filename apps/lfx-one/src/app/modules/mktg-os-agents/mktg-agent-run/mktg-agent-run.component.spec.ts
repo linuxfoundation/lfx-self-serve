@@ -16,6 +16,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
+  MKTG_INTAKE_LINK_ADVICE,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_ANSWERED,
@@ -1005,7 +1006,7 @@ describe('MktgAgentRunComponent', () => {
       };
     };
 
-    it('confirms Sources-first discard, keeps the notice on Keep it, and does not ask twice before one explicit Create', async () => {
+    it('confirms Sources-first discard, opens progress on Keep it, and does not ask twice before one explicit Create', async () => {
       await configure('browser', agentId, { mode: 'new' });
       const conflict = activeConflict();
       lastIntake.mockReturnValue(of(history));
@@ -1024,8 +1025,11 @@ describe('MktgAgentRunComponent', () => {
       });
       discardPrompt()?.reject?.(ConfirmEventType.REJECT);
       await fixture.whenStable();
-      expect(query('mktg-run-waiting-open')).not.toBeNull();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/mktg-os-agents', agentId], {
+        queryParams: { project: PROJECT_1.slug, run: conflict.activeRunId },
+      });
       expect(generate).not.toHaveBeenCalled();
+      // The router mock keeps this fixture mounted; reopen the discard branch explicitly.
       query('mktg-run-waiting-start-over')?.click();
       discardPrompt()?.accept?.();
       await fixture.whenStable();
@@ -1148,7 +1152,7 @@ describe('MktgAgentRunComponent', () => {
       );
     });
 
-    it.each(['continue', 'start-over'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
+    it.each(['continue', 'keep-it', 'start-over', 'dismiss'])('offers a waiting draft on a fresh visit, then %s without another Generate', async (choice) => {
       await configure('browser', agentId, { mode: 'new' });
       const attempts = TestBed.inject(MktgRunAttemptService);
       const request = { agentId, projectUid: PROJECT_1.uid, intake: MKTG_AGENT_INTAKES[agentId], answers: history.answers };
@@ -1166,8 +1170,13 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-run-sources')).toBeNull();
       expect(component['showIntakeForm']()).toBe(false);
       expect(component['submitDisabled']()).toBe(true);
-      if (choice === 'continue') {
-        query('mktg-run-waiting-continue')?.querySelector('button')?.click();
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      navigate.mockClear();
+      if (choice === 'continue' || choice === 'keep-it') {
+        if (choice === 'keep-it') {
+          query('mktg-run-waiting-start-over')?.click();
+          discardPrompt()?.reject?.(ConfirmEventType.REJECT);
+        } else query('mktg-run-waiting-continue')?.querySelector('button')?.click();
         expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { mode: null }, replaceUrl: true }));
         queryParams.next(convertToParamMap({})); // Router mock: emit the accepted plain-route navigation.
         await fixture.whenStable();
@@ -1175,6 +1184,13 @@ describe('MktgAgentRunComponent', () => {
         expect(component['questionsPending']()).toEqual(pending);
         expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
         expect(query('mktg-run-questions-return-note')?.textContent).toContain('Documents › Started runs › Answer the questions.');
+      } else if (choice === 'dismiss') {
+        query('mktg-run-waiting-start-over')?.click();
+        discardPrompt()?.reject?.(ConfirmEventType.CANCEL);
+        await fixture.whenStable();
+        expect(navigate).not.toHaveBeenCalled();
+        expect(query('mktg-run-waiting-notice')).not.toBeNull();
+        expect(attempts.load(PROJECT_1.uid, agentId)).toEqual(saved);
       } else {
         query('mktg-run-waiting-start-over')?.click();
         discardPrompt()?.accept?.();
@@ -1653,6 +1669,38 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-form')).toBeNull();
     });
 
+    it.each([false, true])('keeps public landing recovery visible without identity and retries only navigation (failed=%s)', async (failed) => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      userSignal.set(null);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      component['onPublicLanding'](failed);
+      await fixture.whenStable();
+      expect(query('mktg-run-public-error')?.textContent).toContain('Sign in before opening this run');
+      expect(query('mktg-agent-run-open-asset')).not.toBeNull();
+      expect(component['navigation']()?.runId).toBe(failed ? runId : undefined);
+      expect(navigate).not.toHaveBeenCalled();
+      userSignal.set({ sub: 'synthetic-signed-in' } as User);
+      await fixture.whenStable();
+      // Identity changes reset private state. The fresh public reader observes
+      // the same terminal run again and can now attempt its public destination.
+      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+      if (failed) reader.failed.emit();
+      else reader.landed.emit();
+      await fixture.whenStable();
+      expect(query('mktg-run-public-error')?.textContent).toContain('could not be opened');
+      navigate.mockClear();
+      query('mktg-agent-run-open-asset')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledWith(
+        ['..', 'documents', type.agentKey, 'living'],
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: failed ? runId : null }), replaceUrl: true })
+      );
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
     it.each([false, true])('continues only this browser’s matching questions attempt (matching=%s)', async (matching) => {
       await configure('browser', type.catalogAgentId, { run: runId });
       const attempt = {
@@ -1875,6 +1923,9 @@ describe('MktgAgentRunComponent', () => {
         ['..', 'documents', type?.agentKey, 'living'],
         expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ run: runId, revision: null, generation: null }) })
       );
+      expect(component['runFailed']()).toBe(false);
+      expect(query('mktg-agent-run-retry')).toBeNull();
+      expect(query('mktg-agent-run-open-asset')).not.toBeNull();
       component['onRetryHandoff']();
       await fixture.whenStable();
       expect(navigate).toHaveBeenCalledTimes(2);
@@ -3213,6 +3264,32 @@ describe('MktgAgentRunComponent', () => {
     });
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
+
+    it('warns about a stored Drive source immediately on restore', async () => {
+      const stored = assetRun([]);
+      stored.answers['website_url'] = 'https://drive.google.com/file/d/synthetic/view';
+      storedRuns['proj-1'] = stored;
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('warns about Drive sources and duplicate fields without disabling Generate', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const url = 'https://drive.google.com/drive/folders/synthetic';
+      component['intakeForm'].patchValue({ project_name: 'Synthetic project', website_url: url, deck_url: url + '/?usp=sharing' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+      expect(component['submitDisabled']()).toBe(false);
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-submit-button"] button')?.disabled).toBe(false);
+      expect(component['documentsSection']()?.earlierUrls()).toContain(url);
+      component['intakeForm'].patchValue({ website_url: 'https://project.example', deck_url: '' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-deck_url')).toBeNull();
+    });
 
     it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; other links and documents in one section', async () => {
       activeContext.set(PROJECT_1);

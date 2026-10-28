@@ -195,6 +195,7 @@ export class MktgRunProgressComponent {
 
   public constructor() {
     let readerScope = '';
+    let identityResolved = false;
     const scope = computed(() => ({
       project: this.project(),
       agentKey: this.agentKey(),
@@ -262,7 +263,14 @@ export class MktgRunProgressComponent {
       .subscribe();
     toObservable(scope)
       .pipe(
-        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        distinctUntilChanged((a, b) => {
+          if (this.runPage()) return JSON.stringify(a) === JSON.stringify(b);
+          // Preserve MAIN's initial read-only document request while the viewer resolves.
+          identityResolved ||= !!a.subject;
+          const firstResolution = !identityResolved && !!b.subject;
+          identityResolved ||= !!b.subject;
+          return JSON.stringify(a) === JSON.stringify(b) || (firstResolution && JSON.stringify({ ...a, subject: b.subject }) === JSON.stringify(b));
+        }),
         switchMap((request) => {
           const key = JSON.stringify({
             project: request.project,
@@ -281,7 +289,14 @@ export class MktgRunProgressComponent {
           readerScope = key;
           this.warning.set('');
           this.readFailure.set('');
-          if (!isPlatformBrowser(this.platformId) || !request.subject || !request.polling || !request.project || !request.agentKey || !request.documentId)
+          if (
+            !isPlatformBrowser(this.platformId) ||
+            (this.runPage() && !request.subject) ||
+            !request.polling ||
+            !request.project ||
+            !request.agentKey ||
+            !request.documentId
+          )
             return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
@@ -307,6 +322,8 @@ export class MktgRunProgressComponent {
             this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
           };
           const read = (poll: boolean) => {
+            // Stamp each actual read before exposing creator-only activity, not the long-lived scope.
+            const readerSubject = this.user.user()?.sub ?? '';
             // A document handoff updates the selector without replacing its accepted observer.
             const selectedRunId = this.runPage() ? request.runId : this.runId();
             const metadata$ = defer(() =>
@@ -373,6 +390,7 @@ export class MktgRunProgressComponent {
                 if (request.project !== this.project() || request.agentKey !== this.agentKey() || request.documentId !== this.documentId()) return;
                 if (this.runPage() && request.runId !== this.runId()) return;
                 if (request.subject && request.subject !== this.user.user()?.sub) return;
+                if (readerSubject && readerSubject !== this.user.user()?.sub) return;
                 const previous = this.loaded();
                 this.loadedSelector.set(request.runId);
                 // A poll of the same block must not reset the stepper or overwrite unsent edits.
@@ -392,7 +410,7 @@ export class MktgRunProgressComponent {
                     return row;
                   }),
                 });
-                this.loadedSubject.set(request.subject);
+                this.loadedSubject.set(readerSubject);
                 this.observed.emit({ ...cycle, detail: this.loaded() ?? cycle.detail });
                 if (cycle.detail.progressUnavailable || cycle.view?.progressUnavailable) return;
                 const selected = this.selectedRun();

@@ -46,8 +46,8 @@ export class MembersTiersComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the tiers settle — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -65,6 +65,8 @@ export class MembersTiersComponent {
   protected readonly view: Signal<HealthMetricsMembersTiersView> = computed(() =>
     buildHealthMetricsMembersTiersView(this.response(), this.chrome.selectedRange(), this.mode())
   );
+  /** No membership was measured; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
 
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view(), this.mode()));
   protected readonly chartOptions: ChartOptions<'bar'> = {
@@ -133,10 +135,12 @@ export class MembersTiersComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && !buildHealthMetricsMembersTiersView(response, this.chrome.selectedRange(), this.mode()).measured);
+              }
             })
           )
         )
@@ -149,7 +153,7 @@ export class MembersTiersComponent {
   private onRangeChange(): void {
     if (this.loadFailed() || this.loading()) return;
 
-    this.settled.emit();
+    this.settled.emit(!this.view().measured);
   }
 
   /** One stacked dataset per tier, as its share of each year's members or revenue; the year's total sits under its label. */

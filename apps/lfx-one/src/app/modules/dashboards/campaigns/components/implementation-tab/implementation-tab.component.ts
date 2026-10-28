@@ -130,6 +130,7 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
@@ -246,6 +247,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 
@@ -296,6 +298,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
   ],
@@ -515,6 +518,24 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see microsoftAssetUploadEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftAssetUploadAvailable = computed<boolean>(() => this.microsoftAssetUploadEnabled() === true);
+  /**
+   * The library upload is admitted on ANY platform's asset capability, as the BFF route is: the
+   * library is one pool, and a deployment that can use an image anywhere may add to it. `null`
+   * while no flag says yes and one is still unanswered — unknown, not a no.
+   */
+  protected readonly libraryUploadAvailable = computed<boolean | null>(() => {
+    const flags = [
+      this.redditAssetUploadEnabled(),
+      this.metaAssetUploadEnabled(),
+      this.linkedInAssetUploadEnabled(),
+      this.googleAssetUploadEnabled(),
+      this.microsoftAssetUploadEnabled(),
+      // The tweet image: the BFF route admits the upload on `canCreateTwitter()` alone.
+      this.twitterCreateEnabled(),
+    ];
+    if (flags.some((enabled) => enabled === true)) return true;
+    return flags.some((enabled) => enabled !== false) ? null : false;
+  });
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -997,7 +1018,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditInterests = signal<string[]>([]);
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
-  protected readonly redditBudgetUsd = signal(500);
+  protected readonly redditBudgetUsd = signal(DEFAULT_REDDIT_BUDGET_USD);
   /**
    * Reddit campaign objective. Seeded from `DEFAULT_REDDIT_OBJECTIVE` for the reason the Meta
    * objective is seeded from upstream's: nothing has ever sent this field, so both creators have
@@ -3566,6 +3587,11 @@ export class ImplementationTabComponent implements OnInit {
     // Told to the parent at once: a tab switch now destroys this component but not the request,
     // and the remount resumes it from the draft (`resumeRedditImageUpload`).
     this.emitDraft();
+  }
+
+  /** A library upload stored a new image: re-read the slot coverage and the Google image slots' library. */
+  protected onCreativeLibraryChanged(): void {
+    this.creativeLibraryRevision.update((revision) => revision + 1);
   }
 
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
@@ -6504,6 +6530,17 @@ export class ImplementationTabComponent implements OnInit {
     // the previous brief's pixel into the new brief's draft and create (#3484). Inside `seeding`,
     // so the reset does not emit a draft of its own.
     this.redditConversionPixelForm.reset();
+    // The other Reddit values the brief does not derive, cleared for the same reason (#4589): each
+    // is restored only from a draft, so with the draft cleared by a brief switch they would carry
+    // the previous brief's typed post, image, button, objective, goal and budget into this one.
+    // The uploaded image is left alone on purpose: it is scoped to its brief, and
+    // `redditImageAssetBlock` already holds Create with a Remove for one made for another brief.
+    this.redditPostUrl.set('');
+    this.redditImageUrl.set('');
+    this.redditCallToAction.set('');
+    this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
+    this.redditVideoGoal.set('');
+    this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,

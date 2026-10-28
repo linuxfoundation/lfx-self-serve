@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<section
+  class="lfx-framework-print lfx-faq-print bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] break-before-page [overflow-wrap:anywhere]"
+  [style.--mfp-font]="v.brand.fontStack"
+  [style.--mfp-dark]="v.brand.dark"
+  [style.--mfp-accent]="v.brand.accent"
+  [style.--mfp-tint]="v.brand.tint"
+  [style.--mfp-ink]="v.brand.ink"
+  aria-label="FAQ"
+  data-testid="mktg-faq-print">
+  <!-- Always render the document identity, even with no questions or an empty first group. -->
+  <header class="break-inside-avoid break-after-avoid">
+    <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' FAQ'" />
+    <h2 class="mb-[8pt] flex items-baseline gap-[10pt] text-[22pt] font-medium break-after-avoid">
+      <span class="text-[11pt] font-semibold text-[color:var(--mfp-accent)]">{{ number() }}</span
+      >FAQ
+    </h2>
+  </header>
+  @for (group of v.groups; track group.path) {
+    @for (row of group.questions; track row.path; let firstQuestion = $first) {
+      <!-- Keep each group heading WITH its first pair. The document header avoids a break after it. -->
+      <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-faq-print-pair">
+        @if (firstQuestion) {
+          <h3 class="border-b border-black/10 pb-[6pt] text-[14pt] font-medium break-after-avoid" data-testid="mktg-faq-print-group">{{ group.name }}</h3>
+        }
+        <h4 class="text-[11pt] font-semibold break-after-avoid">{{ row.question }}</h4>
+        <p class="whitespace-pre-line">{{ row.answered ? row.answer : unansweredLabel }}</p>
+        @if (row.source) {
+          <p class="text-[7.5pt] opacity-70" data-testid="mktg-faq-print-source">Source: {{ row.source }}</p>
+        }
+      </article>
+    }
+  }
+</section>

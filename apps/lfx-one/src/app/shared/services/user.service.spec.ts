@@ -4,9 +4,9 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -68,6 +68,124 @@ describe('UserService', () => {
     expect(onError).toHaveBeenCalledWith(error);
     expect(refreshed).not.toHaveBeenCalled();
     subscription.unsubscribe();
+  });
+
+  // #4523: every identities GET re-runs the server's CDP reconcile, so the page must share one.
+  describe('getIdentities', () => {
+    const identitiesUrl = '/api/profile/identities';
+    let response$: Subject<EnrichedIdentity[]>;
+    // HttpClient observables are cold: every subscription is a request, so count subscriptions, not get() calls.
+    let subscriptions: number;
+    const identitiesRequests = (): number => subscriptions;
+
+    beforeEach(() => {
+      response$ = new Subject<EnrichedIdentity[]>();
+      subscriptions = 0;
+      httpGet.mockImplementation((url: string) =>
+        url === identitiesUrl
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+    });
+
+    function respond(rows: EnrichedIdentity[] = []): void {
+      response$.next(rows);
+      response$.complete();
+    }
+
+    it('shares one request between concurrent and later subscribers', () => {
+      const shell = vi.fn();
+      const tab = vi.fn();
+      service.getIdentities().subscribe(shell);
+      service.getIdentities().subscribe(tab);
+      respond([{ id: 'id-1' } as EnrichedIdentity]);
+      const late = vi.fn();
+      service.getIdentities().subscribe(late);
+
+      expect(identitiesRequests()).toBe(1);
+      for (const consumer of [shell, tab, late]) {
+        expect(consumer).toHaveBeenCalledExactlyOnceWith([{ id: 'id-1' }]);
+      }
+    });
+
+    it('shares a response carrying synthetic auth0: ids with current subscribers only', () => {
+      const shell = vi.fn();
+      const tab = vi.fn();
+      const synthetic = [{ id: 'cdp-1' }, { id: 'auth0:github|1' }] as EnrichedIdentity[];
+      service.getIdentities().subscribe(shell);
+      service.getIdentities().subscribe(tab);
+      respond(synthetic);
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      // A later visit must see the real CDP id, so removal does not skip CDP rejection.
+      service.getIdentities().subscribe();
+
+      expect(shell).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(tab).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('fetches once more after refreshUserIdentities(), for every consumer together', () => {
+      service.getIdentities().subscribe();
+      respond();
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      service.refreshUserIdentities();
+      service.getIdentities().subscribe();
+      service.getIdentities().subscribe();
+
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('does not cache a failed request', () => {
+      const onError = vi.fn();
+      service.getIdentities().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      service.getIdentities().subscribe();
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('drops the cache after a successful identity removal or email link', () => {
+      vi.mocked(TestBed.inject(HttpClient).patch).mockReturnValue(of({ success: true }));
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ success: true }));
+      service.getIdentities().subscribe();
+      respond();
+
+      for (const mutate of [() => service.rejectIdentity('id-1'), () => service.verifyAndLinkEmail('dev@example.org', '123456')]) {
+        response$ = new Subject<EnrichedIdentity[]>();
+        const before = identitiesRequests();
+        mutate().subscribe();
+        service.getIdentities().subscribe();
+        expect(identitiesRequests()).toBe(before + 1);
+        respond();
+      }
+    });
+
+    // A removal can fail after the Auth0 unlink already landed, so the cached list can't be trusted.
+    it('drops the cache after a failed identity removal or email link', () => {
+      vi.mocked(TestBed.inject(HttpClient).patch).mockReturnValue(throwError(() => new Error('cdp unavailable')));
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('link step failed')));
+      service.getIdentities().subscribe();
+      respond();
+
+      for (const mutate of [() => service.rejectIdentity('id-1'), () => service.verifyAndLinkEmail('dev@example.org', '123456')]) {
+        response$ = new Subject<EnrichedIdentity[]>();
+        const before = identitiesRequests();
+        const onError = vi.fn();
+        mutate().subscribe({ error: onError });
+        service.getIdentities().subscribe();
+        expect(onError).toHaveBeenCalledOnce();
+        expect(identitiesRequests()).toBe(before + 1);
+        respond();
+      }
+    });
   });
 
   it.each([

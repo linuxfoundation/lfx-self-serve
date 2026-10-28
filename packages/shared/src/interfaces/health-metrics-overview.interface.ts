@@ -190,18 +190,35 @@ export type HealthMetricsOverviewCardStatus = 'loading' | 'failed' | 'ready';
 export interface HealthMetricsOverviewExploreLink {
   label: string;
   commands: readonly string[];
-  fragment: string;
+  /** The section to land on; none opens the page at the top. */
+  fragment?: string;
   queryParams: Readonly<Record<string, string | null>>;
+  /** Leaves Health Metrics: `queryParams` replace the current ones instead of merging into them. */
+  replaceQueryParams?: boolean;
 }
 
-/** A card's empty state, word for word from the design. */
+/** A card's empty state as shown: an icon tile, a title, then one sentence or a short list of reasons. */
 export interface HealthMetricsOverviewEmptyCopy {
   icon: string;
-  /** Classes for the 44px circle behind the icon and the icon itself. */
-  circleClass: string;
-  iconClass: string;
+  title: string;
+  /** One sentence; empty when the reasons list stands in for it. */
+  text: string;
+  reasons: readonly string[];
+}
+
+/** An empty state's words for one period; in a past year's copy, `{Y}` stands for the year. */
+export interface HealthMetricsOverviewEmptyPeriodCopy {
   title: string;
   text: string;
+  reasons: readonly string[];
+}
+
+/** A card's empty state for YTD and for a past year, word for word from the design. */
+export interface HealthMetricsOverviewEmptyStateCopy {
+  icon: string;
+  ytd: HealthMetricsOverviewEmptyPeriodCopy;
+  /** None for a card that shows today's figures whatever the period, so it always speaks of today. */
+  past?: HealthMetricsOverviewEmptyPeriodCopy;
 }
 
 /** A change against the year before: the arrow follows the figure, the colour whether that is good. */

@@ -468,7 +468,11 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     };
   }
 
-  async function setup(identities: EnrichedIdentity[], refresh$ = new Subject<void>()): Promise<ComponentFixture<ProfileLayoutComponent>> {
+  async function setup(
+    identities: EnrichedIdentity[],
+    refresh$ = new Subject<void>(),
+    platformId: 'browser' | 'server' = 'browser'
+  ): Promise<ComponentFixture<ProfileLayoutComponent>> {
     const userServiceMock = {
       user: signal({ user_id: 'u1' } as unknown as User),
       impersonating: signal(false),
@@ -486,7 +490,7 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
-        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
@@ -505,6 +509,20 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
   beforeEach(() => {
     sessionStorage.clear();
     TestBed.resetTestingModule();
+  });
+
+  // #4523: an SSR fetch is a second identities GET that re-runs the server's CDP reconcile.
+  it('does not fetch identities during SSR', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })], new Subject<void>(), 'server');
+
+    expect(TestBed.inject(UserService).getIdentities).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+  });
+
+  it('fetches identities once in the browser', async () => {
+    await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })]);
+
+    expect(TestBed.inject(UserService).getIdentities).toHaveBeenCalledOnce();
   });
 
   it('shows the identities primary instead of a stale profile email', async () => {

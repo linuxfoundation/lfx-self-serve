@@ -225,6 +225,9 @@
                 placeholder="https://…"
                 data-testid="mktg-linkedin-content-url"
                 dataTest="mktg-linkedin-content-url" />
+              @if (linkWarning(); as warning) {
+                <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-linkedin-link-warning">{{ warning }}</span>
+              }
               <p class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">{{ sourceLinkHint }}</p>
             } @else {
               @if (file(); as selected) {

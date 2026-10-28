@@ -70,6 +70,7 @@ import {
   mktgActiveRunConflictHeading,
   mktgRunAnsweredBy,
   readMktgRetiredRunHint,
+  mktgLinkWarnings,
 } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
@@ -372,6 +373,15 @@ export class MktgAgentRunComponent {
     if (!this.intakeValid()) return 'Complete the required fields and correct any highlighted sources.';
     return '';
   });
+  protected readonly linkValues = computed(() =>
+    Object.fromEntries(
+      (this.intake?.fields ?? [])
+        .filter((field) => field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url')
+        .map((field) => [field.key, this.intakeValue()[field.key] ?? ''])
+    )
+  );
+  protected readonly linkUrls = computed(() => Object.values(this.linkValues()).flatMap((value) => value.split(/\r?\n/)));
+  protected readonly linkWarnings = computed(() => mktgLinkWarnings(this.linkValues()));
   protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
   protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
   protected readonly missingFiles = computed(() => this.missingDocuments() + this.missingLogos());
@@ -615,7 +625,7 @@ export class MktgAgentRunComponent {
               return EMPTY;
             }
             this.resetForContext(context, fresh);
-            if (!context || this.publicReceiver()) return EMPTY;
+            if (!context || !user?.sub || this.publicReceiver()) return EMPTY;
             const history =
               fresh && user?.sub
                 ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
@@ -691,6 +701,12 @@ export class MktgAgentRunComponent {
     this.onRetryHandoff();
   }
 
+  protected onRetryPublicLanding(): void {
+    const destination = this.navigation();
+    if (destination?.subject && destination.subject === this.userService.user()?.sub && destination.projectUid === this.publicProject()) this.onRetryHandoff();
+    else this.onPublicLanding(!!destination?.runId);
+  }
+
   protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.publicProject()) return;
     if (cycle.detail.progressUnavailable) {
@@ -762,7 +778,9 @@ export class MktgAgentRunComponent {
     const destination = this.navigation();
     if (!destination) return;
     if (destination.projectUid !== this.projectContext.activeContextUid() || !destination.subject || destination.subject !== this.userService.user()?.sub) {
-      this.discardPendingNavigation();
+      // The public receiver can retry this public destination after signing in;
+      // it has no private generation capability to restore or submit.
+      if (!this.publicReceiver()) this.discardPendingNavigation();
       this.navigating.set(false);
       this.writingStretch.set(false);
       this.phase.set('form');
@@ -853,8 +871,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
-    // Removing entry-only mode uses the same restoration path as a plain run URL.
-    this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    if (this.waitingQuestions()) {
+      // Removing entry-only mode uses the same restoration path as a plain run URL.
+      this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.router.navigate(this.waitingRunLink(), { queryParams: this.waitingRunParams() });
   }
 
   protected onStartOverWaiting(): void {
@@ -1028,7 +1050,10 @@ export class MktgAgentRunComponent {
           this.discardedRunId = runId;
           action();
         },
-        () => this.keepExistingRun()
+        (reason) => {
+          this.keepExistingRun();
+          if (reason === ConfirmEventType.REJECT) this.onContinueWaiting();
+        }
       ),
     });
   }
@@ -2063,6 +2088,7 @@ export class MktgAgentRunComponent {
         runId &&
         MKTG_STARTED_RUN_ID_REGEX.test(runId)
       ) {
+        this.runFailed.set(false); // Recorded failures offer navigation recovery, never a new Generate retry.
         this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey: type.agentKey, runId });
         this.onRetryHandoff();
       } else if (progress.type === 'refused') {
