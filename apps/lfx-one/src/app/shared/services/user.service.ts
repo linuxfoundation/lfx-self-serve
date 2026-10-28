@@ -634,9 +634,11 @@ export class UserService {
     }
     // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
     // encode before interpolating so the PATCH route resolves reliably.
+    // Drop the cache on failure too: the Auth0 unlink can succeed before a later step fails, so the
+    // cached list may already be wrong either way.
     return this.http
       .patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body)
-      .pipe(tap(() => (this.userIdentities$ = null)));
+      .pipe(tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) }));
   }
 
   /**
@@ -680,8 +682,9 @@ export class UserService {
   public verifyAndLinkEmail(email: string, otp: string): Observable<VerifyAndLinkEmailResponse> {
     return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(
       take(1),
-      // Callers outside the Identities tab (account settings) don't emit a refresh; drop the cache.
-      tap(() => (this.userIdentities$ = null))
+      // Callers outside the Identities tab (account settings) don't emit a refresh; drop the cache. On
+      // failure too — the link may have landed before a later step failed.
+      tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) })
     );
   }
 

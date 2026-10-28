@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { defer, of, Subject } from 'rxjs';
+import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -163,6 +163,25 @@ describe('UserService', () => {
         const before = identitiesRequests();
         mutate().subscribe();
         service.getIdentities().subscribe();
+        expect(identitiesRequests()).toBe(before + 1);
+        respond();
+      }
+    });
+
+    // A removal can fail after the Auth0 unlink already landed, so the cached list can't be trusted.
+    it('drops the cache after a failed identity removal or email link', () => {
+      vi.mocked(TestBed.inject(HttpClient).patch).mockReturnValue(throwError(() => new Error('cdp unavailable')));
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('link step failed')));
+      service.getIdentities().subscribe();
+      respond();
+
+      for (const mutate of [() => service.rejectIdentity('id-1'), () => service.verifyAndLinkEmail('dev@example.org', '123456')]) {
+        response$ = new Subject<EnrichedIdentity[]>();
+        const before = identitiesRequests();
+        const onError = vi.fn();
+        mutate().subscribe({ error: onError });
+        service.getIdentities().subscribe();
+        expect(onError).toHaveBeenCalledOnce();
         expect(identitiesRequests()).toBe(before + 1);
         respond();
       }
