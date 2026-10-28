@@ -94,6 +94,8 @@ export class MktgDocumentsComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
+  // Once occupied, this slot stays mounted for this scope's page visit.
+  protected readonly startedRunsVisible = signal(false);
   protected readonly errorText = signal('');
   protected readonly refreshWarning = signal('');
   // The documents list could not be read: nothing is known about what the
@@ -203,6 +205,7 @@ export class MktgDocumentsComponent {
         .pipe(takeUntilDestroyed())
         .subscribe((documents) => {
           this.documents.set(documents);
+          if (documents?.runs?.length) this.startedRunsVisible.set(true);
           this.loading.set(false);
           this.scrollToSelection();
         });
@@ -289,13 +292,12 @@ export class MktgDocumentsComponent {
       tap((request) => {
         const scope = JSON.stringify([request.project, request.userSub]);
         this.pendingSelectionScroll = scope === this.listedScope && request.type !== this.listedType;
-        const typeChanged = request.type !== this.listedType;
         this.listedType = request.type;
-        if (typeChanged) this.loading.set(true);
         if (scope !== this.listedScope) {
           this.listedScope = scope;
           this.loading.set(true);
           this.documents.set(null);
+          this.startedRunsVisible.set(false);
           this.errorText.set('');
           this.refreshWarning.set('');
           this.listFailed.set(false);

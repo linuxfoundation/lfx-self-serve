@@ -34,7 +34,7 @@ describe('Marketing family page', () => {
     revisionNumber: 3,
     contentSha256: 'b'.repeat(64),
   };
-  const documents = signal<MktgDocumentsResponse>({ project: 'synthetic', groups: [] });
+  const documents = signal<MktgDocumentsResponse | null>({ project: 'synthetic', groups: [] });
   const run = vi.fn(() => of({ project: 'synthetic', framework, chainId: 'chain', ownerToken: 'token', status: 'complete', steps: [] }));
   const writer = signal(false);
   const lastExport = vi.fn(() => of(null));
@@ -157,7 +157,7 @@ describe('Marketing family page', () => {
       expect(link?.textContent?.trim()).toBe(label);
       expect(link?.getAttribute('href')).toBe('/project/mktg-os-agents/' + target + '?project=synthetic' + (questions ? '' : '&run=synthetic-run'));
     }
-    documents.update((value) => ({ ...value, runs: value.runs?.map((run) => ({ ...run, state: 'failed' })) }));
+    documents.update((value) => (value ? { ...value, runs: value.runs?.map((run) => ({ ...run, state: 'failed' })) } : null));
     await harness.fixture.whenStable();
     expect(row?.textContent).not.toContain(status);
     expect(root?.querySelector('[data-testid="mktg-family-run-status"]')).toBeNull();
@@ -214,7 +214,7 @@ describe('Marketing family page', () => {
     const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-status"]');
     expect(status?.textContent).toContain('FAQ · Waiting for your answers');
     expect(status?.querySelector('a')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=synthetic');
-    documents.update((value) => ({ ...value, runs: value.runs?.map((run) => (run.agentKey === 'faq' ? { ...run, state: 'writing' } : run)) }));
+    documents.update((value) => (value ? { ...value, runs: value.runs?.map((run) => (run.agentKey === 'faq' ? { ...run, state: 'writing' } : run)) } : null));
     await harness.fixture.whenStable();
     expect(status?.textContent).toContain('FAQ · Writing…');
     expect(status?.querySelector('a')?.getAttribute('href')).toBe('/project/mktg-os-agents/documents/faq/living?project=synthetic&run=newer');
@@ -237,7 +237,7 @@ describe('Marketing family page', () => {
     await harness.fixture.whenStable();
     expect(run).toHaveBeenCalledTimes(scenario === 'matching state' ? 1 : 0);
     expect((TestBed.inject(Location).getState() as Record<string, unknown> | null)?.[MKTG_REBUILD_NAVIGATION_STATE_KEY]).toBeUndefined();
-    documents.set({ ...documents() });
+    documents.set({ project: 'synthetic', groups: [], ...documents() });
     await harness.fixture.whenStable();
     expect(run).toHaveBeenCalledTimes(scenario === 'matching state' ? 1 : 0);
   });
@@ -692,7 +692,7 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
     const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]');
     expect(status?.getAttribute('role')).toBe('status');
-    expect(status?.textContent).toContain('Loading family assets');
+    expect(status?.textContent).toContain('Refreshing');
     loading.set(false);
     await harness.fixture.whenStable();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
@@ -700,10 +700,40 @@ describe('Marketing family page', () => {
     loading.set(true);
     await harness.fixture.whenStable();
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
-    expect(status?.textContent).toContain('Loading family assets');
+    expect(status?.textContent).toContain('Refreshing');
   });
-  it('hides every header action until the kit read resolves and on error', async () => {
+  it('settles the reserved header action once and retains the same rows and action during retry', async () => {
+    const knownFamilies = families();
+    families.set([]);
+    documents.set(null);
     loading.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    expect(root?.querySelector('[data-testid="mktg-family-action-loading"]')).not.toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBeNull();
+    documents.set({ project: 'synthetic', groups: [] });
+    families.set(knownFamilies);
+    loading.set(false);
+    await harness.fixture.whenStable();
+    const actions = root?.querySelector('[data-testid="mktg-family-actions"]');
+    const assets = root?.querySelector('[data-testid="mktg-family-assets"]');
+    expect(actions).not.toBeNull();
+    expect(assets).not.toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-action-loading"]')).toBeNull();
+    loading.set(true);
+    await harness.fixture.whenStable();
+    expect(root?.querySelector('[data-testid="mktg-family-actions"]')).toBe(actions);
+    expect(root?.querySelector('[data-testid="mktg-family-assets"]')).toBe(assets);
+    expect(actions?.getAttribute('aria-busy')).toBe('true');
+    loading.set(false);
+    await harness.fixture.whenStable();
+    expect(actions?.getAttribute('aria-busy')).toBe('false');
+  });
+
+  it('reserves the header action until the kit read resolves and clears it on a failed first read', async () => {
+    loading.set(true);
+    documents.set(null);
     families.set([]);
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);

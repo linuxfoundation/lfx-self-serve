@@ -433,6 +433,44 @@ describe('MktgDocumentsComponent', () => {
     }
   });
 
+  it('reserves the started-runs slot until the first read, then retains it when runs finish', async () => {
+    const read = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(read);
+    await render();
+    expect(query('mktg-documents-started-loading')).not.toBeNull();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    read.next({ ...documentsResponse(), runs: [startedRun('questions')] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-loading')).toBeNull();
+    const card = query('mktg-documents-started-runs');
+    expect(card).not.toBeNull();
+    read.next({ ...documentsResponse(), runs: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-runs')).toBe(card);
+    expect(card?.textContent).toContain('No runs in progress');
+  });
+
+  it('collapses an initially empty run slot once and keeps documents visible during type refetch', async () => {
+    const read = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(read);
+    await render('/');
+    expect(query('mktg-documents-started-loading')).not.toBeNull();
+    read.next(documentsResponse());
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-loading')).toBeNull();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    store.listDocuments.mockReturnValue(NEVER);
+    await TestBed.inject(Router).navigateByUrl('/?type=brand-kit');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-loading')).toBeNull();
+    expect(query('mktg-documents-revisions')).not.toBeNull();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
+  });
+
   it('retains loaded documents on transient refresh failure, retries and removes completed progress', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments
@@ -448,7 +486,7 @@ describe('MktgDocumentsComponent', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('No runs in progress');
     expect(query('mktg-documents-refresh-warning')).toBeNull();
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });

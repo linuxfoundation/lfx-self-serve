@@ -1283,13 +1283,15 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       if (!view) {
-        const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
+        const type = this.runDetail()?.type;
+        // A confirmed run with no revision can name its asset; never guess from route params.
+        if (!type || type.agentKey === 'member-360') return '';
+        const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
+        return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
-        return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
+        return `${this.projectContext.activeContext()?.name ?? ''} ${mktgKitAssetLabel(view.type.agentKey) ?? view.type.itemLabel}`.trim();
       }
       const source = this.linkedinContent()?.source;
       return source ? `${view.type.itemLabel} · ${source.label}` : view.type.itemLabel;

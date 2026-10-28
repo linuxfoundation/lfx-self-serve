@@ -24,9 +24,11 @@
       <lfx-button label="Refresh progress" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-documents-refresh-progress" />
     }
 
-    @if (!loading() && !listFailed() && runs().length) {
+    @if (loading() && !documents()) {
+      <div class="h-28 animate-pulse rounded-xl border border-gray-200 bg-gray-100" aria-hidden="true" data-testid="mktg-documents-started-loading"></div>
+    } @else if (!listFailed() && startedRunsVisible()) {
       <section
-        class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
+        class="flex min-h-28 flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
         aria-label="Started runs"
         data-testid="mktg-documents-started-runs">
         <h2 class="text-sm font-semibold text-gray-700">Started runs</h2>
@@ -67,6 +69,8 @@
               >
             }
           </div>
+        } @empty {
+          <p class="text-sm text-gray-500" data-testid="mktg-documents-no-started-runs">No runs in progress</p>
         }
       </section>
     }
@@ -119,7 +123,7 @@
 
       <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
       <section #documentPanel aria-label="Documents and revisions" class="flex min-w-0 scroll-mt-20 flex-col gap-5">
-        @if (loading()) {
+        @if (loading() && !documents()) {
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
             Loading documents…
           </div>

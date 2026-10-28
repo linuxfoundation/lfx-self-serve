@@ -119,7 +119,7 @@ export class MktgFamilyComponent {
 
   private initHeaderRun() {
     return computed(() => {
-      if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
+      if (!this.kit.documents() || this.kit.accessDenied() || !this.context.canWrite()) return null;
       const rows = this.rows();
       const newest = [...(this.kit.documents()?.runs ?? [])]
         .filter((run) => run.state !== 'failed')
@@ -135,7 +135,7 @@ export class MktgFamilyComponent {
       const definition = this.definition();
       if (!definition) return null;
       return resolveMktgFamilyActions(this.family() ?? { family: definition, rows: [], agents: [], live: this.live() }, {
-        loaded: !this.kit.loading() && (!this.kit.error() || this.kit.accessDenied()),
+        loaded: !!this.kit.documents() || (!this.kit.loading() && (!this.kit.error() || this.kit.accessDenied())),
         canWrite: this.context.canWrite() && !this.kit.accessDenied(),
         approvedFramework: !!this.kit.documents()?.approvedFramework,
       });

@@ -148,7 +148,7 @@ test.describe('Marketing OS current revisions', () => {
     await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded', { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
-    await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0, { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-started-runs')).toContainText('No runs in progress', { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });

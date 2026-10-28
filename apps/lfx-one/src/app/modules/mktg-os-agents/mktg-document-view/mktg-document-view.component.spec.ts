@@ -373,6 +373,37 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.approveRevision).not.toHaveBeenCalled();
   }
 
+  it('shows neutral title and action placeholders until a living document resolves, with no Run again flash', async () => {
+    const read = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValue(read);
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-title-loading')).not.toBeNull();
+    expect(query('mktg-document-view-action-loading')).not.toBeNull();
+    expect(query('mktg-document-view-title')).toBeNull();
+    expect(query('mktg-document-view-run-again')).toBeNull();
+    read.next({ ...revisionResponse(LATEST), sidecar: kitSidecar() });
+    read.complete();
+    await settle();
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-action-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('TestOrbit Brand kit');
+    expectTitleCardRunAgain();
+  });
+
+  it('does not render a provisional Member 360 title before its period resolves', async () => {
+    const read = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValue(read);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-document-view-title-loading')).not.toBeNull();
+    expect(query('mktg-document-view-title')).toBeNull();
+    const response = { ...member360Revision(), project: PROJECT.uid, member360: member360Fixture() };
+    read.next(response);
+    read.complete();
+    await settle();
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe(`Member 360 · ${response.member360.period.label}`);
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+  });
+
   it('names the route asset in the crumb before its loading or generating document arrives', async () => {
     store.getDocument.mockReturnValue(new Subject<MktgDocumentDetailResponse>());
     await render('/documents/brand-kit/living');
@@ -2981,7 +3012,7 @@ describe('MktgDocumentViewComponent', () => {
     pending.next(response);
     pending.complete();
     await settle();
-    expect(query('mktg-document-view-title')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-document-view-title')?.textContent).toContain('Brand kit');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1');
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
   });
