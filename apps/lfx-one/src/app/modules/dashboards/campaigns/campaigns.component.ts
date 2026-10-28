@@ -2508,7 +2508,11 @@ export class CampaignsComponent {
         // re-evaluates it after a switch, so the picker stayed empty until they navigated
         // away and back. Guarded, so a switch into a foundation whose channel is off still
         // renders that answer rather than looping on it.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
+        // Every SEND surface, matching the delivery-type handler's own guard. Left as
+        // `=== 'email'` while that one was widened, a foundation switch on the survey surface
+        // reloaded nothing -- and since `selectTab` never fires without a tab transition, the
+        // Implement panel stayed blank until the operator navigated tabs by hand.
+        if (this.selectedDeliveryType() !== 'paid-marketing' && this.selectedEmailTab() === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
@@ -2525,7 +2529,7 @@ export class CampaignsComponent {
         // resolvable: the panel repopulates instead of sitting empty until the operator
         // navigates away and back. `loadEmailMetrics` re-reads its own context and handles the
         // no-brief case, so it is safe to call unconditionally either way.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
+        if (this.selectedDeliveryType() !== 'paid-marketing' && this.selectedEmailTab() === 'insights') {
           this.loadEmailMetrics();
         }
 
@@ -3457,6 +3461,7 @@ export class CampaignsComponent {
     this.surveySequenceSends.set([]);
     this.surveySequenceState.set('idle');
     this.surveySequenceError.set('');
+    this.discardSequenceStaging();
   }
 
   protected onSurveySendDateInput(stage: CampaignSurveyStage, value: string): void {
@@ -3489,6 +3494,11 @@ export class CampaignsComponent {
     this.surveySequenceState.set('generating');
     this.surveySequenceError.set('');
     this.surveySequenceSends.set([]);
+    // The staged set, and everything built from it, describe the PREVIOUS generation of copy.
+    // Brief ids are stable across a regeneration -- the same identity resolves to the same row --
+    // so leaving them staged made "Stage all" skip every send and report success while HubSpot
+    // still held the superseded drafts.
+    this.discardSequenceStaging();
 
     const written: CampaignSequenceSend[] = [];
     try {
@@ -6102,6 +6112,23 @@ export class CampaignsComponent {
     this.emailTemplateSelectionIsSuggested.set(true);
   }
 
+  /**
+   * Forget what this campaign staged and built.
+   *
+   * One method rather than four signal writes at each site, because "the drafts and the workflow
+   * belong to the copy that produced them" is one rule: a regeneration and a count change both
+   * invalidate all of it, and a site that cleared only some would leave the panel offering a
+   * workflow built from drafts it can no longer show.
+   */
+  private discardSequenceStaging(): void {
+    this.sequenceStagedBriefIds.set([]);
+    this.sequenceStagingState.set('idle');
+    this.sequenceStagingMessage.set('');
+    this.sendWorkflowState.set('idle');
+    this.sendWorkflowError.set('');
+    this.sendWorkflowResult.set(null);
+  }
+
   /** A send's operator-facing name, read off the shared type list so the two cannot disagree. */
   private surveyStageLabel(stage: CampaignSurveyStage): string {
     return CAMPAIGN_SURVEY_TYPES.find((type) => type.stage === stage)?.label ?? stage;
@@ -6152,7 +6179,17 @@ export class CampaignsComponent {
       this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
     );
     const briefId = persisted.briefId ?? '';
-    if (briefId === '' || ownershipKey === null) {
+
+    // APPROVED, not merely saved. `saveBrief` returns a non-empty id with `approved: false`
+    // when the approve step failed, and on `stale-brief` / `unverified-validator` -- and
+    // campaign-service gates copy generation, audience build and staging on the brief having
+    // reached approved. Accepting the id anyway cached an unusable brief, and because the
+    // ownership cache short-circuits, every retry returned it instead of re-attempting the
+    // approval that was actually missing.
+    if (briefId === '' || !persisted.approved) {
+      throw new Error(this.emailSaveFailureMessage('so this send was not saved.'));
+    }
+    if (ownershipKey === null) {
       return briefId;
     }
 
