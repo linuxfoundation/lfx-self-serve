@@ -182,7 +182,7 @@ For missing sign-off recovery (single-commit amend, or older commits / cherry-pi
 
 - Always reference PrimeNG's component interface when defining types — all PrimeNG components are wrapped in LFX components for UI library independence.
 - Use direct imports for standalone components (no barrel exports).
-- Authentication is selective: public routes (`/meetings/` SSR pages, single-segment `/votes/:id` SSR for login-free vote links, `/public/api`) allow anonymous access (optional auth), protected routes require it. Auth0/Authelia via express-openid-connect; custom `/login` handler with URL validation. Prefer user bearer tokens over M2M tokens except in genuinely public endpoints — see `.claude/rules/development-rules.md` for the M2M usage rules.
+- Authentication is selective: public routes (`/meetings/` SSR pages, `/public/api`) allow anonymous access (optional auth), protected routes require it. Auth0/Authelia via express-openid-connect; custom `/login` handler with URL validation. Prefer user bearer tokens over M2M tokens except in genuinely public endpoints — see `.claude/rules/development-rules.md` for the M2M usage rules.
 
 ### Dev server
 
