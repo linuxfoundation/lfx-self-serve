@@ -251,6 +251,25 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaInstagramDsa = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA',
 
   /**
+   * Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
+   * table, served by `GET /api/campaigns/google/geo-targets`.
+   *
+   * A CAPABILITY flag, like `CampaignServiceMicrosoftSchedule`: it says the DEPLOYED campaign-service
+   * has `GET /projects/{project_id}/google-ads/geo-targets`
+   * (linuxfoundation/lfx-v2-campaign-service#411). An older one has no such route, so every search
+   * would fail. Turn it on only once #411 is released and deployed in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): postal-code ids reach the
+   * campaign only on the campaign-service road, which is why the capability the client sees
+   * (`CampaignListResult.googleGeoSearchEnabled`) needs both. With it off the tab keeps the typed-id
+   * box and the search route answers 404 as if it were not mounted.
+   *
+   * Turning it back off strands nothing: ids already picked stay on the draft and dispatch as typed
+   * ones do. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceGoogleGeoSearch = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH',
+
+  /**
    * Offers an image UPLOAD in the Reddit section of the create flow, sent as
    * `redditConfig.imageAssetId` instead of a pasted `imageUrl` (decision D3).
    *

@@ -609,6 +609,23 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA:
     value:
 
+  # Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
+  # table: the operator types a postal code or place name, picks a result, and its numeric id is sent
+  # in `googleAdsConfig.geoTargets` exactly as a typed id would be.
+  #
+  # A CAPABILITY flag, like MICROSOFT_SCHEDULE: "does the DEPLOYED campaign-service have
+  # `GET /projects/{project_id}/google-ads/geo-targets`?" REQUIRES
+  # linuxfoundation/lfx-v2-campaign-service#411 RELEASED and DEPLOYED — an older campaign-service has
+  # no such route, so every search would fail. It also needs the create pipeline (CREATE, BRIEFS,
+  # JOBS) on, because postal-code ids reach a campaign on that road only.
+  #
+  # Off (the default), the tab keeps the typed-id box and `GET /api/campaigns/google/geo-targets`
+  # answers 404. Turning it back off strands nothing: ids already picked stay on the draft and are
+  # sent as typed ones are. Order: deploy campaign-service #411, confirm it, THEN set this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH:
+    value:
+
   # Offers an image UPLOAD in the Reddit section of the create flow (decision D3): the operator
   # picks a PNG/JPEG (up to 10 MB), it is stored by campaign-service against the brief, and the
   # create sends its id as `redditConfig.imageAssetId` instead of a pasted `imageUrl`. The pasted

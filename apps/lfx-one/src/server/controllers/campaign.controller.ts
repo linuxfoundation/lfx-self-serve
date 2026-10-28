@@ -55,6 +55,8 @@ import type {
   CampaignToggleStatus,
   FlushableResponse,
   GoogleAdsAccountOption,
+  GoogleAdsGeoTargetSearchResult,
+  GoogleAdsGeoTargetSuggestion,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
   GoogleCreativeFieldSpec,
@@ -85,6 +87,9 @@ import {
   GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_GEO_SEARCH_BOUNDS,
+  GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN,
+  GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
@@ -217,6 +222,7 @@ import {
   canCreateWithAudienceSegments,
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
+  canSearchGoogleGeoTargets,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
   canUseMetaCreativeAssets,
@@ -3427,6 +3433,123 @@ export class CampaignController {
         .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
       logger.success(req, operation, startTime, { count: accounts.length });
       res.json(accounts);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Search Google's geo target table for the Implement tab's location picker, proxied to
+   * campaign-service's `suggest-google-ads-geo-targets` (linuxfoundation/lfx-v2-campaign-service#411)
+   * and answered in this app's camelCase vocabulary.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` and the create cutover
+   * (`canSearchGoogleGeoTargets`): off, the route answers 404 as if it were not mounted, the gating
+   * the Google accounts route uses, because an older campaign-service has no suggest route to call.
+   *
+   * NOT root-only, unlike the accounts route beside it: the geo target table is Google's public
+   * location data, not anything an ad account holds, so the LF system credential upstream falls back
+   * to exposes nothing about any foundation. The router's `requireCampaignManager` still applies.
+   *
+   * Every parameter is checked against upstream's own bounds first, so a malformed search is a named
+   * 400 here rather than a Goa validation error from campaign-service.
+   */
+  public async searchGoogleAdsGeoTargets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_geo_target_search';
+    if (!canSearchGoogleGeoTargets()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const refuse = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller', path: req.path }));
+
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      refuse('project', 'A project is required to search Google Ads locations.');
+      return;
+    }
+    const q = typeof req.query['q'] === 'string' ? googleAdsTrimSpace(req.query['q']) : '';
+    if (q === '' || [...q].length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength) {
+      refuse('q', `Enter a place name or postal code of 1 to ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength} characters.`);
+      return;
+    }
+
+    const rawCountry = req.query['countryCode'];
+    let countryCode: string | undefined;
+    if (rawCountry !== undefined && rawCountry !== '') {
+      if (typeof rawCountry !== 'string' || !GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN.test(rawCountry.trim())) {
+        refuse('countryCode', 'A country to search within must be a two-letter ISO country code.');
+        return;
+      }
+      countryCode = rawCountry.trim().toUpperCase();
+    }
+
+    // Repeated `?targetTypes=` arrives as an array and a single one as a string; anything else
+    // (an object from `targetTypes[a]=…`) is refused rather than read as "no filter".
+    const rawTypes = req.query['targetTypes'];
+    let typeList: unknown[] = [];
+    if (Array.isArray(rawTypes)) typeList = rawTypes;
+    else if (rawTypes !== undefined) typeList = [rawTypes];
+    if (!typeList.every((t): t is string => typeof t === 'string')) {
+      refuse('targetTypes', 'Location types must be a list of type names.');
+      return;
+    }
+    const targetTypes = typeList.map((t) => t.trim()).filter((t) => t !== '');
+    if (targetTypes.length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypes) {
+      refuse('targetTypes', `At most ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypes} location types can be searched at once.`);
+      return;
+    }
+    if (targetTypes.some((t) => t.length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypeLength || !/[A-Za-z0-9]/.test(t))) {
+      refuse(
+        'targetTypes',
+        `Each location type must be a name of at most ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypeLength} characters, such as Postal Code.`
+      );
+      return;
+    }
+
+    const rawLimit = req.query['limit'];
+    let limit: number | undefined;
+    if (rawLimit !== undefined && rawLimit !== '') {
+      const parsed = typeof rawLimit === 'string' && /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxLimit) {
+        refuse('limit', `The number of locations to return must be from 1 to ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxLimit}.`);
+        return;
+      }
+      limit = parsed;
+    }
+
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, hasCountry: countryCode !== undefined, typeCount: targetTypes.length });
+    try {
+      const payload = await this.campaignServiceClient.suggestGoogleAdsGeoTargets(req, projectSlug, {
+        q,
+        ...(countryCode ? { country_code: countryCode } : {}),
+        ...(targetTypes.length > 0 ? { target_types: targetTypes } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      // `suggestions` is required upstream; reading its absence as an empty list would say nothing
+      // matched, so an unreadable body fails the search instead — the accounts route's rule.
+      if (!Array.isArray(payload?.suggestions)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads location list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      // A row whose id is not the shape `geoTargets` accepts cannot be added to a campaign, so it is
+      // dropped rather than offered. Upstream patterns the field the same way; this is the belt.
+      const suggestions: GoogleAdsGeoTargetSuggestion[] = payload.suggestions
+        .filter((s) => typeof s?.id === 'string' && GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN.test(s.id) && typeof s.name === 'string')
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          canonicalName: typeof s.canonical_name === 'string' && s.canonical_name.trim() !== '' ? s.canonical_name : s.name,
+          countryCode: typeof s.country_code === 'string' ? s.country_code : '',
+          targetType: typeof s.target_type === 'string' ? s.target_type : '',
+          status: typeof s.status === 'string' ? s.status : '',
+          ...(typeof s.reach === 'number' && Number.isFinite(s.reach) ? { reach: s.reach } : {}),
+        }));
+      const result: GoogleAdsGeoTargetSearchResult = { suggestions, truncated: payload.truncated === true };
+      logger.success(req, operation, startTime, { count: suggestions.length, truncated: result.truncated });
+      res.json(result);
     } catch (error) {
       next(error);
     }
