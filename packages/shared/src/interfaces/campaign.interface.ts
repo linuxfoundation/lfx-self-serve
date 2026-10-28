@@ -6642,6 +6642,20 @@ export interface AudienceListNameConflict {
 }
 
 /**
+ * A step-4 reuse attach (an existing master list, or a past send's lists) waiting for the operator
+ * to confirm the lists it would create in HubSpot.
+ */
+export interface AudiencePendingReuseAttach {
+  kind: 'master' | 'send';
+  /** The master list id, or the past send's email id. */
+  id: string;
+  /** What the operator is attaching, for the confirmation. */
+  label: string;
+  /** The lists this attach would create, as one phrase: it can differ from the step-6 attach's. */
+  creates: string;
+}
+
+/**
  * The project's standing standard list and the standard rows it stands for, so a past send that
  * excluded the standing list is compared with a recorded audience in the same terms.
  */
@@ -6661,6 +6675,29 @@ export interface AudienceStandardSuppressionToggle {
 
 /** How the Audience tab sets the send audience: build a new list, or use existing lists. */
 export type AudienceBuildMode = 'build' | 'reuse';
+
+/** The Audience tab's numbered steps, in page order. Numbers are assigned to the visible ones only. */
+export type AudienceStepKey = 'discover' | 'include' | 'exclude' | 'reuse' | 'gaps' | 'compose' | 'qa';
+
+/** The follow-up a readiness notice offers, emitted back to the tab that raised it. */
+export type AudienceReadinessAction = 'retry-audience-read' | 'retry-brief';
+
+/**
+ * One reason the Audience tab is paused or limited. The tab raises several at once (a staging
+ * pause, an unread audience, an unsaved plan, a degraded connection); the banner shows the most
+ * urgent first and folds the rest behind a toggle.
+ */
+export interface AudienceReadinessNotice {
+  /** The notice's `data-testid`, unchanged from when each was its own banner. */
+  testId: string;
+  /** `busy` shows a spinner; `warn` is amber and announced as an alert. */
+  tone: 'busy' | 'info' | 'warn';
+  title?: string;
+  message: string;
+  /** A `data-testid` for the message itself, when the copy variant matters to a test. */
+  messageTestId?: string;
+  action?: { kind: AudienceReadinessAction; label: string; testId: string };
+}
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {
