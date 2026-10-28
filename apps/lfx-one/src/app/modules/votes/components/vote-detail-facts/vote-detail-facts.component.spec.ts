@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { getVoteVisibilityRules } from '@lfx-one/shared/utils';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteDetailFactsComponent } from './vote-detail-facts.component';
 
@@ -119,6 +119,31 @@ describe('VoteDetailFactsComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('labels the visibility dialog, focuses its rules and returns focus on Escape', async () => {
+    render(makeVote());
+    const trigger = fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-visibility-more"] button') as HTMLButtonElement;
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(trigger.getAttribute('aria-controls')).toBe('vote-detail-facts-visibility-rules');
+
+    trigger.focus();
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const dialog = document.body.querySelector('[role="dialog"][aria-label="Visibility rules"]');
+    expect(dialog).not.toBeNull();
+    const rules = dialog!.querySelector('#vote-detail-facts-visibility-rules') as HTMLElement;
+    await vi.waitFor(() => expect(document.activeElement).toBe(rules));
+
+    rules.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
+    await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"][aria-label="Visibility rules"]')).toBeNull());
   });
 
   it.each(['creator', 'voter'] as const)('shows pending visibility copy for %s until held results are released', (audience) => {

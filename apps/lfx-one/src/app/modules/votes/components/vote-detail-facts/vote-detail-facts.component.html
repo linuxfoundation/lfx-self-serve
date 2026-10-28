@@ -25,16 +25,23 @@
         <h2 class="text-base font-semibold text-gray-900">Visibility at a glance</h2>
       </div>
       <p class="text-sm text-gray-600" data-testid="vote-detail-facts-visibility-summary">{{ visibilityHeadline() }}</p>
-      <div class="relative w-fit">
+      <div #visibilityTrigger class="relative w-fit">
         <lfx-button
           label="More about visibility"
           [text]="true"
           size="small"
           (onClick)="visibilityPopover.toggle($event)"
           [ariaExpanded]="visibilityPopover.overlayVisible"
+          ariaHaspopup="dialog"
+          ariaControls="vote-detail-facts-visibility-rules"
           data-testid="vote-detail-facts-visibility-more" />
-        <p-popover #visibilityPopover [style]="{ width: '320px' }" data-testid="vote-detail-facts-visibility-popover">
-          <ul class="flex flex-col gap-2 text-sm text-gray-600">
+        <p-popover #visibilityPopover ariaLabel="Visibility rules" [style]="{ width: '320px' }" data-testid="vote-detail-facts-visibility-popover">
+          <ul
+            id="vote-detail-facts-visibility-rules"
+            class="flex flex-col gap-2 text-sm text-gray-600"
+            tabindex="-1"
+            autofocus
+            (keydown.escape)="visibilityPopover.hide(); visibilityTrigger.querySelector('button')?.focus()">
             @for (rule of visibilityRules(); track rule) {
               <li data-testid="vote-detail-facts-visibility-rule">{{ rule }}</li>
             }
