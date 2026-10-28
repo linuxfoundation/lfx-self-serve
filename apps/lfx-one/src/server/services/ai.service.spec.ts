@@ -67,8 +67,8 @@ function mockChatResponse(content: string): Response {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: async () => ({ choices: [{ message: { content } }] }),
-    text: async () => content,
+    // `makeAiRequest` reads the body as text and parses it (#4500), so the body is the JSON text.
+    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
   } as unknown as Response;
 }
 
@@ -182,6 +182,26 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
 
     await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/401 Unauthorized.*Invalid API key/);
+  });
+
+  it('fails cleanly on a 2xx that is not JSON, naming the proxy and redacting the body (#4500)', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '<html>gateway page echoing Bearer test-key</html>',
+    } as unknown as Response);
+
+    const error: Error = await service.extractBriefActionItems(req, { brief_text: 'brief' }).then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (e: unknown) => e as Error
+    );
+
+    expect(error.message).toMatch(/AI proxy returned a response that is not a JSON object \(200\): <html>gateway page echoing Bearer \[redacted\]<\/html>/);
+    expect(error.message).not.toContain('test-key');
+    expect(error.message).not.toMatch(/Unexpected token|is not valid JSON/);
   });
 
   it('bounds the fetch with an AbortSignal timeout, not an unbounded request', async () => {
@@ -496,7 +516,7 @@ describe('AiService.reconcileAttendees (GH-1672 / PCC-1452 port)', () => {
   });
 
   it('throws on a response with no choices', async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', json: async () => ({ choices: [] }) } as unknown as Response);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ choices: [] }) } as unknown as Response);
 
     await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
   });

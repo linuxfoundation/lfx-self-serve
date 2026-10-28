@@ -1,38 +1,51 @@
 ---
 title: Mailing Lists
-description: Subscribe, unsubscribe, and manage mailing lists for your Linux Foundation projects.
+description: Find, join, create, and manage the mailing lists for your Linux Foundation projects in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
-tags: [mailing-lists, email, subscribe, groups, communication]
-last_updated: 2026-05-23
+tags: [mailing-lists, email, join, leave, groups, subscribers, communication]
+last_updated: 2026-10-28
 intercom_collection: Mailing Lists
 ---
 
-The Mailing Lists section lets you view and manage email mailing lists associated with your Linux Foundation projects. Mailing lists are the primary communication channel for many open source project communities.
+Mailing lists are the main way many project communities talk to each other. In LFX Self Serve you can see the lists for a project or foundation, join or leave them, and, if you manage lists, create them and control who can join, post, and read.
+
+Mailing lists in LFX Self Serve run on Groups.io. Each list has its own email address and an **Open on Groups.io** link.
 
 ## What you can do
 
-- View mailing lists for your project or foundation
-- Subscribe to or unsubscribe from mailing lists
-- Create new mailing lists (maintainer, board-member, or executive-director personas)
-- View mailing list details and subscriber counts
-- Manage mailing list settings
+Everyone:
 
-## Who this applies to
+- [Find mailing lists](manage-mailing-lists/) for a project or foundation, and see the ones you are subscribed to
+- [Join a list](manage-mailing-lists/) that is open to the public, or leave one you no longer want
 
-All authenticated users can browse and subscribe to mailing lists. Creating and managing mailing lists requires a **maintainer**, **board-member**, or **executive-director** persona.
+If you manage mailing lists for a project or foundation:
 
-## Navigation
+- [Create a mailing list](create-mailing-list/) with a name, description, settings, and an optional linked group
+- [Choose the settings](mailing-list-settings/): who can join, who can post, and who can read the archive
+- [Manage subscribers](manage-subscribers/): add people, set how they receive email, and make moderators
+- [Edit a list](manage-mailing-lists/) and change its linked group
 
-Go to **app.lfx.dev** and select **Mailing Lists** from the left navigation sidebar. The mailing lists dashboard (route: `/mailing-lists`) shows all lists available for your current project context.
+## Where to find Mailing Lists
+
+Select **Mailing Lists** in the sidebar. What you see depends on the view you are in:
+
+- **Project or foundation view.** The lists that belong to that project or foundation. People who manage lists also see **Add Mailing List**.
+- **Me view.** Only the lists you are subscribed to, across all foundations and projects. This is where you leave a list.
+
+Creating a list needs permission to manage mailing lists for the project, and the project needs a mailing list service. If you don't see **Add Mailing List**, contact your project administrator.
 
 ## Key concepts
 
-- **Mailing list**: An email distribution group for project communications
-- **Subscriber**: A member who receives messages sent to the list
-- **List settings**: Configuration options such as moderation and archiving
+- **Subscriber.** A person who receives messages sent to the list.
+- **Moderator.** A subscriber with the **Moderator** role. Only moderators can post to an **Announcement** list.
+- **Audience & Access.** Who can join: **Public**, **Approval Required**, or **Invite Only**.
+- **Posting Permission.** How conversations work: **Open Discussion**, **Moderated Discussion**, or **Announcement**.
+- **Visibility.** Who can read past discussions: **Public** or **Subscribers only**. **Subscribers only** can't be changed back later.
+- **Delivery mode.** How a subscriber receives email: **Individual**, **Digest**, or **None**.
+- **Linked group.** A group whose members are subscribed to the list automatically.
 
 ## Related sections
 
-- [Committees](../committees/) — committees often have associated mailing lists
-- [Meetings](../meetings/) — meeting invitations are often sent through mailing lists
+- [Committees](../committees/): link a group to a mailing list so its members are subscribed
+- [Meetings](../meetings/): meeting invitations are often sent through mailing lists

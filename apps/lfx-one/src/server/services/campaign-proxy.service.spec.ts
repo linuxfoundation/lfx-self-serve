@@ -123,8 +123,7 @@ describe('CampaignProxyService email delivery type', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => '{}',
-          json: async () => ({ choices: [{ message: { content: '{}' } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: '{}' } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode(sse));
@@ -554,8 +553,7 @@ describe('CampaignProxyService model JSON fences', () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        text: async () => payload,
-        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        text: async () => JSON.stringify({ choices: [{ message: { content: payload } }] }),
         body: new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -731,8 +729,7 @@ describe('CampaignProxyService Google extensions', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => body,
-          json: async () => ({ choices: [{ message: { content: body } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: body } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -2497,8 +2494,7 @@ describe('CampaignProxyService streaming AI failures', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => EXTRACTION,
-          json: async () => ({ choices: [{ message: { content: EXTRACTION } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: EXTRACTION } }] }),
           body: null,
         };
       })
@@ -2576,6 +2572,23 @@ describe('CampaignProxyService streaming AI failures', () => {
     // asymmetry between them is what #3996 was. Extraction is non-fatal, so this stage logs and
     // the brief continues.
     expect(loggedMessage('campaign_brief_extract')).toBe('AI request failed (403): rejected Authorization: Bearer [redacted]');
+  });
+
+  it('fails the non-streaming call cleanly on a 2xx that is not JSON (#4500)', async () => {
+    const service = stubAi({ ok: true, status: 200, body: null }, 'sk-live-abc+123', {
+      ok: true,
+      status: 200,
+      text: '<html>gateway page echoing Bearer sk-live-abc+123</html>',
+    });
+
+    await errorEvent(briefStream(service));
+
+    // A raw `response.json()` threw V8's `SyntaxError` here, which names neither the proxy nor the
+    // status and quotes the body unredacted. Extraction is non-fatal, so this stage logs and the
+    // brief continues.
+    expect(loggedMessage('campaign_brief_extract')).toBe(
+      'AI proxy returned a response that is not a JSON object (200): <html>gateway page echoing Bearer [redacted]</html>'
+    );
   });
 
   it('bounds the body rather than putting a whole error page in one log line', async () => {

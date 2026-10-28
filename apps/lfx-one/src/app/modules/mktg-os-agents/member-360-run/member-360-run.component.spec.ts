@@ -183,6 +183,23 @@ describe('Member360RunComponent', () => {
     expect(navigate).toHaveBeenCalledOnce();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
+  it('presents tracker matches and source tiles as neutral information', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv')]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const summary = root.querySelector('[data-testid="member-360-tracker-summary"]');
+    expect(summary?.textContent).toContain('1 row');
+    expect(summary?.classList.contains('text-gray-500')).toBe(true);
+    expect(summary?.className).not.toContain('emerald');
+    const tiles = root.querySelectorAll('[data-testid="member-360-source-tile"]');
+    expect(tiles).toHaveLength(3);
+    for (const tile of tiles) {
+      for (const token of ['border', 'border-gray-200', 'bg-gray-50', 'text-gray-700']) expect(tile.classList.contains(token)).toBe(true);
+      expect(tile.className).not.toContain('emerald');
+    }
+  });
   it('keeps fixed context parents for a shared URL without copying revision, tab or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);

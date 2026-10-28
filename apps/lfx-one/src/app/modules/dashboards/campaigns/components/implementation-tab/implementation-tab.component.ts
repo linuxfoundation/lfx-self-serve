@@ -246,6 +246,7 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
 import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 
@@ -296,6 +297,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
+    CreativeLibraryUploadComponent,
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
   ],
@@ -515,6 +517,24 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see microsoftAssetUploadEnabled — an explicit yes, never a `null`. */
   protected readonly microsoftAssetUploadAvailable = computed<boolean>(() => this.microsoftAssetUploadEnabled() === true);
+  /**
+   * The library upload is admitted on ANY platform's asset capability, as the BFF route is: the
+   * library is one pool, and a deployment that can use an image anywhere may add to it. `null`
+   * while no flag says yes and one is still unanswered — unknown, not a no.
+   */
+  protected readonly libraryUploadAvailable = computed<boolean | null>(() => {
+    const flags = [
+      this.redditAssetUploadEnabled(),
+      this.metaAssetUploadEnabled(),
+      this.linkedInAssetUploadEnabled(),
+      this.googleAssetUploadEnabled(),
+      this.microsoftAssetUploadEnabled(),
+      // The tweet image: the BFF route admits the upload on `canCreateTwitter()` alone.
+      this.twitterCreateEnabled(),
+    ];
+    if (flags.some((enabled) => enabled === true)) return true;
+    return flags.some((enabled) => enabled !== false) ? null : false;
+  });
 
   /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
@@ -3566,6 +3586,11 @@ export class ImplementationTabComponent implements OnInit {
     // Told to the parent at once: a tab switch now destroys this component but not the request,
     // and the remount resumes it from the draft (`resumeRedditImageUpload`).
     this.emitDraft();
+  }
+
+  /** A library upload stored a new image: re-read the slot coverage and the Google image slots' library. */
+  protected onCreativeLibraryChanged(): void {
+    this.creativeLibraryRevision.update((revision) => revision + 1);
   }
 
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
