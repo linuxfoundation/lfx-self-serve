@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants/mktg-run.constants';
+import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { DOCUMENT_PROJECT, DOCUMENT_TYPE, documentFixture, fulfillDocumentJson, setupDocuments } from './helpers/mktg-os-documents.helper';
 import { ASSET_FAILURE, ASSET_PROJECT, DATA_LOAD_TIMEOUT, assetRevision, setupAsset } from './helpers/mktg-os-assets.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -14,7 +14,7 @@ test.describe('Marketing OS runs land on assets', () => {
   test.afterEach(async ({ page }) => {
     await expect(page).not.toHaveURL(/auth0\.com/);
   });
-  test('Generate hands off once and a later matching receipt opens exactly its stored revision', async ({ page }) => {
+  test('Generate stays on the run page and a later matching receipt opens exactly its stored revision', async ({ page }) => {
     const intake = MKTG_AGENT_INTAKES[DOCUMENT_TYPE.catalogAgentId ?? ''];
     if (!intake || intake.endpoints.answers) throw new Error('Missing registered direct-intake fixture');
     await setupDocuments(page);
@@ -55,8 +55,8 @@ test.describe('Marketing OS runs land on assets', () => {
     const generate = page.getByTestId('mktg-agent-run-submit-button').getByRole('button');
     await expect(generate).toBeEnabled();
     await generate.click();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Saving');
+    await expect(page.getByTestId('mktg-agent-run-running')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     await expect(page).toHaveURL(new RegExp('revision=' + revision.id), { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision ' + revision.number);
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
@@ -65,7 +65,7 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('intake-late-receipt-exact-revision.png'), fullPage: true });
   });
 
-  test('multi-round Brand Kit research and uncertain writing stay on the run route until checking hands off once to the exact revision', async ({ page }) => {
+  test('multi-round Brand Kit research, checking and writing stay on the run route until the exact stored revision', async ({ page }) => {
     const fixture = await setupNoQuestionsHandoff(page);
     await fixture.openAndGenerate();
     fixture.betweenRounds();
@@ -76,12 +76,11 @@ test.describe('Marketing OS runs land on assets', () => {
     await expect(page).not.toHaveURL(/\/documents\//);
     await expect(page.getByTestId('mktg-run-activity-title')).not.toContainText('Writing');
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/documents\//);
-    await expect(page.getByTestId('mktg-document-view-intake-link')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).not.toHaveURL(/\/documents\//);
     fixture.storing();
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Saving', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mktg-document-view-intake-link')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
     fixture.finish();
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id), { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
@@ -91,11 +90,12 @@ test.describe('Marketing OS runs land on assets', () => {
     await page.screenshot({ path: test.info().outputPath('no-questions-research-writing-exact-kit.png'), fullPage: true });
   });
 
-  test('an earlier receipt-less ready result hands off before checking and waits for its exact stored revision', async ({ page }) => {
+  test('an earlier receipt-less ready result stays on the run page until its exact stored revision', async ({ page }) => {
     const fixture = await setupNoQuestionsHandoff(page);
     await fixture.openAndGenerate();
     fixture.earlyReady();
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Saving', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).not.toHaveURL(/\/documents\//);
     fixture.finish();
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id), { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
@@ -107,10 +107,11 @@ test.describe('Marketing OS runs land on assets', () => {
     const fixture = await setupNoQuestionsHandoff(page);
     await fixture.openAndGenerate();
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing', { timeout: DATA_LOAD_TIMEOUT });
     fixture.unconfirm();
-    await expect(page.getByTestId('mktg-document-view-failure-reply')).toContainText('could not be confirmed', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mktg-document-view-intake-link').getByRole('button')).toBeVisible();
+    await expect(page.getByTestId('mktg-agent-run-error')).toContainText('Your answers are kept', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/documents\//);
     expect(fixture.posts).toEqual([BRAND_KIT_INTAKE.endpoints.generate]);
     await page.screenshot({ path: test.info().outputPath('unconfirmed-kept-intake.png'), fullPage: true });
   });

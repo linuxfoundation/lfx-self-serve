@@ -219,8 +219,10 @@ export class MktgAgentRunComponent {
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
   protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
   protected readonly waitingQuestions = signal(false);
-  protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
-  private readonly existingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state'> | null>(null);
+  protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
+  private readonly existingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
+  private readonly waitingSince = signal('');
+  private readonly staleWaitingMs = 24 * 60 * 60 * 1000;
   private discardConfirmed = false;
   private discardedRunId: string | null = null;
   private discardEpoch = 0;
@@ -331,12 +333,8 @@ export class MktgAgentRunComponent {
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly hasWaitingNotice = computed(() => this.waitingQuestions() || !!this.waitingRun());
-  protected readonly waitingRunMessage = computed(() =>
-    this.waitingQuestions() || this.waitingRun()?.state === 'questions'
-      ? 'This run is waiting for your answers.'
-      : `This ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} is being written.`
-  );
-  protected readonly waitingRunLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.assetType?.agentKey ?? '', MKTG_LIVING_DOCUMENT_ID]);
+  protected readonly waitingRunMessage = this.initWaitingRunMessage();
+  protected readonly waitingRunLink = computed(() => [mktgKitRootPath(this.router.url), this.agent?.id ?? '']);
   protected readonly waitingRunParams = computed(() => ({ project: this.projectSlug() ?? '', run: this.waitingRun()?.runId ?? '' }));
   protected readonly showIntakeForm = computed(
     () => !this.hasWaitingNotice() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
@@ -951,7 +949,17 @@ export class MktgAgentRunComponent {
             (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
         );
         this.existingRun.set(run ?? null);
-        if (!fresh || this.startedOverWaiting() || this.runAttempts.load(project, this.agent?.id ?? '')) return;
+        const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+        if (
+          !fresh &&
+          run?.state === 'questions' &&
+          !saved?.pendingQuestions &&
+          saved?.state !== 'writing' &&
+          !this.route.snapshot.queryParamMap.get('questions')
+        ) {
+          void this.router.navigate([], { relativeTo: this.route, queryParams: { run: run.runId }, queryParamsHandling: 'merge', replaceUrl: true });
+        }
+        if (!fresh || this.startedOverWaiting() || saved) return;
         if (run) this.waitingRun.set(run);
       }),
       map((documents) =>
@@ -968,13 +976,27 @@ export class MktgAgentRunComponent {
     );
   }
 
+  private initWaitingRunMessage(): Signal<string> {
+    return computed(() => {
+      if (!this.waitingQuestions() && this.waitingRun()?.state !== 'questions')
+        return `This ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} is being written.`;
+      const started = Date.parse(this.waitingRun()?.startedAt ?? this.waitingSince());
+      if (Number.isFinite(started) && Date.now() - started > this.staleWaitingMs) {
+        return `Waiting for your answers since ${formatDate(started, 'd MMM', 'en-US')}. Continue to answer them — if the agent no longer responds, start over.`;
+      }
+      return 'This run is waiting for your answers.';
+    });
+  }
+
   /** Browser proof is a fast path only; the summary read supplies the any-browser equivalent. */
   private readWaitingDraft(project: string): void {
     const draft = this.runAttempts.load(project, this.agent?.id ?? '');
     if (!draft) return;
-    if (draft.state === 'questions' && draft.pendingQuestions) this.waitingQuestions.set(true);
-    else if (draft.attempt?.runId && (draft.state === 'writing' || draft.state === 'questions'))
-      this.waitingRun.set({ runId: draft.attempt.runId, state: draft.state });
+    if (draft.state === 'questions' && draft.pendingQuestions) {
+      this.waitingQuestions.set(true);
+      this.waitingSince.set(draft.updatedAt);
+    } else if (draft.attempt?.runId && (draft.state === 'writing' || draft.state === 'questions'))
+      this.waitingRun.set({ runId: draft.attempt.runId, state: draft.state, startedAt: draft.updatedAt });
   }
 
   private intakeSourcesHint(): string {
@@ -1429,6 +1451,7 @@ export class MktgAgentRunComponent {
     this.discardedRunId = null;
     this.discardEpoch++;
     this.confirmation.close();
+    this.waitingSince.set('');
     this.startedOverWaiting.set(false);
     this.hasAcknowledgement.set(false);
     this.hasVersion.set(false);

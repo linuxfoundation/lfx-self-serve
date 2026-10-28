@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants/mktg-kit.constants';
+import { MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   DOCUMENT_PROJECT,
@@ -82,7 +85,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     fixture.finish();
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
@@ -161,7 +165,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     ask = true;
     await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
