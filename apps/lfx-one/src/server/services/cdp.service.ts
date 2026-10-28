@@ -46,7 +46,8 @@ interface CachedToken {
  * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
-  // Static: several controllers/services each construct their own CdpService. Maps member id → running chain.
+  // Static: several controllers/services each construct their own CdpService. Maps member id → the
+  // never-rejecting tail of its identity write queue; present only while work is queued or running.
   private static readonly memberIdentityWritesInFlight = new Map<string, Promise<void>>();
 
   private cachedToken: CachedToken | null = null;
@@ -264,13 +265,12 @@ export class CdpService {
   }
 
   /**
-   * Reject an identity for a user by resolving their member ID first. Waits for any reconcile
-   * write chain running for the member on this pod, so a queued verify can't undo the removal.
+   * Reject an identity for a user by resolving their member ID first. Runs in the member's write
+   * queue: after any reconcile chain on this pod, and holding the slot so none can overlap it.
    */
   public async rejectIdentityForUser(req: Request | undefined, sub: string, identityId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
-    await CdpService.memberIdentityWritesInFlight.get(memberId);
-    await this.rejectIdentity(req, memberId, identityId, sub);
+    await CdpService.runSerialForMember(memberId, () => this.rejectIdentity(req, memberId, identityId, sub));
   }
 
   /**
@@ -423,8 +423,8 @@ export class CdpService {
 
   /**
    * Fire-and-forget: run one member's identity writes one at a time. Parallel writes on a member
-   * deadlock CDP (#4523), so a second chain for a member already writing on this pod is skipped.
-   * Returns false when skipped. Each write should catch and log its own failure.
+   * deadlock CDP (#4523), so this is skipped while the member has queued writes on this pod (another
+   * reconcile chain or a removal). Returns false when skipped. Each write should catch and log its own failure.
    */
   public runMemberIdentityWrites(req: Request | undefined, memberId: string, writes: (() => Promise<void>)[]): boolean {
     if (CdpService.memberIdentityWritesInFlight.has(memberId)) {
@@ -435,19 +435,13 @@ export class CdpService {
       return false;
     }
 
-    // Never rejects (each write's failure is caught), so a removal can safely await it.
-    const chain = (async () => {
-      try {
-        for (const write of writes) {
-          await write().catch((err: unknown) => {
-            logger.warning(req, 'run_cdp_member_identity_writes', 'CDP identity write failed (non-blocking)', { member_id: memberId, err });
-          });
-        }
-      } finally {
-        CdpService.memberIdentityWritesInFlight.delete(memberId);
+    void CdpService.runSerialForMember(memberId, async () => {
+      for (const write of writes) {
+        await write().catch((err: unknown) => {
+          logger.warning(req, 'run_cdp_member_identity_writes', 'CDP identity write failed (non-blocking)', { member_id: memberId, err });
+        });
       }
-    })();
-    CdpService.memberIdentityWritesInFlight.set(memberId, chain);
+    });
     return true;
   }
 
@@ -984,6 +978,27 @@ export class CdpService {
     const created = await this.createOrganization(req, name, normalizedDomain, undefined, logo);
     logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain: normalizedDomain });
     return created;
+  }
+
+  /**
+   * Queue `task` behind the member's pending identity writes on this pod. The slot is taken
+   * synchronously, before the task runs, and released once nothing newer is queued. The returned
+   * promise carries the task's own outcome; the stored tail never rejects.
+   */
+  private static runSerialForMember<T>(memberId: string, task: () => Promise<T>): Promise<T> {
+    const queue = CdpService.memberIdentityWritesInFlight;
+    const result = (queue.get(memberId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    queue.set(memberId, tail);
+    void tail.then(() => {
+      if (queue.get(memberId) === tail) {
+        queue.delete(memberId);
+      }
+    });
+    return result;
   }
 
   /**

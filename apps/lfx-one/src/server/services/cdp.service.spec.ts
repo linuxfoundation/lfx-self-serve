@@ -157,6 +157,8 @@ describe('CdpService.runMemberIdentityWrites', () => {
 
     expect(new CdpService().runMemberIdentityWrites(undefined, 'member-serial', [first.write, second.write])).toBe(true);
 
+    await vi.waitFor(() => expect(started).toEqual(['first']));
+    await Promise.resolve();
     expect(started).toEqual(['first']);
     first.resolve();
     await vi.waitFor(() => expect(started).toEqual(['first', 'second']));
@@ -172,7 +174,7 @@ describe('CdpService.runMemberIdentityWrites', () => {
     expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [first.write])).toBe(true);
     expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [duplicate.write])).toBe(false);
     expect(new CdpService().runMemberIdentityWrites(undefined, 'member-other', [other.write])).toBe(true);
-    expect(started).toEqual(['first', 'other-member']);
+    await vi.waitFor(() => expect(started).toEqual(['first', 'other-member']));
 
     first.resolve();
     other.resolve();
@@ -209,6 +211,39 @@ describe('CdpService.runMemberIdentityWrites', () => {
     pendingVerify.resolve();
     await removal;
     expect(requestedUrls(fetchMock)[1]).toContain(`${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES('member-removal')}/identity-1`);
+  });
+
+  // The removal holds the slot while its PATCH runs, so a reconcile can't write alongside it.
+  it('skips a reconcile chain while a removal holds the member slot', async () => {
+    let releasePatch!: (response: Response) => void;
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ memberId: 'member-holding' }))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => (releasePatch = resolve)));
+    const verify = vi.fn(async () => undefined);
+
+    const removal = new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-holding', [verify])).toBe(false);
+
+    releasePatch(jsonResponse({}));
+    await removal;
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-holding', [verify])).toBe(true));
+  });
+
+  it('propagates a failed removal and frees the member slot', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: 'member-failed-removal' })).mockResolvedValueOnce(jsonResponse({ message: 'boom' }, 500));
+
+    await expect(new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1')).rejects.toThrow('CDP identity reject failed');
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-failed-removal', [])).toBe(true));
+  });
+
+  // An empty list must not leave a settled chain registered, or every later reconcile is skipped.
+  it('leaves no slot behind for an empty write list', async () => {
+    const verify = vi.fn(async () => undefined);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-empty', [])).toBe(true);
+
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-empty', [verify])).toBe(true));
+    await vi.waitFor(() => expect(verify).toHaveBeenCalledOnce());
   });
 });
 
