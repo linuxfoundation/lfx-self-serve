@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MEMBER_360_CONTACT_PLACEHOLDERS } from '../constants/member-360.constants';
-import type { Member360Tabs } from '../interfaces/member-360.interface';
+import type { Member360Tabs, Member360Envelope } from '../interfaces/member-360.interface';
 
 /** Privacy extraction is structural, independent of schema validity and project scope. */
 export function member360CandidateContacts(candidate: unknown): string[] {
@@ -61,6 +61,26 @@ export function createMember360Redactor(contacts: (string | null)[]): (text: str
       copied = end;
     }
     return chunks.join('') + text.slice(copied);
+  };
+}
+
+/** Apply the existing contact/email policy to known research prose before persistence. */
+export function redactMember360Research(
+  research: NonNullable<Member360Envelope['inputs']['research']>,
+  redact: (text: string) => string
+): NonNullable<Member360Envelope['inputs']['research']> {
+  return {
+    fetches: research.fetches.map((row) => ({ ...row, url: redact(row.url), final_url: row.final_url === null ? null : redact(row.final_url) })),
+    searches: research.searches.map(redact),
+    lfx_reads: research.lfx_reads.map(redact),
+    questions: research.questions.map((row) => ({
+      ...row,
+      question: redact(row.question),
+      why: redact(row.why),
+      suggested_answer: redact(row.suggested_answer),
+      basis: redact(row.basis),
+    })),
+    answers: research.answers.map((row) => ({ ...row, text: redact(row.text) })),
   };
 }
 

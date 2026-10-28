@@ -35,6 +35,7 @@ import {
   createMember360Redactor,
   member360CandidateContacts,
   redactMember360Tabs,
+  redactMember360Research,
   findMember360Questions,
   member360TerminalResult,
   mktgOneOffTerminalFacts,
@@ -258,6 +259,10 @@ export class Member360Service {
       delete storedEnvelope.lfx_project_uid;
       let member360 = {
         ...storedEnvelope,
+        inputs: {
+          ...storedEnvelope.inputs,
+          ...(storedEnvelope.inputs.research && { research: redactMember360Research(storedEnvelope.inputs.research, redact) }),
+        },
         project_uid: project.uid,
         ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),
         project_name: redactIdentity(best.project_name),

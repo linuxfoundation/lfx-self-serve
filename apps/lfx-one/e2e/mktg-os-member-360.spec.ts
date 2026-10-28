@@ -79,6 +79,19 @@ test('Kit → Member family → run has fixed linked parents and browser Back', 
   await page.screenshot({ path: info.outputPath('member-family-back.png'), fullPage: true });
 });
 
+test('shows the stored summary markdown and partial-report disclosure above the result', async ({ page }, info) => {
+  await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+  const view = member360Revision();
+  if (!view.member360) throw new Error('Missing synthetic Member 360 envelope');
+  view.member360.summary_markdown = 'Partial report.\n\n## Run findings\n\n**Synthetic evidence** remains incomplete for this project.';
+  await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  const summary = page.getByTestId('member-360-run-summary');
+  await expect(summary).toContainText('Partial report.');
+  await expect(summary.getByRole('heading', { name: 'Run findings' })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('member-summary-partial.png'), fullPage: true });
+});
+
 test('shared Member document has linked parents and Create another Member 360 drops asset-only URL state', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);

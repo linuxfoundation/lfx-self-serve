@@ -189,6 +189,30 @@ describe('Member 360 form-only contract', () => {
       expect(formInputSchema.safeParse({ ...base, trackers: [{ filename: 'tracker.csv', rows }] }).success).toBe(false);
     }
   });
+  it('retains optional 2.1.1 research with exact provenance shapes and accepts legacy inputs', () => {
+    const inputs = { trackers_provided: false, prior_run_provided: false, weight_overrides_provided: false };
+    const research = {
+      fetches: [{ url: 'https://project.example/research', ok: false, status: null, final_url: null }],
+      searches: ['synthetic project evidence'],
+      lfx_reads: ['project roster'],
+      questions: [
+        {
+          id: 'window',
+          question: 'Which window should this tracker cover?',
+          why: 'Missing date.',
+          suggested_answer: 'Use the current window.',
+          basis: 'Synthetic tracker',
+        },
+      ],
+      answers: [{ id: 'window', origin: 'accepted', text: 'Use the current window.' }],
+    };
+    expect(envelopeSchema.shape.inputs.parse({ ...inputs, research }).research).toEqual(research);
+    expect(envelopeSchema.shape.inputs.parse(inputs)).toEqual(inputs);
+    expect(
+      envelopeSchema.shape.inputs.safeParse({ ...inputs, research: { ...research, answers: [{ ...research.answers[0], origin: 'invalid' }] } }).success
+    ).toBe(false);
+    expect(envelopeSchema.shape.inputs.safeParse({ ...inputs, research: { ...research, extra: true } }).success).toBe(false);
+  });
   it('accepts the optional original LFX uid while stripping unknown envelope keys', () => {
     const identity = envelopeSchema.pick({ lfx_project_uid: true });
     expect(identity.parse({ lfx_project_uid: 'mcp-project', future_metadata: true })).toEqual({ lfx_project_uid: 'mcp-project' });

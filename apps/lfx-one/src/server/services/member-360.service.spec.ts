@@ -741,15 +741,24 @@ describe('Member 360 entitlement and generation', () => {
     mocks.recordGeneration.mockRejectedValue(new Error('temporary storage failure'));
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'ready', stored: false });
   });
-  it('strips additive 2.0 metadata and row keys but requires the 1.0 fields', async () => {
+  it('retains 2.1.1 research while stripping unknown metadata and requiring the original fields', async () => {
     const candidate = { ...member360Fixture(), future_metadata: true };
+    candidate.agent.agent_version = '2.1.1';
     Object.assign(candidate.inputs, {
       research: {
         fetches: [{ url: 'https://sample.example', ok: true, status: 200, final_url: 'https://sample.example' }],
         searches: ['synthetic query'],
         lfx_reads: ['project record'],
-        questions: [],
-        answers: [],
+        questions: [
+          {
+            id: 'window',
+            question: 'Which window should this tracker cover?',
+            why: 'Missing date.',
+            suggested_answer: 'Use the current window.',
+            basis: 'Synthetic tracker',
+          },
+        ],
+        answers: [{ id: 'window', origin: 'accepted', text: 'Use the current window.' }],
       },
     });
     for (const row of [
@@ -767,8 +776,41 @@ describe('Member 360 entitlement and generation', () => {
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
     const stored = mocks.recordGeneration.mock.calls[0][3].member360;
     expect(JSON.stringify(stored)).not.toContain('future_metadata');
-    expect(stored.inputs).not.toHaveProperty('research');
+    expect(stored.inputs.research).toEqual(candidate.inputs.research);
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
+  });
+  it('preserves research metadata while redacting contact and email text before storage', async () => {
+    const envelope = member360Fixture();
+    const privateText = 'opaque-research-contact owner@example.test';
+    envelope.agent.agent_version = '2.1.1';
+    envelope.tabs.member_ranking[0].key_contact = 'opaque-research-contact';
+    envelope.inputs.research = {
+      fetches: [
+        {
+          url: 'https://project.example/?owner=opaque-research-contact',
+          ok: true,
+          status: 200,
+          final_url: 'https://project.example/?owner=owner@example.test',
+        },
+        { url: 'https://project.example/unavailable', ok: false, status: null, final_url: null },
+      ],
+      searches: [privateText],
+      lfx_reads: [privateText],
+      questions: [{ id: 'window', question: privateText, why: privateText, suggested_answer: privateText, basis: privateText }],
+      answers: [{ id: 'window', origin: 'requester', text: privateText }],
+    };
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(stored.inputs.research.answers[0]).toEqual({ id: 'window', origin: 'requester', text: '[contact redacted] [contact redacted]' });
+    expect(stored.inputs.research.questions[0].basis).toBe('[contact redacted] [contact redacted]');
+    expect(stored.inputs.research.fetches[0]).toMatchObject({ ok: true, status: 200 });
+    expect(stored.inputs.research.fetches[1]).toMatchObject({ ok: false, status: null, final_url: null });
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('opaque-research-contact');
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('owner@example.test');
+    expect(envelope.inputs.research.answers[0].text).toBe(privateText);
   });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
     'keeps %s open through its own turn end, then fails after a later final reply',

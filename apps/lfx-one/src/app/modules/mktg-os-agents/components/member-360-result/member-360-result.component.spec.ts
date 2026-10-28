@@ -45,6 +45,20 @@ describe('Member360ResultComponent', () => {
     };
     return { fixture, component: fixture.componentInstance, query, names, sort };
   }
+  it('renders the agent summary first as markdown, preserving its partial-report disclosure', () => {
+    const envelope = member360Fixture();
+    envelope.summary_markdown = 'Partial report.\n\n## Run findings\n\n**Synthetic evidence** remains incomplete for this project.';
+    const view = render(envelope);
+    expect(view.query('member-360-result').firstElementChild).toBe(view.query('member-360-run-summary'));
+    expect(view.query('member-360-run-summary').textContent).toContain('Partial report.');
+    expect(view.query('member-360-run-summary').querySelector('strong')?.textContent).toBe('Synthetic evidence');
+  });
+  it.each(['absent', '', ' \n '])('omits an %j summary without rendering an empty section', (value) => {
+    const envelope = member360Fixture();
+    if (value === 'absent') Reflect.deleteProperty(envelope, 'summary_markdown');
+    else envelope.summary_markdown = value;
+    expect(render(envelope).query('member-360-run-summary')).toBeNull();
+  });
   it('exposes the shared form route for title-row actions without carrying asset state or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);

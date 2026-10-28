@@ -22,10 +22,7 @@ The candidate's `partial` status (`summary_markdown` starts with `Partial report
 Both paths validate schema and size, recompute SHA-256 over the **original** `JSON.stringify(tabs)` property order, check the entitled project, and select the highest valid version.
 The hash binds tabs only; `summary_markdown` stays model prose and is redacted as before, alongside the tabs, before persistence.
 Unmatched or prose-only envelopes, tool inputs and another tool's results remain refused.
-Optional 2.0 additions at the top level, inside the existing
-`inputs` object (including 2.0's `inputs.research` provenance), and on typed tab rows
-are tolerated and stripped by validation; required
-1.0 fields, enums and numeric bounds remain mandatory. The selected sidecar is the
+Unknown additions at the top level, inside `inputs`, and on typed tab rows are tolerated and stripped by validation; required fields, enums and numeric bounds remain mandatory. The known optional `inputs.research` object mirrors agent 2.1.1 and is retained with the run (fetches, searches, LFX reads, questions and answers); it is not rendered yet. The selected sidecar is the
 stripped validated object, then privacy-sanitized and rehashed, never the raw candidate.
 The original-byte check still authenticates the upstream payload before that projection.
 User and trigger events are excluded by the existing Guild service. Raw events remain available for the shared activity feed, agent-authored questions and root termination; after the terminal-state layer, raw contract candidates supply privacy-only contact masks, never accepted output. The previous stored Member Ranking is loaded server-side for trends;
@@ -43,8 +40,7 @@ Every session produces one immutable run document through the existing document
 store. After validating the upstream hash, the BFF clears every ranking row's
 `key_contact` before persistence and recomputes the sanitized tabs hash: immutable
 revisions never retain that field's free-text contact identity. A typed, known-field
-mapper redacts email addresses and exact original contact strings throughout the tabs
-and summary Markdown before hashing. Exact matches use escaped Unicode word-boundary patterns;
+mapper redacts email addresses and exact original contact strings throughout the tabs, summary Markdown and known research prose before persistence. Research IDs, answer origins, statuses and booleans stay unchanged; the existing redactor algorithm is reused, not a new person-name detector. Exact matches use escaped Unicode word-boundary patterns;
 short values and known placeholders are skipped to avoid corrupting unrelated words. Organization/project identity fields use the email pass only.
 The sanitized envelope is schema-validated before storage; if redaction contracts the
 summary below the minimum length, a neutral summary replaces it and is revalidated. A fallback that still fails validation returns a distinct terminal error, not a persistence retry.
@@ -66,7 +62,7 @@ Generate navigates to `documents/member-360/:documentId?run=<opaqueRunId>` after
 server records the start. The existing Document component uses its shared document
 metadata polling cycle, not a Member-specific result receiver or browser pending cache.
 It waits for a committed revision before rendering the existing Member 360 type:
-summary, ranking, expanded member evidence, team actions, Evidence, Method, and history.
+the agent's stored summary Markdown (including any leading “Partial report.” disclosure), then summary cards, ranking, expanded member evidence, team actions, Evidence, Method, and history. Empty or absent legacy summary prose creates no empty section.
 A plain document URL in another browser works without the run selector, owner token,
 session storage or the initiating tab: authorized reads reconcile the saved session.
 Owner tokens never enter URLs. The creator-bound result endpoint remains compatible
