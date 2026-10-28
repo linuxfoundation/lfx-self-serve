@@ -8,6 +8,7 @@ import { AudienceBuilderController } from '../controllers/audience-builder.contr
 import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
+import { canonicalizeProjectQuery } from '../middleware/canonicalize-project-query.middleware';
 import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
 
 /**
@@ -50,6 +51,12 @@ const optimizeController = new CampaignOptimizeController();
 // Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
 // data. Its route-specific guard admits ROOT callers without granting access to project writes.
 router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
+
+// The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
+// Registered ahead of `router.use(requireCampaignManager)` so that a `?project=` given as a uid is resolved to
+// its slug BEFORE the guard runs: the guard and the brief index both key a project by slug, and the same
+// project must get the same authorization and the same briefs whichever identifier names it (#4507).
+router.get('/briefs', canonicalizeProjectQuery, requireCampaignManager, (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -177,8 +184,6 @@ router.get('/microsoft/campaign-ref', (req, res, next) => optimizeController.res
 router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
 // Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
 router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
-// The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
-router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
 // The campaign row from campaign-service (not the index) with its current ETag. Two callers: the Optimize tab,
 // to recover a row's ETag after an ad-set write whose outcome left the validator unknown, and the
 // act-from-Monitor dialog, for its levers' If-Match.
