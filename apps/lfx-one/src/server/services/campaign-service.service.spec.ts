@@ -4705,6 +4705,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
       microsoftScheduleEnabled: false,
+      googleAudienceSegmentsEnabled: false,
     });
   });
 
@@ -5071,6 +5072,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       biddingEnabled: false,
       // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
       microsoftScheduleEnabled: false,
+      googleAudienceSegmentsEnabled: false,
     });
   });
 });

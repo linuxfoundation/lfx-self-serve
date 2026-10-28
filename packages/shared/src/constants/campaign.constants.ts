@@ -1237,6 +1237,17 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
+/**
+ * The error `code` (HTTP 403) of a create refused because it carries Google audience segments and the
+ * caller is not a ROOT writer or ROOT campaign manager. Every foundation's Google Ads connection
+ * points at one shared LF customer and a user list cannot yet be mapped to a project, so a non-root
+ * operator could otherwise target another foundation's list (linuxfoundation/lfx-v2-campaign-service#411).
+ */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE = 'GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED';
+/** The user-facing message of that refusal. */
+export const GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE =
+  'Google audience segments can only be added by LF administrators, because every foundation shares one Google Ads account. Remove the audience segments and create again.';
+
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
 
@@ -3801,6 +3812,43 @@ export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', '
  * kind is decided by the channel.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
+
+/**
+ * The Google channels that accept audience segments — Search and nothing else.
+ *
+ * Upstream attaches audience criteria to the ad group the Search cascade builds, and refuses them
+ * on every other channel rather than dropping them (`internal/platform/googleads/campaign.go`:
+ * "audience segments are not supported on %s"): Demand Gen's ad group takes no criteria and
+ * Performance Max has no ad group to hang them on. A separate list from
+ * {@link GOOGLE_CHANNELS_WITH_AD_EXTENSIONS} although it holds the same one channel, because the two
+ * fences are upstream's for different reasons and either could move without the other.
+ */
+export const GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS = ['search'] as const;
+
+/**
+ * Upstream's own bound on a Google Ads audience segment list (`targeting.go`'s
+ * `maxAudienceSegments`), checked against the RAW list before any entry — so a list that is only
+ * over the cap because it repeats a segment is refused on the cap, as {@link GOOGLE_ADS_MAX_CALLOUTS} is.
+ */
+export const GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS = 20;
+
+/**
+ * The one audience segment shape upstream attaches: a Customer Match or remarketing user list the
+ * advertiser already built, named by its full resource name, `customers/{customerId}/userLists/{id}`
+ * with both ids all ASCII digits (`audienceCriterionField` in `targeting.go`). The customer id is
+ * written without dashes — `123-456-7890` is the Google Ads UI's display form and is refused.
+ *
+ * This client creates no audiences and has no listing of them, so the resource name is the input.
+ */
+export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLists\/[0-9]+$/;
+
+/**
+ * A well-formed custom audience resource name, recognized only so it can be refused with its real
+ * reason. Upstream parses the shape and then refuses it ("custom audiences are not supported for
+ * SEARCH campaigns; only userLists are accepted"), so naming it here keeps an operator from hunting
+ * for a typo in a resource name that is perfectly well formed.
+ */
+export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
