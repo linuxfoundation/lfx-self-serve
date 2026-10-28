@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, Injector, input, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterModule } from '@angular/router';
+import { NavigationEnd, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
 import { CreateArtifactDialogComponent } from '@components/create-artifact-dialog/create-artifact-dialog.component';
@@ -16,8 +16,15 @@ import {
   CREATABLE_ARTIFACTS,
   LINKS_CONFIG,
   NAVBAR_BRAND_SITE,
+  NAVBAR_DOCK_MORPH_MS,
   NAVBAR_LENS_OVERRIDES,
+  NAVBAR_MORPH_EASING,
+  NAVBAR_MORPH_SETTLE_MS,
   NAVBAR_NO_ACCESS_GHOST_ITEMS,
+  NAVBAR_PEEK_CLOSE_DELAY_MS,
+  NAVBAR_PEEK_MORPH_MS,
+  NAVBAR_PEEK_OPEN_DELAY_MS,
+  NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
   BOARD_SCOPED_PERSONAS,
@@ -30,16 +37,19 @@ import {
   LensOption,
   NavbarBrandApp,
   NavbarMenuBlock,
+  NavbarMorphFocus,
   NavbarRoleMark,
   NavbarRoleProject,
   NavbarTabIndicator,
   NavTooltipItem,
+  NavTooltipPlacement,
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
@@ -49,7 +59,7 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
-import { filter } from 'rxjs';
+import { filter, pairwise } from 'rxjs';
 
 import { NavMenuBase } from './nav-menu-base.directive';
 
@@ -61,6 +71,10 @@ import { NavMenuBase } from './nav-menu-base.directive';
  * Menu building, active-route highlighting, context switching and the SSR hydration gate come from
  * {@link NavMenuBase}; this component renders them in the navbar markup and folds in the rail actions
  * that used to live in the former lens-switcher rail.
+ *
+ * The desktop instance also collapses to a 48px rail and peeks open over the page from it
+ * ({@link NavbarCollapseService}): one panel that morphs between the two, its header buttons moved
+ * with a FLIP animation. The mobile drawer's instance never collapses.
  *
  * Styles are unencapsulated (`lfxn-` prefixed) because the context card is also rendered by the
  * project/org selectors' `navbar` variant, inside their own host elements.
@@ -84,7 +98,15 @@ import { NavMenuBase } from './nav-menu-base.directive';
   providers: [DialogService],
   templateUrl: './navbar.component.html',
   styleUrl: './navbar.component.scss',
-  host: { class: 'lfxn-host' },
+  host: {
+    class: 'lfxn-host',
+    '[class.lfxn-host--dock]': '!mobile()',
+    '[class.is-collapsed]': 'railVisible()',
+    '[class.is-overlay]': '!mobile() && collapse.overlay()',
+    '[class.is-narrow]': '!mobile() && collapse.narrow()',
+    '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
+    '[class.is-animated]': '!mobile() && collapse.animated()',
+  },
 })
 export class NavbarComponent extends NavMenuBase {
   private readonly dialogService = inject(DialogService);
@@ -93,6 +115,8 @@ export class NavbarComponent extends NavMenuBase {
   private readonly appService = inject(AppService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
+  protected readonly collapse = inject(NavbarCollapseService);
+  private readonly injector = inject(Injector);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
   public readonly bannerOffset = input<boolean>(false);
@@ -257,6 +281,31 @@ export class NavbarComponent extends NavMenuBase {
   /** The Documentation button reads as active anywhere under `/docs`, as the lens rail it replaced did. */
   protected readonly isDocsActive: Signal<boolean> = computed(() => isDocsPath(this.navigatedUrl()));
 
+  // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
+  /** The panel shows as the slim rail. */
+  protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
+  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
+  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /** Rail tooltips open beside the trigger; the open panel's below it. */
+  protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
+  /** A peek on a wide viewport docks open on click; otherwise the toggle opens or closes the sidebar. */
+  protected readonly toggleLabel: Signal<string> = computed(() => {
+    if (this.railVisible()) return 'Open sidebar';
+    return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
+  });
+  /** A menu or panel opened from the navbar is up: a peek must not close under it. */
+  private readonly navbarMenuOpen: Signal<boolean> = computed(
+    () => this.brandMenuOpen() || this.createMenuOpen() || this.userMenuOpen() || this.selectorPanelOpen()
+  );
+  private readonly panelEl = viewChild<ElementRef<HTMLElement>>('panel');
+  private peekOpenTimer: ReturnType<typeof setTimeout> | null = null;
+  private peekCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private morphSettleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Last pointer position seen while peeking; null until the pointer moves (keyboard use never closes a peek). */
+  private pointer: { x: number; y: number } | null = null;
+  /** The pointer was last over a navbar tooltip — appended to `body`, so it can sit outside the panel it belongs to. */
+  private pointerOnTooltip = false;
+
   public constructor() {
     super();
     // afterNextRender so input bindings have settled — the mobile drawer instance skips the fetch.
@@ -268,6 +317,41 @@ export class NavbarComponent extends NavMenuBase {
     this.initTabIndicator();
     this.initDrawerCloseCleanup();
     this.initPreviewPickCommit();
+    this.initCollapse();
+  }
+
+  /**
+   * The sidebar toggle: dock open or closed on wide viewports. On narrow ones it pins a peek — from the rail, or the hover
+   * peek the pointer just opened on its way to the click — and closes a pinned one. A keyboard press (no click count)
+   * keeps focus in the navbar; a pointer click drops it.
+   */
+  protected onToggleClick(event: MouseEvent): void {
+    this.clearPeekOpenTimer();
+    const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
+    if (this.collapse.narrow()) {
+      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
+      return;
+    }
+    if (this.collapse.peek()) {
+      // Already as wide as docked: the panel just stops floating, and the page gutter grows under it.
+      this.morph(() => this.collapse.setCollapsed(false), focus);
+      return;
+    }
+    this.morph(() => this.collapse.setCollapsed(!this.collapse.collapsed()), focus);
+  }
+
+  /** Hovering the rail's toggle peeks the panel open — the only hover that does, so a collapse click never reopens it. */
+  protected onToggleEnter(): void {
+    if (!this.railVisible() || this.collapse.touch()) return;
+    this.clearPeekOpenTimer();
+    this.peekOpenTimer = setTimeout(() => {
+      this.peekOpenTimer = null;
+      if (this.railVisible()) this.morph(() => this.collapse.openPeek());
+    }, NAVBAR_PEEK_OPEN_DELAY_MS);
+  }
+
+  protected onToggleLeave(): void {
+    this.clearPeekOpenTimer();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -318,6 +402,8 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   protected openImpersonationDialog(): void {
+    this.userMenu()?.hide();
+    this.closePeekForDialog();
     this.dialogService.open(ImpersonationDialogComponent, {
       header: 'Impersonate User',
       width: '400px',
@@ -329,6 +415,7 @@ export class NavbarComponent extends NavMenuBase {
 
   protected openCreateDialog(artifact: CreatableArtifactConfig): void {
     this.createMenu()?.hide();
+    this.closePeekForDialog();
     const dialogRef = this.dialogService.open(CreateArtifactDialogComponent, {
       // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
       showHeader: false,
@@ -361,6 +448,8 @@ export class NavbarComponent extends NavMenuBase {
   protected onOrgSelected(): void {
     if (!this.lensService.previewingMenuLens()) {
       this.closeMobileDrawer();
+      // The same `replaceUrl` re-addressing leaves a pinned peek open, so the pick closes it too.
+      if (!this.mobile() && this.collapse.peekPinned()) this.morph(() => this.collapse.closePeek(), 'none');
       return;
     }
     this.lensService.commitMenuLens();
@@ -368,7 +457,14 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   protected openChangelogDrawer(): void {
+    this.userMenu()?.hide();
+    this.closePeekForDialog();
     this.changelogDrawerVisible.set(true);
+  }
+
+  protected navigateToDocs(): void {
+    this.userMenu()?.hide();
+    this.router.navigate(['/docs']);
   }
 
   /**
@@ -397,6 +493,111 @@ export class NavbarComponent extends NavMenuBase {
       if (group) measure(group);
     });
     this.destroyRef.onDestroy(() => observer?.disconnect());
+  }
+
+  /**
+   * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
+   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
+   * focus leaving it when pinned, on Escape, or on a navigation from a pinned peek — but never while a menu or panel
+   * opened from it is still up.
+   */
+  private initCollapse(): void {
+    afterNextRender(() => {
+      if (this.mobile()) return;
+      this.collapse.init();
+      const doc = this.elementRef.nativeElement.ownerDocument;
+      const panel = this.panelEl()?.nativeElement;
+
+      const onMove = (event: MouseEvent): void => {
+        this.pointer = { x: event.clientX, y: event.clientY };
+        this.pointerOnTooltip = event.target instanceof Element && !!event.target.closest('.lfxn-tooltip');
+        if (!this.collapse.peek() || this.collapse.peekPinned()) return;
+        if (this.peekInUse()) this.clearPeekCloseTimer();
+        // Started once per leave: further movement outside must not keep pushing the close back.
+        else if (!this.peekCloseTimer) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+      };
+      const onLeaveWindow = (): void => {
+        this.pointer = { x: -1, y: -1 };
+        this.pointerOnTooltip = false;
+        if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+      };
+      const onDown = (event: MouseEvent): void => {
+        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
+        this.morph(() => this.collapse.closePeek());
+      };
+      // An open navbar tooltip takes the first Escape (an interactive role card returns focus to its trigger); the next
+      // one closes the peek.
+      const onKey = (event: KeyboardEvent): void => {
+        if (event.key !== 'Escape' || !this.collapse.peek() || this.navbarMenuOpen() || doc.querySelector('.lfxn-tooltip')) return;
+        this.morph(() => this.collapse.closePeek(), 'keyboard');
+      };
+      // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
+      // A hover peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
+      const onFocusOut = (event: FocusEvent): void => {
+        const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
+        if (next && (panel?.contains(next) || next.closest('.lfxn-tooltip, .p-popover'))) return;
+        if (!this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        else if (next) this.morph(() => this.collapse.closePeek(), 'none');
+      };
+
+      doc.addEventListener('mousemove', onMove, { passive: true });
+      doc.documentElement.addEventListener('mouseleave', onLeaveWindow);
+      doc.addEventListener('mousedown', onDown, true);
+      doc.addEventListener('keydown', onKey);
+      panel?.addEventListener('focusout', onFocusOut);
+      this.destroyRef.onDestroy(() => {
+        doc.removeEventListener('mousemove', onMove);
+        doc.documentElement.removeEventListener('mouseleave', onLeaveWindow);
+        doc.removeEventListener('mousedown', onDown, true);
+        doc.removeEventListener('keydown', onKey);
+        panel?.removeEventListener('focusout', onFocusOut);
+        this.collapse.resetPeek();
+      });
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.clearPeekOpenTimer();
+      this.clearPeekCloseTimer();
+      if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
+    });
+
+    // A pick from a peek navigates under it: close it, so the overlay doesn't cover the page just opened — a pinned peek
+    // or a hover peek (keyboard focus on the picked link holds one open, see peekInUse). As with the mobile drawer, only
+    // a navigation the viewer made counts — a page rewriting its own address in place (`replaceUrl`, e.g. Org Lens
+    // writing in the default organization) would snap a just-opened peek shut; back/forward still closes it. Focus on
+    // the link the rail now hides moves to the toggle (the railVisible subscription below).
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd && this.collapse.peek()),
+        filter(() => {
+          const navigation = this.router.currentNavigation();
+          return !navigation?.extras.replaceUrl || navigation.trigger === 'popstate';
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.morph(() => this.collapse.closePeek(), 'none'));
+
+    // A menu or panel opened from a hover peek just closed: give the pointer a moment, then close if it is outside.
+    toObservable(this.navbarMenuOpen)
+      .pipe(
+        pairwise(),
+        filter(([wasOpen, open]) => wasOpen && !open && this.collapse.peek() && !this.collapse.peekPinned()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.schedulePeekClose(NAVBAR_PEEK_RECHECK_DELAY_MS));
+
+    // The rail can also come from the viewport crossing the narrow breakpoint (a resize, a zoom) rather than a morph:
+    // a navbar control holding focus may be about to hide, so focus moves to one the rail still shows.
+    toObservable(this.railVisible)
+      .pipe(
+        pairwise(),
+        filter(([wasRail, rail]) => !wasRail && rail),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => afterNextRender(() => this.keepFocusOnRail(), { injector: this.injector }));
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {
@@ -490,6 +691,127 @@ export class NavbarComponent extends NavMenuBase {
       host.addEventListener('click', commitOnPick, true);
       this.destroyRef.onDestroy(() => host.removeEventListener('click', commitOnPick, true));
     });
+  }
+
+  /** Create, Impersonate and What's New open over the page: the peek closes with them, leaving the rail under the backdrop. */
+  private closePeekForDialog(): void {
+    if (!this.mobile() && this.collapse.peek()) this.morph(() => this.collapse.closePeek(), 'none');
+  }
+
+  private schedulePeekClose(delay: number): void {
+    this.clearPeekCloseTimer();
+    this.peekCloseTimer = setTimeout(() => {
+      this.peekCloseTimer = null;
+      if (!this.collapse.peek() || this.collapse.peekPinned() || this.navbarMenuOpen() || this.peekInUse()) return;
+      this.morph(() => this.collapse.closePeek());
+    }, delay);
+  }
+
+  /**
+   * The peek is still in use: the pointer is over the panel or one of its tooltips (an interactive role card can reach
+   * past the panel), a tooltip holds focus, or keyboard focus is inside the panel (a click leaves focus behind without
+   * `:focus-visible`, which must not hold the peek). Keyboard-only use leaves no pointer position, which counts as
+   * inside, so only a pointer that left closes the peek.
+   */
+  private peekInUse(): boolean {
+    const panel = this.panelEl()?.nativeElement;
+    if (!panel || !this.pointer || this.pointerOnTooltip) return true;
+    const active = panel.ownerDocument.activeElement;
+    if (active?.closest('.lfxn-tooltip')) return true;
+    if (active && panel.contains(active) && active.matches(':focus-visible')) return true;
+    const rect = panel.getBoundingClientRect();
+    const { x, y } = this.pointer;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  /**
+   * Applies a collapse-state change as one morph: the panel's widths and fades are CSS transitions, but the header
+   * buttons swap between a row and a column, so they FLIP from where they were to where they land. Also closes the
+   * open tooltip, settles focus as `focus` says, and re-fits width-measuring page layouts once the morph settles.
+   */
+  private morph(change: () => void, focus: NavbarMorphFocus = 'pointer'): void {
+    const host = this.elementRef.nativeElement;
+    const wasRail = this.collapse.visualCollapsed();
+    const wasDockedCollapsed = this.collapse.effectiveCollapsed();
+    const before = new Map<string, DOMRect>();
+    host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width && el.dataset['flip']) before.set(el.dataset['flip'], rect);
+    });
+
+    change();
+    NavTooltipDirective.hideWithin(host);
+    const active = host.ownerDocument.activeElement;
+    if (focus === 'pointer' && active instanceof HTMLElement && host.contains(active)) active.blur();
+
+    const view = host.ownerDocument.defaultView;
+    if (this.collapse.effectiveCollapsed() !== wasDockedCollapsed) {
+      // Pages that size themselves from window resizes would otherwise keep the width measured mid-morph. One per burst.
+      if (this.morphSettleTimer) clearTimeout(this.morphSettleTimer);
+      this.morphSettleTimer = setTimeout(() => {
+        this.morphSettleTimer = null;
+        view?.dispatchEvent(new Event('resize'));
+      }, NAVBAR_MORPH_SETTLE_MS);
+    }
+    const flip = this.collapse.visualCollapsed() !== wasRail && this.collapse.animated() && !view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!flip && focus !== 'keyboard') return;
+
+    const duration = this.collapse.overlay() ? NAVBAR_PEEK_MORPH_MS : NAVBAR_DOCK_MORPH_MS;
+    afterNextRender(
+      () => {
+        if (focus === 'keyboard') this.settleKeyboardFocus();
+        if (!flip) return;
+        host.querySelectorAll<HTMLElement>('[data-flip]').forEach((el) => {
+          const from = el.dataset['flip'] ? before.get(el.dataset['flip']) : undefined;
+          const to = el.getBoundingClientRect();
+          if (!from || !to.width || typeof el.animate !== 'function') return;
+          el.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px)` }, { transform: 'none' }], {
+            duration,
+            easing: NAVBAR_MORPH_EASING,
+          });
+        });
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * After a keyboard-driven change, keep focus on a control the new state still shows: on the rail, the rail's own
+   * controls (else the toggle); open, where it was — or, when the toggle is hidden (a narrow peek), the brand button.
+   */
+  private settleKeyboardFocus(): void {
+    const host = this.elementRef.nativeElement;
+    const active = host.ownerDocument.activeElement;
+    const toggle = host.querySelector<HTMLElement>('[data-flip="side"]');
+    const toggleShown = !!toggle && toggle.getClientRects().length > 0;
+    const focused = active instanceof HTMLElement && host.contains(active) ? active : null;
+    if (this.collapse.visualCollapsed()) {
+      if (!focused) toggle?.focus();
+      else this.keepFocusOnRail();
+      return;
+    }
+    if (focused && (focused !== toggle || toggleShown)) return;
+    if (toggleShown) toggle?.focus();
+    else host.querySelector<HTMLElement>('.lfxn__brand')?.focus();
+  }
+
+  /** Focus inside the navbar that sits on something the rail hides moves to the rail's toggle; focus elsewhere stays. */
+  private keepFocusOnRail(): void {
+    const host = this.elementRef.nativeElement;
+    const active = host.ownerDocument.activeElement;
+    if (!(active instanceof HTMLElement) || !host.contains(active)) return;
+    if (active.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
+    host.querySelector<HTMLElement>('[data-flip="side"]')?.focus();
+  }
+
+  private clearPeekOpenTimer(): void {
+    if (this.peekOpenTimer) clearTimeout(this.peekOpenTimer);
+    this.peekOpenTimer = null;
+  }
+
+  private clearPeekCloseTimer(): void {
+    if (this.peekCloseTimer) clearTimeout(this.peekCloseTimer);
+    this.peekCloseTimer = null;
   }
 
   /**

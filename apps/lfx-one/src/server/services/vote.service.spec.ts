@@ -42,6 +42,7 @@ const {
   stripAuthPrefix,
   computeIsFoundation,
   addAccessToResources,
+  checkSingleAccessStrict,
   assertVoteWrite,
   sendEmail,
 } = vi.hoisted(() => ({
@@ -59,6 +60,7 @@ const {
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
   addAccessToResources: vi.fn(async (_req: unknown, resources: unknown[]) => resources),
+  checkSingleAccessStrict: vi.fn(async () => false),
   assertVoteWrite: vi.fn(),
   sendEmail: vi.fn(),
 }));
@@ -109,6 +111,7 @@ vi.mock('./project.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('./email.service', () => ({
@@ -220,6 +223,26 @@ describe('VoteService', () => {
       );
       expect(toEntityProjectFields).toHaveBeenCalledWith(project);
       expect(vote).toMatchObject(mappedFields);
+    });
+
+    it('decorates vote#writer only when includeWriter is set', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+
+      const withWriter = await service.getVoteById(req, CANONICAL_UID, { includeWriter: true });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'vote', id: voteFixture.uid, access: 'writer' });
+      expect(withWriter.writer).toBe(true);
+
+      checkSingleAccessStrict.mockClear();
+      await service.getVoteById(req, CANONICAL_UID);
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    });
+
+    it('propagates an access-check outage instead of reporting writer: false', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('access-check unavailable'));
+
+      await expect(service.getVoteById(req, CANONICAL_UID, { includeWriter: true })).rejects.toThrow('access-check unavailable');
     });
 
     it('leaves the vote unenriched when the project lookup finds nothing', async () => {

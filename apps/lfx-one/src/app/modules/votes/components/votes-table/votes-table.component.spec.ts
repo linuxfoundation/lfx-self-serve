@@ -766,6 +766,13 @@ describe('VotesTableComponent — row More menu', () => {
     expect(navigate).toHaveBeenCalledWith(['/', 'project', 'votes', 'create'], { queryParams: { clone: 'project-vote' } });
   });
 
+  it('opens the presenter in a new tab from the Present item, only for writers of an open or ended vote (#4140)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    table['openPresenter']('vote-9');
+    expect(open).toHaveBeenCalledWith('/votes/vote-9/present', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
   it('omits Clone from the menu without hasPMOAccess', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
     await settle();
@@ -810,22 +817,22 @@ describe('VotesTableComponent — row More menu', () => {
 
     // Clone rides on project access, reminders (and Extend) on per-vote writer access — the gates
     // are independent, which is the whole point of this case. Clone is appended last (#3781), so
-    // the reminder stays at index 2 (after Extend) whether or not Clone is there.
+    // the reminder stays at index 3 (after Present and Extend) whether or not Clone is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
       hasPMOAccess
-        ? ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
-        : ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list']
+        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
+        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
     reminderItem.dispatchEvent(new Event('mouseenter'));
     await fixture.whenStable();
     expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
-    expect(items[2].tooltipOptions?.tooltipPosition).toBe('left');
+    expect(items[3].tooltipOptions?.tooltipPosition).toBe('left');
     reminderItem.dispatchEvent(new Event('mouseleave'));
 
-    items[2].command!({});
+    items[3].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
@@ -1027,7 +1034,7 @@ describe('VotesTableComponent — row More menu', () => {
     { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
-    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Send summary', 'Clone'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Present', 'Send summary', 'Clone'] },
   ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
