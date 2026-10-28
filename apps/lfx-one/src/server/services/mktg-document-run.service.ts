@@ -360,12 +360,12 @@ export class MktgDocumentRunService {
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
             }
-            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity);
+            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity, getEffectiveSub(req));
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
             if (coverage) coverage.lookupFailed = true;
-            return stored ? mktgRunProgress(stored.record) : null;
+            return stored ? mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req)) : null;
           }
         })
       );
@@ -443,7 +443,7 @@ export class MktgDocumentRunService {
               return;
             }
             const stored = await this.read(req, project, key);
-            const row = stored && matchesMktgRunProgress(mktgRunProgress(stored.record), agentKey, documentId);
+            const row = stored && matchesMktgRunProgress(mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req)), agentKey, documentId);
             if (row && stored) {
               rows.set(id, row);
               staleWindow ||=
@@ -468,11 +468,11 @@ export class MktgDocumentRunService {
   public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
-      return mktgRunProgress(stored.record);
+      return mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req));
     }
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
-    return mktgRunProgress(record, result.failureText ?? result.reply);
+    return mktgRunProgress(record, result.failureText ?? result.reply, undefined, getEffectiveSub(req));
   }
 
   /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */
@@ -802,6 +802,10 @@ export class MktgDocumentRunService {
   private cached(key: string) {
     const cache = MktgDocumentRunService.terminalCache;
     const entry = cache.get(key);
+    if (entry?.progress?.agentKey === 'linkedin-post') {
+      cache.delete(key);
+      return undefined;
+    }
     if (entry) {
       cache.delete(key);
       cache.set(key, entry);
@@ -810,6 +814,11 @@ export class MktgDocumentRunService {
   }
 
   private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null): void {
+    // Creator-only LinkedIn replies must be projected per reader, never from the shared terminal cache.
+    if (progress?.agentKey === 'linkedin-post') {
+      MktgDocumentRunService.terminalCache.delete(entry.key);
+      return;
+    }
     const stamp = entry.lastModified?.getTime() ?? 0;
     // S3 timestamps have second precision: never memoize the still-current write second.
     if (!stamp || Date.now() - stamp < MKTG_STARTED_RUN_CACHE_STABLE_MS) {

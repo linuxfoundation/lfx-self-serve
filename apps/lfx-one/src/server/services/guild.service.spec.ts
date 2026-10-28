@@ -9,6 +9,10 @@ vi.mock('./logger.service', () => ({
 }));
 
 import type { Request } from 'express';
+import {
+  MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS,
+  MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+} from '../../../../../packages/shared/src/constants/mktg-one-off-terminal.fixture';
 
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -49,6 +53,11 @@ describe('GuildService.getRawEventPayloads', () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('normalizes the raw recorded wrapper fixture to a content-free marker plus 11 public events', async () => {
+    fetchMock.mockResolvedValue(mockEventsResponse(MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS.map((payload) => JSON.parse(payload))));
+    expect(await service.getRawEventPayloads(req, 'synthetic-recorded-session')).toEqual(MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS);
   });
 
   describe('envelope-injection defense (user-event exclusion filter)', () => {

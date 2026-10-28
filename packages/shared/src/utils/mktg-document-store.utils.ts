@@ -9,6 +9,7 @@
 
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
 import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
 import type { Member360FailureReason } from '../interfaces/member-360.interface';
 import type { MktgDocumentRunProgress, MktgStartedRunRecord, MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
@@ -169,10 +170,18 @@ export function findMktgRunIntake(key: string, includeOneOff = false) {
 }
 
 /** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
-export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText, activity?: MktgRunActivity[]): MktgDocumentRunProgress | null {
+export function mktgRunProgress(
+  run: MktgStartedRunRecord,
+  fullReply = run.failureText,
+  activity?: MktgRunActivity[],
+  readerSubject?: string
+): MktgDocumentRunProgress | null {
   if (run.state === 'completed' || run.state === 'superseded') {
     return null;
   }
+  // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
+  const failureText =
+    run.agentKey === 'linkedin-post' && (!run.creatorSubject || readerSubject !== run.creatorSubject) ? MKTG_ONE_OFF_STOPPED_MESSAGE : fullReply;
   const progress: MktgDocumentRunProgress = {
     runId: run.runId,
     project: run.project,
@@ -181,7 +190,7 @@ export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failu
     startedAt: run.startedAt,
     state: run.state,
     ...(activity && { activity }),
-    ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
+    ...(run.state === 'failed' && failureText !== undefined && { failureText }),
     ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
   };
   return progress;
