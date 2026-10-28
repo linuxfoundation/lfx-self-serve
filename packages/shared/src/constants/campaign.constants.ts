@@ -3454,6 +3454,9 @@ export const HUBSPOT_APP_HOST_PATTERN = /^app(?:-[a-z0-9]+)?\.hubspot\.com$/;
  */
 export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
+/** The most list ids campaign-service's preview-count unions in one request (a 400 past it). */
+export const AUDIENCE_PREVIEW_MAX_LIST_IDS = 50;
+
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
 

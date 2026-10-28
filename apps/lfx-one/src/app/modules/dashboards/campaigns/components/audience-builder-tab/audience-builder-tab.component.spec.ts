@@ -4582,14 +4582,36 @@ describe('AudienceBuilderTabComponent', () => {
       expect(tab.attachedMasterId(), 'a pending registrants exclusion read as already recorded').toBeNull();
     });
 
-    it('counts the standing list in place of the standard rows once it exists', async () => {
+    it('says the suppression is too large to count exactly instead of sending a refused count', async () => {
+      const many: AudienceSuppressionList[] = Array.from({ length: 50 }, (_, i) => ({
+        key: `brand_${i}`,
+        label: `Brand opt-out ${i}`,
+        listId: String(400 + i),
+        name: `Brand opt-out ${i}`,
+        size: 10,
+        category: 'brand',
+        hubspotUrl: '',
+      }));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, ...many], standardList: STANDING }));
+      await discover();
+
+      click('campaigns-audience-suppression-count-run');
+
+      expect(previewAudienceCount, 'a count over the 50-list limit was sent').not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-too-many"]')?.textContent).toContain('52');
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-suppression-count-run"]')?.disabled).toBe(true);
+    });
+
+    it('counts the standing list beside the standard rows once it exists', async () => {
       getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
       await discover();
       previewAudienceCount.mockReturnValue(of({ exact: true, estimate: 5100, count: 5100, reason: '' }));
 
       click('campaigns-audience-suppression-count-run');
 
-      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: ['300'] });
+      // Both: the standing list can hold older standard lists, and a newly resolved row is only
+      // added to it by the next attach or compose.
+      expect(previewAudienceCount).toHaveBeenLastCalledWith('tlf', { listIds: ['300', '201'] });
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-count-value"]')?.textContent).toContain('5,100');
     });
 
@@ -4780,6 +4802,97 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(tab.attachUnavailableMessage()).toContain('under Standard suppressions');
       expect(tab.attachUnavailableMessage()).not.toContain('step 3');
+    });
+  });
+
+  describe('PR review fixes, round 2 (#4462)', () => {
+    const GDPR: AudienceSuppressionList = {
+      key: 'lf_events_gdpr',
+      label: 'LF Events GDPR',
+      listId: '201',
+      name: 'LF Events - GDPR Suppression',
+      size: 5000,
+      category: 'standard',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+    };
+    const REGISTRANTS: AudienceSuppressionList = {
+      key: 'current_registrants',
+      label: 'Current registrants - Synthetic Summit 2026',
+      listId: '',
+      name: 'Synthetic Summit 2026 - Current Registrants',
+      category: 'current_registrants',
+      hubspotUrl: '',
+      willCreate: true,
+    };
+    const STANDING: AudienceComposedList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    const MASTER = { listId: '501', name: 'Synthetic Summit - Master', size: 3000, hubspotUrl: 'u' };
+
+    async function discover(briefId = ''): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    it('returns focus to the step-4 button a cancelled reuse confirmation was opened from', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+
+      click('campaigns-audience-reuse-attach-cancel');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('audience-last-sent-master-use-501');
+    });
+
+    it("counts a copied past send's standing-list id as the one standing list", async () => {
+      const send: AudienceLastSentEmail = {
+        emailId: 'em-8',
+        emailName: 'Synthetic Summit 2026 - Reminder',
+        sentAt: '2026-02-10T15:00:00Z',
+        hubspotUrl: 'https://app.hubspot.com/email/1/details/em-8/performance',
+        includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+        suppressionLists: [{ listId: '300', name: STANDING.name, size: 10, missing: false }],
+      };
+      getAudienceLastSent.mockReturnValue(of([send]));
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR], standardList: STANDING }));
+      await discover();
+
+      click('audience-last-sent-copy-em-8');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-bar-excluded"]')?.textContent?.trim()).toBe('1');
+    });
+
+    it('moves focus to the review step from the summary bar', async () => {
+      await discover();
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-summary-bar-review');
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('campaigns-audience-step-compose');
+    });
+
+    it('withdraws a reuse confirmation once attaching is no longer possible', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR, REGISTRANTS], standardList: STANDING }));
+      getAudienceExistingMasterLists.mockReturnValue(of([MASTER]));
+      await discover('brief-1');
+      click('audience-last-sent-master-use-501');
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('stagingInFlight', true);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-reuse-attach-confirming"]')).toBeNull();
+    });
+
+    it('does not promise step 4 creates nothing while the standing list does not exist', async () => {
+      getAudienceSuppressionLists.mockReturnValue(of({ lists: [GDPR] }));
+      await discover('brief-1');
+      toggleStandardRow('lf_events_gdpr');
+
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).not.toContain('nothing new is created');
     });
   });
 });

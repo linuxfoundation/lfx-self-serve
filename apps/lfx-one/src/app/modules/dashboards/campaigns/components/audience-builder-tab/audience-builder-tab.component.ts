@@ -35,6 +35,7 @@ import {
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
   AUDIENCE_OPT_IN_LOOKUP_EMPTY,
   AUDIENCE_OPT_IN_SIGNALS,
+  AUDIENCE_PREVIEW_MAX_LIST_IDS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
   AUDIENCE_STEP_ORDER,
@@ -894,11 +895,16 @@ export class AudienceBuilderTabComponent {
   });
 
   /** Step 4's "Use for this email" note: whether its attach creates anything in HubSpot. */
-  protected readonly reuseAttachNote = computed(() =>
-    this.writeCreates().length > 0
-      ? `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`
-      : 'No master list is built and nothing new is created in HubSpot.'
-  );
+  protected readonly reuseAttachNote = computed(() => {
+    if (this.writeCreates().length > 0) {
+      return `No master list is built, but it also creates ${this.writeCreatesText()} in HubSpot, so it asks first.`;
+    }
+    // A past send's own exclusions can complete the standard set while the standing list does not
+    // exist yet, so "nothing is created" holds only once it does; that attach asks first.
+    return this.standardList() === null
+      ? "No master list is built. A past send's own exclusions can still create the project's shared standard suppression list; it asks first if so."
+      : 'No master list is built and nothing new is created in HubSpot.';
+  });
 
   /**
    * The compose confirmation's exclusion count, counted as upstream reports it afterwards: the
@@ -906,8 +912,10 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly composeExcludeCount = computed(() => {
     const standard = new Set(this.standardRowIds());
+    // A copied past send can carry the standing list's own id: it is the same one list.
+    const standingId = this.standardList()?.listId;
     const sent = this.sentExcludeIds();
-    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id)).length + 1 : sent.length;
+    const count = this.standardApplied() ? sent.filter((id) => !standard.has(id) && id !== standingId).length + 1 : sent.length;
     return count + (this.registrantsEvent() === '' ? 0 : 1);
   });
 
@@ -966,17 +974,27 @@ export class AudienceBuilderTabComponent {
 
   /**
    * The lists the exact count unions: what the send excludes. When every standard row applies and
-   * the standing list exists, that list is counted in their place: it is only ever grown, so it can
-   * hold older standard lists the current rows no longer name.
+   * the standing list exists, that list is counted beside them: it is only ever grown, so it can hold
+   * older standard lists the current rows no longer name.
    */
   protected readonly countedExcludeIds = computed<readonly string[]>(() => {
     const standing = this.standardList();
     if (standing === null || !this.standardApplied()) {
       return this.excludeIds();
     }
-    const standard = new Set(this.standardRowIds());
-    return [standing.listId, ...this.excludeIds().filter((id) => !standard.has(id) && id !== standing.listId)];
+    // The standing list AND the rows: the next attach or compose grows the standing list to cover a
+    // newly resolved row, so until then the rows can hold contacts the standing list does not.
+    return [standing.listId, ...this.excludeIds().filter((id) => id !== standing.listId)];
   });
+
+  /**
+   * More lists than one count can union. Shown as such rather than sent and refused, and never cut
+   * down: a count over fewer lists would understate the suppression. The standing list cannot stand
+   * in for the rows to save room, because the UI cannot see whether it already covers a newly
+   * resolved row (it is grown by the next attach or compose).
+   */
+  protected readonly suppressionCountTooMany = computed(() => this.countedExcludeIds().length > AUDIENCE_PREVIEW_MAX_LIST_IDS);
+  protected readonly previewMaxListIds = AUDIENCE_PREVIEW_MAX_LIST_IDS;
 
   /**
    * The exclusions actually sent: ticked suppression rows plus lists marked Exclude, minus inclusion.
@@ -2250,7 +2268,9 @@ export class AudienceBuilderTabComponent {
     if (step === 'discover' || step === 'include' || step === 'reuse' || step === 'gaps') {
       this.mode.set('reuse');
     }
-    this.scrollTo(`campaigns-audience-step-${step}`);
+    // Focus, not only scroll: from the summary bar at the bottom, keyboard and screen-reader users
+    // otherwise kept their place there and tabbed out of the builder. Focusing scrolls it into view.
+    this.scrollTo(`campaigns-audience-step-${step}`, true);
   }
 
   protected onReadinessAction(action: AudienceReadinessAction): void {
@@ -2297,11 +2317,14 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onCancelUseSelection(): void {
-    const reuse = this.pendingReuseAttach() !== null;
+    const reuse = this.pendingReuseAttach();
     this.attachConfirmedFor.set(null);
     this.pendingReuseAttach.set(null);
-    if (!reuse) {
+    // Back to the button the confirmation was opened from: its Cancel leaves the DOM with it.
+    if (reuse === null) {
       this.scrollTo('campaigns-audience-use-direct', true);
+    } else {
+      this.scrollTo(reuse.kind === 'master' ? `audience-last-sent-master-use-${reuse.id}` : `audience-last-sent-use-${reuse.id}`, true);
     }
   }
 
@@ -2360,7 +2383,7 @@ export class AudienceBuilderTabComponent {
   /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
   protected onCountSuppression(): void {
     const listIds = [...this.countedExcludeIds()];
-    if (this.degraded() || this.suppressionCounting() || listIds.length === 0) {
+    if (this.degraded() || this.suppressionCounting() || listIds.length === 0 || this.suppressionCountTooMany()) {
       return;
     }
     const key = [...listIds].sort().join(',');
