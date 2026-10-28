@@ -8,7 +8,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { OverviewInfoTipComponent } from '../overview-info-tip/overview-info-tip.component';
 
-import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyCopy } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyCopy, HealthMetricsOverviewMetaPart } from '@lfx-one/shared/interfaces';
 
 /** The design's bordered Overview card: a titled header, then a skeleton, an error, an empty state or the body. */
 @Component({
@@ -20,8 +20,8 @@ import type { HealthMetricsOverviewCardStatus, HealthMetricsOverviewEmptyCopy } 
 export class OverviewCardComponent {
   public readonly heading = input.required<string>();
   public readonly info = input.required<string>();
-  /** A line under the title; shown only once the body is. */
-  public readonly subtitle = input<string>('');
+  /** "Label: value" parts under the title, values darker than labels; shown only once the body is. */
+  public readonly meta = input<readonly HealthMetricsOverviewMetaPart[]>([]);
   public readonly status = input.required<HealthMetricsOverviewCardStatus>();
   public readonly isEmpty = input<boolean>(false);
   public readonly emptyCopy = input.required<HealthMetricsOverviewEmptyCopy>();
