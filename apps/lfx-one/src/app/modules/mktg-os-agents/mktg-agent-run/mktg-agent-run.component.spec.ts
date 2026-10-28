@@ -2413,6 +2413,22 @@ describe('MktgAgentRunComponent', () => {
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
+    it('warns about Drive sources and duplicate fields without disabling Generate', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const url = 'https://drive.google.com/drive/folders/synthetic';
+      component['intakeForm'].patchValue({ project_name: 'Synthetic project', website_url: url, deck_url: url + '/?usp=sharing' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain("We can't open private Google Drive links or folders.");
+      expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain('This link is already added above.');
+      expect(component['submitDisabled']()).toBe(false);
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-submit-button"] button')?.disabled).toBe(false);
+      expect(component['documentsSection']()?.earlierUrls()).toContain(url);
+      component['intakeForm'].patchValue({ website_url: 'https://project.example', deck_url: '' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-link-warning-deck_url')).toBeNull();
+    });
+
     it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; other links and documents in one section', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();

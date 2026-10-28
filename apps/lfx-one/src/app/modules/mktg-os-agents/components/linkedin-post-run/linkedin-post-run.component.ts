@@ -4,7 +4,7 @@
 import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -41,7 +41,7 @@ import {
   MktgRunQuestion,
   MktgRunActivity,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink } from '@lfx-one/shared/utils';
+import { isLinkedinSetup, normalizeLinkedinShareLink, mktgLinkWarnings } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -137,6 +137,8 @@ export class LinkedinPostRunComponent {
   protected readonly linkSaving = signal(false);
   protected readonly linkStatus = signal('');
   protected readonly linkError = signal('');
+  private readonly contentUrl = toSignal(this.contentForm.controls.url.valueChanges, { initialValue: '' });
+  protected readonly linkWarning = computed(() => mktgLinkWarnings({ url: this.contentUrl() })['url']);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
   protected readonly agent = computed(() => MKTG_AGENTS.find((entry) => entry.id === this.intake().agentId));
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');

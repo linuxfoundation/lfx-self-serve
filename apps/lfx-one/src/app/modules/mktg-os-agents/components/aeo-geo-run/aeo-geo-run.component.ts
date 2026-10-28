@@ -27,7 +27,7 @@ import {
   MktgRunQuestionDraft,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
-import { isAeoGeoKeyPageUrl, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
+import { isAeoGeoKeyPageUrl, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers, mktgLinkWarnings } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -103,6 +103,10 @@ export class AeoGeoRunComponent {
       })[this.agent()?.accent ?? 'gray']
   );
   private readonly values = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
+  protected readonly linkWarnings = computed(() => ({
+    ...mktgLinkWarnings({ domain: this.values()['domain'] ?? '' }),
+    ...mktgLinkWarnings(Object.fromEntries(AEO_GEO_KEY_PAGE_FIELDS.map(({ key }) => [key, this.values()[key] ?? '']))),
+  }));
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? '');
   protected readonly documentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.intake().agentId));

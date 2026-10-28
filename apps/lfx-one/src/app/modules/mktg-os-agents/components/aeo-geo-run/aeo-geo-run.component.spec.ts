@@ -91,6 +91,21 @@ describe('AeoGeoRunComponent', () => {
       ],
     });
   });
+  it('advises on website/key-page Drive links and normalized repeats without adding a submission gate', async () => {
+    await render();
+    const url = 'https://drive.google.com/drive/folders/synthetic';
+    await fill('mktg-aeo-domain', url);
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain("We can't open private Google Drive links or folders.");
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+    await fill('mktg-aeo-page_1', url);
+    await fill('mktg-aeo-page_2', url + '?usp=sharing');
+    expect(query('mktg-aeo-link-warning-page_1').textContent).not.toContain('already added above');
+    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain("We can't open private Google Drive links or folders.");
+    expect(query('mktg-aeo-link-warning-page_2').textContent).toContain('This link is already added above.');
+    expect(query('mktg-aeo-link-warning-domain').textContent).not.toContain('already added above');
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('prefills the website from LFX and distinguishes empty previous runs', async () => {
     await render();
     expect((query('mktg-aeo-domain') as HTMLInputElement).value).toBe('https://project.example/');
