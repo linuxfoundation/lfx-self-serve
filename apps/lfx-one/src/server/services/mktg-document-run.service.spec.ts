@@ -320,7 +320,7 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({
       statusCode: 409,
       code: 'MKTG_RUN_ACTIVE',
-      details: { activeRunId: hash(session), state, agentKey: types[0].agentKey, documentId: 'living' },
+      details: { activeRunId: hash(session), state, agentKey: types[0].agentKey, documentId: 'living', startedAt: JSON.parse(stored().body).startedAt },
     });
     expect(flows.interrupt).not.toHaveBeenCalled();
     expect(stored().metadata['state']).toBe(state);
@@ -407,7 +407,7 @@ describe('MktgDocumentRunService core', () => {
     });
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).rejects.toMatchObject({
       statusCode: 409,
-      details: { activeRunId: hash(session), state: 'questions' },
+      details: { activeRunId: hash(session), state: 'questions', startedAt: JSON.parse(stored().body).startedAt },
     });
     expect(flows.interrupt).not.toHaveBeenCalled();
   });

@@ -924,6 +924,7 @@ describe('MktgAgentRunComponent', () => {
         agentKey: type.agentKey,
         documentId: 'living',
         startedBy: 'Another writer',
+        startedAt: '2026-10-19T12:00:00.000Z',
       };
     };
 
@@ -1002,6 +1003,8 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
       const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      expect(component['waitingRun']()).toMatchObject({ startedAt: conflict.startedAt });
+      expect(component['existingRun']()).toMatchObject({ startedAt: conflict.startedAt });
       expect(discardPrompt()).toMatchObject({
         header: "Another writer's Messaging framework run is in progress",
         rejectLabel: 'Open it',

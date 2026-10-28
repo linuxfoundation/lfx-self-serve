@@ -344,6 +344,7 @@ describe('MktgAgentRunService', () => {
       agentKey: 'brand-kit',
       documentId: 'living',
       startedBy: 'Another writer',
+      startedAt: '2026-10-19T12:00:00.000Z',
     };
     const failure = new HttpErrorResponse({ status: 409, error: conflict });
     httpPost.mockReturnValueOnce(throwError(() => failure));
@@ -421,6 +422,7 @@ describe('MktgAgentRunService', () => {
       agentKey: 'brand-kit',
       documentId: 'living',
       startedBy: 'Another writer',
+      startedAt: '2026-10-19T12:00:00.000Z',
       ...override,
     };
     expect(service.activeRunConflict(new HttpErrorResponse({ status: 409, error: body }), generateRequest())).toBeNull();

@@ -79,6 +79,7 @@ describe('Member360RunComponent', () => {
       agentKey: 'member-360',
       documentId: 'run-' + 'a'.repeat(24),
       startedBy: 'Synthetic writer',
+      startedAt: '2026-10-19T12:00:00.000Z',
     };
     run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
