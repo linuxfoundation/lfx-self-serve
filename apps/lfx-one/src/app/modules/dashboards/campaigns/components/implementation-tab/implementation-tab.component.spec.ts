@@ -10948,8 +10948,22 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       fixture = await mount(true);
       await type({ instagramUserId: '17841400000000000', dsaBeneficiary: value, dsaPayor: 'LF' });
 
-      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter the name on one line, without tabs or line breaks.');
+      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter the name on one line, without tabs, line breaks or invisible formatting characters.');
       expect(component()['canSubmit']()).toBe(false);
+    });
+
+    it('caps a disclosure at 256 code points, counting an astral-plane character once', async () => {
+      fixture = await mount(true);
+      await type({ instagramUserId: '17841400000000000', dsaBeneficiary: 'a'.repeat(257), dsaPayor: 'LF' });
+
+      expect(component()['metaDsaBeneficiaryError']()).toBe('Enter at most 256 characters.');
+      expect(component()['canSubmit']()).toBe(false);
+
+      // 256 characters of 2 UTF-16 units each: `.length` would be 512, but it is within the cap.
+      await type({ dsaBeneficiary: '\u{20000}'.repeat(256) });
+      expect(component()['metaDsaBeneficiaryError']()).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+      expect(fixture.nativeElement.querySelector('#meta-dsa-beneficiary')?.getAttribute('maxlength')).toBeNull();
     });
 
     it('accepts a non-Latin disclosure', async () => {
@@ -10970,12 +10984,27 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
       expect(draft?.['metaDsaBeneficiary']).toBe('CNCF ');
       expect(draft?.['metaDsaPayor']).toBe('LF');
 
-      const restored = await mount(true, draft);
+      const restored = await mount(true, { ...draft, metaGeoTargets: ['DE'] });
+      let restoredDraft: Record<string, unknown> | undefined;
+      component(restored)['draftChange'].subscribe((d: Record<string, unknown>) => (restoredDraft = d));
       expect(component(restored)['metaInstagramDsaForm'].getRawValue()).toEqual({
         instagramUserId: '17841400000000000',
         dsaBeneficiary: 'CNCF ',
         dsaPayor: 'LF',
       });
+      // What the checks and the request read, not just what the inputs show (PR #4483 review): a
+      // restored id and pair satisfy an Instagram placement and an EU geo, and are sent.
+      expect(component(restored)['metaDsaCountries']()).toEqual(['DE']);
+      expect(component(restored)['metaInstagramUserIdError']()).toBeNull();
+      expect(component(restored)['metaDsaBeneficiaryError']()).toBeNull();
+      const request = await submitted(restored);
+      expect(request['metaConfig']['instagramUserId']).toBe('17841400000000000');
+      expect(request['metaConfig']['dsaBeneficiary']).toBe('CNCF');
+      expect(request['metaConfig']['dsaPayor']).toBe('LF');
+      // A later edit elsewhere re-emits the restored values, not blanks.
+      component(restored)['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026 (edited)');
+      expect(restoredDraft?.['metaInstagramUserId']).toBe('17841400000000000');
+      expect(restoredDraft?.['metaDsaPayor']).toBe('LF');
     });
   });
 });

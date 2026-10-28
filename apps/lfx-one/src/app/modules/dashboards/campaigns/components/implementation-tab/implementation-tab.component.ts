@@ -614,8 +614,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaObjectiveIsUnavailable = computed(() => !(META_SELECTABLE_OBJECTIVES as readonly MetaObjective[]).includes(this.metaObjective()));
   protected readonly metaPlacementLabels = META_PLACEMENT_LABELS;
   protected readonly metaSelectablePlacements = META_SELECTABLE_PLACEMENTS;
-  /** The DSA disclosure length cap campaign-service enforces, bound to each box's `maxlength`. */
-  protected readonly metaDsaNameMaxLength = META_DSA_NAME_MAX_LENGTH;
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
@@ -7967,7 +7965,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
-   * same present-only rule, and the same `emitEvent: false`, as `restoreGoogleBidding`.
+   * same present-only rule as `restoreGoogleBidding`.
    */
   private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
     const fields = [
@@ -7975,17 +7973,24 @@ export class ImplementationTabComponent implements OnInit {
       ['metaDsaBeneficiary', 'dsaBeneficiary'],
       ['metaDsaPayor', 'dsaPayor'],
     ] as const;
+    const patch: Partial<Record<(typeof fields)[number][1], string>> = {};
     for (const [draftKey, control] of fields) {
       const value = draft[draftKey];
-      if (typeof value !== 'string') continue;
-      this.metaInstagramDsaForm.controls[control].setValue(value, { emitEvent: false });
+      if (typeof value === 'string') patch[control] = value;
     }
+    // ONE emitting patch, unlike `restoreGoogleBidding`: `metaInstagramDsaDraft` (what validation,
+    // `submit` and `emitDraft` read) follows this group's `valueChanges`, so a silent write would
+    // leave the inputs showing the restored text while every check still saw blanks (PR #4483
+    // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
+    // draft subscription honours.
+    if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
   }
 
   /**
    * Why one EU DSA disclosure cannot be sent, or `null` while the capability is off. Mirrors
    * campaign-service's `CheckPublishIdentity`: at most `META_DSA_NAME_MAX_LENGTH` characters
-   * (counted as code points, as Go counts runes), no C0/C1 control, Unicode line/paragraph separator
+   * (counted as code points, as Go counts runes — which is why the inputs carry no native
+   * `maxlength`: the browser counts UTF-16 units and would cut a valid astral-plane name short), no C0/C1 control, Unicode line/paragraph separator
    * or bidi control (its `isLineBreakingOrControl`), and present whenever the
    * other one is OR an EU country is targeted. Trimmed first, as upstream trims.
    */
@@ -7997,7 +8002,7 @@ export class ImplementationTabComponent implements OnInit {
     if ([...value].length > META_DSA_NAME_MAX_LENGTH) return `Enter at most ${META_DSA_NAME_MAX_LENGTH} characters.`;
     // eslint-disable-next-line no-control-regex -- matching control characters is the point.
     if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value))
-      return 'Enter the name on one line, without tabs or line breaks.';
+      return 'Enter the name on one line, without tabs, line breaks or invisible formatting characters.';
     if (value !== '') return null;
     const eu = this.metaDsaCountries();
     if (eu.length > 0) return `Required when targeting the EU/EEA (${eu.join(', ')}).`;
