@@ -406,12 +406,10 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(results);
       const fixture = await setup();
 
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe('—');
 
       results.next(makeResults());
       TestBed.tick();
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ value: 1, label: 'Not voted yet' });
     });
   });
@@ -559,9 +557,7 @@ describe('VoteDetailComponent', () => {
 
       const notVotedCard = read<StatCardItem[]>(fixture, 'summaryCards')[2];
       expect(notVotedCard).toMatchObject({ label: 'Not voted yet', subLine: 'Voting not open yet' });
-      const callout = testId(fixture, 'vote-detail-overview-callout')?.textContent ?? '';
-      expect(callout).toContain('This vote is a draft');
-      expect(callout).not.toContain('This vote is closed');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Not open yet', severity: 'secondary' });
     });
 
@@ -579,7 +575,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('This vote is closed');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
     });
   });
@@ -1827,7 +1823,7 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(of(heldResults()));
     });
 
-    it('shows the held panel on Overview, with no manager callout while the vote is open', async () => {
+    it('shows the held panel on Overview while the vote is open', async () => {
       const fixture = await setup();
 
       expect(read(fixture, 'resultsHeld')).toBe(true);
@@ -1835,7 +1831,6 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('until voting closes on');
       expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
     it('keeps participation numbers but shows "—" for comments and drops the abstention count from the summary', async () => {
@@ -1878,8 +1873,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).not.toContain('Totals appear when voting closes');
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
       expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('Totals and comments will appear once they are finalized.');
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('Final results are available');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
     it.each(['creator', 'voter'] as const)('passes held and released results to the facts card for %s', async (audience) => {

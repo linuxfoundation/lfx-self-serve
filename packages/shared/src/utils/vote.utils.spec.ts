@@ -1184,7 +1184,7 @@ describe('voter results helpers', () => {
     ])('never promises individual ballots with missing privacy metadata for %s (closed: %s)', (audience, isClosed) => {
       const rules = getVoteVisibilityRules(audience, undefined, isClosed);
       expect(rules).toContain('No one sees how another voter voted on this page.');
-      expect(rules.at(-1)).toBe('Ballot privacy information is unavailable.');
+      expect(rules.at(-1)).toBe('No one sees how another voter voted on this page.');
       expect(rules.join(' ')).not.toContain('Voters tab');
       expect(rules.join(' ')).not.toContain('can see each voter');
     });
@@ -1197,7 +1197,7 @@ describe('voter results helpers', () => {
     ])('treats null privacy as unavailable for %s (closed: %s)', (audience, isClosed) => {
       const rules = getVoteVisibilityRules(audience, null, isClosed);
       expect(rules).toContain('No one sees how another voter voted on this page.');
-      expect(rules.at(-1)).toBe('Ballot privacy information is unavailable.');
+      expect(rules.at(-1)).toBe('No one sees how another voter voted on this page.');
       expect(rules.join(' ')).not.toContain('Named ballot');
       expect(rules.join(' ')).not.toContain('Voters tab');
     });
@@ -1233,7 +1233,6 @@ describe('voter results helpers', () => {
       expect(rules).toEqual([
         'Voting has closed. Totals and comments will appear once they are finalized.',
         'No one sees how another voter voted on this page.',
-        'Pseudo-anonymous ballot: results are shown without voter names.',
       ]);
       expect(getVoteVisibilityRules(audience, true, true, true, false)[0]).toContain('see the final totals and comments.');
     });
@@ -1243,7 +1242,6 @@ describe('voter results helpers', () => {
         'As a manager, you can follow live totals and comments until the vote closes.',
         'Voters see only their own response until the vote closes.',
         "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.",
-        'Named ballot: each ballot is recorded against the voter who cast it.',
       ]);
     });
 
@@ -1262,11 +1260,15 @@ describe('voter results helpers', () => {
       expect(rules.join(' ')).not.toContain('Only vote managers see who wrote each comment.');
     });
 
-    it('names the ballot privacy for named and pseudo-anonymous votes', () => {
+    it('leaves ballot privacy to the page header', () => {
       for (const audience of ['voter', 'creator'] as const) {
         for (const isClosed of [true, false]) {
-          expect(getVoteVisibilityRules(audience, true, isClosed).at(-1)).toBe('Pseudo-anonymous ballot: results are shown without voter names.');
-          expect(getVoteVisibilityRules(audience, false, isClosed).at(-1)).toBe('Named ballot: each ballot is recorded against the voter who cast it.');
+          for (const pseudoAnonymous of [true, false, undefined, null]) {
+            const text = getVoteVisibilityRules(audience, pseudoAnonymous, isClosed).join(' ');
+            expect(text).not.toContain('Named ballot');
+            expect(text).not.toContain('Pseudo-anonymous ballot');
+            expect(text).not.toContain('unavailable');
+          }
         }
       }
     });
