@@ -98,6 +98,7 @@ Every meeting has a join link at `/meetings/:id`. For a **Public** or **Private*
 
 ## Related sections
 
+- [Reconcile Attendance](reconcile-attendance/) — organizers match Zoom attendees to real people after a meeting
 - [Past Meetings](past-meetings/) — attendance, participants, recording, transcript, and AI summary
 - [Meeting Materials](meeting-materials/) — add, organize, and find files and links
 - [Manage Participants](manage-participants/) — invite guests, add groups, resend invitations, and remove people

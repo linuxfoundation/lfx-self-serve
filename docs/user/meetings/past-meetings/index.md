@@ -34,7 +34,7 @@ When the meeting has participants, the page summarizes attendance:
 
 - **Watch Recording** opens the recording in a new tab.
 - **AI Summary** opens the meeting's AI-generated summary. Organizers also see an **Approved** or **Pending** badge here.
-- **Reconcile Attendance** is for organizers. It lets them review how people in the Zoom attendance record were matched to LFX users and correct the matches.
+- **Reconcile Attendance** is for organizers. It lets them review how people in the Zoom attendance record were matched to LFX users and correct the matches. See [Reconcile Attendance](../reconcile-attendance/).
 
 The page also shows the meeting's **Agenda** and its **Resources**, which are the files and links attached to the meeting. Organizers always see **Resources**, so they can add to it with **Manage**. Everyone else sees it only when it has something in it.
 
@@ -94,6 +94,7 @@ Only organizers can edit or approve a summary.
 
 ## Related
 
+- [Reconcile Attendance](../reconcile-attendance/) — match Zoom attendees to real people
 - [Meetings overview](../) — an overview of the Meetings section
 - [Meeting Materials](../meeting-materials/) — manage a past meeting's files and links
 - [Join a Meeting](../join-meeting/) — read a transcript and use the Meeting Tools panel
