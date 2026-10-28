@@ -380,6 +380,28 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
     ]);
   });
 
+  it('asks the owner of the list to reload after a successful change', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('ada', false)]);
+    const reload = vi.fn();
+    component.refreshRequested.subscribe(reload);
+
+    component.onToggleHost(registrant('ada', false));
+
+    expect(reload).toHaveBeenCalledWith(0);
+  });
+
+  it('does not ask for a reload when the update fails', async () => {
+    const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [] }));
+    const component = await mount(update, [registrant('ada', false)]);
+    const reload = vi.fn();
+    component.refreshRequested.subscribe(reload);
+
+    component.onToggleHost(registrant('ada', false));
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it('leaves the list alone when the update fails', async () => {
     const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [{ error: { message: 'nope' } }] }));
     const component = await mount(update, [registrant('ada', false)]);

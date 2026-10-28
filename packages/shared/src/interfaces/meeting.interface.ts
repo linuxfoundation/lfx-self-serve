@@ -862,6 +862,10 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /** The host toggle's accessible name, built from the same name as `removeLabel` and flipping with the guest's host flag. */
+  hostLabel: string;
+  /** The host toggle's tooltip: `Make host`, or `Remove host` when the guest already is one. */
+  hostTooltip: string;
   /**
    * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
    * `This occurrence`. `null` everywhere else, where every guest shares the same scope.

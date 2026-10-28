@@ -250,6 +250,16 @@ describe('ComposerGuestsComponent', () => {
       expect(rows()[0].removeLabel).toBe('Remove Member One');
     });
 
+    it('names the guest in the host toggle and flips it with the host flag', () => {
+      formService.setGuests([savedGroupGuest]);
+      expect(rows()[0].hostLabel).toBe('Make Member One a meeting host');
+      expect(rows()[0].hostTooltip).toBe('Make host');
+
+      formService.setGuests([{ ...savedGroupGuest, host: true }]);
+      expect(rows()[0].hostLabel).toBe('Remove Member One as meeting host');
+      expect(rows()[0].hostTooltip).toBe('Remove host');
+    });
+
     it('falls back to the email when the registrant has no name', () => {
       // The icon-only button has no other content, so a bare "Remove" would leave a screen-reader
       // user counting rows. The email is what identifies the row on screen here too.

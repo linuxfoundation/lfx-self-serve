@@ -238,9 +238,9 @@
                     type="button"
                     class="flex-none rounded-md p-2 hover:bg-gray-50 hover:text-blue-600"
                     [class]="row.guest.host ? 'text-blue-600' : 'text-gray-400'"
-                    [attr.aria-label]="hostToggleAriaLabel(row.guest)"
+                    [attr.aria-label]="row.hostLabel"
                     [attr.aria-pressed]="!!row.guest.host"
-                    [pTooltip]="hostToggleTooltip(row.guest)"
+                    [pTooltip]="row.hostTooltip"
                     tooltipPosition="top"
                     (click)="onToggleHost(row.guest)"
                     [attr.data-testid]="'composer-guest-host-toggle-' + row.trackId">

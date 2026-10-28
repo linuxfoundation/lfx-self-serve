@@ -307,15 +307,6 @@ export class ComposerGuestsComponent {
     }
   }
 
-  /** The host toggle's tooltip text; its accessible name adds the guest, see {@link hostToggleAriaLabel}. */
-  protected hostToggleTooltip(guest: MeetingRegistrantWithState): string {
-    return guest.host ? 'Remove host' : 'Make host';
-  }
-
-  protected hostToggleAriaLabel(guest: MeetingRegistrantWithState): string {
-    return `${guest.host ? 'Remove host from' : 'Make host'} ${this.guestLabel(guest)}`;
-  }
-
   /**
    * Flips a guest's Meeting Host flag in place.
    * @description A saved guest becomes `'modified'`, which `setGuests` turns into an update on save; a guest
@@ -475,6 +466,10 @@ export class ComposerGuestsComponent {
           // user to count rows to find out which guest they are about to drop — the email is what
           // identifies the row on screen in that case, so it identifies the button too.
           removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+          hostLabel: guest.host
+            ? `Remove ${displayName || guest.email || 'guest'} as meeting host`
+            : `Make ${displayName || guest.email || 'guest'} a meeting host`,
+          hostTooltip: guest.host ? 'Remove host' : 'Make host',
           scopeLabel: this.scopeLabel(guest),
           // Editing one occurrence, only guests invited to it alone can go: upstream can't drop a series
           // guest from a single occurrence, so those rows are read-only.

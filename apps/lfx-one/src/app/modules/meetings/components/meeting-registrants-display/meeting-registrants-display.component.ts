@@ -102,13 +102,23 @@ export class MeetingRegistrantsDisplayComponent {
   // disappears without waiting for the async refetch to complete.
   private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
   // Host flags the organizer just changed — applied over the displayed list so the badge and sort order
-  // update at once, without waiting for the async refetch (works for managed and self-managed modes).
+  // update at once. A refetch is also requested, but the list can lag the write, so the override is kept
+  // until the drawer closes rather than dropped when a fetch lands (a lagging fetch would flip the badge back).
   private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
   protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  // Rows the server hasn't confirmed yet — their uid is a placeholder, so there is nothing to update.
+  protected readonly unconfirmedGuestUids: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.optimisticRegistrants()
+          .filter((r) => r.uid?.startsWith('optimistic-'))
+          .map((r) => r.uid)
+      )
+  );
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => !this.pastMeeting() && isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
@@ -275,6 +285,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.stagedGuests.set([]);
         this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
+        this.hostOverrides.set(new Map());
       });
   }
 
@@ -377,6 +388,12 @@ export class MeetingRegistrantsDisplayComponent {
           if (response.summary.successful > 0) {
             this.hostOverrides.update((map) => new Map(map).set(uid, host));
             this.messageService.add({ severity: 'success', summary: 'Success', detail: `${label} is ${host ? 'now' : 'no longer'} a meeting host` });
+            // Ask whoever owns the list to reload it, so views built from it (the join page's "Organized by" chip) catch up.
+            if (this.externallyManaged()) {
+              this.refreshRequested.emit(0);
+            } else {
+              this.refresh$.next(true);
+            }
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: response.failures[0]?.error?.message || 'Failed to update host' });
           }
