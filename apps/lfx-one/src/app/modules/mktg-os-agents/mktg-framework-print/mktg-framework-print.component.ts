@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FoundationMessagePrintView } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
+import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 
 // The Messaging Framework's PRINT rendering (Download PDF): the framework
 // view's tabs as one document on portrait pages of the paper the print
@@ -22,7 +23,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 // kit book's sheet and the one pager's letter page.
 @Component({
   selector: 'lfx-mktg-framework-print',
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, MktgPrintRunningHeadComponent],
   templateUrl: './mktg-framework-print.component.html',
   styleUrl: './mktg-framework-print.component.scss',
 })
@@ -33,6 +34,8 @@ export class MktgFrameworkPrintComponent {
   // === Inputs ===
   /** The framework as the print lays it out, with the brand it is set in. */
   public readonly view = input.required<FoundationMessagePrintView>();
+  /** Family document number; standalone exports retain their own section numbers. */
+  public readonly number = input('');
 
   // === Computed ===
   /** The Google Fonts stylesheet of the brand's typeface, when the kit says it is there (null otherwise). */

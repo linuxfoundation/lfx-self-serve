@@ -148,6 +148,14 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
   await page.emulateMedia({ media: 'print' });
   await expect(page.getByTestId('family-export-print-cover')).toBeVisible();
+  await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
+  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2', '01.3', '01.4']);
+  await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
+  await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
+  for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
+  }
   await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
   await expect(page.getByTestId('brand-kit-page-cover')).toBeHidden();
   await expect(page.getByTestId('brand-kit-page-contents')).toBeHidden();

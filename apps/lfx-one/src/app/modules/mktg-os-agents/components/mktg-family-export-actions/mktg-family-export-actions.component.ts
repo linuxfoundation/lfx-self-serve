@@ -14,6 +14,7 @@ import {
   MKTG_FAMILY_PDF_NOTE,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_KIT_FAMILIES,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -64,6 +65,7 @@ export class MktgFamilyExportActionsComponent {
   protected readonly pdfNote = MKTG_FAMILY_PDF_NOTE;
   protected readonly approvalNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
   protected readonly printOnlyClass = MKTG_FAMILY_PRINT_ONLY_CLASS;
+  protected readonly familyName = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId())?.name ?? 'Family');
 
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
   protected readonly checking = signal(true);
