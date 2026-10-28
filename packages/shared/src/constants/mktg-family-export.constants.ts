@@ -14,4 +14,5 @@ export const MKTG_FAMILY_EXPORT_KINDS = {
 } as const;
 export const MKTG_FAMILY_PRINT_BODY_CLASS = 'lfx-print-family';
 export const MKTG_FAMILY_PRINT_ONLY_CLASS = 'lfx-family-print-only';
-export const MKTG_FAMILY_PDF_NOTE = 'PDF includes the approved messaging framework and brand kit. Boilerplates and FAQ do not have print layouts yet.';
+export const MKTG_FAMILY_SLIDES_NOTE = 'Google Slides: framework, brand kit, boilerplates and FAQ (approved current).';
+export const MKTG_FAMILY_PDF_NOTE = 'PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.';
