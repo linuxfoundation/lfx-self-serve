@@ -53,7 +53,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
-import { AiProxyError, aiErrorDetail, aiErrorSummary } from '../helpers/ai-error.helper';
+import { AiProxyError, aiErrorDetail, aiErrorSummary, readAiJson } from '../helpers/ai-error.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -483,7 +483,8 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
     throw new AiProxyError(`AI request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
   }
 
-  const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  // Not a bare `response.json()`: a 2xx that is not a JSON object fails as a redacted `AiProxyError` (#4500).
+  const data = await readAiJson<{ choices?: { message?: { content?: string } }[] }>(response, aiApiKey);
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error('AI proxy returned an empty or malformed response');
