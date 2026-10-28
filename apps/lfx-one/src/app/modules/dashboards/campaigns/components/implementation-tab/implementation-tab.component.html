@@ -98,6 +98,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
   {{ googleStructuredSnippetsWithheldWarning() }}
 </div>
+<!-- Audience segments withheld after a channel switch, announced on the same terms as the extensions above. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-withheld-live">
+  {{ googleAudienceSegmentsWithheldWarning() }}
+</div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
   same politeness: the campaign is still created, it just carries no extensions.
@@ -502,7 +506,7 @@
           </div>
           @if (googleAudienceSegmentDraftError() === 'custom') {
             <p id="google-audience-segment-custom" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-custom">
-              Custom audiences cannot target a Search campaign — only user lists can. Enter a user list resource name, like
+              A Search campaign cannot target a custom audience, only a user list. Enter a user list resource name, like
               customers/1234567890/userLists/987654321, instead.
             </p>
           } @else if (googleAudienceSegmentDraftError() === 'shape') {
@@ -518,10 +522,9 @@
       }
 
       <!-- Segments entered under Search and withheld after a switch: said out loud, as the languages are. -->
-      @if (googleAudienceSegmentsWithheldOn(); as channelLabel) {
+      @if (googleAudienceSegmentsWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-audience-segments-withheld">
-          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take audience segments, so the
-          {{ googleAudienceSegments().length }} you added will not be sent. Switch back to Search to keep them.
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
 

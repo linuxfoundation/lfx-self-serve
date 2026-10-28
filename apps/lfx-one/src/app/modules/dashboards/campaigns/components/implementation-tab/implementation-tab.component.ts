@@ -2118,7 +2118,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
   protected readonly googleAudienceSegmentsAvailable: Signal<boolean> = this.initGoogleAudienceSegmentsAvailable();
-  protected readonly googleAudienceSegmentsWithheldOn: Signal<string | null> = this.initGoogleAudienceSegmentsWithheldOn();
+  protected readonly googleAudienceSegmentsWithheldWarning: Signal<string | null> = this.initGoogleAudienceSegmentsWithheldWarning();
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -4671,15 +4671,18 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The label of the channel an entered segment list is being WITHHELD on, or null when nothing is
-   * — the audience twin of {@link initGoogleLanguagesWithheldOn}, on the same terms: non-null only
-   * on a dispatched channel that takes no segments, with segments entered.
+   * The sentence saying an entered segment list is being WITHHELD, or null when nothing is — the
+   * audience twin of {@link initGoogleLanguagesWithheldOn}, on the same terms: non-null only on a
+   * dispatched channel that takes no segments, with segments entered. A whole sentence rather than
+   * a channel label, as {@link initGoogleCalloutsWithheldWarning} is, so one string feeds both the
+   * visible notice and its live region.
    */
-  private initGoogleAudienceSegmentsWithheldOn(): Signal<string | null> {
+  private initGoogleAudienceSegmentsWithheldWarning(): Signal<string | null> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
-      if (!channel || this.googleAudienceSegmentsAvailable() || this.googleAudienceSegments().length === 0) return null;
-      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+      const count = this.googleAudienceSegments().length;
+      if (!channel || this.googleAudienceSegmentsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take audience segments, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
 

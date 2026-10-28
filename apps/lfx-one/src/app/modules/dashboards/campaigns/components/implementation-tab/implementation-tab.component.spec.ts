@@ -6141,6 +6141,7 @@ describe('ImplementationTabComponent google audience segments', () => {
     expect(c['googleAudienceSegmentDraftError']()).toBe(kind);
     const line = fixture.nativeElement.querySelector(`[data-testid="implementation-google-audience-segment-${kind}"]`);
     expect(line).not.toBeNull();
+    if (kind === 'custom') expect(line.textContent).toContain('A Search campaign cannot target a custom audience, only a user list.');
     const input = fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segment-add"]');
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.getAttribute('aria-describedby')).toBe(line.id);
@@ -6222,18 +6223,26 @@ describe('ImplementationTabComponent google audience segments', () => {
     const c = seedChannel(fixture, { includeSearch: true });
     c['addGoogleAudienceSegment'](LIST_A);
     const notice = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-withheld"]');
+    // Always mounted, so a screen reader hears the sentence when the channel switch gives it text.
+    const live = () => fixture.nativeElement.querySelector('[data-testid="implementation-google-audience-segments-withheld-live"]') as HTMLElement;
     fixture.detectChanges();
     expect(notice()).toBeNull();
+    expect(live().getAttribute('aria-live')).toBe('polite');
+    expect(live().textContent?.trim()).toBe('');
 
     c['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
     fixture.detectChanges();
     expect(c['googleAudienceSegments']()).toEqual([LIST_A]);
     expect(c['googleAudienceSegmentsPayload']()).toEqual({});
     expect(notice()?.textContent).toContain('Performance Max campaigns do not take audience segments');
+    expect(live().textContent?.trim()).toBe(c['googleAudienceSegmentsWithheldWarning']());
+    // The visible notice carries no role of its own, or the sentence would be announced twice.
+    expect(notice()?.getAttribute('role')).toBeNull();
 
     c['campaignForm'].patchValue({ includeSearch: true, includePerformanceMax: false });
     fixture.detectChanges();
     expect(notice()).toBeNull();
+    expect(live().textContent?.trim()).toBe('');
     expect(c['googleAudienceSegmentsPayload']()).toEqual({ audienceSegments: [LIST_A] });
   });
 
