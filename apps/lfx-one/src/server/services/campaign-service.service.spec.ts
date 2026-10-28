@@ -4698,6 +4698,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
     });
@@ -4920,6 +4922,48 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Meta image capabilities: the image itself is the cutover gate alone (the legacy creator
+   * reads no Meta image), the upload additionally its own flag — and not Reddit's or Google's.
+   */
+  it.each([
+    [
+      { create: true, briefs: true, jobs: true, meta: true, others: false },
+      { creative: true, upload: true },
+    ],
+    [
+      { create: true, briefs: true, jobs: true, meta: false, others: true },
+      { creative: true, upload: false },
+    ],
+    [
+      { create: false, briefs: true, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+    [
+      { create: true, briefs: false, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+  ])('reports the Meta image capabilities from the cutover and the Meta-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaAssets) return flags.meta;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleAssets || flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaCreativeEnabled).toBe(expected.creative);
+      expect(result.metaAssetUploadEnabled).toBe(expected.upload);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4954,6 +4998,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
     });

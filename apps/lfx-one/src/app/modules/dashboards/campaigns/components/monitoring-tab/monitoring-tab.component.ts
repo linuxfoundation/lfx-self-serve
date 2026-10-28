@@ -14,6 +14,7 @@ import {
   CAMPAIGN_MONITOR_ACT_PLATFORMS,
   CAMPAIGN_PACING_THRESHOLDS,
   CAMPAIGN_PLATFORMS,
+  campaignPlatformMonitorable,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_DATE_RANGE_OPTIONS,
   MONITOR_KEYWORD_PAGE_SIZE,
@@ -207,8 +208,11 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly googleAccountOptions = signal<GoogleAdsAccountOption[] | null>(null);
   protected readonly googleAccountsLoading = signal(false);
   protected readonly googleAccountsError = signal<string | null>(null);
-  /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
-  protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
+  /**
+   * X's monitor follows `monitorable` in `CAMPAIGN_PLATFORMS`, not its `disabled` create flag. It shows
+   * only with the cutover on; metrics off upstream, or a non-root caller, gets the panel's notice.
+   */
+  protected readonly twitterOffered = campaignPlatformMonitorable('twitter-ads');
 
   // Microsoft Ads / X: one report-backed panel, showing whichever of the two is selected.
   private reportBackedSub: Subscription | null = null;

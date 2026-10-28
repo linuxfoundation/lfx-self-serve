@@ -667,12 +667,43 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, 'connection');
     });
 
-    it('offers Microsoft Ads and HubSpot, and keeps X hidden while the app disables it', async () => {
+    it('offers Microsoft Ads, X and HubSpot, X because it is monitorable although its create is disabled', async () => {
       await setup(allConnected);
 
       expect(el('platform-microsoft')).not.toBeNull();
       expect(el('platform-hubspot')).not.toBeNull();
-      expect(el('platform-twitter')).toBeNull();
+      expect(el('platform-twitter')).not.toBeNull();
+      expect(el('platform-twitter')?.textContent?.trim()).toBe('X Ads');
+    });
+
+    it("reads the X connection's account from the X button", async () => {
+      await setup(allConnected);
+      select('twitter');
+
+      expect(service['getTwitterMonitorData']).toHaveBeenCalledWith('cncf', '18ce54d4x5t', 30);
+      expect(el('twitter-monitor-panel')).not.toBeNull();
+      expect(el('twitter-error')).toBeNull();
+    });
+
+    it('shows "metrics not enabled" for X instead of an error while campaign-service does not read X metrics', async () => {
+      await setup(allConnected);
+      service['getTwitterMonitorData'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'not enabled', upstreamCode: 'metrics_not_enabled' } }))
+      );
+      select('twitter');
+
+      expect(el('twitter-connection-notice')?.getAttribute('data-state')).toBe('metrics_disabled');
+      expect(text('twitter-connection-notice-title')).toBe('X / Twitter Ads metrics are not enabled');
+      expect(el('twitter-error')).toBeNull();
+    });
+
+    it('says the project has no X connection, with no read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, twitter: none('no_connection') } });
+      select('twitter');
+
+      expect(el('twitter-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(service['getTwitterMonitorData']).not.toHaveBeenCalled();
+      expect(el('twitter-error')).toBeNull();
     });
 
     it('says the project has no connection for a platform, with no picker and no read', async () => {
@@ -972,6 +1003,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       ['reddit', 'getRedditMonitorData'],
       ['meta', 'getMetaMonitorData'],
       ['microsoft', 'getMicrosoftMonitorData'],
+      ['twitter', 'getTwitterMonitorData'],
     ] as const)('shows %s 503 after a disabled 400 on the panel Refresh, with its Retry', async (platform, read) => {
       await setup(allConnected);
       service[read].mockReturnValue(throwError(disabled));
@@ -1174,9 +1206,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup(allConnected);
       const xRows = reportBacked().campaigns.map((c) => ({ ...c, campaignId: '1a2b3c' }));
       service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: xRows })));
-      // X's button is hidden while the app disables the platform, so the panel is selected directly.
-      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
-      fixture.detectChanges();
+      select('twitter');
 
       expect(service['getTwitterMonitorData']).toHaveBeenCalled();
       expect(el('monitor-act-twitter-ads-1a2b3c')).not.toBeNull();
@@ -2302,13 +2332,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     await setup(connections);
     service[read].mockReturnValue(throwError(restricted));
     fixture.detectChanges();
-    if (panel === 'twitter') {
-      // X's button is hidden while the app disables the platform, so the panel is selected directly.
-      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
-      fixture.detectChanges();
-    } else {
-      select(panel);
-    }
+    select(panel);
 
     expect(service[read]).toHaveBeenCalled();
     expect(el(`${panel}-connection-notice`)?.getAttribute('data-state')).toBe('restricted');

@@ -264,6 +264,27 @@ export enum ServerFeatureFlag {
   CampaignServiceGoogleAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS',
 
   /**
+   * Offers an image UPLOAD in the Meta section of the create flow, sent as
+   * `metaConfig.variants[].imageAssetId` instead of a pasted image URL.
+   *
+   * A CAPABILITY flag like `CampaignServiceGoogleAssets`, and it asserts the same kind of thing: no
+   * URL signing is involved, because Meta's dispatch path reads the stored bytes and uploads them to
+   * the ad account's image library (`internal/dispatch/meta.go`, `resolveVariantAssets`). What it
+   * says is that the DEPLOYED campaign-service resolves Meta asset ids, which every release from
+   * v1.0.21 does. It is its own flag so Meta uploads can be switched off without touching Reddit's
+   * or Google's.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no Meta image at all, so the capability the client sees
+   * (`CampaignListResult.metaAssetUploadEnabled`) needs both. With it off the Meta upload control is
+   * hidden and the create route refuses a request carrying a Meta `imageAssetId` rather than
+   * dropping it; the upload route still admits an upload on either sibling flag's authority. The
+   * pasted image URL is unaffected either way. ON in the chart; same accepted values as the flags
+   * above.
+   */
+  CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
