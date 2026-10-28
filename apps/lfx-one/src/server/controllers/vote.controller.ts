@@ -24,6 +24,7 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { VoteService } from '../services/vote.service';
 
 /**
@@ -694,6 +695,34 @@ export class VoteController {
       logger.success(req, 'send_vote_reminders', startTime, {
         vote_uid: uid,
         recipient_count: result.recipient_count,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /votes/:uid/send-ballots — emails a personalized ballot link to every non-responder (#4363).
+   * The service writer-checks and re-resolves recipients; the client sends no body. Logs the count and actor only.
+   */
+  public async sendVoteBallots(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'send_vote_ballots', { vote_uid: uid });
+
+    try {
+      if (!validateUidParameter(uid, req, next, { operation: 'send_vote_ballots', service: 'vote_controller' })) {
+        return;
+      }
+
+      const result = await this.voteService.sendVoteBallots(req, uid);
+
+      logger.success(req, 'send_vote_ballots', startTime, {
+        vote_uid: uid,
+        sent: result.sent,
+        skipped: result.skipped,
+        actor: getEffectiveUsername(req) ?? undefined,
       });
 
       res.json(result);
