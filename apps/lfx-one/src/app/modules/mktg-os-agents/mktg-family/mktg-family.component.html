@@ -8,7 +8,7 @@
       <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>
       @if (live() && actions()?.header; as header) {
         <!-- One solid primary names the next step; the shared rule owns its destination. -->
-        <div pageHeaderActions class="flex flex-wrap items-start gap-3" data-testid="mktg-family-actions">
+        <div pageHeaderActions class="flex flex-col items-end gap-1" data-testid="mktg-family-actions">
           @if (header.kind === 'rebuild') {
             <lfx-button
               [label]="header.label"
@@ -16,6 +16,8 @@
               [ariaLabel]="header.label"
               (onClick)="rebuildPanel()?.start()"
               data-testid="mktg-family-rebuild" />
+          } @else if (header.kind === 'export') {
+            <lfx-button [label]="header.label" [ariaLabel]="header.label" (onClick)="exportPanel()?.focusDownload()" data-testid="mktg-family-run" />
           } @else {
             <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
             <lfx-button
@@ -26,6 +28,9 @@
               [queryParams]="headerQueryParams()"
               (onClick)="$event.stopPropagation()"
               data-testid="mktg-family-run" />
+          }
+          @if (header.caption) {
+            <p class="text-xs text-gray-500" data-testid="mktg-family-next-caption">{{ header.caption }}</p>
           }
         </div>
       }
@@ -101,7 +106,7 @@
                               styleClass="p-0 text-sm"
                               [disabled]="true"
                               [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
-                            <span class="ml-2 text-xs text-gray-500" [attr.data-testid]="'mktg-family-run-reason-' + row.asset.id">{{ reason }}</span>
+                            <span class="ml-2 text-xs text-gray-500" [attr.data-testid]="'mktg-family-run-reason-' + row.asset.id">· {{ reason }}</span>
                           </span>
                         } @else {
                           <lfx-button

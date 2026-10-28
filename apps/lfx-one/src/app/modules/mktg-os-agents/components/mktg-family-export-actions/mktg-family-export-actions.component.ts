@@ -3,14 +3,12 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { TooltipModule } from 'primeng/tooltip';
-import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
-  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE,
   MKTG_DOCUMENT_TYPES,
   MKTG_FAMILY_PDF_NOTE,
   MKTG_FAMILY_PRINT_BODY_CLASS,
@@ -38,7 +36,7 @@ import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-fra
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [TooltipModule, TooltipHostFocusDirective, DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
+  imports: [DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
   templateUrl: './mktg-family-export-actions.component.html',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })
@@ -52,7 +50,9 @@ export class MktgFamilyExportActionsComponent {
 
   public readonly familyId = input.required<string>();
   protected readonly pdfNote = MKTG_FAMILY_PDF_NOTE;
-  protected readonly approvalNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+  protected readonly approvalNote = MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly focusRequested = signal(false);
   protected readonly printOnlyClass = MKTG_FAMILY_PRINT_ONLY_CLASS;
 
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
@@ -74,29 +74,33 @@ export class MktgFamilyExportActionsComponent {
   protected readonly canExport = this.initCanExport();
   protected readonly canPrint = this.initCanPrint();
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
-  /** Why the export buttons are greyed out, for their tooltips; empty while they take a click. */
-  protected readonly exportDisabledReason = computed(() => {
-    if (this.canExport()) return '';
-    if (!this.writer()) return 'You need write access to this project to export';
-    if (!this.target()) return 'This family has no assets the exporter supports yet';
-    if (this.checking()) return 'Checking approved assets and the last export…';
-    if (this.lookupError()) return 'Could not check the approved assets. Use Check again.';
-    if (this.busy()) return 'An export is already running';
-    return this.approvalNote;
-  });
-  protected readonly pdfDisabledReason = computed(() =>
-    this.canPrint() ? '' : this.exportDisabledReason() || 'Approve the messaging framework or the brand kit first: the PDF prints those'
-  );
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
 
   public constructor() {
+    effect(() => {
+      if (!isPlatformBrowser(this.platformId) || !this.focusRequested() || !this.canPrint()) return;
+      this.focusRequested.set(false);
+      afterNextRender(
+        () => {
+          if (this.canPrint()) this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus();
+        },
+        { injector: this.injector }
+      );
+    });
     if (isPlatformBrowser(this.platformId)) this.initLookup();
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
       this.pdf?.unsubscribe();
       this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
     });
+  }
+
+  /** Navigate to the controls only; never start an export as a side effect. */
+  public focusDownload(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.host.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    this.focusRequested.set(true);
   }
 
   protected export(): void {

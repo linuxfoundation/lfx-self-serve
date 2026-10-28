@@ -12,39 +12,22 @@
     <p class="text-sm text-gray-500">
       Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
     </p>
-    <span
-      role="note"
-      [pTooltip]="pdfDisabledReason()"
-      lfxTooltipHostFocus
-      tooltipPosition="bottom"
-      tooltipEvent="hover"
-      [attr.aria-label]="pdfDisabledReason() || null"
-      [attr.tabindex]="pdfDisabledReason() ? 0 : null">
-      <lfx-button
-        label="Download PDF"
-        [disabled]="!canPrint()"
-        [loading]="printing()"
-        [outlined]="true"
-        [fluid]="true"
-        data-testid="family-export-pdf"
-        (onClick)="downloadPdf()" />
-    </span>
-    <span
-      role="note"
-      [pTooltip]="exportDisabledReason()"
-      lfxTooltipHostFocus
-      tooltipPosition="bottom"
-      tooltipEvent="hover"
-      [attr.aria-label]="exportDisabledReason() || null"
-      [attr.tabindex]="exportDisabledReason() ? 0 : null">
-      <lfx-button
-        label="Export to Google Slides"
-        [disabled]="!canExport()"
-        [loading]="phase() === 'running'"
-        [fluid]="true"
-        data-testid="family-export-slides"
-        (onClick)="export()" />
-    </span>
+    <lfx-button
+      label="Download PDF"
+      [disabled]="!canPrint()"
+      [loading]="printing()"
+      [outlined]="true"
+      [fluid]="true"
+      data-testid="family-export-pdf"
+      (onClick)="downloadPdf()" />
+    <lfx-button
+      label="Export to Google Slides"
+      [disabled]="!canExport()"
+      [loading]="phase() === 'running'"
+      [outlined]="true"
+      [fluid]="true"
+      data-testid="family-export-slides"
+      (onClick)="export()" />
     @if (!writer()) {
       <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
     } @else if (checking()) {

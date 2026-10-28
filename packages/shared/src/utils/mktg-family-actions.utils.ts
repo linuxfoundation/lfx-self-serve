@@ -4,7 +4,13 @@
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
-import { MKTG_FAMILY_ACTION_LABELS, MKTG_FAMILY_ONE_OFF_RUN_MODES, MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.constants';
+import {
+  MKTG_FAMILY_ACTION_LABELS,
+  MKTG_FAMILY_FRAMEWORK_REQUIRED,
+  MKTG_FAMILY_ONE_OFF_RUN_MODES,
+  MKTG_FAMILY_WRITE_REQUIRED,
+} from '../constants/mktg-family-actions.constants';
+import { mktgFamilyExportAgentKeys } from './mktg-family-export.utils';
 import {
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_KIT_FRAMEWORK_AGENT_ID,
@@ -34,16 +40,27 @@ export function mktgRunModeFor(agentId: string): 'new' | null {
 export function mktgFamilyRowAction(row: MktgKitAssetRow, ctx: MktgFamilyActionContext): MktgFamilyActions['rows'][string] {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === row.asset.agentKey);
   const agentId = type?.catalogAgentId;
-  if (!agentId || !isMktgFamilyAgentAvailable(agentId))
+  if (!type || !agentId || !isMktgFamilyAgentAvailable(agentId))
     return { row: { ...row, state: 'coming-soon', badge: MKTG_KIT_STATE_LABELS['coming-soon'] }, action: null };
   if (row.document) return { row, action: null };
   const dependency = missingDependency(agentId, ctx);
   const agent = MKTG_AGENTS.find((candidate) => candidate.id === agentId);
-  let blockedReason = dependency ? `Approve the ${dependency.documentName.toLowerCase()} first: ${agent?.name ?? agentId} builds on the approved one.` : '';
+  let blockedReason = '';
+  if (dependency)
+    blockedReason =
+      dependency.sourceAgentId === MKTG_KIT_FRAMEWORK_AGENT_ID
+        ? MKTG_FAMILY_FRAMEWORK_REQUIRED
+        : `Approve the ${dependency.documentName.toLowerCase()} first: ${agent?.name ?? agentId} builds on the approved one.`;
   if (!ctx.canWrite) blockedReason = MKTG_FAMILY_WRITE_REQUIRED;
   return {
     row,
-    action: { kind: 'run', label: MKTG_FAMILY_ACTION_LABELS.run(row.asset.runName ?? row.asset.label), agentId, mode: mktgRunModeFor(agentId), blockedReason },
+    action: {
+      kind: 'run',
+      label: MKTG_FAMILY_ACTION_LABELS.create(row.asset.runName ?? (type.kind === 'run' ? row.asset.label : row.asset.label.toLowerCase())),
+      agentId,
+      mode: mktgRunModeFor(agentId),
+      blockedReason,
+    },
   };
 }
 
@@ -92,6 +109,11 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
         header: {
           kind: 'blocked',
           label: MKTG_FAMILY_ACTION_LABELS.blocked(dependency.documentName),
+          caption: MKTG_FAMILY_ACTION_LABELS.caption(
+            Object.values(rows)
+              .filter(({ action }) => action)
+              .map(({ row }) => row.asset.captionName ?? row.asset.runName ?? row.asset.label.toLowerCase())
+          ),
           agentId: null,
           mode: null,
           link: link ?? { commands: commands ?? [], queryParams: {} },
@@ -128,7 +150,11 @@ export function resolveMktgFamilyActions(view: MktgKitFamilyView, context: MktgF
     };
   const drafts = Object.values(rows).filter(({ row }) => row.state === 'draft' && row.document);
   const link = documentLink(drafts[0]?.row);
-  return { rows, header: link ? { kind: 'review', label: MKTG_FAMILY_ACTION_LABELS.review(drafts.length), agentId: null, mode: null, link } : null };
+  if (link) return { rows, header: { kind: 'review', label: MKTG_FAMILY_ACTION_LABELS.review(drafts.length), agentId: null, mode: null, link } };
+  const available = Object.values(rows).filter(({ row }) => row.state !== 'coming-soon');
+  const exportable =
+    mktgFamilyExportAgentKeys(view.family.id).length > 0 && available.length > 0 && available.every(({ row }) => row.document && row.state === 'approved');
+  return { rows, header: exportable ? { kind: 'export', label: MKTG_FAMILY_ACTION_LABELS.export(), agentId: null, mode: null, link: null } : null };
 }
 
 function missingDependency(agentId: string, ctx: MktgFamilyActionContext) {
