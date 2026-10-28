@@ -8,6 +8,7 @@ const body = {
   code: 'MKTG_RUN_ACTIVE',
   message: 'A run is in progress.',
   startedBy: 'Synthetic writer',
+  startedAt: '2026-10-19T12:00:00.000Z',
   activeRunId: 'b'.repeat(64),
   state: 'writing',
   agentKey: 'brand-kit',
@@ -28,6 +29,8 @@ describe('active-run conflict choices', () => {
     { agentKey: 'faq' },
     { startedBy: '' },
     { startedBy: null },
+    { startedAt: undefined },
+    { startedAt: 'invalid' },
   ])('rejects malformed or out-of-slot facts %j', (override) => {
     expect(readMktgActiveRunConflict({ ...body, ...override }, 'brand-kit')).toBeNull();
   });

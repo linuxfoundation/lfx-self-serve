@@ -11,6 +11,8 @@ export interface MktgActiveRunConflict {
   code: typeof MKTG_RUN_ACTIVE;
   message: string;
   startedBy: string;
+  /** When the active run started (ISO); the run page shows waiting since. */
+  startedAt: string;
   activeRunId: string;
   state: MktgDocumentRunState;
   agentKey: MktgDocumentAgentKey;

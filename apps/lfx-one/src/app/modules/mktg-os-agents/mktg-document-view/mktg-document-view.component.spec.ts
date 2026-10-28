@@ -1644,6 +1644,7 @@ describe('MktgDocumentViewComponent', () => {
       agentKey: type.agentKey,
       documentId: 'living',
       startedBy: 'Another writer',
+      startedAt: '2026-10-19T12:00:00.000Z',
     };
     const attempts = TestBed.inject(MktgRunAttemptService);
     vi.mocked(attempts.consume).mockReturnValueOnce({ subject: 'synthetic-sub', pending: { request, state: 'draft', updatedAt: new Date().toISOString() } });
