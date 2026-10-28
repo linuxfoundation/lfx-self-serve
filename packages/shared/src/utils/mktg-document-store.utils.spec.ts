@@ -24,6 +24,7 @@ import {
   mktgRunProgress,
   mktgRunResultIdentity,
   findMktgRunIntake,
+  isMktgRunFailureReason,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -48,6 +49,12 @@ function startedRun(overrides: Partial<MktgStartedRunRecord> = {}): MktgStartedR
 }
 
 describe('mktg-document-store utils', () => {
+  it.each(['no_edit_access', 'agent_stopped'])('accepts the classified reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(true);
+  });
+  it.each(['unknown_code', '__proto__', 'constructor', 'no_edit_access extra', '', null, undefined, 12])('rejects non-allow-listed reason %s', (reason) => {
+    expect(isMktgRunFailureReason(reason)).toBe(false);
+  });
   it('uses a bounded payload digest and prefers the exact receipt content SHA', () => {
     const result: MktgRunResultResponse = { status: 'ready', version: 1, documentMarkdown: 'Synthetic output marker. '.repeat(5000) };
     const digest = mktgRunResultIdentity(result);

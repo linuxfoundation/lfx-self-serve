@@ -9,6 +9,8 @@
 
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
+import type { Member360FailureReason } from '../interfaces/member-360.interface';
 import type { MktgDocumentRunProgress, MktgStartedRunRecord, MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
@@ -178,7 +180,9 @@ export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failu
     documentId: run.documentId,
     startedAt: run.startedAt,
     state: run.state,
+    ...(activity && { activity }),
     ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
+    ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
   };
   return progress;
 }
@@ -201,6 +205,11 @@ export function isMktgRunTerminal(state: MktgStoredDocumentRunState): boolean {
 
 export function isMktgRunAttemptId(value: string): boolean {
   return typeof value === 'string' && MKTG_STARTED_RUN_ATTEMPT_ID_REGEX.test(value);
+}
+
+/** Host-classified record metadata only, never arbitrary strings or agent prose. */
+export function isMktgRunFailureReason(value: unknown): value is Member360FailureReason {
+  return typeof value === 'string' && Object.hasOwn(MEMBER_360_FAILURE_MESSAGES, value);
 }
 
 export function mktgRunIdFromKey(key: string): string {

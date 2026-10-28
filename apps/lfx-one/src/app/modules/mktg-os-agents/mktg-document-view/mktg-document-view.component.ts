@@ -3,7 +3,7 @@
 
 import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -24,6 +24,7 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+  MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENTS,
@@ -34,7 +35,6 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_DOCUMENT_COMMENT_LIMITS,
-  MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
@@ -44,7 +44,6 @@ import {
   MktgFrameworkAsset,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
-  MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
   MktgApprovedRevisionState,
@@ -60,15 +59,17 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
-  describeMktgRevision,
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
+  mktgSentenceCaseLabel,
+  mktgKitAssetLabel,
   mktgKitRootPath,
   mktgRunRouteFor,
+  mktgRunModeFor,
   parseMktgLegacyRevisionId,
   normalizeLinkedinShareLink,
   readBrandKitRevision,
@@ -80,9 +81,11 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
+import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
 import {
   catchError,
   combineLatest,
@@ -102,7 +105,6 @@ import {
   throwError,
   timer,
   TimeoutError,
-  Observable,
   shareReplay,
   take,
   takeUntil,
@@ -119,9 +121,8 @@ import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-bo
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MEMBER_360_FAILURE_MESSAGES } from '@lfx-one/shared/constants';
-import { Member360Result, MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import { Member360Service } from '@services/member-360.service';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
@@ -162,6 +163,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     MktgFrameworkViewComponent,
     MktgCommentsPanelComponent,
     TooltipModule,
+    TooltipHostFocusDirective,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
     InputTextComponent,
@@ -188,6 +190,8 @@ export class MktgDocumentViewComponent {
   private readonly attempts = inject(MktgRunAttemptService);
 
   protected readonly frameworkKey = MKTG_KIT_FRAMEWORK_KEY;
+  protected readonly frameworkView = viewChild(MktgFrameworkViewComponent);
+  protected readonly brandKitView = viewChild(BrandKitWebViewComponent);
 
   protected readonly linkForm = new FormGroup({ share_link: new FormControl('', { nonNullable: true }) });
   protected readonly shareLinkAnswerKey = LINKEDIN_SHARE_LINK_ANSWER_KEY;
@@ -196,12 +200,8 @@ export class MktgDocumentViewComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
-  protected readonly generating = signal(false);
-  protected readonly needsInput = signal(false);
   protected readonly runFailed = signal(false);
   protected readonly failureDetails = signal('');
-  protected readonly runActivity = signal<MktgRunActivity[]>([]);
-  protected readonly runStartedAt = signal(0);
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
   protected readonly reload = signal(0);
@@ -221,6 +221,7 @@ export class MktgDocumentViewComponent {
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
   protected readonly runDetail = signal<MktgDocumentDetailResponse | null>(null);
+  private readonly activityContext = signal<[string, MktgRunActivity[] | undefined]>(['', undefined]);
   protected readonly localProgress = signal<MktgDocumentLocalProgress>(null);
   protected readonly failureText = signal('');
   private readonly unconfirmed = signal(false);
@@ -247,33 +248,36 @@ export class MktgDocumentViewComponent {
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
+  protected readonly visibleRunActivity = computed(() => {
+    const [subject, activity] = this.activityContext();
+    return subject && subject === this.userService.user()?.sub ? activity : undefined;
+  });
+  protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
+  protected readonly pausedWithoutAnswers = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'questions' && !findMktgRunIntake(run.agentKey, true)?.endpoints.answers;
+  });
+  protected readonly runDocumentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === this.params().agentKey));
+  protected readonly unconfirmedFailure = computed(() => this.unconfirmed() && !this.selectedRun());
+  protected readonly failureAssetLabel = computed(() =>
+    mktgSentenceCaseLabel(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'document')
+  );
   protected readonly generatingLabel = computed(
-    () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
+    () =>
+      `Working on ${mktgKitAssetLabel(this.params().agentKey) ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
-  protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
-    const view = this.view();
-    return view
-      ? view.revisions.map((revision) => ({
-          revision,
-          how: describeMktgRevision(revision, view.type),
-          authorLabel: describeMktgRevisionAuthor(revision.author),
-        }))
-      : [];
-  });
-  protected readonly currentSelectorLabel = computed(() => describeMktgRevisionAuthor(this.view()?.current?.changedBy));
+  protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
+  protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
   });
   protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
   protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
-  protected readonly visibleRevisionRows: Signal<MktgRevisionRow[]> = this.initVisibleRevisionRows();
-  protected readonly shortHash: Signal<string> = computed(() => {
-    const sha = this.view()?.revision.contentSha256 ?? '';
-    return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
-  });
+  protected readonly visibleRevisionRows: Signal<MktgRevisionSummary[]> = this.initVisibleRevisionRows();
   /**
    * The revision as a framework asset, when it is one: a JSON revision of the
    * foundation-message document whose text parses as a framework. Null for
@@ -331,7 +335,7 @@ export class MktgDocumentViewComponent {
   });
   protected readonly runAgainParams = computed(() => ({
     project: this.projectContext.activeContext()?.slug || this.routeProject(),
-    mode: MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.catalogAgentId === this.runAgentId()) ? MKTG_RUN_NEW_MODE : null,
+    mode: mktgRunModeFor(MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.catalogAgentId ?? ''),
     ...MKTG_RUN_RESUME_QUERY_CLEAR,
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
@@ -391,8 +395,8 @@ export class MktgDocumentViewComponent {
     computed(() => ({
       project: this.projectContext.activeContextUid(),
       slug: this.projectContext.activeContext()?.slug ?? '',
-      user: this.params().agentKey === 'member-360' || this.isPendingReportAgent(this.params().agentKey) ? this.userService.user()?.sub : undefined,
-      subject: this.userService.user()?.sub ?? '',
+      user: this.isPendingReportAgent(this.params().agentKey) ? this.userService.user()?.sub : undefined,
+      subject: this.params().agentKey === 'member-360' ? '' : (this.userService.user()?.sub ?? ''),
       ...this.params(),
       revisionId: this.revisionParam(),
       runId: this.runParam(),
@@ -426,14 +430,19 @@ export class MktgDocumentViewComponent {
   );
 
   // === AEO/GEO state seam (fields precede the constructor by repository lint) ===
+  protected readonly generating = signal(false);
   private readonly pendingDocuments = inject(MktgPendingDocumentService);
   private readonly printService = inject(MktgPrintService);
   private aeoPrintRequested = false;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
-  protected readonly activityStartedAt = signal(0);
+  protected readonly aeoActivityStartedAt = signal(0);
   protected readonly retryGenerating = signal(false);
   protected readonly isAeoDocument = computed(() => this.isPendingReportAgent(this.params().agentKey));
+  protected readonly aeoHeaderTitle = computed(() => {
+    const site = this.view()?.aeoGeoReport?.domain;
+    return site ? `AEO/GEO report · ${site}` : 'AEO/GEO report';
+  });
   protected readonly aeoTitle = computed(() => this.view()?.aeoGeoReport?.report_filename.replace(/\.md$/, '') ?? 'AEO/GEO report');
   protected readonly scoreRows = computed(() => {
     const report = this.view()?.aeoGeoReport;
@@ -501,10 +510,9 @@ export class MktgDocumentViewComponent {
             this.notice.set('');
             this.runHistory.set([]);
             this.historyError.set('');
-            this.runActivity.set([]);
-            this.needsInput.set(false);
             this.runFailed.set(false);
             this.failureDetails.set('');
+            this.activityContext.set(['', undefined]);
             this.refreshWarning.set('');
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
@@ -542,69 +550,14 @@ export class MktgDocumentViewComponent {
               this.generating.set(false);
               return EMPTY;
             }
-            if (request.agentKey === 'member-360') {
-              this.loading.set(true);
-              const pending = !!request.user && this.member360.isPending(request.project, request.documentId);
-              this.generating.set(pending);
-              this.runStartedAt.set(pending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
-              const ready$: Observable<Member360Result | null> = pending
-                ? this.member360
-                    .waitForStored(request.project, request.documentId, (activity) => this.runActivity.set(activity))
-                    .pipe(
-                      tap((result) => {
-                        this.needsInput.set(result.status === 'needs_input');
-                        if (result.status === 'failed') {
-                          this.runFailed.set(true);
-                          this.errorText.set(MEMBER_360_FAILURE_MESSAGES[result.reason ?? 'agent_stopped'] ?? MEMBER_360_FAILURE_MESSAGES.agent_stopped);
-                          this.failureDetails.set(result.message ?? '');
-                        }
-                      }),
-                      // Keep needs_input out of the stored read while the tap above shows the prompt.
-                      // Polling continues; a later ready/failed emission clears that prompt.
-                      filter((result) => result.status !== 'needs_input')
-                    )
-                : of(null);
-              // Preserve this dedicated receiver's owner capability and stored-read lifecycle.
-              const revision$ = defer(() =>
-                request.revisionId
-                  ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-                  : this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
-                      switchMap((detail) => {
-                        const revisionId = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
-                        if (!revisionId) {
-                          this.generating.set(true);
-                          return EMPTY;
-                        }
-                        return this.documentStore.getRevision(request.project, request.agentKey, request.documentId, revisionId);
-                      })
-                    )
-              );
-              return ready$.pipe(
-                switchMap((result) => (result?.status === 'failed' ? of(null) : revision$)),
-                switchMap((view) => {
-                  if (!view?.member360) return of(view);
-                  return this.documentStore.listDocuments(request.project).pipe(
-                    tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === 'member-360')?.documents ?? [])),
-                    map(() => view),
-                    catchError(() => {
-                      this.historyError.set('Run history could not be loaded.');
-                      return of(view);
-                    })
-                  );
-                }),
-                catchError((error: HttpErrorResponse | TimeoutError) => {
-                  if (error instanceof TimeoutError) {
-                    this.errorText.set('This run is still being checked. Reload to check the same run; nothing is overwritten.');
-                  } else {
-                    this.errorText.set(
-                      pending
-                        ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
-                        : this.loadErrorText(error.status, error.error?.code)
-                    );
-                  }
-                  return of(null);
-                })
-              );
+            // Member 360 uses the stack's server-recorded run receiver below, not the retired browser-capability poller.
+            const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === request.agentKey);
+            let prepared = null;
+            if (type?.catalogAgentId && findMktgRunIntake(request.agentKey, true) && request.subject && request.generation) {
+              prepared =
+                type.kind === 'run'
+                  ? this.attempts.consume(request.generation, request.project, type.catalogAgentId, request.documentId)
+                  : this.attempts.consume(request.generation, request.project, type.catalogAgentId);
             }
             const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === request.agentKey);
             const prepared =
@@ -664,6 +617,7 @@ export class MktgDocumentViewComponent {
               this.refreshWarning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
             };
             const read = (poll: boolean) => {
+              const readerSubject = this.userService.user()?.sub ?? '';
               const metadata$ = defer(() => this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
                 switchMap((detail) => {
                   const id = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
@@ -718,6 +672,13 @@ export class MktgDocumentViewComponent {
                     this.refreshWarning.set('');
                   }
                   this.runDetail.set(cycle.detail);
+                  this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
+                  const failure = this.selectedRun();
+                  if (request.agentKey === 'member-360' && failure?.state === 'failed') {
+                    this.runFailed.set(true);
+                    this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason ?? 'agent_stopped']);
+                    this.failureDetails.set(failure.failureText ?? '');
+                  }
                   const selected = cycle.detail.runs?.find((run) => run.runId === this.handoffRunId());
                   if (selected) observedRun = true;
                   if (selected?.state === 'failed' || (observedRun && !selected && cycle.detail.revisions.length)) this.localProgress.set(null);
@@ -761,7 +722,8 @@ export class MktgDocumentViewComponent {
                     take(1),
                     switchMap(() => {
                       const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
-                      const active = recorded?.state === 'writing' || recorded?.state === 'storing';
+                      const ownedQuestions = intake.oneOffDocument && intake.endpoints.answers && recorded?.state === 'questions';
+                      const active = recorded?.state === 'writing' || recorded?.state === 'storing' || ownedQuestions;
                       // The accepted run may have finished before this first metadata read. Confirm its
                       // private result receipt instead of silently treating whichever revision is current as its output.
                       const finishedBeforeRead =
@@ -776,7 +738,19 @@ export class MktgDocumentViewComponent {
                     })
                   )
                 : EMPTY;
-            return merge(generation$, reads$, recovery$);
+            return merge(generation$, reads$, recovery$).pipe(
+              switchMap((view) => {
+                if (!view?.member360) return of(view);
+                return this.documentStore.listDocuments(request.project).pipe(
+                  tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === view.type.agentKey)?.documents ?? [])),
+                  map(() => view),
+                  catchError(() => {
+                    this.historyError.set('Run history could not be loaded.');
+                    return of(view);
+                  })
+                );
+              })
+            );
           }),
           takeUntilDestroyed()
         )
@@ -784,7 +758,6 @@ export class MktgDocumentViewComponent {
           this.view.set(view);
           this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
-          this.generating.set(false);
         });
     }
   }
@@ -807,7 +780,7 @@ export class MktgDocumentViewComponent {
     this.dependencyService.notifyDocumentsChanged(scope.projectUid);
     const tab = location.tab ?? this.route.snapshot.queryParamMap.get('tab');
     void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
-      queryParams: { ...this.runAgainParams(), revision: location.revisionId, ...(tab ? { tab } : {}) },
+      queryParams: { ...this.runAgainParams(), mode: null, revision: location.revisionId, ...(tab ? { tab } : {}) },
     });
   }
 
@@ -862,6 +835,7 @@ export class MktgDocumentViewComponent {
       return;
     }
     this.retrying.set(true);
+    this.errorText.set('');
     const scope = this.loadedScope;
     const subject = this.userService.user()?.sub;
     this.documentStore
@@ -1027,7 +1001,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: this.runAgainParams(),
+      queryParams: { ...this.runAgainParams(), profile: null, revision: null, type: null, mode: mktgRunModeFor(LINKEDIN_POST_INTAKE.agentId) },
     });
   }
 
@@ -1142,7 +1116,9 @@ export class MktgDocumentViewComponent {
 
   private initLiveState(): Signal<string> {
     return computed(() => {
-      if (this.runState() === 'failed') return this.selectedRun() || !this.unconfirmed() ? 'The run did not finish.' : 'The run could not be confirmed.';
+      if (this.runState() === 'failed')
+        return this.unconfirmedFailure() ? 'The run could not be confirmed.' : `The ${this.failureAssetLabel()} wasn't finished`;
+      if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState()) return 'Generating the asset.';
       return this.view() ? 'The asset is ready.' : '';
@@ -1175,12 +1151,12 @@ export class MktgDocumentViewComponent {
     return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
   }
 
-  private initVisibleRevisionRows(): Signal<MktgRevisionRow[]> {
+  private initVisibleRevisionRows(): Signal<MktgRevisionSummary[]> {
     return computed(() => {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((row, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || row.revision.latest || row.revision.id === openId);
+      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
     });
   }
 
@@ -1194,7 +1170,9 @@ export class MktgDocumentViewComponent {
   private initBreadcrumbPage(): Signal<MktgBreadcrumbPage> {
     return computed(() => {
       const view = this.view();
-      let label = view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document';
+      let label = view?.member360
+        ? this.title()
+        : (view?.type.itemLabel ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'Document');
       const createdAt = view?.revision.createdAt;
       if (view?.type.agentKey === 'aeo-geo' && typeof createdAt === 'string' && createdAt.trim() && !Number.isNaN(Date.parse(createdAt))) {
         label += ` · ${formatDate(createdAt, 'd MMM y', 'en-US', 'UTC')}`;
@@ -1208,7 +1186,8 @@ export class MktgDocumentViewComponent {
       const view = this.view();
       if (!view) {
         const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${type.itemLabel}`.trim() : '';
+        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
+        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
@@ -1348,7 +1327,7 @@ export class MktgDocumentViewComponent {
       pending.agentId === agentKey
     );
     const startedAt = Date.parse(pending?.savedAt ?? '');
-    this.activityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
+    this.aeoActivityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
     const read = () =>
       revisionId
         ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)

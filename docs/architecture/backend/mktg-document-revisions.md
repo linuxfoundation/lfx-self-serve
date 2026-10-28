@@ -293,7 +293,8 @@ project, registered agent, document, private Guild session and opaque `creatorSu
 Owner tokens are never written; legacy missing subjects mean unattributed writes.
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
-`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+`failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
+`revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.

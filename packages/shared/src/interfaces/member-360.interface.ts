@@ -41,12 +41,6 @@ export interface Member360TrackerUpload {
 export interface Member360Session extends MktgRunSessionResponse {
   documentId: string;
 }
-export interface Member360PendingRun {
-  user: string;
-  project: string;
-  session: Member360Session;
-  startedAt: number;
-}
 export type Member360FailureReason = 'no_edit_access' | 'agent_stopped';
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input' | 'failed';
