@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinStoredProfile } from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
-import { LINKEDIN_SOURCE_MAX_WORDS, MKTG_AGENTS } from '@lfx-one/shared/constants';
+import { LINKEDIN_SOURCE_MAX_WORDS, MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
 vi.mock('@lfx-one/shared/constants', async (original) => {
   const actual = await original<typeof import('@lfx-one/shared/constants')>();
   return {
@@ -16,6 +16,12 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 });
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
+  preflight: vi.fn(),
+  ownedResult: vi.fn(),
+  attribution: vi.fn(),
+  track: vi.fn(),
+  record: vi.fn(),
+  resume: vi.fn(),
   share: vi.fn(),
   answer: vi.fn(),
   start: vi.fn(),
@@ -25,6 +31,15 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   project: vi.fn(),
   startOperation: vi.fn(() => 0),
+}));
+vi.mock('../services/mktg-document-run.service', () => ({
+  MktgDocumentRunService: class {
+    public resolveProject = mocks.preflight;
+    public ownedOneOffResult = mocks.ownedResult;
+    public startForOneOff = mocks.track;
+    public recordResultBestEffort = mocks.record;
+    public resumeAfterQuestions = mocks.resume;
+  },
 }));
 vi.mock('../services/mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
@@ -68,7 +83,15 @@ describe('LinkedIn endpoint boundaries', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.project.mockResolvedValue({ uid: 'project-one', name: 'Synthetic project', writer: true });
-    mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567' });
+    mocks.preflight.mockImplementation(async (req: Request, project: unknown) => {
+      if (typeof project !== 'string' || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) throw Object.assign(new Error('Invalid project'), { statusCode: 400 });
+      const resolved = await mocks.project(req, project);
+      if (!resolved.writer) throw Object.assign(new Error('No access'), { statusCode: 403 });
+      return resolved.uid;
+    });
+    mocks.ownedResult.mockReset().mockResolvedValue({ status: 'pending' });
+    mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
   });
   it('binds gap answers to the owner and writer grant, validates ids, and continues the same session', async () => {
@@ -86,6 +109,7 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).not.toHaveBeenCalled();
     expect(mocks.answer).toHaveBeenCalledWith(expect.anything(), 'session-one', body.questionsId, body.answers, 'linkedin-post');
     expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(mocks.resume).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId);
     mocks.answer.mockClear();
     await controller.answer(request({ ...body, ownerToken: 'forged' }), res, next);
     expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 403 }));
@@ -96,6 +120,20 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(mocks.answer).not.toHaveBeenCalled();
     expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it('preflights storage before Guild and captures private metadata before acknowledging Generate', async () => {
+    const req = request({ project: 'project-one', answers: { content_source: 'text', content_text: 'Synthetic source' } });
+    const res = response();
+    const next = vi.fn();
+    const failure = Object.assign(new Error('Tracking unavailable'), { statusCode: 503 });
+    mocks.preflight.mockRejectedValueOnce(failure);
+    await new LinkedinPostController().generate(req, res, next);
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(next).toHaveBeenLastCalledWith(failure);
+    await new LinkedinPostController().generate(req, res, next);
+    expect(mocks.track).toHaveBeenCalledWith(req, 'linkedin-post', 'project-one', 'session-one', { sourceWords: 12 });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ runId: 'a'.repeat(64) }));
   });
 
   it('checks writer entitlement and validates share-link edits before the metadata store', async () => {

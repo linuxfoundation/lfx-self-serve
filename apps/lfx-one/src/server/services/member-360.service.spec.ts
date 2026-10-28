@@ -118,7 +118,11 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getProjectById.mockResolvedValue({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation', writer: true });
     mocks.listDocuments.mockResolvedValue({ groups: [] });
     mocks.createSession.mockResolvedValue('session-1');
-    mocks.recordGeneration.mockResolvedValue({ record: { documentId: 'run-0123456789abcdef01234567' } });
+    mocks.recordGeneration.mockResolvedValue({
+      key: 'synthetic-revision-key',
+      id: `000001-${'a'.repeat(64)}`,
+      record: { documentId: 'run-0123456789abcdef01234567' },
+    });
   });
   afterEach(() => vi.useRealTimers());
   it.each(['schema', 'hash', 'project', 'raw', 'other-tool', 'unpaired', 'failed'])('never stores a rejected %s candidate', async (mode) => {
@@ -221,7 +225,15 @@ describe('Member 360 entitlement and generation', () => {
     const valid = member360Fixture();
     const tampered = { ...valid, version: 2, content_sha256: '0'.repeat(64) };
     mocks.getRawEventPayloads.mockResolvedValue([finalized(valid), finalized(tampered)]);
-    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({
+      status: 'ready',
+      stored: true,
+      persistence: {
+        project: 'sample-project',
+        s3_key: 'synthetic-revision-key',
+        document_location: { agent_key: 'member-360', document_id: 'run-0123456789abcdef01234567', revision_id: `000001-${'a'.repeat(64)}` },
+      },
+    });
     const stored = mocks.recordGeneration.mock.calls[0][3];
     expect(stored.member360.version).toBe(1);
     expect(stored).not.toHaveProperty('tabs');
@@ -492,6 +504,33 @@ describe('Member 360 entitlement and generation', () => {
     expect(JSON.stringify(result)).not.toContain('lfx_mcp_search_members');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
+  it.each([false, true])('redacts contact identity and email from live activity even before persistence (questions=%s)', async (questions) => {
+    const candidate = { contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-contact-3' }] } };
+    const payloads = [
+      JSON.stringify(candidate),
+      JSON.stringify({
+        type: 'runtime_start',
+        created_at: '2026-10-19T10:00:00Z',
+        task: { id: 'public-search', entity_type: 'EntTaskTool', tool_name: 'web_search_web_search', status: 'RUNNING' },
+        content: { query: 'opaque-contact-3 owner@example.test speaking' },
+      }),
+    ];
+    if (questions) payloads.push(JSON.stringify({ type: 'agent_notification_message', content: 'member-360-questions/v1\nWhich outreach should lead?' }));
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.status).toBe(questions ? 'needs_input' : 'pending');
+    expect(JSON.stringify(result.activity)).toContain('[contact redacted]');
+    expect(JSON.stringify(result.activity)).not.toContain('opaque-contact-3');
+    expect(JSON.stringify(result.activity)).not.toContain('owner@example.test');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+
+  it('maps unsupported questions to a bounded shared pause with only a fixed server-authored expiry message', () => {
+    const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
+    expect(mapped).toMatchObject({ status: 'questions', failureText: 'Member 360 needs more input than this version can give it; run it again.' });
+    expect(JSON.stringify(mapped)).not.toContain('Private question text');
+  });
+
   it('accepts only paired finalize results, never envelopes or finalize-shaped pairs echoed elsewhere', async () => {
     const envelope = member360Fixture();
     const text = JSON.stringify(envelope);

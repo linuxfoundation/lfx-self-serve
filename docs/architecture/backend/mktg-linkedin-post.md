@@ -53,7 +53,14 @@ best-effort; ready/refused and an already-returned failed status are unchanged.
 Both provider failure metadata and idle-runtime failureText use the client layer's
 same stop/Retry path; raw failureText is not rendered as a document or provider reason.
 
-Both the generic run shell and LinkedIn stop polling on `failed`, keep the current form, show Retry and create no document or revision. Failed LinkedIn pending capabilities are retired so another reload cannot automatically resume the dead session. Generic stored version history survives failure; only session reuse is invalidated. Retry starts a new session, not another poll of the failed one. Provisional first-run reload behavior: if profile setup was lost with the old page, Retry opens an empty setup form with “Your setup answers aren't kept in the browser — enter them again to draft”. It never resumes the dead session or persists profile answers. After profile re-entry, Retry also asks for the source again when it was lost on reload.
+The generic run shell retains its own failure/Retry text and stored version history. A failed LinkedIn run stays on its Document with the recorded explanation; opening its intake asks for source/setup re-entry, not a one-click Retry with kept inputs. If setup was lost, the form says “Your setup answers aren't kept in the browser — enter them again to draft”. Source re-entry and reload do not poll the dead session or persist profile answers; only a new explicit Draft starts a new run.
+
+The [durable started-run record](./mktg-document-revisions.md#durable-started-runs) also permits
+writer-entitled Documents reconciliation without a creator owner token. It completes the same
+session/document and initializes a first-run profile only for the ORIGINAL creator recorded at
+Generate, never the visiting writer. Initialization is disabled if Generate began during
+impersonation, and the existing read-time impersonation restriction remains. Activity on this
+project-readable progress surface is creator-only; other writers receive progress without the feed.
 
 ## Source ingestion
 
@@ -70,7 +77,15 @@ The result shows three labeled full-text options, hashtags, tagging suggestions,
 
 `Link to share` is optional LFX-side data, prefilled from the URL source until the user edits it, and initially empty for pasted text or files. The client sends it as `answers.share_link`; it is validated as a bounded HTTPS URL without credentials and is not added to the agent form. The generation response carries the answer into the additive pending-run `answers` field; creator-bound result polls carry it back for persistence alongside the structured option sidecar. Optional `sourceWords` accompanies that poll for the source summary; its label/fetched state are taken from the validated envelope's provenance.
 
-A LinkedIn revision read adds a validated `linkedinPost` projection (options, notes, LFX answers and optional source summary) for its read-only view. No raw personal profile fields are exposed. Both the intake result and stored document use the same `LinkedinPostOptionsComponent`: it substitutes every literal `[LINK]` only for display/copy, shows a dashed `add your link` chip when absent, and keeps the literal placeholder in copied text with the design's quiet reminder. Raw option text, the original agent envelope and the existing privacy-normalized persisted Markdown/content hash are not modified by link substitution.
+For browser-independent completion, Generate captures the normalized link answers and source word
+count in that private started-run record, alongside initialization permission and the already-recorded
+opaque creator subject. It stores no profile fields there. Documents reconciliation uses those
+captured values instead of relying on a creator-bound result poll to return them; the public progress
+projection exposes none of that private context. See [Durable started runs](./mktg-document-revisions.md#durable-started-runs).
+
+A LinkedIn revision read adds a validated `linkedinPost` projection (options, notes, LFX answers and optional source summary) for its read-only view. No raw personal profile fields are exposed. The Document uses `LinkedinPostOptionsComponent`: it substitutes every literal `[LINK]` only for display/copy, shows a dashed `add your link` chip when absent, and keeps the literal placeholder in copied text with the design's quiet reminder. Raw option text, the original agent envelope and the existing privacy-normalized persisted Markdown/content hash are not modified by link substitution.
+
+The intake has no completed result view and no Open document action for stored posts. If Generate was accepted but its handoff navigation did not happen, it instead shows “Your draft was started — open it to follow progress.” with an explicit Open draft action. Open draft retries only navigation to that accepted Document, never another Generate. Editing source inputs clears that acceptance so the next explicit Draft uses the new inputs.
 
 The initial link answer is persisted with the run and recovered with its document. Omitted result-poll answers remain absent rather than being converted to an empty link. If a later poll supplies the first answer, it seeds an absent presentation overlay with a create-only write; it never rewrites immutable revision bytes, replaces an originally supplied answer, or overwrites a later explicit link edit. `PATCH /api/mktg-agents/linkedin-post/documents/:documentId/share-link` accepts only `{ project, share_link }`, checks the effective signed-in user and the project's writer entitlement, and refuses writes during impersonation. A blank string clears the link; HTTPS-only, credential/whitespace refusal and the 2,048-character cap use the same shared normalizer as the intake. The route checks that the run has valid option cards before replacing `documents/{project}/linkedin-post/{documentId}/presentation.json` through the mutable private-object facility. Profile and presentation writes delegate to the generic conditional-write API: create with `If-None-Match`, replace with the observed ETag/`If-Match`, and refuse contention rather than overwriting a concurrent save. Private key logging remains suppressed. Reads validate the overlay's hash and link before applying it. An absent overlay uses the original run answer; a failed read is an error, never a silent fallback to stale presentation.
 

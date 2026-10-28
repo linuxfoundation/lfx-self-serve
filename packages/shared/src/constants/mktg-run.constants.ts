@@ -46,6 +46,7 @@ import {
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
+import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -685,6 +686,8 @@ export const ICP_INTAKE: MktgAgentIntake = {
 export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
   oneOffDocument: true,
+  tracksDocumentRun: true,
+  lastIntakeFields: ['content_source', 'content_text', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY],
   formTitleAction: 'Draft',
   documentName: 'LinkedIn post',
   intro: 'Three post options in your voice, from pasted text, a link or a file.',
@@ -705,7 +708,7 @@ export const AEO_GEO_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Run',
   documentName: 'AEO/GEO report',
   intro:
-    'Scores how a website shows up in AI search and answer engines, with prioritized recommendations. One input: the site. Each run is its own report; nothing is revised, run again instead.',
+    'Scores how a website shows up in AI search and answer engines, with prioritised recommendations. One input: the site. Each audit is its own report; to update it, audit again.',
   batchPreamble: [],
   fields: [
     { key: 'domain', question: 'The website to audit', kind: 'text' },
@@ -736,6 +739,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
     intro: 'Scores member engagement for the active, entitlement-checked project.',
@@ -921,5 +925,5 @@ export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
 export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
 /** Model reasoning is never a reply, a questions turn, or feed activity. */
 export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
-/** Stable questions-block hash carried by accepted-answers continuation. */
-export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
+/** Stable questions-block hash: catalog's short digest or LinkedIn's full SHA-256. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;

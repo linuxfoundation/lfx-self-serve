@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ import {
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
+  MKTG_RUN_FAILURE_REASON,
 } from '@lfx-one/shared/constants';
 
 const redraft = vi.hoisted(() => ({ forSession: vi.fn(), assertScope: vi.fn(), settle: vi.fn() }));
@@ -28,6 +30,10 @@ vi.mock('./mktg-document-comments.service', () => ({
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
+  events: vi.fn(),
+  linkedin: vi.fn(),
+  member: vi.fn(),
+  attribution: vi.fn(),
   project: vi.fn(),
   ensure: vi.fn(),
   readiness: vi.fn(),
@@ -37,13 +43,14 @@ const flows = vi.hoisted(() => ({
   active: 0,
   max: 0,
 }));
-vi.mock('@lfx-one/shared/constants', async () => ({
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
-  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
-}));
-vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
+vi.mock('./guild.service', async (original) => {
+  const actual = await original<typeof import('./guild.service')>();
+  return {
+    GuildService: class extends actual.GuildService {
+      public override getRawEventPayloads = flows.events;
+    },
+  };
+});
 vi.mock('./brand-kit.service', () => ({
   BrandKitService: class {
     public getResult = flows.result;
@@ -69,6 +76,26 @@ vi.mock('./icp.service', () => ({
     public getResult = flows.result;
   },
 }));
+vi.mock('./linkedin-post.service', () => ({
+  LinkedinPostService: class {
+    public result = flows.linkedin;
+    public constructor(...args: unknown[]) {
+      flows.attribution(...args);
+    }
+  },
+}));
+vi.mock('./member-360.service', async (original) => {
+  const actual = await original<typeof import('./member-360.service')>();
+  return {
+    Member360Service: class {
+      public static toRunResult = actual.Member360Service.toRunResult;
+      public result = flows.member;
+      public constructor(...args: unknown[]) {
+        flows.attribution(...args);
+      }
+    },
+  };
+});
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = flows.project;
@@ -162,6 +189,9 @@ describe('MktgDocumentRunService core', () => {
     redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.events.mockReset().mockResolvedValue([]);
+    flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
     flows.ensure.mockResolvedValue(undefined);
     flows.readiness.mockResolvedValue(true);
@@ -170,6 +200,193 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    const id = `run-${hash(session).slice(0, 24)}`;
+    await service.startForOneOff(creator, agent, project, session, { answers: { share_link: 'https://post.example/' }, sourceWords: 32 });
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agent);
+    expect(type).toBeDefined();
+    const reader = new MktgDocumentRunService();
+    const activity = [{ id: 'public-step', kind: 'checking', label: 'Checking the document', status: 'running' }];
+    const result = agent === 'linkedin-post' ? flows.linkedin : flows.member;
+    result.mockResolvedValue({ status: 'pending', activity });
+    expect(await reader.readProgress(creator, project, agent, id)).toMatchObject({ runs: [{ documentId: id, state: 'writing', activity }] });
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-visitor' } } });
+    const listing = await reader.readProgress(visitor, project);
+    const document = await reader.readProgress(visitor, project, agent, id);
+    for (const snapshot of [listing, document]) {
+      expect(snapshot.runs[0]).not.toHaveProperty('activity');
+      expect(JSON.stringify(snapshot)).not.toContain('public-step');
+    }
+    expect(flows.attribution).toHaveBeenCalledWith({ creatorSubject: 'synthetic-creator' }, ...(agent === 'linkedin-post' ? [true] : []));
+    if (agent === 'linkedin-post') {
+      expect(flows.linkedin).toHaveBeenCalledWith(creator, 'synthetic-creator', session, project, { share_link: 'https://post.example/' }, 32);
+    }
+    const receipt = { ...ready().persistence, document_location: { agent_key: agent, document_id: id, revision_id: location().revision_id } };
+    result.mockResolvedValue({ status: 'ready', stored: true, persistence: receipt });
+    expect(await reader.readProgress(req, project, agent, id)).toEqual({ runs: [] });
+    expect(stored().metadata['state']).toBe('completed');
+    const privateBody = JSON.parse(stored().body);
+    expect(privateBody.documentId).toBe(id);
+    privateBody.documentId = 'living';
+    objects.set(key(), { ...stored(), body: JSON.stringify(privateBody), metadata: { ...stored().metadata, state: 'writing' } });
+    expect((await reader.readProgress(req, project, agent, id)).runs).toEqual([]);
+  });
+
+  it.each(['linkedin-post', 'member-360'])('classifies a settled %s runtime failure on a Documents read before its writing deadline', async (agent) => {
+    await service.startForOneOff(req, agent, project, session);
+    const startedAt = new Date().toISOString();
+    vi.advanceTimersByTime(61_000);
+    flows.events.mockResolvedValue([JSON.stringify({ type: 'runtime_error', created_at: startedAt, content: { error: 'PRIVATE PROVIDER DETAILS' } })]);
+    const visitor = { originalUrl: '/api/mktg-agents/documents/' + agent } as Request;
+    const progress = await service.readProgress(visitor, project, agent);
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+    expect(Date.now() - Date.parse(startedAt)).toBeLessThan(MKTG_RUN_POLL.timeoutMs);
+    expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
+    expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/' + agent);
+  });
+
+  it('uses one completion policy for owned and Documents reads, retaining the record through completion', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    const context = { answers: { share_link: 'https://post.example/original' }, sourceWords: 32 };
+    await service.startForOneOff(creator, 'linkedin-post', project, session, context);
+    const documentId = `run-${hash(session).slice(0, 24)}`;
+    flows.linkedin.mockResolvedValue({
+      ...ready(),
+      persistence: { ...ready().persistence, document_location: { ...location('linkedin-post'), document_id: documentId } },
+    });
+    flows.get.mockClear();
+    const result = await service.ownedOneOffResult(creator, project, 'linkedin-post', session, {
+      answers: { share_link: 'https://post.example/changed' },
+      sourceWords: 1,
+    });
+    expect(result.status).toBe('ready');
+    expect(flows.linkedin).toHaveBeenCalledExactlyOnceWith(creator, 'synthetic-creator', session, project, context.answers, 32);
+    expect(flows.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'synthetic-creator' }, true);
+    // One context lookup, then mark's existing post-write winner confirmation; no duplicate pre-write record/result lookup.
+    expect(flows.get.mock.calls).toEqual([[key()], [key()]]);
+    expect(flows.get.mock.invocationCallOrder[1]).toBeGreaterThan(flows.beforePut.mock.invocationCallOrder[0]);
+    expect(stored().metadata['state']).toBe('completed');
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-other' } } });
+    await expect(service.ownedOneOffResult(visitor, project, 'linkedin-post', session, {})).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.ownedOneOffResult(creator, project, 'member-360', session, {})).rejects.toBeInstanceOf(AuthorizationError);
+    flows.linkedin.mockResolvedValue({ status: 'pending' });
+    await service.ownedOneOffResult(creator, project, 'linkedin-post', 'untracked-session', {});
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', 'untracked-session', project, undefined, undefined);
+    await service.ownedOneOffResult(creator, 'other-project', 'linkedin-post', session, {});
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, 'other-project', undefined, undefined);
+  });
+
+  it.each(['service', 'provider', 'network'])('falls back on a transient %s read and logs no private body/error details', async (kind) => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session, { sourceWords: 99 });
+    flows.get.mockImplementationOnce(() => {
+      if (kind === 'service') throw new MicroserviceError('private provider message', 503, 'STORE_UNAVAILABLE');
+      if (kind === 'provider') throw Object.assign(new Error('private provider message'), { $metadata: { httpStatusCode: 503 } });
+      throw Object.assign(new Error('private provider message'), { code: 'ECONNRESET' });
+    });
+    const body = { answers: { share_link: 'https://post.example/fallback' }, sourceWords: 12 };
+    expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).toMatchObject({ status: 'pending' });
+    expect(flows.linkedin).toHaveBeenLastCalledWith(creator, 'synthetic-creator', session, project, body.answers, 12);
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_owned_run_read', expect.any(String), {
+      project,
+      status: kind === 'network' ? 0 : 503,
+      code: kind === 'network' ? 'network' : 'http',
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private provider message');
+    flows.linkedin.mockClear();
+    flows.get.mockImplementationOnce(() => {
+      throw new AuthorizationError('No access');
+    });
+    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).rejects.toBeInstanceOf(AuthorizationError);
+    flows.get.mockImplementationOnce(() => {
+      throw Object.assign(new Error('Non-transient synthetic permission failure'), { code: 'EACCES' });
+    });
+    await expect(service.ownedOneOffResult(creator, project, 'linkedin-post', session, body)).rejects.toMatchObject({ code: 'EACCES' });
+    expect(flows.linkedin).not.toHaveBeenCalled();
+  });
+
+  it('retains the tracking-write error for operators without changing the successful result', async () => {
+    const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(creator, 'linkedin-post', project, session);
+    const result = {
+      ...ready(),
+      persistence: { ...ready().persistence, document_location: { ...location('linkedin-post'), document_id: `run-${hash(session).slice(0, 24)}` } },
+    };
+    flows.linkedin.mockResolvedValue(result);
+    const err = new MicroserviceError('Synthetic metadata write failed', 503, 'STORE_UNAVAILABLE');
+    flows.beforePut.mockRejectedValueOnce(err);
+    expect(await service.ownedOneOffResult(creator, project, 'linkedin-post', session, {})).toBe(result);
+    expect(logger.warning).toHaveBeenCalledWith(creator, 'mktg_run_record_result', expect.any(String), { project, err });
+  });
+
+  it('keeps independent one-off sessions and pauses Member needs-input without exposing question text', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    await service.startForOneOff(req, 'member-360', project, 'second-session');
+    flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
+    const progress = await service.readProgress(req, project, 'member-360');
+    expect(progress.runs).toHaveLength(2);
+    expect(progress.runs.every((run) => run.state === 'questions')).toBe(true);
+    expect(JSON.stringify(progress)).not.toContain('private question text');
+    expect(JSON.stringify(progress)).not.toContain('sessionId');
+    expect(JSON.stringify(progress)).not.toContain('creatorSubject');
+    expect(stored().metadata['state']).toBe('questions');
+    flows.member.mockResolvedValue({ status: 'pending' });
+    expect((await new MktgDocumentRunService().readProgress(req, project, 'member-360')).runs.every((run) => run.state === 'questions')).toBe(true);
+    expect(flows.member).toHaveBeenCalledTimes(4);
+  });
+
+  it('bounds an unsupported Member questions pause by the original writing deadline and stops Guild reads after failure', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.member.mockResolvedValue({ status: 'needs_input', message: 'private question text', activity: [] });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs + 1);
+    const expired = await service.readProgress(req, project);
+    expect(expired.runs[0]).toMatchObject({ state: 'failed', failureText: 'Member 360 needs more input than this version can give it; run it again.' });
+    expect(JSON.stringify(expired)).not.toContain('private question text');
+    const reads = flows.member.mock.calls.length;
+    await new MktgDocumentRunService().readProgress(req, project);
+    await new MktgDocumentRunService().readProgress(req, project);
+    expect(flows.member).toHaveBeenCalledTimes(reads);
+  });
+
+  it('retains Member failure classification with the redacted details across process-local cache loss', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.member.mockResolvedValue({ status: 'failed', reason: 'no_edit_access', message: 'Synthetic entitled-project refusal.' });
+    const progress = await service.readProgress(req, project);
+    expect(progress.runs[0]).toMatchObject({ state: 'failed', failureReason: 'no_edit_access', failureText: 'Synthetic entitled-project refusal.' });
+    expect(stored().metadata['failure-reason']).toBe('no_edit_access');
+    const reread = await new MktgDocumentRunService().readProgress(req, project);
+    expect(reread.runs[0]).toMatchObject({ failureReason: 'no_edit_access' });
+  });
+
+  it('ignores failure reason codes outside the dedicated allow-list on writes and legacy metadata reads', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    flows.member.mockResolvedValue({ status: 'failed', reason: 'unknown_code', message: 'Synthetic refusal.' });
+    expect((await service.readProgress(req, project)).runs[0]).not.toHaveProperty('failureReason');
+    expect(stored().metadata).not.toHaveProperty('failure-reason');
+    stored().metadata['failure-reason'] = 'constructor';
+    expect((await new MktgDocumentRunService().readProgress(req, project)).runs[0]).not.toHaveProperty('failureReason');
+  });
+
+  it('renews LinkedIn after answers ACK, and ignores the already-answered questions block', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
+    const questionsId = 'a'.repeat(64);
+    flows.linkedin.mockResolvedValue({ status: 'questions', questionsId });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+    await service.resumeAfterQuestions(req, project, session, questionsId);
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('writing');
+    flows.linkedin.mockResolvedValue({ status: 'questions', questionsId: 'b'.repeat(64) });
+    expect((await service.readProgress(req, project)).runs[0]?.state).toBe('questions');
+  });
+
+  it('does not attribute or initialize a LinkedIn profile as the visiting reader when the creator is unknown', async () => {
+    await service.startForOneOff(req, 'linkedin-post', project, session);
+    await new MktgDocumentRunService().readProgress(req, project);
+    expect(flows.linkedin).toHaveBeenCalledWith(req, '', session, project, undefined, undefined);
+    expect(flows.attribution).toHaveBeenCalledWith({ creatorSubject: null }, false);
   });
 
   it('captures only the initiating subject and preserves it across ACKs and renewal', async () => {
@@ -378,9 +595,23 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('failed');
   });
 
+  it('keeps one-off completion context and redraft revision identity in distinct start options', async () => {
+    const oneOff = { answers: { share_link: 'https://post.example/options' }, sourceWords: 24 };
+    const start = vi.spyOn(service, 'start');
+    await service.startForOneOff(req, 'linkedin-post', project, 'oneoff-options-session', oneOff);
+    expect(start).toHaveBeenLastCalledWith(req, project, 'linkedin-post', 'oneoff-options-session', 0, 'initial', { oneOff });
+    const basedOnId = location().revision_id;
+    await service.start(req, project, types[0].agentKey, 'redraft-options-session', 1, 'redraft-options', { basedOnId });
+    expect(JSON.parse(stored('oneoff-options-session').body).oneOff).toMatchObject(oneOff);
+    expect(stored('oneoff-options-session').metadata['prior-revision-id']).toBeUndefined();
+    expect(JSON.parse(stored('redraft-options-session').body).oneOff).toBeUndefined();
+    expect(stored('redraft-options-session').metadata['prior-revision-id']).toBe(basedOnId);
+    start.mockRestore();
+  });
+
   it('does not treat the selected base receipt as completion of a fresh redraft', async () => {
     const agent = types[0].agentKey;
-    await service.start(req, project, agent, session, 1, 'send-one', location(agent).revision_id);
+    await service.start(req, project, agent, session, 1, 'send-one', { basedOnId: location(agent).revision_id });
     await service.recordResult(req, session, ready(agent), project);
     expect(stored().metadata['state']).toBe('writing');
   });

@@ -300,11 +300,45 @@ conditional across writers” is a separate storage-contract WorkItem, not an at
 The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
-Started, state and plain-text failure text (agent reply or server-authored deadline /
-storage-exhaustion reason); no session capability or starter identity is exposed.
+Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
+and plain-text failure text (agent reply or server-authored deadline / storage-exhaustion reason);
+no session capability, starter identity or private completion context is exposed.
+Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning,
+and is projected only when the effective reader is the stored original creator. Other project writers
+see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
+redactor to activity labels/details before returning them, including to the creator.
+
+The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
+object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes
+`{ oneOff: context }`; the comments redraft service passes `{ basedOnId: revisionId }`
+on both initial submission and ACK replay. A revision ID is never parsed as one-off
+completion data. The captured one-off body and the existing redraft
+`prior-revision-id` semantics stay separate; neither field populates the other.
+
+Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
+LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
+then call `startForOneOff` before returning an opaque `runId` alongside their existing response.
+The destination is the exact session-derived `run-…` document ID, never `living`;
+separate one-off sessions cannot supersede each other's progress. Plain writer-entitled
+Documents reads dispatch to the existing domain result service and persist the same revision
+without any browser cache or owner token. Completion checks the exact receipt's project,
+agent and document. The domain writer receives the original opaque creator attribution,
+not the reading visitor's identity.
+
+LinkedIn's immutable private start also retains validated link answers, source word count and
+whether profile initialization was allowed at Generate. Reconciliation initializes only the
+original creator's profile, never a visitor's; impersonation still disables initialization.
+No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
+tracked session. Member 360 maps `needs_input` to a bounded questions pause: its question text is
+never exposed and it has no answers endpoint. Unlike answerable pauses, its original writing
+deadline keeps running. Refresh/reopen rechecks it until that deadline; after expiry it becomes
+terminal failed with the server-authored message “Member 360 needs more input than this version
+can give it; run it again.” Subsequent normal reads do not query Guild for that failed record.
+Its ready result carries the shared exact persistence receipt as well as the existing `stored`
+flag; existing clients remain compatible.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Questions pause the writing deadline until accepted answers renew
+`superseded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the
@@ -314,7 +348,11 @@ matching late receipt can finish a failed attempt on a creator poll or explicit
 detail refresh. Effective start/run-id order retires older same-document runs.
 Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
 Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
-creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+creator attribution (legacy unknown), never the visitor. It also uses the shared Guild outcome
+resolver with an internal catalog-resolved result endpoint; the visiting Documents Request is
+not mutated. A settled runtime failure becomes failed before the writing deadline, projecting
+only the classifier's fixed safe reason as failureText, never provider payloads. Controller calls
+without that optional endpoint keep their existing registered-route behaviour. Retry checks the exact stored session;
 it creates no generation and does not change the document's current pointer.
 
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses

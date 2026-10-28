@@ -81,6 +81,8 @@ export const MEMBER_360_FINALIZE_RECEIPT_ID = 'member-360-finalize/v1';
 export const MEMBER_360_PARTIAL_SUMMARY_PREFIX = 'Partial report.';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';
 export const MEMBER_360_API = '/api/mktg-agents/member-360';
+/** This intake has no answer endpoint; its human pause cannot keep a run alive indefinitely. */
+export const MEMBER_360_INPUT_TIMEOUT_MESSAGE = 'Member 360 needs more input than this version can give it; run it again.';
 export const MEMBER_360_MAX_BYTES = 5 * 1024 * 1024;
 export const MEMBER_360_MAX_TRACKERS = 10;
 export const MEMBER_360_MAX_TRACKER_ROWS = 2000;

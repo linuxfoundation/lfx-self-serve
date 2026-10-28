@@ -25,6 +25,9 @@ import {
   BOILERPLATES_INTAKE,
   FAQ_INTAKE,
   ICP_INTAKE,
+  LINKEDIN_POST_INTAKE,
+  MEMBER_360_API,
+  LINKEDIN_SOURCE_MAX_WORDS,
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentAgentKey,
@@ -39,6 +42,9 @@ import {
   MktgStoredDocumentRunState,
   MktgStoredStartedRun,
   MktgGenerationAttribution,
+  MktgOneOffRunContext,
+  MktgDocumentRunStartOptions,
+  MktgRunActivity,
   ObjectStoreListEntry,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -51,16 +57,23 @@ import {
   isMktgRunAttemptId,
   mktgRunIdFromKey,
   mktgRunRenewAt,
+  normalizeLinkedinShareAnswers,
+  isMktgRunFailureReason,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
+import { LinkedinPostService } from './linkedin-post.service';
+import { Member360Service } from './member-360.service';
 import { BrandKitService } from './brand-kit.service';
 import { BoilerplatesService } from './boilerplates.service';
 import { FoundationMessageService } from './foundation-message.service';
 import { FaqService } from './faq.service';
 import { IcpService } from './icp.service';
+import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
@@ -72,6 +85,7 @@ export class MktgDocumentRunService {
   private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
+  private readonly guild = new GuildService();
   private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly comments = new MktgDocumentCommentsService();
 
@@ -123,14 +137,16 @@ export class MktgDocumentRunService {
     sessionId: string,
     priorVersion = 0,
     attemptId = 'initial',
-    basedOnId?: string
+    options: MktgDocumentRunStartOptions = {}
   ): Promise<string> {
+    const { oneOff, basedOnId } = options;
     if (
-      !findMktgRunIntake(agentKey) ||
+      !findMktgRunIntake(agentKey, true) ||
       !sessionId ||
       !Number.isInteger(priorVersion) ||
       priorVersion < 0 ||
       !isMktgRunAttemptId(attemptId) ||
+      (oneOff !== undefined && !this.validContext(oneOff)) ||
       (basedOnId !== undefined && !MKTG_REVISION_ID_REGEX.test(basedOnId))
     ) {
       throw ServiceValidationError.forField('run', 'Invalid document run.');
@@ -152,10 +168,11 @@ export class MktgDocumentRunService {
       schema: MKTG_STARTED_RUN_SCHEMA,
       project,
       agentKey,
-      documentId: MKTG_LIVING_DOCUMENT_ID,
+      documentId: this.documentId(agentKey, sessionId),
       runId,
       sessionId,
       creatorSubject: getEffectiveSub(req) ?? null,
+      ...(oneOff && { oneOff: { ...oneOff, initializeProfile: !isImpersonating(req) } }),
       startedAt: now,
       priorVersion,
       attemptId,
@@ -274,16 +291,18 @@ export class MktgDocumentRunService {
             }
             let record = stored.record;
             let fullReply: string | undefined;
+            let activity: MktgRunActivity[] | undefined;
             // Failed is terminal for automatic reconciliation. Only an explicit detail refresh or creator poll rechecks it.
             if (record.state !== 'failed') {
               const result = await this.result(req, record);
               record = await this.advanceResult(req, stored, result);
               fullReply = result.failureText ?? result.reply;
+              activity = record.creatorSubject && getEffectiveSub(req) === record.creatorSubject ? result.activity : undefined;
             }
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record));
             }
-            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined);
+            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined, activity);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
@@ -437,7 +456,7 @@ export class MktgDocumentRunService {
     }
     try {
       const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
-      if (stored && !isMktgRunTerminal(stored.record.state) && findMktgRunIntake(stored.record.agentKey)?.endpoints.answers) {
+      if (stored && !isMktgRunTerminal(stored.record.state) && findMktgRunIntake(stored.record.agentKey, true)?.endpoints.answers) {
         await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, questionsId, 0);
       }
     } catch (error) {
@@ -525,8 +544,21 @@ export class MktgDocumentRunService {
     if (result.status === 'failed' || result.status === 'refused') {
       return this.mark(req, stored, 'failed', run.retryAt, undefined, run.answeredQuestionsId, run.persistRetries, result.failureText ?? result.reply ?? '');
     }
-    if (result.status === 'questions' && result.questionsId !== run.answeredQuestionsId) {
-      return run.state === 'questions' ? run : this.mark(req, stored, 'questions');
+    const unsupportedPause = !findMktgRunIntake(run.agentKey, true)?.endpoints.answers && (run.state === 'questions' || result.status === 'questions');
+    if (unsupportedPause && Date.now() - Date.parse(run.retryAt ?? run.startedAt) > MKTG_RUN_POLL.timeoutMs) {
+      return this.mark(
+        req,
+        stored,
+        'failed',
+        run.retryAt,
+        undefined,
+        run.answeredQuestionsId,
+        0,
+        result.failureText ?? run.failureText ?? 'The agent needs more input than this version can give it; run it again.'
+      );
+    }
+    if (result.status === 'questions' && (!result.questionsId || result.questionsId !== run.answeredQuestionsId)) {
+      return run.state === 'questions' ? run : this.mark(req, stored, 'questions', run.retryAt, undefined, run.answeredQuestionsId, 0, result.failureText);
     }
     if (run.state === 'questions' || (run.state === 'storing' && !staleReceipt)) {
       return run;
@@ -551,9 +583,16 @@ export class MktgDocumentRunService {
     await this.comments.settle(req, context, result);
   }
 
-  private result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
+  private async result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
+    const result = await this.agentResult(req, record);
+    const endpoint = findMktgRunIntake(record.agentKey, true)?.endpoints.result;
+    const outcome = await this.guild.resolveRunOutcome(req, record.sessionId, result, endpoint);
+    return outcome.status === 'failed' && outcome.failure ? { ...outcome, failureText: outcome.failure.reason } : outcome;
+  }
+
+  private async agentResult(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
     const attribution: MktgGenerationAttribution = { creatorSubject: record.creatorSubject ?? null };
-    switch (findMktgRunIntake(record.agentKey)?.endpoints.result) {
+    switch (findMktgRunIntake(record.agentKey, true)?.endpoints.result) {
       case BRAND_KIT_INTAKE.endpoints.result:
         return new BrandKitService(attribution).getResult(req, record.sessionId, record.project);
       case FOUNDATION_MESSAGE_INTAKE.endpoints.result:
@@ -564,6 +603,19 @@ export class MktgDocumentRunService {
         return new FaqService(attribution).getResult(req, record.sessionId, record.project);
       case ICP_INTAKE.endpoints.result:
         return new IcpService(attribution).getResult(req, record.sessionId, record.project);
+      case LINKEDIN_POST_INTAKE.endpoints.result:
+        return new LinkedinPostService(attribution, !!record.creatorSubject && record.oneOff?.initializeProfile === true).result(
+          req,
+          record.creatorSubject ?? '',
+          record.sessionId,
+          record.project,
+          record.oneOff?.answers,
+          record.oneOff?.sourceWords
+        );
+      case `${MEMBER_360_API}/result`: {
+        const result = await new Member360Service(attribution).result(req, record.sessionId, record.project);
+        return Member360Service.toRunResult(result);
+      }
       default:
         throw ServiceValidationError.forField('agentKey', 'No registered result endpoint for this run.');
     }
@@ -736,8 +788,9 @@ export class MktgDocumentRunService {
       if (
         record.schema !== MKTG_STARTED_RUN_SCHEMA ||
         record.project !== project ||
-        !findMktgRunIntake(record.agentKey) ||
-        record.documentId !== MKTG_LIVING_DOCUMENT_ID ||
+        !findMktgRunIntake(record.agentKey, true) ||
+        record.documentId !== this.documentId(record.agentKey, record.sessionId) ||
+        (record.oneOff !== undefined && !this.validContext(record.oneOff)) ||
         typeof record.sessionId !== 'string' ||
         !record.sessionId ||
         record.runId !== this.hash(record.sessionId) ||
@@ -784,8 +837,25 @@ export class MktgDocumentRunService {
       return null;
     }
   }
+  private validContext(context: MktgOneOffRunContext): boolean {
+    return (
+      !!context &&
+      typeof context === 'object' &&
+      !Array.isArray(context) &&
+      (context.initializeProfile === undefined || typeof context.initializeProfile === 'boolean') &&
+      (context.sourceWords === undefined ||
+        (Number.isInteger(context.sourceWords) && context.sourceWords >= 0 && context.sourceWords <= LINKEDIN_SOURCE_MAX_WORDS)) &&
+      (context.answers === undefined || normalizeLinkedinShareAnswers(context.answers) !== null)
+    );
+  }
+
+  private documentId(agentKey: string, sessionId: string): string {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    return type?.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
+  }
+
   private catalogDocumentType(agentId: string): MktgDocumentType | undefined {
-    return MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey));
+    return MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'living' && type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey));
   }
 
   private hash(value: string): string {

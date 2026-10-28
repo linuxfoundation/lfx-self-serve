@@ -16,6 +16,7 @@ import {
   LinkedinSetup,
   LinkedinQuestionsTurn,
   MktgRunAnswer,
+  MktgGenerationAttribution,
   Project,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -46,7 +47,14 @@ export class LinkedinPostService {
   private readonly guild = new GuildService();
   private readonly profiles = new LinkedinProfileService();
   private readonly sources = new LinkedinSourceService();
-  private readonly documents = new MktgDocumentStoreService();
+  private readonly documents: MktgDocumentStoreService;
+
+  public constructor(
+    attribution?: MktgGenerationAttribution,
+    private readonly initializeProfile = true
+  ) {
+    this.documents = new MktgDocumentStoreService(attribution);
+  }
 
   public async start(
     req: Request,
@@ -139,7 +147,7 @@ export class LinkedinPostService {
     }
     // Durable per-run consumption plus create-only storage prevents edit overwrite and post-delete replay.
     let profileSaved = best.profile_source !== 'first_run_setup';
-    if (best.profile_source === 'first_run_setup' && !isImpersonating(req)) {
+    if (best.profile_source === 'first_run_setup' && user && this.initializeProfile && !isImpersonating(req)) {
       profileSaved = await this.profiles.initializeOnce(req, user, sessionId, { profile: best.profile, profile_markdown: best.profile_markdown });
     }
     return {

@@ -30,7 +30,7 @@ import type {
   MktgRevisionSummary,
   ParsedMktgRevisionKey,
 } from '../interfaces/mktg-document-store.interface';
-import type { MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
+import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 
 /** Normalize the artifact receipt's snake-case location for camel-case UI/progress models. */
 export function mktgDocumentLocationOfReceipt(receipt?: MktgRunPersistReceipt): MktgDocumentLocation | undefined {
@@ -155,14 +155,19 @@ export function describeMktgRevision(
 }
 
 /** Pure run membership, validation and public projection shared by the durable reader. */
-export function findMktgRunIntake(key: string) {
+export function findMktgRunIntake(key: string, includeOneOff = false) {
   const type = findMktgDocumentType(key);
   const id = type?.catalogAgentId;
-  return type?.kind === 'living' && id && MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active') ? MKTG_AGENT_INTAKES[id] : undefined;
+  const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
+  return id &&
+    (type?.kind === 'living' || (includeOneOff && intake?.tracksDocumentRun)) &&
+    MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active')
+    ? intake
+    : undefined;
 }
 
 /** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
-export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText): MktgDocumentRunProgress | null {
+export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText, activity?: MktgRunActivity[]): MktgDocumentRunProgress | null {
   if (run.state === 'completed' || run.state === 'superseded') {
     return null;
   }
