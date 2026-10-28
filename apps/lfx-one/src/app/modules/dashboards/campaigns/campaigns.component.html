@@ -1417,7 +1417,7 @@
                               Write every email first &mdash; the last write did not finish.
                             } @else if (emailAudienceWriteInFlight()) {
                               Wait for the audience to finish updating.
-                            } @else if (emailStagingHeld()) {
+                            } @else if (emailStagingHeld() && !surveySeriesRestarted()) {
                               Wait for the single-email draft above to finish, or confirm it in HubSpot.
                             } @else if (sequenceHasHeldSend()) {
                               A draft did not confirm. Check it in HubSpot, then start the series over.

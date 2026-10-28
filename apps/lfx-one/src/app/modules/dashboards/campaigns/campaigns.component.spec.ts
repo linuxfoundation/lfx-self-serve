@@ -9024,6 +9024,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       await seq().onGenerateSurveySequence();
 
       expect(page.canStageSequence(), "the old brief's hold blocked the new series").toBe(true);
+
+      // Another condition now disables Stage all: the hint names THAT, not the hidden single draft.
+      seq().selectedEmailTemplateId.set('');
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      const hint = fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-stage-hint"]')?.textContent ?? '';
+      expect(hint, 'the hint pointed at the hidden single-email draft').not.toContain('single-email draft');
     });
 
     it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
