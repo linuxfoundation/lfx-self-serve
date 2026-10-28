@@ -244,7 +244,12 @@ export class VoteVotersComponent {
 
     const vote = this.vote();
     const dialogVote = vote.poll_comment_prompts?.length ? vote : { ...vote, poll_comment_prompts: this.commentPrompts() };
-    const data: VoteBallotDialogData = { vote: dialogVote, ballots, index };
+    const commentPrompts = computed(() => {
+      const currentVote = this.vote();
+      if (currentVote.uid !== vote.uid || currentVote.pseudo_anonymity !== false) return [];
+      return currentVote.poll_comment_prompts?.length ? currentVote.poll_comment_prompts : this.commentPrompts();
+    });
+    const data: VoteBallotDialogData = { vote: dialogVote, ballots, index, commentPrompts };
     this.dialogService.open(VoteBallotDialogComponent, {
       header: 'Ballot',
       width: 'min(720px, 96vw)',

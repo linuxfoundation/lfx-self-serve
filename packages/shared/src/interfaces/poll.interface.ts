@@ -606,6 +606,8 @@ export interface VoteBallotQuestionView {
 /** Dialog data for `lfx-vote-ballot-dialog` (#3914): the ballots in table order and the one to open first. */
 export interface VoteBallotDialogData {
   vote: Vote;
+  /** Reactive recovered prompts for an already-open ballot; scoped to the vote that opened it. */
+  commentPrompts?: () => PollCommentPrompt[];
   /** The table's filtered, sorted rows that have a ballot — next/previous step through these */
   ballots: VoteVoterRowView[];
   index: number;

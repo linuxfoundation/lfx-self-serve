@@ -130,8 +130,10 @@ test.describe('Vote permalink (#3659)', () => {
     await more.locator('button').click();
 
     await expect(page.getByRole('menuitem', { name: 'Copy link' })).toBeVisible();
-    // Opening the menu must not select the row, which would navigate to the vote page.
+    // An active awaiting row opens an in-place ballot; the menu must trigger neither that nor navigation.
     await expect(page).not.toHaveURL(new RegExp(`/votes/${VOTE_UID}`));
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('vote-cast-drawer-header')).toHaveCount(0);
   });
 
   for (const status of ['active', 'ended']) {

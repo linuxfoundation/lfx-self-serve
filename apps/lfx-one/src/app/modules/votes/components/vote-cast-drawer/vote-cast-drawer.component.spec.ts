@@ -478,6 +478,50 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(submitMyResponse).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { label: 'omitted', prompts: undefined },
+    { label: 'empty', prompts: [] },
+  ])('preserves late saved comments in locked Review when prompts are $label', async ({ prompts }) => {
+    const pending = new Subject<MyVoteBallot | null>();
+    await openReview({ ...REVIEW_VOTE, poll_comment_prompts: prompts }, vi.fn().mockReturnValue(pending));
+    expect(el('vote-cast-comments')).toBeNull();
+
+    pending.next(BALLOT);
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const comment = el('vote-cast-comment-p1');
+    expect(comment?.textContent).toContain('Comment');
+    const textarea = comment?.querySelector('textarea');
+    expect(textarea?.value).toBe('Needs a second reading');
+    expect(textarea?.disabled).toBe(true);
+    expect(fixture.componentInstance.commentForm.disabled).toBe(true);
+    expect(submitButton()).toBeNull();
+  });
+
+  it('preserves known comment labels and saved-only prompts in Review without changing the vote', async () => {
+    await openReview(
+      REVIEW_VOTE,
+      vi.fn().mockReturnValue(
+        of({
+          ...BALLOT,
+          comment_responses: [
+            ...BALLOT.comment_responses,
+            { prompt_id: 'saved-only', comment_text: 'Recorded on an older prompt' },
+            { prompt_id: 'blank-only', comment_text: '  ' },
+          ],
+        })
+      )
+    );
+
+    expect(el('vote-cast-comment-p1')?.textContent).toContain('Anything else?');
+    expect(el('vote-cast-comment-saved-only')?.querySelector('textarea')?.value).toBe('Recorded on an older prompt');
+    expect(el('vote-cast-comment-saved-only')?.querySelector('textarea')?.disabled).toBe(true);
+    expect(el('vote-cast-comment-blank-only')).toBeNull();
+    expect(REVIEW_VOTE.poll_comment_prompts).toEqual([{ prompt_id: 'p1', prompt: 'Anything else?' }]);
+  });
+
   it('shows recorded single/multiple choices and comments in disabled voting controls', async () => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
     await openReview(REVIEW_VOTE, getMyVoteBallot);

@@ -26,13 +26,13 @@ export class VoteBallotDialogComponent {
   // === Dialog Data ===
   protected readonly vote: Vote = this.config.data!.vote;
   protected readonly ballots: VoteVoterRowView[] = this.config.data!.ballots;
-  protected readonly commentPrompts: PollCommentPrompt[] = this.vote.poll_comment_prompts ?? [];
   protected readonly isActive: boolean = normalizePollStatus(this.vote.status) === PollStatus.ACTIVE;
 
   // === Writable Signals ===
   protected readonly index = signal<number>(this.clampIndex(this.config.data!.index));
 
   // === Computed Signals ===
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.config.data?.commentPrompts?.() ?? this.vote.poll_comment_prompts ?? []);
   protected readonly current: Signal<VoteVoterRowView | null> = computed(() => this.ballots[this.index()] ?? null);
   protected readonly isAbstained: Signal<boolean> = computed(() => this.current()?.status === VoteVoterStatus.ABSTAINED);
   protected readonly questions: Signal<VoteBallotQuestionView[]> = computed(() => {
@@ -65,7 +65,7 @@ export class VoteBallotDialogComponent {
           .filter((response) => !!response.comment_text?.trim())
           .map((response) => [response.prompt_id, response.comment_text])
       );
-      return Object.fromEntries(this.commentPrompts.map((prompt) => [prompt.prompt_id, comments.get(prompt.prompt_id) ?? null]));
+      return Object.fromEntries(this.commentPrompts().map((prompt) => [prompt.prompt_id, comments.get(prompt.prompt_id) ?? null]));
     });
   }
 

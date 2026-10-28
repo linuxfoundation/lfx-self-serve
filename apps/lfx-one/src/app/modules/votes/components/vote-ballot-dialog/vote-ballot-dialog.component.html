@@ -97,9 +97,9 @@
     }
 
     <!-- Comments -->
-    @if (commentPrompts.length > 0) {
+    @if (commentPrompts().length > 0) {
       <section class="flex flex-col gap-3 border-t border-gray-100 pt-4" data-testid="vote-ballot-dialog-comments">
-        @for (prompt of commentPrompts; track prompt.prompt_id) {
+        @for (prompt of commentPrompts(); track prompt.prompt_id) {
           <div class="flex flex-col gap-1">
             <h3 class="text-sm font-medium text-gray-700">{{ prompt.prompt }}</h3>
             @if (commentsByPrompt()[prompt.prompt_id]; as comment) {

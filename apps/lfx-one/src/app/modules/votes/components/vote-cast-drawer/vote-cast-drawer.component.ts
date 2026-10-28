@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
 import {
+  buildBallotCommentPrompts,
   buildCommentResponses,
   buildVoteBallotQuestions,
   getCommentPromptsData,
@@ -131,7 +132,7 @@ export class VoteCastDrawerComponent {
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
-  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = this.initCommentPrompts();
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
@@ -452,6 +453,15 @@ export class VoteCastDrawerComponent {
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
+    });
+  }
+
+  private initCommentPrompts(): Signal<PollCommentPrompt[]> {
+    return computed(() => {
+      const vote = this.vote();
+      const ballot = this.myBallot();
+      if (!this.readOnly() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
+      return buildBallotCommentPrompts(vote.poll_comment_prompts, ballot.comment_responses);
     });
   }
 
