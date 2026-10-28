@@ -246,7 +246,6 @@ export interface HealthMetricsOverviewOrgsHalfView {
   engagementLabel: string;
   /** Empty when the period has no engagement split, so the donut shows its track only. */
   donut: HealthMetricsOverviewDonutSegmentView[];
-  lowPctLabel: string;
   rows: HealthMetricsOverviewEngagementRowView[];
   link: HealthMetricsOverviewExploreLink;
 }
@@ -260,8 +259,22 @@ export interface HealthMetricsOverviewParticipatingOrgsView {
 export interface HealthMetricsOverviewGaugeSegmentView {
   key: string;
   path: string;
+  /** Full color for the segment holding the score, the color mixed toward white for the rest. */
   stroke: string;
-  opacity: number;
+}
+
+/** A round end cap of the gauge, at -100 or +100, in its segment's color. */
+export interface HealthMetricsOverviewGaugeCapView {
+  key: string;
+  x: string;
+  y: string;
+  fill: string;
+}
+
+/** One "Label: value" part of a card's meta line under its title. */
+export interface HealthMetricsOverviewMetaPart {
+  label: string;
+  value: string;
 }
 
 /** One Promoters / Passives / Detractors row. */
@@ -276,10 +289,12 @@ export interface HealthMetricsOverviewNpsRowView {
 
 export interface HealthMetricsOverviewNpsView {
   isEmpty: boolean;
-  subtitle: string;
+  /** "Latest NPS: Q2 2026 · Audience: Board · Responses: 15 of 22 (68%)". */
+  meta: HealthMetricsOverviewMetaPart[];
   scoreLabel: string;
   delta: HealthMetricsOverviewDelta | null;
   segments: HealthMetricsOverviewGaugeSegmentView[];
+  caps: HealthMetricsOverviewGaugeCapView[];
   /** The needle's tip; `null` without a score, so no needle is drawn. */
   needle: { x: string; y: string } | null;
   ariaLabel: string;
