@@ -100,11 +100,55 @@ When editing files in `docs/`:
 - **Remove true duplicates** — if the same code block or configuration appears twice in a file, keep the more detailed version
 - **Replace stale status trackers** — "Implemented / Not Implemented" checklists go stale; replace with a concise summary of what's implemented
 - **Remove aspirational schedules** — "Weekly/Monthly/Quarterly" maintenance schedules that aren't enforced by code don't belong in architecture docs
-- **Remove stale version footers** — "Last Updated" dates go stale silently
+- **Remove stale version footers** — "Last Updated" dates go stale silently. This applies to footers in architecture docs; the `last_updated` front-matter field in `docs/user/` articles is maintained (see User Documentation Maintenance below)
 - **Keep related documentation and external resource links** — cross-references help readers navigate the docs
 - **Keep examples** — real-world examples are explanations, even if they demonstrate similar patterns; they show different use cases
 - **Keep ops debugging commands only if architecture-relevant** — kubectl/snowsql commands belong in runbooks, not architecture docs
 - **Remove specific benchmark numbers** — values like "Current: ~1.5MB ✅" go stale and are hard to maintain
+
+## User Documentation Maintenance
+
+The user-facing docs (`docs/user/<section>/<article>/index.md`, published at `/docs`) describe the app as users see it. They go stale silently, so **a change that alters what a user sees or can do updates the matching `docs/user/` article in the same PR.**
+
+Update the docs when a change:
+
+- **Adds a feature** — a new page, tab, wizard step, button, drawer, filter or setting a user can reach. Add or extend an article.
+- **Removes a feature** — delete or trim every article, step and FAQ line that describes it.
+- **Changes the UI a doc describes** — renamed buttons, tabs, labels or routes; a reordered or restructured flow (e.g. a form becoming a wizard); changed permissions, personas, lens access or feature-flag availability; or a visual change that leaves a screenshot or "you will see…" description wrong. A redesign of a page or shared component (e.g. a vote results drawer, the committee detail page, a dashboard card, a shared table or filter used across modules) means re-reading every section that covers it, even when no behavior changed.
+
+Pure internal changes (refactors, types, tests, server-only changes with no visible effect) don't need a docs update.
+
+How to do it:
+
+1. **Find the affected articles** using the table below. A change in a shared component (`shared/components/`, layouts, navigation) can affect several sections, so also `grep -rn "<UI label or route>" docs/user/` and re-check every hit.
+2. **Re-read each article against the new UI** and fix every step, label, route, persona or lens claim that no longer matches. Describe only what the code on your branch does; never document a flagged or dark-launched feature as generally available.
+3. **Keep front-matter current** — bump `last_updated` on every article you touch, and keep every other front-matter field (`title`, `description`, `audience`, `product_area`, `tags`, `intercom_collection`) accurate. A new article goes in an existing topic directory (see [docs-portal.md](../../docs/architecture/frontend/docs-portal.md)).
+4. **State it in the PR** — list the `docs/user/` files you updated, or write "No user docs impact" with a one-line reason.
+
+Use a separate `docs(<section>)` commit for the docs change so it can be reviewed on its own.
+
+| Code (`apps/lfx-one/src/app/modules/`)                                              | Docs section (`docs/user/`)                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `meetings`                                                                          | `meetings/`                                                                                                                                                                                                 |
+| `committees`, `groups`                                                              | `committees/`                                                                                                                                                                                               |
+| `votes`                                                                             | `votes/`                                                                                                                                                                                                    |
+| `surveys`                                                                           | `surveys/`                                                                                                                                                                                                  |
+| `mailing-lists`                                                                     | `mailing-lists/`                                                                                                                                                                                            |
+| `documents`                                                                         | `documents/`                                                                                                                                                                                                |
+| `events`                                                                            | `events/`                                                                                                                                                                                                   |
+| `badges`                                                                            | `badges/`                                                                                                                                                                                                   |
+| `trainings`                                                                         | `trainings/`                                                                                                                                                                                                |
+| `crowdfunding`                                                                      | `crowdfunding/`                                                                                                                                                                                             |
+| `mentorship`                                                                        | `mentorship/`                                                                                                                                                                                               |
+| `dashboards` (Me, Foundation, Project lens pages, Health Metrics, ROI)              | `dashboards/`                                                                                                                                                                                               |
+| `dashboards/social-listening`                                                       | `social-listening/`                                                                                                                                                                                         |
+| `dashboards/org`, `dashboards/participating-orgs`, Org lens pages (e.g. EasyCLA)    | `organization/` (EasyCLA), and `dashboards/` for the Org Overview page                                                                                                                                      |
+| `profile`, `public-profile`                                                         | `profile/`, and `account/` for CLAs, identities, work history and individual enrollment                                                                                                                     |
+| `settings`, `transactions`                                                          | `account/`                                                                                                                                                                                                  |
+| `meetups`, `newsletters`, `formations`, `gw`, `akrites`, `invite`, `mktg-os-agents` | No section yet. If the change is user-visible, add an article under the closest existing topic, or propose a new topic in the PR. Topics are curated (see `docs-portal.md`), so do not create one silently. |
+| `auth-error`, `not-found`, `unavailable`, `docs`                                    | None. System pages and the docs portal itself.                                                                                                                                                              |
+
+The table lists every module under `modules/` today. A dark-launched or flagged feature is not documented until it is generally available (see step 2). When you add a module or move a feature between modules, update this table in the same PR.
 
 ## GitHub Issues
 
