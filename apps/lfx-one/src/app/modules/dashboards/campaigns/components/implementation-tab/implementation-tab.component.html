@@ -468,7 +468,6 @@
                     placeholder="Search a postal code or place"
                     [delay]="0"
                     [forceSelection]="true"
-                    [showEmptyMessage]="!googleGeoSearchPending()"
                     [invalid]="googleGeoSearchFailed()"
                     [describedBy]="googleGeoSearchDescribedBy()"
                     styleClass="w-72"
@@ -488,6 +487,9 @@
                           }
                         </span>
                       </div>
+                    </ng-template>
+                    <ng-template #empty>
+                      <span class="text-xs text-gray-500" data-testid="implementation-google-geo-search-empty">{{ googleGeoSearchEmptyMessage() }}</span>
                     </ng-template>
                   </lfx-autocomplete>
                 } @else if (!googleGeoTargetsFull()) {
@@ -521,8 +523,11 @@
                 <span id="google-postal-hint" class="text-xs text-gray-500" data-testid="implementation-google-postal-hint">
                   Search Google's location table by postal code or place name, then pick a result — its id is what the campaign targets.
                 </span>
-                <!-- Always mounted, so "Searching…" is announced as it appears rather than with the next change. -->
-                <span role="status" aria-live="polite" class="text-xs text-gray-500" data-testid="implementation-google-geo-search-status">
+                <!--
+                  Always mounted, so "Searching…" is announced as it appears rather than with the next
+                  change. Screen-reader only: the popup's empty template already shows it on screen.
+                -->
+                <span role="status" aria-live="polite" class="sr-only" data-testid="implementation-google-geo-search-status">
                   @if (googleGeoSearchPending()) {
                     Searching…
                   }

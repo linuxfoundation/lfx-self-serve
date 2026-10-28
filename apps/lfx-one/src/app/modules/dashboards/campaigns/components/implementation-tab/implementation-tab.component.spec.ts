@@ -3,8 +3,10 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { EnvironmentProviders, Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import {
   CREATIVE_ASSET_MAX_BYTES,
@@ -55,12 +57,12 @@ import type {
   GoogleCreativeFieldSpec,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { AutoComplete } from 'primeng/autocomplete';
 import { of, Subject, throwError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
 
@@ -4737,7 +4739,7 @@ describe('ImplementationTabComponent create failure messaging', () => {
  * non-Search channels. One harness for all of them: every one is gated on a Google channel being
  * selected, and a channel is only selectable once its capability has resolved true.
  */
-function configureGoogleTab(): Promise<void> {
+function configureGoogleTab(extraProviders: (Provider | EnvironmentProviders)[] = []): Promise<void> {
   return TestBed.configureTestingModule({
     imports: [ImplementationTabComponent],
     providers: [
@@ -4746,6 +4748,7 @@ function configureGoogleTab(): Promise<void> {
       provideRouter([]),
       ProjectContextService,
       { provide: MessageService, useValue: { add: vi.fn() } },
+      ...extraProviders,
     ],
   })
     .compileComponents()
@@ -6337,6 +6340,22 @@ describe('ImplementationTabComponent google location picker', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
   let search: ReturnType<typeof vi.fn>;
 
+  // jsdom doesn't implement matchMedia; PrimeNG's Overlay (rendered under p-autoComplete once the
+  // panel opens) calls it to decide modal/non-modal mode — the autocomplete wrapper spec's stub.
+  beforeAll(() => {
+    window.matchMedia ??= ((query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList) as typeof window.matchMedia;
+  });
+
   const AUSTIN: GoogleAdsGeoTargetSuggestion = {
     id: '1026201',
     name: 'Austin',
@@ -6355,7 +6374,8 @@ describe('ImplementationTabComponent google location picker', () => {
   };
 
   beforeEach(async () => {
-    await configureGoogleTab();
+    // Noop animations: the DOM-level spec opens PrimeNG's popup, whose overlay is animated.
+    await configureGoogleTab([provideNoopAnimations()]);
     const ctx = TestBed.inject(ProjectContextService);
     ctx.setRouteLensKind('foundation');
     ctx.setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
@@ -6536,31 +6556,58 @@ describe('ImplementationTabComponent google location picker', () => {
   });
 
   /**
-   * While a search is out its rows are cleared, but "No results found" is not yet true: the empty
-   * message is suppressed and "Searching…" shows instead, until the answer lands.
+   * While a search is out its rows are cleared, but "nothing matched" is not yet true: the popup's
+   * empty template says the search is running, until the answer lands.
    */
-  it('shows searching, not an empty-results message, while a later search is pending', async () => {
+  it('says searching, not no matches, while a later search is pending', async () => {
     const later = new Subject<GoogleAdsGeoTargetSearchResult>();
     search.mockReturnValueOnce(of({ suggestions: [AUSTIN], truncated: false })).mockReturnValueOnce(later);
     const c = seedPicker();
-    const picker = () => fixture.debugElement.query(By.directive(AutocompleteComponent)).componentInstance as AutocompleteComponent;
     c['onGoogleGeoSearch']({ query: 'Austin' });
     await afterDebounce();
-    expect(picker().showEmptyMessage()).toBe(true);
 
     c['onGoogleGeoSearch']({ query: 'Austin Texas' });
     await afterDebounce();
 
     expect(c['googleGeoSearchOptions']()).toEqual([]);
-    expect(picker().showEmptyMessage()).toBe(false);
+    expect(c['googleGeoSearchEmptyMessage']()).toBe('Searching…');
     expect(find('implementation-google-geo-search-status')?.textContent).toContain('Searching');
 
     later.next({ suggestions: [ZIP], truncated: false });
     fixture.detectChanges();
 
-    expect(picker().showEmptyMessage()).toBe(true);
+    expect(c['googleGeoSearchEmptyMessage']()).toBe('No matching locations.');
     expect(find('implementation-google-geo-search-status')?.textContent?.trim()).toBe('');
     expect(c['googleGeoSearchOptions']()).toEqual([{ ...ZIP, disabled: false }]);
+  });
+
+  /**
+   * Through the REAL input and PrimeNG's own completion: two keystrokes before the debounce expires.
+   * The cleared rows the second query starts with must not close the popup and spend PrimeNG's
+   * loading cycle, or the answer lands in a popup that never reopens.
+   */
+  it('shows the returned rows after typing twice into the picker before the debounce expires', async () => {
+    seedPicker();
+    const input = fixture.nativeElement.querySelector('#google-postal-add') as HTMLInputElement;
+    const type = async (text: string): Promise<void> => {
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      // PrimeNG's own `delay` is 0 here, still a timeout: let it emit the completion.
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+    };
+    input.focus();
+    input.dispatchEvent(new Event('focus'));
+
+    await type('Aus');
+    await type('Austin');
+    await afterDebounce();
+    fixture.detectChanges();
+
+    const autocomplete = fixture.debugElement.query(By.directive(AutoComplete)).componentInstance as AutoComplete;
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(autocomplete.overlayVisible).toBe(true);
+    expect(document.querySelector(`[data-testid="implementation-google-geo-search-option-${AUSTIN.id}"]`)).not.toBeNull();
   });
 
   it('sends no request for a blank query', async () => {

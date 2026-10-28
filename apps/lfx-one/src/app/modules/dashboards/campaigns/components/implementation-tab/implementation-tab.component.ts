@@ -1174,11 +1174,25 @@ export class ImplementationTabComponent implements OnInit {
   });
   protected readonly googleGeoSearchFailed = computed(() => this.googleGeoSearchState().failed);
   /**
-   * Whether a search is waiting on its debounce or its request. While it is, the picker suppresses
-   * its "No results found" message — the stale rows are already cleared, but nothing has answered —
-   * and the line under it says the search is running instead.
+   * Whether a search is waiting on its debounce or its request: its stale rows are already cleared,
+   * but nothing has answered yet, so "nothing matched" would be false.
    */
   protected readonly googleGeoSearchPending = computed(() => this.googleGeoSearchState().pending);
+  /**
+   * What the picker's popup says while it has no rows — searching, failed, or nothing matched.
+   *
+   * A custom `#empty` template, NOT a toggled `showEmptyMessage`. PrimeNG opens or closes its popup
+   * only while it is `loading`, on the first suggestions update after a completion
+   * (`handleSuggestionsChange`). The cleared rows a new query starts with ARE that update, so with
+   * the empty message switched off they closed the popup and spent the loading cycle, and the real
+   * rows then landed in a popup that never reopened. An empty template keeps the popup open through
+   * that first update and lets it say which empty state it is.
+   */
+  protected readonly googleGeoSearchEmptyMessage = computed(() => {
+    if (this.googleGeoSearchPending()) return 'Searching…';
+    if (this.googleGeoSearchFailed()) return 'The location search did not come back. Try again in a moment.';
+    return 'No matching locations.';
+  });
   protected readonly googleGeoSearchTruncated = computed(() => this.googleGeoSearchState().truncated);
   /** What the picker's input points `aria-describedby` at: the failure line when a search failed, else the hint. */
   protected readonly googleGeoSearchDescribedBy = computed(() => (this.googleGeoSearchFailed() ? 'google-geo-search-failed' : 'google-postal-hint'));
