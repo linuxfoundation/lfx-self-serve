@@ -11,7 +11,10 @@ it('prints grouped pairs with sources, keeps headings with the first pair and ma
   const asset = faqAssetOfRevision(JSON.stringify(envelope.content), envelope);
   if (!asset) throw new Error('Invalid synthetic FAQ');
   const fixture = TestBed.createComponent(MktgFaqPrintComponent);
-  fixture.componentRef.setInput('view', buildFaqPrintView(asset, mktgPrintBrand(null)));
+  const brand = mktgPrintBrand(null);
+  fixture.componentRef.setInput('view', buildFaqPrintView(asset, brand));
+  fixture.componentRef.setInput('number', '08');
+  fixture.componentRef.setInput('projectName', 'Synthetic project');
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   expect(root.querySelector('section')?.classList.contains('break-before-page')).toBe(true);
@@ -21,7 +24,10 @@ it('prints grouped pairs with sources, keeps headings with the first pair and ma
     expect(pair.classList.contains('break-inside-avoid')).toBe(true);
     expect(pair.querySelector('h4')?.classList.contains('break-after-avoid')).toBe(true);
   });
-  expect(pairs[0].querySelector('h2')?.textContent).toContain('04');
+  expect(pairs[0].querySelector('h2')?.textContent).toContain('08');
+  const head = pairs[0].querySelector('[data-testid="mktg-print-running-head"]');
+  expect(head?.textContent).toContain('Synthetic project FAQ');
+  expect(head?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
   expect(root.querySelectorAll('h3')).toHaveLength(2);
   expect(pairs[0].querySelector('h3')?.classList.contains('break-after-avoid')).toBe(true);
   expect(pairs[0].textContent).toContain('Source: Website');

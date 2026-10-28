@@ -11,7 +11,10 @@ it('prints all four labelled lengths intact, with the title kept beside the firs
   const asset = boilerplatesAssetOfRevision(JSON.stringify(envelope.content), envelope);
   if (!asset) throw new Error('Invalid synthetic boilerplates');
   const fixture = TestBed.createComponent(MktgBoilerplatesPrintComponent);
-  fixture.componentRef.setInput('view', buildBoilerplatesPrintView(asset, mktgPrintBrand(null)));
+  const brand = mktgPrintBrand(null);
+  fixture.componentRef.setInput('view', buildBoilerplatesPrintView(asset, brand));
+  fixture.componentRef.setInput('number', '07');
+  fixture.componentRef.setInput('projectName', 'Synthetic project');
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   expect(root.querySelector('section')?.classList.contains('break-before-page')).toBe(true);
@@ -23,5 +26,8 @@ it('prints all four labelled lengths intact, with the title kept beside the firs
     expect(block.textContent).toContain(envelope.content.bp[index].l);
     expect(block.textContent).toContain(envelope.content.bp[index].t);
   });
-  expect(blocks[0].querySelector('h2')?.textContent).toContain('03');
+  expect(blocks[0].querySelector('h2')?.textContent).toContain('07');
+  const head = blocks[0].querySelector('[data-testid="mktg-print-running-head"]');
+  expect(head?.textContent).toContain('Synthetic project Boilerplates');
+  expect(head?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
 });
