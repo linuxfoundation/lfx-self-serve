@@ -4,7 +4,8 @@
 import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
-  CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
@@ -52,7 +53,6 @@ import type {
   CampaignBriefPersistResult,
   CampaignBudgetUpdateParams,
   CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
@@ -77,6 +77,7 @@ import type {
   CampaignServiceCreateResult,
   CampaignSendWorkflowRequest,
   CampaignSendWorkflowResult,
+  CampaignServiceSendWorkflowResult,
   CampaignServiceCreativeAsset,
   CampaignServiceCreativeAssetList,
   CampaignServiceCreativeAssetPlan,
@@ -2868,26 +2869,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
-   *
-   * Which portal is the project's connection's, not necessarily the LF's own — see
-   * searchHubSpotCampaigns above.
-   *
-   * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
-   * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the
-   * check belongs with the operator who can read the candidate names. Search first, warn, then
-   * create.
-   *
-   * The created campaign lands in a PORTAL-WIDE namespace: visible to everyone working in the
-   * HubSpot portal this project's connection points at, whatever project scoped the request.
-   * That is the boundary — not "every foundation", which overstates it, and not "this project",
-   * which understates it. Two projects connected to the same portal share the namespace; two
-   * connected to different portals do not.
-   *
-   * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
-   * position sends no body at all, and upstream would reject it as a request naming no campaign.
-   */
-  /**
    * Build ONE HubSpot workflow that sends an already-staged series.
    *
    * Upstream does every check that matters -- each brief staged, none on the paid surface, no
@@ -2900,23 +2881,10 @@ export class CampaignServiceClient {
    * would go looking in HubSpot for something that may not be there.
    */
   public async createSendWorkflow(req: Request, projectSlug: string, body: CampaignSendWorkflowRequest): Promise<CampaignSendWorkflowResult> {
-    // The shape campaign-service actually publishes. Declared beside its one use rather than in
-    // the shared package, which holds the CLIENT contract -- these names belong to the wire.
-    interface WireSendWorkflowResult {
-      flow_id?: string;
-      name?: string;
-      edit_url?: string;
-      source_flow_id?: string;
-      source_flow_name?: string;
-      is_enabled?: boolean;
-      send_email_steps?: number;
-      dated_steps?: number;
-      enrollment_list_id?: string;
-    }
     if (projectSlug === '') {
       throw new Error('A send workflow requires the project.');
     }
-    const created = await this.microserviceProxy.proxyRequest<WireSendWorkflowResult>(
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceSendWorkflowResult>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/send-workflows`,
@@ -2957,10 +2925,31 @@ export class CampaignServiceClient {
       isEnabled: created.is_enabled ?? false,
       sendEmailSteps: created.send_email_steps ?? 0,
       datedSteps: created.dated_steps ?? 0,
-      ...(created.enrollment_list_id ? { enrollmentListId: created.enrollment_list_id } : {}),
+      enrollmentListIds: Array.isArray(created.enrollment_list_ids) ? created.enrollment_list_ids : [],
+      suppressionListIds: Array.isArray(created.suppression_list_ids) ? created.suppression_list_ids : [],
     };
   }
 
+  /**
+   * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
+   *
+   * Which portal is the project's connection's, not necessarily the LF's own — see
+   * searchHubSpotCampaigns above.
+   *
+   * IT ALWAYS CREATES and performs no duplicate check — upstream documents why: a
+   * search-then-create still races a concurrent caller and cannot prevent a duplicate, so the
+   * check belongs with the operator who can read the candidate names. Search first, warn, then
+   * create.
+   *
+   * The created campaign lands in a PORTAL-WIDE namespace: visible to everyone working in the
+   * HubSpot portal this project's connection points at, whatever project scoped the request.
+   * That is the boundary — not "every foundation", which overstates it, and not "this project",
+   * which understates it. Two projects connected to the same portal share the namespace; two
+   * connected to different portals do not.
+   *
+   * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
+   * position sends no body at all, and upstream would reject it as a request naming no campaign.
+   */
   public async createHubSpotCampaign(req: Request, projectSlug: string, name: string): Promise<CampaignServiceHubSpotCampaign> {
     if (projectSlug === '' || name === '') {
       throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');
@@ -4349,14 +4338,15 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // `campaignGoal` above is: this value decides which surface may open the row, so an
     // unrecognised string must read as "no delivery type recorded" (paid, per the field's
     // contract) rather than as a surface matching nothing. Rows predating the field land here too.
-    deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
+    deliveryType: CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === found.delivery_type)?.id,
     // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
     // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
     // returning false for it — and this is the presence-vs-value boundary this feature already got
     // wrong once. An absent stage and the empty string are different things upstream (`''` is the
     // PAID brief's real stage), so the check that distinguishes them should be explicit.
-    emailStage:
-      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
+    // Either send surface's vocabulary: a survey brief's stage names its asset, and dropping it
+    // here restored the row with no stage -- the identity it is stored under.
+    emailStage: typeof found.stage === 'string' ? CAMPAIGN_SEND_STAGES.find((stage) => stage === found.stage) : undefined,
   };
 }
 

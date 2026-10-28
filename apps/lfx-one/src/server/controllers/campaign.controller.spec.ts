@@ -57,6 +57,7 @@ const {
   svcGetAudience,
   svcSearchHsCampaigns,
   svcCreateHsCampaign,
+  svcCreateSendWorkflow,
   legacyLookupUtm,
   legacyCreateUtm,
   legacyGetKeywords,
@@ -92,6 +93,7 @@ const {
   svcGetAudience: vi.fn(),
   svcSearchHsCampaigns: vi.fn(),
   svcCreateHsCampaign: vi.fn(),
+  svcCreateSendWorkflow: vi.fn(),
   legacyLookupUtm: vi.fn(),
   legacyCreateUtm: vi.fn(),
   legacyGetKeywords: vi.fn(),
@@ -133,6 +135,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getGoogleAdsAudience = svcGetAudience;
       public searchHubSpotCampaigns = svcSearchHsCampaigns;
       public createHubSpotCampaign = svcCreateHsCampaign;
+      public createSendWorkflow = svcCreateSendWorkflow;
     },
   };
 });
@@ -6189,7 +6192,7 @@ describe('CampaignController.refineBrief email refusal', () => {
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(error.toResponse()['errors']).toEqual([
-      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email', code: 'FIELD_VALIDATION_ERROR' },
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey', code: 'FIELD_VALIDATION_ERROR' },
     ]);
   });
 
@@ -9046,5 +9049,132 @@ describe('CampaignController.createCampaign Microsoft uploaded image', () => {
         code: 'FIELD_VALIDATION_ERROR',
       },
     ]);
+  });
+});
+
+/**
+ * The Survey & Report surface's BFF edges: its brief lookup, its refine refusal, its URL check
+ * (shape only, since nothing is fetched) and the send-workflow proxy.
+ */
+describe('CampaignController survey surface', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function buildLoadReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/brief' } as unknown as Request;
+  }
+
+  function fieldOf(error: unknown): string {
+    return ((error as ServiceValidationError).toResponse()['errors'] as { field: string }[])[0].field;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('looks up a survey brief under the survey surface and its own stage', async () => {
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+
+    await controller.loadBrief(buildLoadReq({ event_slug: 'cloud-survey-2026', project: 'tlf', delivery_type: 'survey', stage: 'Survey Reminder' }), res, next);
+
+    // Not collapsed to paid, and not refused for naming a stage outside the EVENT vocabulary.
+    expect(next).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalledWith(expect.anything(), 'cloud-survey-2026', 'tlf', 'survey', 'Survey Reminder');
+  });
+
+  it.each([
+    ['an event stage on the survey surface', 'survey', 'Final Countdown'],
+    ['a survey stage on the email surface', 'email', 'Survey Promo'],
+    ['no stage on the survey surface', 'survey', ''],
+  ])('refuses %s, as campaign-service does', async (_label, deliveryType, stage) => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'cloud-survey-2026', project: 'tlf', delivery_type: deliveryType, stage }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe('stage');
+  });
+
+  it('refuses to refine a survey brief, which has no ad copy to refine', async () => {
+    await controller.refineBrief(buildReq({ deliveryType: 'survey', feedback: 'shorter', currentCopy: null, currentKeywords: [] }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'deliveryType', message: 'refining email copy is not supported yet', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it('refuses a malformed survey link before generating anything', async () => {
+    const req = {
+      body: { deliveryType: 'survey', url: 'not a link', sourceText: 'Survey' },
+      query: {},
+      path: '/api/campaigns/brief/generate',
+    } as unknown as Request;
+
+    await controller.generateBrief(req, res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe('url');
+  });
+
+  describe('createSendWorkflow', () => {
+    function buildWorkflowReq(body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+      return { body, query, path: '/api/campaigns/send-workflow' } as unknown as Request;
+    }
+
+    it('refuses a request with no project', async () => {
+      await controller.createSendWorkflow(buildWorkflowReq({ name: 'w', briefIds: ['a', 'b'] }, {}), res, next);
+
+      expect(svcCreateSendWorkflow).not.toHaveBeenCalled();
+      expect(fieldOf(vi.mocked(next).mock.calls[0][0])).toBe('project');
+    });
+
+    it.each([
+      ['no name', { name: '  ', briefIds: ['a', 'b'] }],
+      ['no briefs', { name: 'Survey - Workflow', briefIds: [] }],
+      ['briefs that are not strings', { name: 'Survey - Workflow', briefIds: [1, null, ' '] }],
+    ])('refuses a body with %s', async (_label, body) => {
+      await controller.createSendWorkflow(buildWorkflowReq(body), res, next);
+
+      expect(svcCreateSendWorkflow).not.toHaveBeenCalled();
+      expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    });
+
+    it('forwards the cleaned request and answers with the created workflow', async () => {
+      const created = { flowId: '9', name: 'Survey - Workflow', editUrl: 'https://app.hubspot.com/workflows/1/platform/flow/9/edit' };
+      svcCreateSendWorkflow.mockResolvedValue(created);
+
+      await controller.createSendWorkflow(
+        buildWorkflowReq({ name: ' Survey - Workflow ', briefIds: ['a', '', 'b'], sendDates: ['2026-11-02', 7, '2026-11-09'] }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(svcCreateSendWorkflow).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+        sourceWorkflowUrl: '',
+        name: 'Survey - Workflow',
+        briefIds: ['a', 'b'],
+        sendDates: ['2026-11-02', '2026-11-09'],
+      });
+      expect(res.json).toHaveBeenCalledWith(created);
+    });
+
+    it('sends an upstream refusal to the error middleware', async () => {
+      const failure = new MicroserviceError('brief b has no staged draft', 400, 'BAD_REQUEST', { operation: 'x', service: 'y', path: 'z' });
+      svcCreateSendWorkflow.mockRejectedValue(failure);
+
+      await controller.createSendWorkflow(buildWorkflowReq({ name: 'w', briefIds: ['a', 'b'] }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(failure);
+    });
   });
 });

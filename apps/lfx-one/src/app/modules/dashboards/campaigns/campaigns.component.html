@@ -1299,9 +1299,12 @@
                           }
                           <p class="text-sm font-medium text-gray-900" data-testid="campaigns-survey-sequence-subject">{{ send.copy.subject }}</p>
                           <p class="mb-2 text-xs text-gray-500" data-testid="campaigns-survey-sequence-preheader">{{ send.copy.preheader }}</p>
-                          <!-- Structure only: Angular strips inline styles here, so this reads as
-                               the copy it is, never as a faithful preview of the sent email. -->
-                          <div class="max-h-48 overflow-y-auto border-t border-gray-100 pt-2 text-sm text-gray-700" [innerHTML]="send.copy.body"></div>
+                          <!-- The body as it will be STAGED (resource-loading HTML removed, a
+                               refused button's label folded in). Structure only: Angular strips
+                               inline styles here, so this is never a faithful preview. -->
+                          <div
+                            class="max-h-48 overflow-y-auto border-t border-gray-100 pt-2 text-sm text-gray-700"
+                            [innerHTML]="surveySequenceBodies().get(send.briefId) ?? ''"></div>
                         </div>
                       }
                     </div>
@@ -1381,12 +1384,15 @@
                           label="Build workflow (disabled)"
                           icon="fa-light fa-diagram-project"
                           severity="primary"
+                          [disabled]="!canBuildSequenceWorkflow()"
                           [loading]="sendWorkflowState() === 'building'"
                           (onClick)="onBuildSequenceWorkflow()"
                           data-testid="campaigns-send-workflow-build-btn" />
-                        <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note"
-                          >Stage every send first &mdash; the workflow sends the drafts.</span
-                        >
+                        @if (!canBuildSequenceWorkflow() && sendWorkflowState() !== 'building') {
+                          <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note"
+                            >Stage every send first &mdash; the workflow sends the drafts.</span
+                          >
+                        }
                       </div>
                       @if (sendWorkflowState() === 'error') {
                         <p class="text-sm text-red-700" role="alert" data-testid="campaigns-send-workflow-error">{{ sendWorkflowError() }}</p>

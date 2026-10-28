@@ -21,6 +21,7 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignSurveyEmailCountOption,
   CampaignSurveyTypeOption,
   CampaignGoalOption,
   CampaignOptimizeControlLever,
@@ -3466,6 +3467,22 @@ export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
 
 /** The survey type a fresh selection starts on. */
 export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
+
+/**
+ * Every stage a SEND surface can carry, email and survey together. For the places that only
+ * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
+ */
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+
+/**
+ * How many emails a survey can be promoted by. Two sends are an opening and a CLOSING, not a
+ * reminder: with only two, the second is the last one the reader gets, so it carries the deadline.
+ */
+export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
+  { count: 1, label: 'One email', description: 'A single send, scheduled on its own' },
+  { count: 2, label: 'Two emails', description: 'An opening and a closing push' },
+  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing' },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Audience Builder

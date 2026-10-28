@@ -578,7 +578,43 @@ export interface CampaignSendWorkflowResult {
   sendEmailSteps: number;
   /** How many wait-until-date steps had their date replaced. */
   datedSteps: number;
+  /**
+   * The HubSpot lists the new workflow enrolls: the series' shared audience (its master list, or
+   * every list it was attached from). The source workflow's own enrollment is always replaced.
+   */
+  enrollmentListIds: string[];
+  /** The new workflow's whole suppression set: the source workflow's own lists plus the audience's. */
+  suppressionListIds: string[];
 }
+
+/**
+ * campaign-service's `send-workflow-result`, as it arrives on the wire (snake_case). The BFF maps
+ * it to `CampaignSendWorkflowResult`; nothing outside the BFF reads this shape.
+ */
+export interface CampaignServiceSendWorkflowResult {
+  flow_id?: string;
+  name?: string;
+  edit_url?: string;
+  source_flow_id?: string;
+  source_flow_name?: string;
+  is_enabled?: boolean;
+  send_email_steps?: number;
+  dated_steps?: number;
+  enrollment_list_ids?: string[];
+  suppression_list_ids?: string[];
+}
+
+/** One choice in the survey surface's "How many emails?" picker. */
+export interface CampaignSurveyEmailCountOption {
+  count: number;
+  label: string;
+  description: string;
+}
+
+/** Where a survey series' generate, stage or workflow build stands. */
+export type CampaignSurveySequenceGenerateState = 'idle' | 'generating' | 'done' | 'error';
+export type CampaignSurveySequenceStagingState = 'idle' | 'staging' | 'done' | 'error';
+export type CampaignSurveySendWorkflowState = 'idle' | 'building' | 'done' | 'error';
 
 export interface CampaignEventDetails {
   /**

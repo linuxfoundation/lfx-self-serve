@@ -1976,7 +1976,8 @@ export class CampaignProxyService {
     // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
     // for it to refine on an email brief either — the copy it would rewrite was never generated —
     // so the request is refused rather than answered with a broken call.
-    if (body.deliveryType === 'email') {
+    // Every send surface, as on the generate path: survey generates no ad copy either.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }

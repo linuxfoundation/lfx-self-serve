@@ -75,6 +75,8 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
@@ -579,7 +581,7 @@ export class CampaignController {
       // centralized log line, so the one refusal a caller is most likely to hit would have been
       // the one the logs never recorded.
       _next(
-        ServiceValidationError.forField('deliveryType', 'refining send copy is not supported yet', {
+        ServiceValidationError.forField('deliveryType', 'refining email copy is not supported yet', {
           operation: 'campaign_refine_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2391,9 +2393,9 @@ export class CampaignController {
     // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
     // not a malformed one.
     const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
-    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+    if (stageParam !== '' && !(CAMPAIGN_SEND_STAGES as readonly string[]).includes(stageParam)) {
       next(
-        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_SEND_STAGES.join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2403,20 +2405,24 @@ export class CampaignController {
     }
     const stage = stageParam;
 
-    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // Narrowed by lookup, so the survey surface keeps its own identity rather than collapsing to
+    // paid -- which would answer a survey caller with the event's paid brief.
+    const deliveryType: CampaignDeliveryType = CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === deliveryTypeParam)?.id ?? 'paid-marketing';
+    // Each send surface has its OWN stage vocabulary, and upstream refuses a cross-surface pair.
+    const surfaceStages: readonly string[] = deliveryType === 'survey' ? CAMPAIGN_SURVEY_STAGES : CAMPAIGN_EMAIL_STAGES;
     // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
     // is not: paid has no series, so its stage must be empty, and an email send is always some
     // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
     // service guard above it), so without this check the BFF forwards a request that cannot
     // succeed and relays an upstream error for something it could have named here.
-    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : surfaceStages.includes(stage);
     if (!pairIsValid) {
       next(
         ServiceValidationError.forField(
           'stage',
           deliveryType === 'paid-marketing'
             ? 'a paid-marketing brief has no series, so stage must be empty'
-            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+            : `a ${deliveryType} brief names one send, so stage must be one of: ${surfaceStages.join(', ')}`,
           { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
         )
       );

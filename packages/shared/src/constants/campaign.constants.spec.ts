@@ -19,7 +19,11 @@ import {
   MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_SURVEY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
@@ -534,6 +538,27 @@ describe('CAMPAIGN_SURVEY_TYPES', () => {
     const emailStages = new Set<string>(CAMPAIGN_EMAIL_TYPES.map((t) => t.stage));
     for (const t of CAMPAIGN_SURVEY_TYPES) {
       expect(emailStages.has(t.stage), `${t.stage} appears on both surfaces`).toBe(false);
+    }
+  });
+});
+
+describe('CAMPAIGN_SEND_STAGES', () => {
+  it('is exactly the email and survey vocabularies together, in that order', () => {
+    // The BFF validates a brief lookup's stage against this, so a stage missing here is a 400
+    // for a brief campaign-service would have opened.
+    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES]);
+  });
+});
+
+describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
+  it('offers one to three emails, each once', () => {
+    // The page maps each count onto stages (1: promo; 2: promo + closing; 3: + reminder), and
+    // campaign-service's workflow needs at least two briefs -- so a count outside 1..3 has no
+    // stage mapping and a series of one would never reach the workflow build.
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.map((o) => o.count)).toEqual([1, 2, 3]);
+    for (const option of CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS) {
+      expect(option.label.trim(), String(option.count)).not.toBe('');
+      expect(option.description.trim(), String(option.count)).not.toBe('');
     }
   });
 });

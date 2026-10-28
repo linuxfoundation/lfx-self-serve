@@ -629,6 +629,11 @@ export class PlanningTabComponent implements OnInit {
 
   // === Computed Signals ===
   private readonly formValid = toSignal(this.briefForm.statusChanges, { initialValue: this.briefForm.status });
+  /** The pasted source document, as typed. Only the survey surface shows or sends it. */
+  protected readonly sourceTextValue = toSignal(this.briefForm.controls.sourceText.valueChanges, {
+    initialValue: this.briefForm.controls.sourceText.value,
+  });
+
   /**
    * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.
    *
@@ -637,11 +642,6 @@ export class PlanningTabComponent implements OnInit {
    * under a tab labelled Email and had to pick Google Ads before the channel would let them
    * proceed, which is not a requirement so much as a bug wearing one's clothes.
    */
-  /** The pasted source document, trimmed. Empty on every surface but survey. */
-  protected readonly sourceTextValue = toSignal(this.briefForm.controls.sourceText.valueChanges, {
-    initialValue: this.briefForm.controls.sourceText.value,
-  });
-
   protected readonly canGenerate = computed(() => {
     if (this.formValid() !== 'VALID') {
       return false;
@@ -1524,7 +1524,9 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     this.emailEditForm.setValue({
-      sourceText: d.sourceText,
+      // Defaulted: a scraped event brief carries no source document, and `setValue` throws on a
+      // missing control value, which broke the email editor for every event brief.
+      sourceText: d.sourceText ?? '',
       name: d.name,
       dates: d.dates,
       city: d.city,

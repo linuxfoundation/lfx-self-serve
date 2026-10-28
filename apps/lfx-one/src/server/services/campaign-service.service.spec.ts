@@ -6415,3 +6415,97 @@ describe('CampaignServiceClient creative-asset library reads', () => {
     });
   });
 });
+
+/**
+ * The Survey & Report surface: a stored survey brief must come back AS a survey brief, under its
+ * own stage, or the planner's restore and the series' own lookups address a row that never matches.
+ */
+describe('CampaignServiceClient survey briefs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('opens a stored survey brief for a survey caller asking for its stage', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Closing' }), { etag: '"4"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'survey', 'Survey Closing');
+
+    expect(result.status).toBe('loaded');
+    expect(result.brief?.deliveryType).toBe('survey');
+    expect(result.brief?.emailStage).toBe('Survey Closing');
+  });
+
+  it('does not hand a survey brief to a paid caller', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Promo' }), { etag: '"4"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({ status: 'none' });
+  });
+});
+
+describe('CampaignServiceClient.createSendWorkflow', () => {
+  const wire = {
+    flow_id: '1841',
+    name: 'Cloud Survey - Workflow',
+    edit_url: 'https://app.hubspot.com/workflows/8112310/platform/flow/1841/edit',
+    source_flow_id: '1700',
+    source_flow_name: 'Survey sequence',
+    is_enabled: false,
+    send_email_steps: 3,
+    dated_steps: 3,
+    enrollment_list_ids: ['31027', '31028'],
+    suppression_list_ids: ['201', '202'],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts the request wrapped in `input`, omitting an unnamed source workflow and absent dates', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', { sourceWorkflowUrl: '  ', name: 'Cloud Survey - Workflow', briefIds: ['a', 'b'] });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/send-workflows', 'POST', undefined, {
+      input: { name: 'Cloud Survey - Workflow', brief_ids: ['a', 'b'] },
+    });
+  });
+
+  it('sends the dates and a named source workflow when given', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', {
+      sourceWorkflowUrl: ' 1700 ',
+      name: 'w',
+      briefIds: ['a', 'b'],
+      sendDates: ['2026-11-02', '2026-11-09'],
+    });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({
+      input: { source_workflow_url: '1700', name: 'w', brief_ids: ['a', 'b'], send_dates: ['2026-11-02', '2026-11-09'] },
+    });
+  });
+
+  it('maps the snake_case result, list ids included', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).resolves.toEqual({
+      flowId: '1841',
+      name: 'Cloud Survey - Workflow',
+      editUrl: wire.edit_url,
+      sourceFlowId: '1700',
+      sourceFlowName: 'Survey sequence',
+      isEnabled: false,
+      sendEmailSteps: 3,
+      datedSteps: 3,
+      enrollmentListIds: ['31027', '31028'],
+      suppressionListIds: ['201', '202'],
+    });
+  });
+
+  it('treats a create with no workflow link as a failure, not a success', async () => {
+    proxyRequest.mockResolvedValueOnce({ ...wire, edit_url: '' });
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).rejects.toThrow(/no usable workflow link/);
+  });
+});
