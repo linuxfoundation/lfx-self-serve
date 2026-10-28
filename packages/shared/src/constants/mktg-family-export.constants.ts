@@ -17,4 +17,4 @@ export const MKTG_FAMILY_PRINT_ONLY_CLASS = 'lfx-family-print-only';
 export const MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE = 'Available once the framework is approved: PDF and Slides use the approved current.';
 
 export const MKTG_FAMILY_SLIDES_NOTE = 'Google Slides: framework, brand kit, boilerplates and FAQ (approved current).';
-export const MKTG_FAMILY_PDF_NOTE = 'PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.';
+export const MKTG_FAMILY_PDF_NOTE = 'PDF: framework and brand kit (approved current); boilerplates and FAQ have no print layout yet.';

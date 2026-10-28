@@ -61,7 +61,7 @@ describe('Family export slot', () => {
     expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, false);
     expect(root.querySelector('h2')?.textContent).toBe('Export the family');
     expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
-    expect(root.textContent).toContain('PDF: framework and brand kit; boilerplates and FAQ have no print layout yet.');
+    expect(root.textContent).toContain('PDF: framework and brand kit (approved current); boilerplates and FAQ have no print layout yet.');
     for (const action of ['pdf', 'slides']) expect(button(action)?.classList.contains('p-button-outlined')).toBe(true);
     button('slides')?.click();
     await fixture.whenStable();
@@ -248,7 +248,7 @@ describe('Family export slot', () => {
     const { fixture, root } = await setup();
     fixture.componentRef.setInput('familyId', 'social-community');
     await fixture.whenStable();
-    expect(root.querySelector('h2')?.textContent).toBe('Export the whole family');
+    expect(root.querySelector('h2')?.textContent).toBe('Export the family');
     expect(root.querySelector('[data-testid="family-export-unsupported"]')?.textContent).toBe('This family has no assets supported by the exporter yet.');
     expect(root.querySelectorAll('section p')).toHaveLength(1);
     expect(root.querySelector('lfx-button')).toBeNull();
