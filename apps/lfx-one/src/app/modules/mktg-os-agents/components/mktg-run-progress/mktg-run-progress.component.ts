@@ -119,7 +119,6 @@ export class MktgRunProgressComponent {
       agentKey: this.agentKey(),
       documentId: this.documentId(),
       runId: this.runPage() ? this.runId() : '',
-      selectedRunId: this.runPage() ? '' : this.runId(),
       subject: this.user.user()?.sub ?? '',
       polling: this.polling(),
       loadRevision: this.loadRevision(),
@@ -169,9 +168,11 @@ export class MktgRunProgressComponent {
             // Authentication may resolve after this reader started. Stamp each read,
             // not the long-lived polling scope, before exposing creator-only activity.
             const readerSubject = this.user.user()?.sub ?? '';
+            // A document handoff updates its selector without replacing the accepted observer.
+            const selectedRunId = this.runPage() ? '' : this.runId();
             const metadata$ = defer(() =>
-              request.selectedRunId
-                ? this.store.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, request.selectedRunId)
+              selectedRunId
+                ? this.store.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, selectedRunId)
                 : this.store.getDocument(request.project, request.agentKey, request.documentId, poll)
             ).pipe(
               switchMap((detail) => {
@@ -179,9 +180,12 @@ export class MktgRunProgressComponent {
                 const selected = selector ? detail.runs?.find((run) => run.runId === selector) : detail.runs?.[0];
                 if (poll || this.localProgress() || selected?.state !== 'failed' || refreshedFailure) return of(detail);
                 refreshedFailure = true;
-                return this.store
-                  .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId)
-                  .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error))));
+                const refreshed$ = selectedRunId
+                  ? this.store.getDocument(request.project, request.agentKey, request.documentId, false, selected.runId, false, selectedRunId)
+                  : this.store.getDocument(request.project, request.agentKey, request.documentId, false, selected.runId);
+                return refreshed$.pipe(
+                  catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error)))
+                );
               }),
               catchError((error: HttpErrorResponse) => {
                 if (error.status === 404 && this.expectedPending() && type)
