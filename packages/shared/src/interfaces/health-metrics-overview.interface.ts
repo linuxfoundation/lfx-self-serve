@@ -477,10 +477,14 @@ export interface HealthMetricsOverviewTrendKpiView {
   range: { high: string; low: string } | null;
 }
 
-/** An axis tick: its label and where it sits, as a percentage of the plot and, for gridlines, a y on the 600×220 canvas. */
+/** An axis tick: its label and where it sits, as a percentage of the plot. */
 export interface HealthMetricsOverviewTrendTickView {
   label: string;
   pct: string;
+}
+
+/** A y-axis tick, which also draws a gridline at its y on the 600×220 canvas. */
+export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOverviewTrendTickView {
   y: string;
 }
 
@@ -492,7 +496,7 @@ export interface HealthMetricsOverviewTrendView {
   /** "Days left", or "Event held" for a past event. */
   daysTitle: string;
   daysLabel: string;
-  yTicks: HealthMetricsOverviewTrendTickView[];
+  yTicks: HealthMetricsOverviewTrendYTickView[];
   xTicks: HealthMetricsOverviewTrendTickView[];
   currentPath: string;
   lastYearPath: string;

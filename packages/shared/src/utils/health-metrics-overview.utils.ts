@@ -530,7 +530,6 @@ function buildTrendChart(
     xTicks: Array.from({ length: window / 30 + 1 }, (_, index) => window - index * 30).map((days) => ({
       label: String(days),
       pct: (((window - days) / window) * 100).toFixed(2),
-      y: '220',
     })),
   };
 }
