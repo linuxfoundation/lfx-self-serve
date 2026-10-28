@@ -8,7 +8,13 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
 import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent, resolveMktgFamilyActions } from '@lfx-one/shared/utils';
+import {
+  isMktgKitFamilyLive,
+  mktgFamilyExportAgentKeys,
+  readMktgRebuildNavigationIntent,
+  resolveMktgFamilyActions,
+  resolveMktgFamilyRun,
+} from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -61,7 +67,16 @@ export class MktgFamilyComponent {
     if (header?.link) return { ...this.runQueryParams().plain, ...header.link.queryParams };
     return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
-  protected readonly rows = computed(() => Object.values(this.actions()?.rows ?? {}));
+  protected readonly rows = computed(() =>
+    Object.values(this.actions()?.rows ?? {}).map((entry) => ({
+      ...entry,
+      run: resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../']),
+    }))
+  );
+  protected readonly headerRun = computed(() => {
+    if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
+    return this.rows().find((entry) => entry.run)?.run ?? null;
+  });
   /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
   protected readonly runQueryParams = computed(
     (): Record<'fresh' | 'plain', Record<string, string>> => ({

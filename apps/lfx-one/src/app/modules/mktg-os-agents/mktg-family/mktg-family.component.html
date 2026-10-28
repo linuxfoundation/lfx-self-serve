@@ -32,6 +32,19 @@
           @if (header.caption) {
             <p class="text-xs text-gray-500" data-testid="mktg-family-next-caption">{{ header.caption }}</p>
           }
+          @if (headerRun(); as run) {
+            @if (run.link; as link) {
+              <p class="flex flex-wrap items-baseline gap-2 text-xs text-gray-500" data-testid="mktg-family-run-status">
+                <span>{{ run.caption }}</span>
+                <a
+                  class="text-blue-700 hover:underline"
+                  [routerLink]="link.commands"
+                  [queryParams]="{ project: kit.projectQueryParams().project, run: link.queryParams['run'] }"
+                  >{{ run.label }}</a
+                >
+              </p>
+            }
+          }
         </div>
       }
     </lfx-page-header>
@@ -123,7 +136,20 @@
                       }
                     </div>
                     <div class="whitespace-nowrap p-3" [attr.data-testid]="'mktg-family-state-' + row.asset.id">
-                      <span class="block text-xs text-gray-500 @[600px]:sr-only">State</span><lfx-mktg-kit-status [row]="row" />
+                      <span class="block text-xs text-gray-500 @[600px]:sr-only">State</span>
+                      @if (entry.run?.link; as link) {
+                        <span class="relative z-10 flex flex-col items-start gap-1 text-xs text-gray-500">
+                          <span>{{ entry.run?.caption }}</span>
+                          <a
+                            class="text-blue-700 hover:underline"
+                            [routerLink]="link.commands"
+                            [queryParams]="{ project: kit.projectQueryParams().project, run: link.queryParams['run'] }"
+                            >{{ entry.run?.label }}</a
+                          >
+                        </span>
+                      } @else {
+                        <lfx-mktg-kit-status [row]="row" />
+                      }
                     </div>
                     <div class="whitespace-nowrap p-3" [attr.data-testid]="'mktg-family-current-' + row.asset.id">
                       <span class="block text-xs text-gray-500 @[600px]:sr-only">Current</span>

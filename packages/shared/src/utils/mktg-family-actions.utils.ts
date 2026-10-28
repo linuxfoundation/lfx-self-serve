@@ -20,6 +20,32 @@ import {
 import { MKTG_RUN_NEW_MODE } from '../constants/mktg-last-intake.constants';
 import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction, MktgFamilyNextStep } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitAssetRow, MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
+import type { MktgDocumentRunProgress } from '../interfaces/mktg-document-run.interface';
+
+/** Optional run overlay only; stored-asset actions and Kit Next step keep their existing policy. Links are relative to the Kit root. */
+export function resolveMktgFamilyRun(
+  agentKey: string | null | undefined,
+  runs: readonly MktgDocumentRunProgress[] = [],
+  prefix: string[] = []
+): Pick<MktgFamilyHeaderAction, 'label' | 'caption' | 'link'> | null {
+  const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === agentKey);
+  if (!type?.catalogAgentId || !isMktgFamilyAgentAvailable(type.catalogAgentId)) return null;
+  const run = runs
+    .filter((candidate) => candidate.agentKey === agentKey && candidate.state !== 'failed')
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  if (!run) return null;
+  let caption = 'Writing…';
+  if (run.state === 'questions') caption = run.agentKey === 'member-360' ? 'Paused' : 'Waiting for your answers';
+  return {
+    label: run.state === 'questions' ? 'Answer the questions' : 'Open',
+    caption,
+    // B2 seam: switch the writing branch here to [type.catalogAgentId] once the run-page ?run= receiver lands.
+    link:
+      run.state === 'questions'
+        ? { commands: [...prefix, type.catalogAgentId], queryParams: {} }
+        : { commands: [...prefix, 'documents', run.agentKey, run.documentId], queryParams: { run: run.runId } },
+  };
+}
 
 /** Catalog availability is shared by canonical row states and action selection. */
 export function isMktgFamilyAgentAvailable(agentId: string): boolean {
