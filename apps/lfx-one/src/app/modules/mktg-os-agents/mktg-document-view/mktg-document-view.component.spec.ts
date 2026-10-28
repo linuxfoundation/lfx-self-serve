@@ -2184,6 +2184,19 @@ describe('MktgDocumentViewComponent', () => {
     return { ...revisionResponse(selected), type, markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }) };
   }
 
+  it('enables FAQ comments with stored label content in the shared document scope', async () => {
+    const response = faqResponse();
+    store.getRevision.mockReturnValue(of(response));
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    const select = vi.spyOn(comments, 'select');
+    const label = vi.spyOn(comments, 'setLabelContent');
+    await render(`/documents/faq/living?revision=${response.revision.id}`);
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ agentKey: 'faq', revisionId: response.revision.id }));
+    expect(label).toHaveBeenCalledWith(JSON.parse(response.markdown));
+    expect(harness.routeNativeElement?.querySelectorAll('lfx-mktg-field-comments')).toHaveLength(1);
+    expect(query('mktg-comments-panel')).not.toBeNull();
+  });
+
   it('approves directly without confirmation and updates saving/state metadata', async () => {
     const response = faqResponse();
     const pending = new Subject<MktgRevisionResponse>();
