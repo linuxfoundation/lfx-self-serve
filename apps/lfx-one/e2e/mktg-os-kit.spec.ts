@@ -25,11 +25,8 @@ test.describe('Marketing kit home content', () => {
     await setupKit(page, { listing });
     await openKit(page);
     const row = page.getByTestId('mktg-kit-asset-messaging-framework');
-    await expect(row).toContainText('Writing…');
-    await expect(row.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute(
-      'href',
-      /documents\/foundation-message\/living\?project=.*&run=synthetic-run$/
-    );
+    await expect(row.getByTestId('mktg-kit-run-status')).toContainText('Writing…');
+    await expect(row.getByTestId('mktg-kit-run-status-link')).toHaveAttribute('href', /documents\/foundation-message\/living\?project=.*&run=synthetic-run$/);
     await expect(page.getByTestId('mktg-kit-next-step-action')).toContainText('Create messaging framework');
     await page.screenshot({ path: test.info().outputPath('kit-writing.png'), fullPage: true });
   });

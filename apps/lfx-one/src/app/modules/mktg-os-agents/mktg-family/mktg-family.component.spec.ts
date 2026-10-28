@@ -128,13 +128,16 @@ describe('Marketing family page', () => {
     const root = harness.routeNativeElement;
     const row = root?.querySelector(`[data-testid="mktg-family-state-${agentKey === 'foundation-message' ? 'messaging-framework' : agentKey}"]`);
     expect(row?.textContent).toContain(status);
-    expect(root?.querySelector('[data-testid="mktg-family-run-status"]')?.textContent).toContain(status);
+    expect(row?.querySelector('[data-testid="mktg-family-run-status-row"]')?.textContent).toContain(status);
+    expect(root?.querySelector('[data-testid="mktg-family-run-status"]')?.textContent).toContain(
+      (agentKey === 'member-360' ? 'Member 360' : 'Messaging framework') + ' · ' + status
+    );
     const primary = root?.querySelector('[data-testid="mktg-family-run"] a');
     const primaryHref = primary?.getAttribute('href');
     expect(primary?.textContent).toContain(agentKey === 'member-360' ? 'Create Member 360' : 'Review and approve the framework');
     const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
     const target = state === 'questions' ? runTarget : 'documents/foundation-message/living';
-    for (const link of [row?.querySelector('a'), root?.querySelector('[data-testid="mktg-family-run-status"] a')]) {
+    for (const link of [row?.querySelector('[data-testid="mktg-family-run-status-link"]'), root?.querySelector('[data-testid="mktg-family-run-status"] a')]) {
       expect(link?.textContent?.trim()).toBe(label);
       expect(link?.getAttribute('href')).toBe('/project/mktg-os-agents/' + target + '?project=synthetic' + (state === 'questions' ? '' : '&run=synthetic-run'));
     }
@@ -143,6 +146,28 @@ describe('Marketing family page', () => {
     expect(row?.textContent).not.toContain(status);
     expect(root?.querySelector('[data-testid="mktg-family-run-status"]')).toBeNull();
     expect(primary?.getAttribute('href')).toBe(primaryHref);
+  });
+
+  it('names the newest active asset across the family, ignoring failed and other-family runs', async () => {
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [
+        { agentKey: 'foundation-message', state: 'writing', project: 'synthetic', documentId: 'living', runId: 'older', startedAt: '2026-10-28T12:00:00Z' },
+        { agentKey: 'faq', state: 'questions', project: 'synthetic', documentId: 'living', runId: 'newer', startedAt: '2026-10-28T13:00:00Z' },
+        { agentKey: 'brand-kit', state: 'failed', project: 'synthetic', documentId: 'living', runId: 'failed', startedAt: '2026-10-28T14:00:00Z' },
+        { agentKey: 'linkedin-post', state: 'writing', project: 'synthetic', documentId: 'one-off', runId: 'unrelated', startedAt: '2026-10-28T15:00:00Z' },
+      ],
+    });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
+    const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-status"]');
+    expect(status?.textContent).toContain('FAQ · Waiting for your answers');
+    expect(status?.querySelector('a')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=synthetic');
+    documents.update((value) => ({ ...value, runs: value.runs?.map((run) => (run.agentKey === 'faq' ? { ...run, state: 'writing' } : run)) }));
+    await harness.fixture.whenStable();
+    expect(status?.textContent).toContain('FAQ · Writing…');
+    expect(status?.querySelector('a')?.getAttribute('href')).toBe('/project/mktg-os-agents/documents/faq/living?project=synthetic&run=newer');
   });
 
   it.each(['matching state', 'wrong project', 'wrong revision', 'URL only'])('consumes %s once without accepting URL write intent', async (scenario) => {

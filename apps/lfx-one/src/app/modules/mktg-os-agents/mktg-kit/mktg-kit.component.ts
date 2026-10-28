@@ -71,10 +71,11 @@ export class MktgKitComponent {
           canWrite: this.context.canWrite(),
           approvedFramework: !!this.kit.documents()?.approvedFramework,
         });
-        const rows = Object.values(actions.rows).map(({ row }) => ({
-          ...row,
-          run: resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs),
-        }));
+        const rows = Object.values(actions.rows).map(({ row }) => {
+          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs);
+          const link = run?.link;
+          return { ...row, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
+        });
         return {
           ...family,
           needsRebuild: rows.some((row) => row.state === 'needs-rebuild'),

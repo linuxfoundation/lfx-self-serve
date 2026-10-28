@@ -27,8 +27,8 @@ test.describe('Marketing family content', () => {
     ];
     await setupKit(page, { listing });
     await openKit(page, '/families/positioning-brand');
-    await expect(page.getByTestId('mktg-family-state-messaging-framework')).toContainText('Writing…');
-    await expect(page.getByTestId('mktg-family-run-status')).toContainText('Writing…');
+    await expect(page.getByTestId('mktg-family-run-status-row')).toContainText('Writing…');
+    await expect(page.getByTestId('mktg-family-run-status')).toContainText('Messaging framework · Writing…');
     await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveText('Create messaging framework');
     await expect(page.getByTestId('mktg-family-run-status').getByRole('link', { name: 'Open', exact: true })).toHaveAttribute(
       'href',

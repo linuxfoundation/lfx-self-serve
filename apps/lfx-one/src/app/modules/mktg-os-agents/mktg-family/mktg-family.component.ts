@@ -68,15 +68,13 @@ export class MktgFamilyComponent {
     return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
   protected readonly rows = computed(() =>
-    Object.values(this.actions()?.rows ?? {}).map((entry) => ({
-      ...entry,
-      run: resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../']),
-    }))
+    Object.values(this.actions()?.rows ?? {}).map((entry) => {
+      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../']);
+      const link = run?.link;
+      return { ...entry, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
+    })
   );
-  protected readonly headerRun = computed(() => {
-    if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
-    return this.rows().find((entry) => entry.run)?.run ?? null;
-  });
+  protected readonly headerRun = this.initHeaderRun();
   /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
   protected readonly runQueryParams = computed(
     (): Record<'fresh' | 'plain', Record<string, string>> => ({
@@ -117,6 +115,19 @@ export class MktgFamilyComponent {
 
   protected rebuildStarted(): void {
     this.navigationIntent.set(null);
+  }
+
+  private initHeaderRun() {
+    return computed(() => {
+      if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
+      const rows = this.rows();
+      const newest = [...(this.kit.documents()?.runs ?? [])]
+        .filter((run) => run.state !== 'failed')
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .find((run) => rows.some((entry) => entry.run && entry.row.asset.agentKey === run.agentKey));
+      const entry = rows.find(({ row }) => row.asset.agentKey === newest?.agentKey);
+      return entry?.run ? { ...entry.run, caption: `${entry.row.asset.label} · ${entry.run.caption}` } : null;
+    });
   }
 
   private initActions() {
