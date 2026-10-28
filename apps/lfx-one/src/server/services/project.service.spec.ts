@@ -2865,3 +2865,54 @@ describe('ProjectService — getProjectIdBySlug', () => {
     await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
   });
 });
+
+// #4507: uid -> slug over the metadata subject, so a campaign_manager without `viewer` can name a project by uid.
+describe('ProjectService — getProjectSlugByUid', () => {
+  let service: ProjectService;
+  const uid = '00000000-0000-4000-8000-000000000001';
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a slug reply on the get_slug subject', async () => {
+    natsRequest.mockResolvedValue({ data: ' synthetic-project ' });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBe('synthetic-project');
+    expect(natsRequest).toHaveBeenCalledWith('lfx.projects-api.get_slug', expect.anything(), expect.anything());
+  });
+
+  it('answers null for the not_found error body, never a slug', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBeNull();
+  });
+
+  // An unusable answer is the service's malfunction, not a miss: 502, so a caller never authorizes on it.
+  it.each([
+    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' })],
+    ['an empty reply', ''],
+  ])('answers %s with a 502 MicroserviceError instead of reporting the project as missing', async (_label, data) => {
+    natsRequest.mockResolvedValue({ data });
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 502, code: 'BAD_GATEWAY', operation: 'get_project_slug_by_uid' });
+  });
+
+  // A lost answer is an outage, not a miss: 503 with the transport marker.
+  it.each([
+    ['a timeout', new Error('TIMEOUT')],
+    ['no responder', new Error('503 no responders')],
+    ['a closed connection', new Error('CONNECTION_CLOSED')],
+  ])('answers %s with a 503 transport MicroserviceError', async (_label, failure) => {
+    natsRequest.mockRejectedValue(failure);
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true, originalError: failure });
+  });
+});
