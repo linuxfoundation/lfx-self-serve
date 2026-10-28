@@ -11709,6 +11709,46 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
   });
 
   /**
+   * A restore leaves Planning on its input step without going through `reset()`, so Scrape &
+   * Generate for the same event is the only signal that the next proceed is a new generation. The
+   * X fields typed over the restored brief must not follow onto it.
+   */
+  it('drops the typed X fields when a new brief is generated after a restore, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(NEVER as never);
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null, approved: boolean, readAt: number): void;
+      }
+    ).onRestoreSavedBrief({ ...withTwitter } as CampaignBriefOutput, 'brief-1', null, true, 0);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+    await leaveForPlanning();
+
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email') as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      selectedPlatforms: { set(v: Set<string>): void };
+      canGenerate(): boolean;
+      generate(): void;
+    };
+    expect(paid).toBeDefined();
+    paid.briefForm.controls.url.setValue('https://events.example/kubecon');
+    paid.selectedPlatforms.set(new Set(['google-ads', 'twitter-ads']));
+    await settle();
+    expect(paid.canGenerate()).toBe(true);
+    paid.generate();
+    await settle();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
    * A refine re-saves the brief, and the save clears the brief id until it answers, so the carried
    * pending upload is parked on mount. When the save hands the same id back, the upload must be
    * resumed, holding Create, rather than left parked with Create free to send no image.

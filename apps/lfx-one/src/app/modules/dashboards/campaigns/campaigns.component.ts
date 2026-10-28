@@ -295,7 +295,7 @@ export class CampaignsComponent {
   protected readonly carriedTwitterDraft = signal<CampaignTwitterDraft | null>(null);
 
   /**
-   * Set when Planning discards its generated brief (New Brief, Cancel), so the next proceed is a
+   * Set when Planning discards its brief (New Brief, Cancel, or a fresh Generate), so the next proceed is a
    * new generation for which the X fields must not carry, even for the same event. Cleared by that
    * proceed.
    */

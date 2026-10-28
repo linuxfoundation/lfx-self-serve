@@ -3254,13 +3254,22 @@ export class ImplementationTabComponent implements OnInit {
     // A same-event refine restores a pending X upload while `persistBrief` has the brief id
     // cleared, so `resumeTwitterImageUpload` parks it. The save hands the same id back without a
     // remount, so the parked upload is resumed here once its brief is the open one again.
-    effect(() => {
-      const briefId = this.briefPersistence().briefId ?? '';
-      const pendingName = this.twitterImageUploadPendingName();
-      const pendingBriefId = this.twitterImageUploadPendingBriefId();
-      if (!briefId || pendingName === '' || pendingBriefId !== briefId || this.twitterImageUploadStatus() !== 'idle') return;
-      untracked(() => this.resumeTwitterImageUpload(pendingName, pendingBriefId));
-    });
+    // Observed through `toObservable` rather than an `effect()`, which this repo reserves for
+    // logging: resuming subscribes to the upload and writes several signals.
+    toObservable(
+      computed(() => {
+        const briefId = this.briefPersistence().briefId ?? '';
+        const pendingName = this.twitterImageUploadPendingName();
+        const pendingBriefId = this.twitterImageUploadPendingBriefId();
+        if (!briefId || pendingName === '' || pendingBriefId !== briefId || this.twitterImageUploadStatus() !== 'idle') return null;
+        return { pendingName, pendingBriefId };
+      })
+    )
+      .pipe(
+        filter((parked): parked is { pendingName: string; pendingBriefId: string } => parked !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ pendingName, pendingBriefId }) => this.resumeTwitterImageUpload(pendingName, pendingBriefId));
 
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
     // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
