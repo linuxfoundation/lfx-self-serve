@@ -218,7 +218,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-breadcrumb-link-1').click();
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
     const familyRun = page.getByTestId('mktg-family-run').getByRole('link');
-    await expect(familyRun).toHaveAccessibleName('Run next agent: LinkedIn posts');
+    await expect(familyRun).toHaveAccessibleName('Create LinkedIn post');
     await familyRun.click();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
     await page.getByTestId('mktg-linkedin-edit-profile').click();

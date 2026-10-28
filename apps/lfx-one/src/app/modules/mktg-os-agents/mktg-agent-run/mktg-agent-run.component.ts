@@ -3,7 +3,7 @@
 
 import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -551,11 +551,19 @@ export class MktgAgentRunComponent {
     // Browser-only so SSR output stays stable; the first emission lands
     // post-hydration.
     if (isPlatformBrowser(this.platformId)) {
-      effect(() => {
-        this.runService.acknowledgementVersion();
-        const project = this.projectContext.activeContextUid();
-        if (project && this.freshMode() && this.phase() === 'form' && !this.startedOverWaiting()) this.readWaitingDraft(project);
-      });
+      toObservable(
+        computed(() => ({
+          ack: this.runService.acknowledgementVersion(),
+          project: this.projectContext.activeContextUid(),
+          fresh: this.freshMode(),
+          phase: this.phase(),
+          over: this.startedOverWaiting(),
+        }))
+      )
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(({ project, fresh, phase, over }) => {
+          if (project && fresh && phase === 'form' && !over) this.readWaitingDraft(project);
+        });
       combineLatest([this.activeContext$, this.effectiveUser$, this.freshMode$])
         .pipe(
           distinctUntilChanged(
