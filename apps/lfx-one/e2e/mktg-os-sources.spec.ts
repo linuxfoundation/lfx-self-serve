@@ -131,8 +131,12 @@ test.describe('Marketing OS new run Sources', () => {
     const title = `Discard the ${mktgSentenceCaseLabel(type.itemLabel)} run?`;
     await expect(page.getByText(title, { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Keep it', exact: true }).click();
-    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
+    await expect(questions).toContainText('Which synthetic goal?');
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
     expect(sources.generated).toHaveLength(1);
+    await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toBeVisible();
     await page.getByTestId('mktg-run-waiting-start-over').click();
     await page.getByRole('button', { name: 'Discard and start over', exact: true }).click();
     await expect(page.getByTestId('mktg-run-sources')).toBeVisible();

@@ -8,7 +8,7 @@ import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
-import { MktgKitFamilyView } from '@lfx-one/shared/interfaces';
+import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgKitComponent } from './mktg-kit.component';
 
@@ -16,14 +16,14 @@ describe('Marketing kit home', () => {
   const families = signal<MktgKitFamilyView[]>([]);
   const loading = signal(false);
   const error = signal('');
-  const documents = signal<unknown>(null);
+  const documents = signal<MktgDocumentsResponse | null>(null);
   const context = signal({ uid: 'synthetic', slug: 'synthetic' });
   beforeEach(() => {
     context.set({ uid: 'synthetic', slug: 'synthetic' });
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
     error.set('');
-    documents.set({});
+    documents.set({ project: 'synthetic', groups: [] });
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
       providers: [provideRouter([]), { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true) } }],
@@ -58,6 +58,83 @@ describe('Marketing kit home', () => {
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
     expect(navigate).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['foundation-message', 'writing', 'Writing…', 'Open'],
+    ['foundation-message', 'storing', 'Writing…', 'Open'],
+    ['foundation-message', 'questions', 'Waiting for your answers', 'Answer the questions'],
+    ['member-360', 'questions', 'Waiting for your answers', 'Answer the questions'],
+    ['linkedin-post', 'questions', 'Waiting for your answers', 'Answer the questions'],
+    ['foundation-message', 'failed', 'Not run yet', null],
+  ] as const)('shows %s %s without changing Next step', async (agentKey, state, status, label) => {
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [
+        {
+          agentKey,
+          state,
+          project: 'synthetic',
+          documentId: agentKey === 'foundation-message' ? 'living' : 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const row = root.querySelector(`[data-testid="mktg-kit-asset-${agentKey === 'foundation-message' ? 'messaging-framework' : agentKey}"]`);
+    expect(row?.textContent).toContain(status);
+    const link = row?.querySelector('[data-testid="mktg-kit-run-status-link"]');
+    expect(link?.textContent ?? null).toBe(label);
+    if (label) {
+      expect(row?.querySelector('[data-testid="mktg-kit-run-status"]')?.textContent).toContain(status);
+      const questions = state === 'questions';
+      const documentId = agentKey === 'foundation-message' ? 'living' : 'run-synthetic';
+      const runTarget = agentKey === 'foundation-message' ? 'foundation-setup' : agentKey;
+      const target = questions ? runTarget : `documents/${agentKey}/${documentId}`;
+      expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (questions ? '' : '&run=synthetic-run'));
+    }
+    expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
+  });
+  it.each(['writing', 'storing', 'questions'] as const)('keeps approval visible for %s without changing the run destination', async (state) => {
+    families.update((views) =>
+      views.map((view) => ({
+        ...view,
+        rows: view.rows.map((row) =>
+          row.asset.agentKey === 'foundation-message'
+            ? {
+                ...row,
+                state: 'approved',
+                version: 2,
+                document: {
+                  agentKey: 'foundation-message',
+                  documentId: 'living',
+                  revisionCount: 2,
+                  latestRevisionId: 'approved',
+                  approvedCurrent: { revisionId: 'approved', number: 2 },
+                  createdAt: null,
+                  updatedAt: null,
+                },
+              }
+            : row
+        ),
+      }))
+    );
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [{ agentKey: 'foundation-message', state, project: 'synthetic', documentId: 'living', runId: 'synthetic-run', startedAt: '2026-10-28T12:00:00Z' }],
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const row: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]');
+    expect(row?.textContent).toContain(state === 'questions' ? 'Waiting for your answers' : 'Approved · new version being written');
+    expect(row?.querySelector('a')?.getAttribute('href')).toBe(
+      state === 'questions' ? '/foundation-setup?project=synthetic' : '/documents/foundation-message/living?project=synthetic&run=synthetic-run'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('1 assets');
   });
   it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
