@@ -534,11 +534,13 @@ export class NavbarComponent extends NavMenuBase {
         this.morph(() => this.collapse.closePeek(), 'keyboard');
       };
       // Tabbing out of a pinned peek must not leave the overlay over the page content that now holds focus.
+      // A hover peek that keyboard focus was holding open re-checks the pointer once focus leaves it.
       const onFocusOut = (event: FocusEvent): void => {
         const next = event.relatedTarget instanceof Element ? event.relatedTarget : null;
-        if (!next || !this.collapse.peekPinned() || this.navbarMenuOpen()) return;
-        if (panel?.contains(next) || next.closest('.lfxn-tooltip, .p-popover')) return;
-        this.morph(() => this.collapse.closePeek(), 'none');
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
+        if (next && (panel?.contains(next) || next.closest('.lfxn-tooltip, .p-popover'))) return;
+        if (!this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        else if (next) this.morph(() => this.collapse.closePeek(), 'none');
       };
 
       doc.addEventListener('mousemove', onMove, { passive: true });
@@ -584,6 +586,16 @@ export class NavbarComponent extends NavMenuBase {
         takeUntilDestroyed()
       )
       .subscribe(() => this.schedulePeekClose(NAVBAR_PEEK_RECHECK_DELAY_MS));
+
+    // The rail can also come from the viewport crossing the narrow breakpoint (a resize, a zoom) rather than a morph:
+    // a navbar control holding focus may be about to hide, so focus moves to one the rail still shows.
+    toObservable(this.railVisible)
+      .pipe(
+        pairwise(),
+        filter(([wasRail, rail]) => !wasRail && rail),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => afterNextRender(() => this.keepFocusOnRail(), { injector: this.injector }));
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {
@@ -695,13 +707,16 @@ export class NavbarComponent extends NavMenuBase {
 
   /**
    * The peek is still in use: the pointer is over the panel or one of its tooltips (an interactive role card can reach
-   * past the panel), or a tooltip holds keyboard focus. Keyboard-only use leaves no pointer position, which counts as
+   * past the panel), a tooltip holds focus, or keyboard focus is inside the panel (a click leaves focus behind without
+   * `:focus-visible`, which must not hold the peek). Keyboard-only use leaves no pointer position, which counts as
    * inside, so only a pointer that left closes the peek.
    */
   private peekInUse(): boolean {
     const panel = this.panelEl()?.nativeElement;
     if (!panel || !this.pointer || this.pointerOnTooltip) return true;
-    if (panel.ownerDocument.activeElement?.closest('.lfxn-tooltip')) return true;
+    const active = panel.ownerDocument.activeElement;
+    if (active?.closest('.lfxn-tooltip')) return true;
+    if (active && panel.contains(active) && active.matches(':focus-visible')) return true;
     const rect = panel.getBoundingClientRect();
     const { x, y } = this.pointer;
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
@@ -769,13 +784,22 @@ export class NavbarComponent extends NavMenuBase {
     const toggleShown = !!toggle && toggle.getClientRects().length > 0;
     const focused = active instanceof HTMLElement && host.contains(active) ? active : null;
     if (this.collapse.visualCollapsed()) {
-      if (focused?.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
-      toggle?.focus();
+      if (!focused) toggle?.focus();
+      else this.keepFocusOnRail();
       return;
     }
     if (focused && (focused !== toggle || toggleShown)) return;
     if (toggleShown) toggle?.focus();
     else host.querySelector<HTMLElement>('.lfxn__brand')?.focus();
+  }
+
+  /** Focus inside the navbar that sits on something the rail hides moves to the rail's toggle; focus elsewhere stays. */
+  private keepFocusOnRail(): void {
+    const host = this.elementRef.nativeElement;
+    const active = host.ownerDocument.activeElement;
+    if (!(active instanceof HTMLElement) || !host.contains(active)) return;
+    if (active.closest('.lfxn__brand, .lfxn__head-actions > *, .lfxn__user')) return;
+    host.querySelector<HTMLElement>('[data-flip="side"]')?.focus();
   }
 
   private clearPeekOpenTimer(): void {

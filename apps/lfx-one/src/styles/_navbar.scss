@@ -1569,6 +1569,9 @@
   bottom: 58px !important;
   left: 16px !important;
   margin: 0 !important;
+  // Fixed panels can't be reached by scrolling the page, and the rail adds rows: cap to the viewport and scroll inside.
+  max-height: calc(100dvh - 66px);
+  overflow-y: auto;
   border: 1px solid theme('colors.gray.200');
   border-radius: 12px;
   box-shadow:
