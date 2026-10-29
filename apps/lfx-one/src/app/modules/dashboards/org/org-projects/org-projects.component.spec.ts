@@ -320,7 +320,7 @@ describe('OrgProjectsComponent — Employees filter', () => {
     ],
     [ORG_B.uid]: [makeProject('Delta', { contributors: [{ id: 'p-org-b', name: 'Org B Person', avatarUrl: '' }] }), makeProject('Echo')],
   };
-  const selectedAccount = signal<{ uid: string; accountName: string }>(ORG_A);
+  const selectedAccount = signal<{ uid: string; accountName: string } | null>(ORG_A);
 
   let fixture: ComponentFixture<OrgProjectsComponent>;
   let component: OrgProjectsComponent;
@@ -459,6 +459,40 @@ describe('OrgProjectsComponent — Employees filter', () => {
     expect(component['filterForm'].controls.employees.value).toEqual([]);
     expect(queryParams()['employees']).toBeUndefined();
     expect(rowNames()).toEqual(expect.arrayContaining(['Delta', 'Echo']));
+  });
+
+  it('keeps a deep-linked selection when the organization resolves after the page starts', async () => {
+    selectedAccount.set(null);
+    await open('/?employees=p-known');
+
+    selectedAccount.set(ORG_A);
+    await settle();
+
+    expect(component['filterForm'].controls.employees.value).toEqual(['p-known']);
+    expect(queryParams()['employees']).toBe('p-known');
+    expect(rowNames()).toEqual(['Alpha']);
+  });
+
+  it.each([
+    { case: 'writes a filter change once the pending navigation settles', destroy: false },
+    { case: 'drops a filter change still waiting on a navigation when the page is destroyed', destroy: true },
+  ])('$case', async ({ destroy }) => {
+    await open('/');
+    const navigate = vi.spyOn(router, 'navigate');
+
+    const pending = router.navigateByUrl('/?elsewhere=1');
+    expect(router.getCurrentNavigation()).not.toBeNull();
+    component['filterForm'].controls.employees.setValue(['p-known']);
+    if (destroy) fixture.destroy();
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve));
+
+    if (destroy) {
+      expect(navigate).not.toHaveBeenCalled();
+    } else {
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(queryParams()).toEqual({ elsewhere: '1', employees: 'p-known' });
+    }
   });
 
   it('Reset filters clears the employees, foundation, workspace and page params from the URL in one go', async () => {

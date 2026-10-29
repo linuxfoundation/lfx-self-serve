@@ -113,6 +113,7 @@ export class OrgProjectsComponent {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Configuration
@@ -303,9 +304,18 @@ export class OrgProjectsComponent {
       this.workspaceDialogOpen.set(false);
       this.addProjectsDialogOpen.set(false);
       this.editingWorkspace.set(null);
-      // Person ids belong to one organization, so the previous org's Employees selection would match nothing here.
-      this.filterForm.controls.employees.setValue([]);
     });
+
+    // Person ids belong to one organization, so a switch to another org clears the Employees selection. Only a
+    // switch between resolved orgs counts: the first org resolving (null → uid) must keep a deep-linked selection.
+    this.orgUid$
+      .pipe(
+        filter((uid) => uid !== null),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.employees.setValue([]));
 
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value.name?.trim()) {
@@ -314,7 +324,7 @@ export class OrgProjectsComponent {
     });
 
     // Clear pending debounce timer on teardown.
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
       }
@@ -1206,17 +1216,23 @@ export class OrgProjectsComponent {
 
   /**
    * Merges `queryParams` into the URL. While another navigation is in flight (an org switch swapping the path),
-   * the write waits for it to settle, so it merges into the new address instead of cancelling it.
+   * the write waits for it to settle, so it merges into the new address instead of cancelling it. A wait still
+   * pending when the page is destroyed (that navigation left Projects) is dropped.
    */
   private writeQueryParams(queryParams: Params): void {
     if (this.router.getCurrentNavigation()) {
       this.router.events
         .pipe(
           filter((e) => e instanceof NavigationEnd || e instanceof NavigationCancel || e instanceof NavigationError),
-          take(1)
+          take(1),
+          takeUntilDestroyed(this.destroyRef)
         )
         // currentNavigation clears only after the end event's subscribers run, so retry on a microtask.
-        .subscribe(() => queueMicrotask(() => this.writeQueryParams(queryParams)));
+        .subscribe(() =>
+          queueMicrotask(() => {
+            if (!this.destroyRef.destroyed) this.writeQueryParams(queryParams);
+          })
+        );
       return;
     }
     void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
