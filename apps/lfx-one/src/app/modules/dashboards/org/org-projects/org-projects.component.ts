@@ -306,8 +306,9 @@ export class OrgProjectsComponent {
       this.editingWorkspace.set(null);
     });
 
-    // Person ids belong to one organization, so a switch to another org clears the Employees selection. Only a
-    // switch between resolved orgs counts: the first org resolving (null → uid) must keep a deep-linked selection.
+    // The selection came from the previous org's roster, so a switch to another org clears it (the switch navigation
+    // strips `?employees=` too). Only a switch between resolved orgs counts: the first org resolving (null → uid)
+    // must keep a deep-linked selection.
     this.orgUid$
       .pipe(
         filter((uid) => uid !== null),
@@ -1010,7 +1011,7 @@ export class OrgProjectsComponent {
     }
     const options = [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
     // A selected id no project here lists (stale link, other workspace) stays offered so the picker can show and remove it.
-    for (const id of this.formValue().employees ?? []) {
+    for (const id of new Set(this.formValue().employees ?? [])) {
       if (!byId.has(id)) options.push({ value: id, label: this.employeeLabels.get(id) ?? id });
     }
     return options;

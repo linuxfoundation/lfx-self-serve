@@ -124,8 +124,8 @@ export class OrgContributionsComponent {
     search: new FormControl<string>(this.initialParams.get('q') ?? '', { nonNullable: true }),
     dateRange: new FormControl<OrgLensTimeRange>(parseOrgLensTimeRange(this.initialParams.get('range')), { nonNullable: true }),
     foundation: new FormControl<string>((this.initialParams.get('foundation') ?? '').trim(), { nonNullable: true }),
-    projects: new FormControl<string[]>(this.parseInitialCsv('projects'), { nonNullable: true }),
-    employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
+    projects: new FormControl<string[]>(this.parseCsv(this.initialParams.get('projects')), { nonNullable: true }),
+    employees: new FormControl<string[]>(this.parseCsv(this.initialParams.get('employees')), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
   });
@@ -279,6 +279,18 @@ export class OrgContributionsComponent {
       )
       .subscribe((foundation) => {
         if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
+      });
+
+    // `?employees=` follows a query-only navigation too, its removal included: an org switch strips it, since the
+    // selection came from the previous org's roster. The guard skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => this.parseCsv(params.get('employees'))),
+        distinctUntilChanged((a, b) => a.join(',') === b.join(',')),
+        takeUntilDestroyed()
+      )
+      .subscribe((employees) => {
+        if (employees.join(',') !== this.filterForm.controls.employees.value.join(',')) this.filterForm.patchValue({ employees });
       });
   }
 
@@ -576,8 +588,7 @@ export class OrgContributionsComponent {
   }
 
   // Deduped and trimmed to the server's per-filter cap so an oversized deep link still loads instead of 400ing.
-  private parseInitialCsv(param: string): string[] {
-    const raw = this.initialParams.get(param);
+  private parseCsv(raw: string | null): string[] {
     return raw
       ? [
           ...new Set(

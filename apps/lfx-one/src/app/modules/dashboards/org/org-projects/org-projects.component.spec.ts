@@ -5,6 +5,7 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID, DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } from '@lfx-one/shared/constants';
 import type { OrgLensEmptyStateName, OrgLensProject } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -377,7 +378,11 @@ describe('OrgProjectsComponent — Employees filter', () => {
         provideNoopAnimations(),
         provideRouter([]),
         MessageService,
-        { provide: AccountContextService, useValue: { selectedAccount } },
+        // `selectedUrlSegment` / `isAddressedSelection` serve the real OrgLensNavigationService in the routed switch test.
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount, selectedUrlSegment: computed(() => selectedAccount()?.uid ?? null), isAddressedSelection: signal(true) },
+        },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
@@ -393,10 +398,17 @@ describe('OrgProjectsComponent — Employees filter', () => {
                     name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
                     projectSlugs: PROJECTS_BY_ORG[accountUid].map((project) => project.slug),
                   },
+                  // Every project but the first, so for Org A it leaves out the only project listing `p-known`.
+                  { id: 'ws-rest', name: 'Rest', projectSlugs: PROJECTS_BY_ORG[accountUid].slice(1).map((project) => project.slug) },
                 ],
               }),
-            getProjects: (accountUid: string, accountName: string) =>
-              of({ orgSlug: accountUid, orgName: accountName, dataUpdatedAt: '2026-09-30T00:00:00Z', projects: PROJECTS_BY_ORG[accountUid] }),
+            getProjects: (accountUid: string, accountName: string, slugs: string[]) =>
+              of({
+                orgSlug: accountUid,
+                orgName: accountName,
+                dataUpdatedAt: '2026-09-30T00:00:00Z',
+                projects: PROJECTS_BY_ORG[accountUid].filter((project) => slugs.includes(project.slug)),
+              }),
           },
         },
         {
@@ -447,6 +459,51 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
     expect(component['employeeOptions']()).not.toContainEqual(expect.objectContaining({ value: 'p-unknown' }));
     expect(queryParams()['employees']).toBe('p-known');
+  });
+
+  it('keeps the last-seen name of a selected employee the current workspace does not list', async () => {
+    await open('/?employees=p-known');
+
+    component['selectWorkspace']('ws-rest');
+    await settle();
+
+    expect(rowNames()).toEqual([]);
+    expect(component['employeeOptions']()).toContainEqual({ value: 'p-known', label: 'Known Person' });
+  });
+
+  // The org selector switches the account, then re-addresses the page through the real navigation service.
+  it.each([
+    { mount: 'legacy', url: '/org/projects?employees=p-known&utm_source=x' },
+    { mount: 'organization-addressed', url: '/org/org-a/projects?employees=p-known&utm_source=x' },
+  ])('strips ?employees= when switching organization from the $mount address, and shows the new org’s projects', async ({ url }) => {
+    TestBed.overrideProvider(OrgLensNavigationService, { useFactory: () => new OrgLensNavigationService() });
+    TestBed.inject(Router).resetConfig([
+      { path: 'org/projects', component: OrgProjectsComponent },
+      { path: 'org/:orgSegment/projects', component: OrgProjectsComponent },
+    ]);
+    const harness = await RouterTestingHarness.create(url);
+    router = TestBed.inject(Router);
+    const page = (): OrgProjectsComponent => harness.routeDebugElement?.componentInstance as OrgProjectsComponent;
+    expect(
+      page()
+        ['sortedProjects']()
+        .map((p) => p.name)
+    ).toEqual(['Alpha']);
+
+    selectedAccount.set(ORG_B);
+    TestBed.inject(OrgLensNavigationService).navigateToSelectedOrg('switch');
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+
+    expect(router.url).toBe('/org/org-b/projects?utm_source=x');
+    expect(page()['filterForm'].controls.employees.value).toEqual([]);
+    expect(
+      page()
+        ['sortedProjects']()
+        .map((p) => p.name)
+        .sort()
+    ).toEqual(['Delta', 'Echo']);
   });
 
   it('clears the Employees selection, in the form and the URL, when the organization changes', async () => {

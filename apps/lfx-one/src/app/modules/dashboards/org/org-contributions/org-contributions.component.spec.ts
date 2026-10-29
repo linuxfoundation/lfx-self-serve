@@ -628,6 +628,23 @@ describe('OrgContributionsComponent', () => {
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
   });
 
+  // An org switch strips `?employees=` in its own navigation (the selection came from the previous org's roster), and
+  // the page is reused across it, so the selection must follow the URL, its removal included.
+  it('follows ?employees= on a query-only navigation, its removal included, ignoring the echo of its own URL write', async () => {
+    const { fixture, getContributions, queryParamMap } = await render(null, { queryParams: { employees: 'e-1,e-2' } });
+    const { employees } = fixture.componentInstance['filterForm'].controls;
+    expect(employees.value).toEqual(['e-1', 'e-2']);
+
+    const patchValue = vi.spyOn(fixture.componentInstance['filterForm'], 'patchValue');
+    queryParamMap.next(convertToParamMap({ employees: 'e-1,e-2', page: '1' }));
+    expect(patchValue).not.toHaveBeenCalled();
+
+    queryParamMap.next(convertToParamMap({}));
+    await pastDebounce(fixture);
+    expect(employees.value).toEqual([]);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ employees: [] }));
+  });
+
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {
     const { fixture, navigate, getContributions, queryParamMap } = await render(null);
 
