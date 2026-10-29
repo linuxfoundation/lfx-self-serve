@@ -38,6 +38,7 @@ export const HEALTH_METRICS_L2_EMPTY_SOURCES = {
   courses: 'as people enroll in the foundation’s courses',
   board: 'as board meetings are held or added in LFX',
   members: 'as members join and take part in foundation activities',
+  newsletter: 'when the foundation sends a newsletter through LFX',
 } as const;
 
 /** A section's empty state for YTD and for a past year; `{source}` and `{Y}` are filled in per section and period. */

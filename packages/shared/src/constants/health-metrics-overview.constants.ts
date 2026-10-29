@@ -333,6 +333,7 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   pastEvents: { label: 'Explore Past Events', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'past', queryParams: {} },
   speakers: { label: 'Explore Speakers & Proposals', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'spk', queryParams: {} },
   training: { label: 'Explore Enrollment & Revenue', commands: [HEALTH_METRICS_BASE_PATH, 'training'], fragment: 'enroll', queryParams: {} },
+  newsletters: { label: 'Explore Newsletters', commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: 'newsletters', queryParams: { nlMode: null } },
 } as const satisfies Record<string, HealthMetricsOverviewExploreLink>;
 
 /** The design's purple for maintainers and this year's registrations; no `lfxColors` scale carries it. */

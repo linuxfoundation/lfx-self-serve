@@ -31,6 +31,8 @@ import {
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
@@ -1231,6 +1233,148 @@ describe('HealthMetricsEngagementService.getAttendanceTrend', () => {
       .catch((thrown: unknown) => thrown)) as MicroserviceError;
 
     expect(error.toResponse()['error']).toBe('Attendance trend is unavailable right now.');
+  });
+});
+
+describe('HealthMetricsEngagementService.getNewsletterPerformance', () => {
+  const service = new HealthMetricsEngagementService();
+  const summaryRow = {
+    SUBSCRIBERS_COUNT_YTD: '1490.0000000000',
+    SUBSCRIBERS_GROWTH_PCT_YTD: '0.2074554295',
+    SUBSCRIBERS_GROWTH_BASELINE_DATE_YTD: '2026-08-10',
+    NEWSLETTERS_SENT_COUNT_YTD: 11,
+    AVG_OPEN_RATE_YTD: '0.446491661709',
+    AVG_CLICK_RATE_YTD: '0.056694394491',
+    AVG_CLICK_TO_OPEN_RATE_YTD: '0.127973100791',
+    AVG_DELIVERY_RATE_YTD: '0.964348951627',
+    NEWSLETTERS_SENT_COUNT_COMPLETED_YEAR: 0,
+  };
+  const newsletterRow = {
+    NEWSLETTER_KEY: 'lfx_v2_n1',
+    NEWSLETTER_NAME: 'Monthly: Latest',
+    SENT_DATE: '2026-10-26',
+    HAS_ENGAGEMENT_DATA: true,
+    AUDIENCE_COUNT: '1490.0000000000',
+    FAILED_COUNT: 61,
+    UNIQUE_OPENS_COUNT: 647,
+    TOTAL_OPENS_COUNT: 997,
+    UNIQUE_CLICKS_COUNT: 76,
+    TOTAL_CLICKS_COUNT: 1462,
+    OPEN_RATE: '0.4342281879',
+    CLICK_RATE: '0.0510067114',
+    CLICK_TO_OPEN_RATE: '0.1174652241',
+  };
+
+  /** Answers each of the two reads by the view it names. */
+  function respond(summary: unknown[], newsletters: unknown[]): void {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('NEWSLETTER_ENGAGEMENT_SUMMARY') ? summary : newsletters }));
+  }
+
+  function sqlFor(view: string): string {
+    return String(execute.mock.calls.find((call) => String(call[0]).includes(view))?.[0]).replace(/\s+/g, ' ');
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    respond([summaryRow], [newsletterRow]);
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    warning.mockReset();
+  });
+
+  it('reads every period of the summary and every newsletter, latest first, scoped to the foundation', async () => {
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(execute.mock.calls.map((call) => call[1])).toEqual([['acme'], ['acme']]);
+    expect(sqlFor('NEWSLETTER_ENGAGEMENT_SUMMARY')).toContain('avg_delivery_rate_3rd_last_completed_year AS avg_delivery_rate_COMPLETED_YEAR_3');
+    expect(sqlFor('NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER')).toContain(
+      `ORDER BY sort_rank ASC NULLS LAST, newsletter_key ASC LIMIT ${HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1}`
+    );
+    expect(response.measured).toBe(true);
+    expect(response.periods.YTD).toEqual({
+      subscribers: 1490,
+      subscribersGrowth: 0.2074554295,
+      growthBaselineDate: '2026-08-10',
+      newslettersSent: 11,
+      avgOpenRate: 0.446491661709,
+      avgClickRate: 0.056694394491,
+      avgClickToOpenRate: 0.127973100791,
+      avgDeliveryRate: 0.964348951627,
+    });
+    expect(response.periods.COMPLETED_YEAR).toMatchObject({ newslettersSent: 0, subscribers: null });
+    expect(response.newsletters).toEqual([
+      {
+        key: 'lfx_v2_n1',
+        name: 'Monthly: Latest',
+        sentDate: '2026-10-26',
+        hasEngagementData: true,
+        recipients: 1490,
+        failed: 61,
+        uniqueOpens: 647,
+        totalOpens: 997,
+        uniqueClicks: 76,
+        totalClicks: 1462,
+        openRate: 0.4342281879,
+        clickRate: 0.0510067114,
+        clickToOpenRate: 0.1174652241,
+      },
+    ]);
+  });
+
+  it('drops a newsletter without a key, names an unnamed one, and keeps nulls where there is no engagement data', async () => {
+    respond(
+      [summaryRow],
+      [
+        { ...newsletterRow, NEWSLETTER_KEY: ' ' },
+        { NEWSLETTER_KEY: 'n2', NEWSLETTER_NAME: null, SENT_DATE: '2026-09-01', HAS_ENGAGEMENT_DATA: false, AUDIENCE_COUNT: 900, OPEN_RATE: null },
+      ]
+    );
+
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(response.newsletters).toHaveLength(1);
+    expect(response.newsletters[0]).toMatchObject({
+      key: 'n2',
+      name: 'Untitled newsletter',
+      hasEngagementData: false,
+      recipients: 900,
+      openRate: null,
+      failed: null,
+    });
+  });
+
+  it('answers unmeasured for a foundation without a summary row', async () => {
+    respond([], [newsletterRow]);
+
+    await expect(service.getNewsletterPerformance(req, { foundationSlug: 'acme' })).resolves.toEqual(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it('keeps the latest newsletters and warns when the read hits its cap', async () => {
+    respond(
+      [summaryRow],
+      Array.from({ length: HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1 }, (_, index) => ({ ...newsletterRow, NEWSLETTER_KEY: `n${index}` }))
+    );
+
+    const response = await service.getNewsletterPerformance(req, { foundationSlug: 'acme' });
+
+    expect(response.newsletters).toHaveLength(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP);
+    expect(response.newsletters[0]?.key).toBe('n0');
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_newsletter_performance', 'Newsletter rows hit the read cap', expect.anything());
+  });
+
+  it('names the section when a view is missing', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getNewsletterPerformance(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Newsletter performance is unavailable right now.');
   });
 });
 

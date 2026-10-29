@@ -1,0 +1,183 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="engagement-newsletter-performance">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Newsletter performance unavailable"
+      subtitle="We could not load newsletter performance for this foundation. Refresh the page to try again."
+      data-testid="engagement-newsletter-performance-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-performance-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    @let current = view();
+    <lfx-filter-pills
+      variant="track"
+      [options]="modeOptions"
+      [selectedFilter]="mode()"
+      (filterChange)="onModeChange($event)"
+      data-testid="engagement-newsletter-performance-modes" />
+
+    <!-- The design's hero: subscribers with their growth inline, then label-over-value side stats. -->
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="engagement-newsletter-performance-kpis">
+      <div class="flex flex-col gap-2" data-testid="engagement-newsletter-performance-headline">
+        <div class="flex items-baseline gap-2">
+          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-newsletter-performance-subscribers">{{
+            current.headline.value
+          }}</span>
+          @if (current.headline.delta) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="current.headline.deltaDirection === 'up'"
+              [class.text-red-600]="current.headline.deltaDirection === 'down'"
+              data-testid="engagement-newsletter-performance-growth"
+              >{{ current.headline.delta }}</span
+            >
+          }
+        </div>
+        <span class="text-[12px] text-gray-500">{{ current.headline.label }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="engagement-newsletter-performance-side">
+        @for (kpi of current.side; track kpi.key) {
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-[12px] text-gray-500">{{ kpi.label }}</dt>
+            <dd
+              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
+              [attr.data-testid]="'engagement-newsletter-performance-kpi-' + kpi.key">
+              {{ kpi.value }}
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    @if (points().length) {
+      <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="engagement-newsletter-performance-chart">
+        <lfx-chart type="line" [data]="chartData()" [options]="chartOptions()" height="100%" />
+      </div>
+      <div class="flex flex-wrap items-center gap-x-[14px] gap-y-[6px] text-[12px] text-gray-500" aria-hidden="true">
+        @for (dataset of chartData().datasets; track dataset.label) {
+          <span class="inline-flex items-center gap-[6px]"
+            ><span
+              class="w-[14px] border-t-2"
+              [style.border-top-color]="dataset.borderColor"
+              [style.border-top-style]="dataset.borderDash ? 'dashed' : 'solid'"></span
+            >{{ dataset.label }}</span
+          >
+        }
+      </div>
+      <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip. -->
+      <table class="sr-only" data-testid="engagement-newsletter-performance-chart-table">
+        <caption>
+          {{
+            chartLabel()
+          }}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Newsletter</th>
+            @for (dataset of chartData().datasets; track dataset.label) {
+              <th scope="col">{{ dataset.label }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of chartRows(); track row.key) {
+            <tr>
+              <th scope="row">{{ row.title }}</th>
+              @for (cell of row.cells; track $index) {
+                <td>{{ cell }}</td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    } @else {
+      <p class="text-[13px] text-gray-500" data-testid="engagement-newsletter-performance-chart-empty">
+        No opens or clicks are recorded yet for the newsletters sent in this period.
+      </p>
+    }
+
+    <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
+      [value]="current.rows"
+      [paginator]="current.rows.length > size()"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="current.rows.length"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      (onPage)="onTablePage($event)"
+      data-testid="engagement-newsletter-performance-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Newsletter</span></th>
+          <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Recipients</span></th>
+          <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Unique opens</span></th>
+          <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Open rate</span></th>
+          <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Unique clicks</span></th>
+          <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Click rate</span></th>
+          <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Click-to-open</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row>
+        <tr [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key">
+          <td class="min-w-[260px]">
+            <div class="flex flex-col">
+              <span class="text-[13px] font-semibold text-gray-900">{{ row.name }}</span>
+              @if (row.sentLabel) {
+                <span class="text-[12px] text-gray-500">{{ row.sentLabel }}</span>
+              }
+            </div>
+          </td>
+          <td class="text-right">
+            <div class="flex flex-col">
+              <span class="text-[13px] tabular-nums text-gray-900">{{ row.recipientsLabel }}</span>
+              @if (row.failedLabel) {
+                <span class="text-[12px] tabular-nums text-gray-500">{{ row.failedLabel }}</span>
+              }
+            </div>
+          </td>
+          <td class="text-right">
+            <div class="flex flex-col">
+              <span class="text-[13px] tabular-nums text-gray-900">{{ row.uniqueOpensLabel }}</span>
+              @if (row.totalOpensLabel) {
+                <span class="text-[12px] tabular-nums text-gray-500">{{ row.totalOpensLabel }}</span>
+              }
+            </div>
+          </td>
+          <td>
+            <!-- The design's bar cell: a 62×6px track beside the rate, as the attendance bar draws it. -->
+            <div class="flex items-center gap-[9px]" [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key + '-open-rate'">
+              <div class="h-[6px] w-[62px] shrink-0 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full bg-blue-500" [style.width.%]="row.openRateWidthPct"></div>
+              </div>
+              <span class="text-[13px] font-semibold tabular-nums text-gray-900">{{ row.openRateLabel }}</span>
+            </div>
+          </td>
+          <td class="text-right">
+            <div class="flex flex-col">
+              <span class="text-[13px] tabular-nums text-gray-900">{{ row.uniqueClicksLabel }}</span>
+              @if (row.totalClicksLabel) {
+                <span class="text-[12px] tabular-nums text-gray-500">{{ row.totalClicksLabel }}</span>
+              }
+            </div>
+          </td>
+          <td class="text-right">
+            <span class="text-[13px] tabular-nums text-gray-900">{{ row.clickRateLabel }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-[13px] tabular-nums text-gray-900">{{ row.clickToOpenLabel }}</span>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</div>
