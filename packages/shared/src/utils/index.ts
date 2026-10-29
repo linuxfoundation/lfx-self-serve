@@ -15,6 +15,7 @@ export * from './form.utils';
 export * from './github-url.utils';
 export * from './html-utils';
 export * from './iso-timestamp.utils';
+export * from './keyboard.utils';
 export * from './mailing-list.utils';
 export * from './meeting-attachment.utils';
 export * from './meeting-calendar.utils';

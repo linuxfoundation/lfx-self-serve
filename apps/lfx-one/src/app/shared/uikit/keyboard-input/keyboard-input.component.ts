@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { toSpokenKey } from '@lfx-one/shared/utils';
 
 /**
  * Shows a key or shortcut that triggers an action, one `<kbd>` per key. Write modifiers as their symbols (⌘ ⇧ ⌥ ⌃) and show Ctrl on
@@ -41,26 +42,8 @@ export class UiKeyboardInputComponent {
 
   private initSpokenKeys(): Signal<string[]> {
     return computed(() => {
-      // Screen readers skip or misread these glyphs, so each key with one gets a spoken name.
-      const names: Record<string, string> = {
-        '⌘': 'Command',
-        '⇧': 'Shift',
-        '⌥': 'Option',
-        '⌃': 'Control',
-        '↵': 'Enter',
-        '⏎': 'Enter',
-        '⌫': 'Delete',
-        '⎋': 'Escape',
-        '⇥': 'Tab',
-        '←': 'Left arrow',
-        '→': 'Right arrow',
-        '↑': 'Up arrow',
-        '↓': 'Down arrow',
-      };
-      return this.keys().map((key) => {
-        const chars = Array.from(key);
-        return chars.some((char) => names[char]) ? chars.map((char) => names[char] ?? char).join(' ') : '';
-      });
+      // Screen readers skip or misread glyphs, so each key with one gets a spoken name.
+      return this.keys().map((key) => toSpokenKey(key));
     });
   }
 }

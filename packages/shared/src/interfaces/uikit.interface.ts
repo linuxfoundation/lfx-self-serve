@@ -44,3 +44,6 @@ export interface UiModalConfig<D = unknown> {
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
 }
+
+/** Which side of its host a uikit tooltip prefers. */
+export type UiTooltipSide = 'top' | 'right' | 'bottom' | 'left';
