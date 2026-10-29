@@ -289,6 +289,30 @@ describe('Member360RunComponent', () => {
     expect(navigate).toHaveBeenCalledOnce();
   });
 
+  it('shows the safe expired-tracker validation reason so the user can re-upload', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    run.generate.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Validation failed for trackerIds',
+              errors: [{ field: 'trackerIds', message: 'A tracker is unavailable or expired. Upload it again.' }],
+            },
+          })
+      )
+    );
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]').textContent).toContain('Upload it again.');
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+  });
+
   it('explains an unavailable comparison instead of a generic server error', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })

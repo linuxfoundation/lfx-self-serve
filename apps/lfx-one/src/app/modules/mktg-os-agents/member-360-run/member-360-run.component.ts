@@ -237,6 +237,7 @@ export class Member360RunComponent {
               return;
             }
             let message = 'The run could not be started. Your trackers are still here; try again.';
+            if (error.status === 400 && error.error?.code === 'VALIDATION_ERROR') message = getHttpErrorDetail(error, message);
             if (error.status === 403) message = 'You need write access to this project to run Member 360.';
             if (error.error?.code === MEMBER_360_COMPARISON_UNAVAILABLE) message = 'The previous run could not be read. Turn off comparison or retry.';
             this.error.set(message);
