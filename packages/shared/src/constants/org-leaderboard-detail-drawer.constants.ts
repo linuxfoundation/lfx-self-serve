@@ -83,7 +83,10 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     intro:
       'Only four categories earn technical-influence points. Each earns points independently — there are no preset weights per category. Points from all categories are added together to get the total score.',
     bullets: [
-      { label: ORG_MAINTAINER_ROLES_LABEL, text: '— 10 pts if the company has 1+ project maintainers, else 0.' },
+      {
+        label: ORG_MAINTAINER_ROLES_LABEL,
+        text: '— 10 pts from the influence score when the company has maintainers on the project in the selected range; the score only covers companies with code contributions in that range. The count shown is the maintainer roles the company holds, counted separately, so a company can hold roles and still earn 0 points.',
+      },
       {
         label: 'Contributors, PRs Opened',
         text: '— each 0.1% share of the project total earns 0.1 pt, plus a +1 bonus for any share above 0%.',
