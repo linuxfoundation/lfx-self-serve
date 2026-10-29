@@ -165,8 +165,9 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     fixture.askQuestions(pendingQuestions);
     await expect(page.getByTestId('mktg-run-questions')).toContainText('Which voice?');
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    // Rule 1/#4594 onPublicLanding: canonical completion has no private receipt; open current, never invent revision=.
-    await expect(page).toHaveURL(new URL(fixture.documentUrl, page.url()).href);
+    // 144-A replaces the earlier142 current-document expectation for a matching creator capability:
+    // public metadata must not preempt the private result's exact document_location receipt.
+    await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
     await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
     expect(fixture.posts).toEqual([BRAND_KIT_INTAKE.endpoints.generate, BRAND_KIT_INTAKE.endpoints.answers]);
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();

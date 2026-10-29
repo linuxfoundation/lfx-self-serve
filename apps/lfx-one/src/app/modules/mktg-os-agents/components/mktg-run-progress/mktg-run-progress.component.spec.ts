@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
-import { MktgDocumentDetailResponse, MktgDocumentRunProgress, User } from '@lfx-one/shared/interfaces';
+import { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRevisionSummary, MktgRevisionResponse, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -92,6 +92,51 @@ describe('MktgRunProgressComponent', () => {
       expect(text()).toContain('<script>synthetic reply</script>');
       expect(fixture.nativeElement.querySelector('script')).toBeNull();
     }
+  });
+
+  it('emits completion once for a selected stored run and never calls it writing', async () => {
+    await setup();
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    read.mockReturnValue(of(detail([{ ...run, state: 'completed', producedRevisionId: '000009-' + '9'.repeat(64) }])));
+    await fixture.whenStable();
+    expect(landed).toHaveBeenCalledOnce();
+    expect(text()).toContain('Written — confirming the produced revision');
+    expect(text()).not.toContain('Writing…');
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(read).toHaveBeenCalledOnce();
+    expect(answer).not.toHaveBeenCalled();
+  });
+
+  it('reads the completed run produced revision rather than approved current for a document observer', async () => {
+    await setup();
+    fixture.componentRef.setInput('loadRevision', true);
+    const produced: MktgRevisionSummary = {
+      id: '000009-' + '9'.repeat(64),
+      number: 9,
+      createdAt: run.startedAt,
+      origin: 'generated',
+      restoredFromNumber: null,
+      intakeMode: 'form',
+      status: '',
+      contentSha256: '9'.repeat(64),
+      format: 'markdown',
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    };
+    const old = { ...produced, id: '000001-' + '1'.repeat(64), number: 1, contentSha256: '1'.repeat(64), latest: false };
+    const metadata: MktgDocumentDetailResponse = {
+      ...detail([{ ...run, state: 'completed', producedRevisionId: produced.id }]),
+      revisions: [produced, old],
+      approvedCurrent: { revisionId: old.id, number: 1 },
+      current: { revisionId: old.id, changedAt: run.startedAt, changedBy: null },
+    };
+    const view: MktgRevisionResponse = { ...metadata, revision: produced, markdown: '# Produced v9', sidecar: null, approval: null };
+    read.mockReturnValue(of(metadata));
+    revisionRead.mockReturnValue(of(view));
+    await fixture.whenStable();
+    expect(revisionRead).toHaveBeenCalledExactlyOnceWith(run.project, run.agentKey, run.documentId, produced.id, true);
   });
 
   it('keeps the document observer headless without rendering any live card or status', async () => {

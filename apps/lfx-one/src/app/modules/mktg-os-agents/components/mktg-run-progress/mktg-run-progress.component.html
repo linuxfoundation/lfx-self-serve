@@ -32,6 +32,8 @@
             >Answering needs project write access or the browser that started this run. Refresh progress to check again.</span
           >
         }
+      } @else if (runState() === 'completed') {
+        Written — confirming the produced revision…
       } @else {
         {{ runState() === 'storing' ? 'Saving…' : 'Writing…' }} You can leave this page — the agent keeps working.
       }
@@ -117,6 +119,8 @@
           </p>
         }
       }
+    } @else if (state === 'completed') {
+      <p class="text-sm text-gray-600">The produced revision is stored.</p>
     } @else {
       <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
         @if (runDocumentType()) {

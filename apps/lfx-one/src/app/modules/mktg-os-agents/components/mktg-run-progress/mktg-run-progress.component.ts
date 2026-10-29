@@ -13,6 +13,7 @@ import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_STARTED_RUN_STATE_ORDER,
 } from '@lfx-one/shared/constants';
@@ -385,8 +386,16 @@ export class MktgRunProgressComponent {
                       if (selected?.state === 'discarded' || selected?.state === 'superseded') {
                         return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
                       }
+                      const produced =
+                        selected?.state === 'completed' && selected.producedRevisionId && MKTG_REVISION_ID_REGEX.test(selected.producedRevisionId)
+                          ? selected.producedRevisionId
+                          : undefined;
                       const revisionId =
-                        request.revisionId || detail.current?.revisionId || detail.revisions.find((revision) => revision.latest)?.id || detail.revisions[0]?.id;
+                        request.revisionId ||
+                        produced ||
+                        detail.current?.revisionId ||
+                        detail.revisions.find((revision) => revision.latest)?.id ||
+                        detail.revisions[0]?.id;
                       if (!request.loadRevision || !revisionId) return of<MktgDocumentReadCycle>({ detail, view: null });
                       return this.store
                         .getRevision(request.project, request.agentKey, request.documentId, revisionId, true)
@@ -447,7 +456,7 @@ export class MktgRunProgressComponent {
                 terminal = outcome;
                 if (outcome === 'failed') this.failed.emit();
                 if (outcome === 'questions') this.questions.emit();
-                if (outcome === 'landed') this.landed.emit();
+                if (outcome === 'landed' || outcome === 'completed') this.landed.emit();
               })
             );
           };
@@ -587,6 +596,7 @@ export class MktgRunProgressComponent {
         return this.unconfirmedFailure() ? 'The run could not be confirmed.' : `The ${this.failureAssetLabel()} wasn't finished`;
       if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
+      if (this.runState() === 'completed') return 'The produced revision is stored.';
       if (this.runState()) return this.runDocumentType() ? `Writing the ${this.runDocumentType()?.itemLabel}.` : 'Generating the asset.';
       return this.viewSnapshot() ? 'The asset is ready.' : '';
     });

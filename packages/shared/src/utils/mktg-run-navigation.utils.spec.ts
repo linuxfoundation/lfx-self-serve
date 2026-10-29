@@ -31,7 +31,7 @@ describe('retired run navigation', () => {
       expect(mktgDiscardedRunMessage(hint)).toBe('This run was discarded; a newer run was started.');
     }
   );
-  it.each([null, {}, { ...row, state: 'writing' }, { ...row, runId: 'bad' }])('ignores a non-hint %j', (value) => {
+  it.each([null, {}, { ...row, state: 'writing' }, { ...row, state: 'completed' }, { ...row, runId: 'bad' }])('ignores a non-hint %j', (value) => {
     expect(readMktgRetiredRunHint(value)).toBeNull();
   });
   it('aligns the unnamed, superseded and legacy-time variants with the document page', () => {

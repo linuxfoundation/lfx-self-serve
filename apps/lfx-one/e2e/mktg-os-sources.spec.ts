@@ -74,6 +74,68 @@ test.describe('Marketing OS new run Sources', () => {
       expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
       await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
     });
+  test('keeping an active questions run opens that exact run, never its current document', async ({ page }, info) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic asset');
+    const runId = 'b'.repeat(64);
+    const pendingQuestions = {
+      questionsId: 'c'.repeat(64),
+      askedAt: '2026-10-29T09:00:00Z',
+      questions: [{ key: 'goal', label: 'Goal', question: 'Which existing run goal?', why: '', suggestedAnswer: 'Synthetic adoption', basis: [] }],
+    };
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+      route.fulfill({
+        json: {
+          ...documentFixture(),
+          type,
+          documentId: 'living',
+          runs: [
+            {
+              project: DOCUMENT_PROJECT.uid,
+              agentKey: type.agentKey,
+              documentId: 'living',
+              runId,
+              state: 'questions',
+              startedAt: '2026-10-29T09:00:00Z',
+              pendingQuestions,
+            },
+          ],
+        },
+      })
+    );
+    const bodies: Record<string, unknown>[] = [];
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 409,
+        json: {
+          code: 'MKTG_RUN_ACTIVE',
+          message: 'A run is in progress.',
+          activeRunId: runId,
+          state: 'questions',
+          agentKey: type.agentKey,
+          documentId: 'living',
+          startedBy: 'Synthetic writer',
+          startedByViewer: false,
+          startedAt: '2026-10-29T09:00:00Z',
+        },
+      });
+    });
+    await sources.open();
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    const dialog = page.getByRole('alertdialog').filter({ hasText: "Synthetic writer's Brand Kit run is in progress" }).last();
+    await expect(dialog).toBeVisible();
+    const beforeOpen = bodies.length;
+    await dialog.getByRole('button', { name: 'Open it', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}.*run=${runId}`));
+    await expect(page.getByTestId('mktg-run-questions')).toContainText('Which existing run goal?');
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    expect(bodies).toHaveLength(beforeOpen); // Keep/Open never accepts a new Generate or discard.
+    expect(bodies.every((body) => !body['discard'])).toBe(true);
+    await page.screenshot({ path: info.outputPath('keep-existing-run-questions.png'), fullPage: true });
+  });
+
   test('a finished run record defeats a stale active conflict before any discard dialog', async ({ page }, info) => {
     const sources = await setupFreshSources(page);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);

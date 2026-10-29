@@ -9,6 +9,7 @@ import { DOCUMENT_PROJECT, DOCUMENT_TYPE, documentFixture, fulfillDocumentJson, 
 
 async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   const alreadyAnswered = info.title.includes('already answered');
+  const exactProduced = info.title.includes('produced revision');
   await suppressCookieBanner(page);
   await setupDocuments(page, { empty: true });
   const runId = 'c'.repeat(64);
@@ -21,6 +22,8 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   });
   const history = documentFixture();
   const revision = history.revisions[0];
+  if (!revision) throw new Error('Missing synthetic revision');
+  const produced = { ...revision, id: '000009-' + '9'.repeat(64), number: 9, contentSha256: '9'.repeat(64) };
   const stored = { ...history, runs: [], revision, markdown: '# Synthetic cross-device draft', sidecar: null, approval: null };
   await page.route('**/api/mktg-agents/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -34,7 +37,27 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     }
     if (path.endsWith(`/documents/${DOCUMENT_TYPE.agentKey}/living`)) {
       await firstRead;
-      if (phase === 'landed') return fulfillDocumentJson(route, stored);
+      if (phase === 'landed')
+        return fulfillDocumentJson(
+          route,
+          exactProduced
+            ? {
+                ...stored,
+                revisions: [produced, ...history.revisions],
+                runs: [
+                  {
+                    project: DOCUMENT_PROJECT.uid,
+                    agentKey: DOCUMENT_TYPE.agentKey,
+                    documentId: 'living',
+                    runId,
+                    state: 'completed',
+                    startedAt: '2026-10-28T10:00:00Z',
+                    producedRevisionId: produced.id,
+                  },
+                ],
+              }
+            : stored
+        );
       return fulfillDocumentJson(route, {
         project: DOCUMENT_PROJECT.uid,
         type: DOCUMENT_TYPE,
@@ -60,7 +83,11 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
         ],
       });
     }
-    if (path.includes('/revisions/')) return fulfillDocumentJson(route, stored);
+    if (path.includes('/revisions/'))
+      return fulfillDocumentJson(
+        route,
+        exactProduced && path.endsWith(produced.id) ? { ...stored, revision: produced, markdown: '# Synthetic produced revision v9' } : stored
+      );
     if (route.request().method() === 'POST' && (path.endsWith('/generate') || path.endsWith('/answers'))) {
       throw new Error('Public answers must never generate again or use the creator-only answers route');
     }
@@ -103,11 +130,15 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     },
   ]);
   phase = 'landed';
-  await expect(page.getByRole('heading', { name: 'Synthetic cross-device draft', exact: true })).toBeVisible({ timeout: 20000 });
-  expect(new URL(page.url()).searchParams.has('revision')).toBe(false);
+  await expect(page.getByRole('heading', { name: exactProduced ? 'Synthetic produced revision v9' : 'Synthetic cross-device draft', exact: true })).toBeVisible(
+    { timeout: 20000 }
+  );
+  if (exactProduced) expect(new URL(page.url()).searchParams.get('revision')).toBe(produced.id);
+  else expect(new URL(page.url()).searchParams.has('revision')).toBe(false);
   expect(submitted).toHaveLength(1);
   await page.screenshot({ path: info.outputPath('public-run-answers-landed.png'), fullPage: true });
 }
 
 test('another browser answers a waiting public kit run, follows writing and lands on the current document', publicRunAnswers);
 test('another writer already answered the public run questions, so this browser follows writing without resending', publicRunAnswers);
+test('a public follower opens the recorded produced revision rather than approved current', publicRunAnswers);

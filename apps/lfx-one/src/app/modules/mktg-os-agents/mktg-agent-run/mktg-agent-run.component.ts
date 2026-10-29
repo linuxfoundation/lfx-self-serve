@@ -28,6 +28,7 @@ import {
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_REVISION_ID_REGEX,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
@@ -70,6 +71,7 @@ import {
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
   mktgRunAnsweredBy,
+  mktgRunRouteFor,
   readMktgRetiredRunHint,
   mktgLinkWarnings,
 } from '@lfx-one/shared/utils';
@@ -164,6 +166,9 @@ export class MktgAgentRunComponent {
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
   private guardReadSub: Subscription | null = null;
+  private privateReceiptRunId = '';
+  private receiptRecoveryRunId = '';
+  private completedRun: MktgDocumentRunProgress | null = null;
   protected readonly checkingGuard = signal(false);
   protected readonly answeredNotice = signal<MktgRunAnsweredNotice | null>(null);
   /**
@@ -635,7 +640,9 @@ export class MktgAgentRunComponent {
               return EMPTY;
             }
             const destination = this.navigation();
+            let identityOwned: MktgPendingGeneration | null = null;
             if (
+              context &&
               this.publicReceiver() &&
               user?.sub &&
               runId &&
@@ -646,12 +653,20 @@ export class MktgAgentRunComponent {
               !destination.subject
             ) {
               this.pendingPublicRunId = '';
-              this.navigation.set({ ...destination, subject: user.sub });
-              this.onRetryHandoff();
-              return EMPTY;
+              const owned = this.runAttempts.load(context.uid, this.agent?.id ?? '');
+              if (owned?.attempt?.runId === runId && (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions))) {
+                // 144-A/#4636: late identity may reveal this browser's accepted private run.
+                // Do not resume a revision-less public destination instead of its exact receipt.
+                identityOwned = owned;
+              } else {
+                this.navigation.set({ ...destination, subject: user.sub });
+                this.onRetryHandoff();
+                return EMPTY;
+              }
             }
             this.resetForContext(context, fresh);
             if (!context || !user?.sub) return EMPTY;
+            if (identityOwned) this.resumeAcceptedAttempt(identityOwned, context.uid);
             if (this.publicReceiver()) {
               this.publicProgressView()?.reobserve(context.uid);
               return EMPTY;
@@ -726,9 +741,45 @@ export class MktgAgentRunComponent {
     const agentKey = this.publicAgentKey();
     if (!this.publicReceiver() || !projectUid || !agentKey) return;
     this.checkingRun.set(false);
-    // Public completion has no exact-revision receipt: open the current document, without revision=.
+    const destination = this.navigation();
+    if (!failed && destination?.projectUid === projectUid && destination.agentKey === agentKey && destination.revisionId) return;
+    const runId = this.publicRunId();
+    const owned = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+    const ownsRun =
+      !!runId &&
+      owned?.attempt?.runId === runId &&
+      owned.request.projectUid === projectUid &&
+      owned.request.agentId === this.agent?.id &&
+      (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions));
+    const privateReceiptPending =
+      !!runId && this.privateReceiptRunId === runId && this.activeRequest?.projectUid === projectUid && this.activeRequest.agentId === this.agent?.id;
+    if (!failed && (ownsRun || privateReceiptPending)) {
+      // 144-A: a metadata completion can arrive before the creator's document_location.
+      // Keep that private read alive; an approved/current revision is never its substitute.
+      this.writingStretch.set(true);
+      if (owned && ownsRun && (!this.generationSub || this.generationSub.closed) && this.receiptRecoveryRunId !== runId) {
+        this.receiptRecoveryRunId = runId;
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
+      } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
+        this.errorText.set('The produced revision is not confirmed yet. Refresh this run before opening its saved output.');
+      }
+      return;
+    }
+    const completed = this.publicProgressView()?.selectedRun() ?? this.completedRun;
+    const produced =
+      !failed &&
+      completed?.state === 'completed' &&
+      completed.project === projectUid &&
+      completed.agentKey === agentKey &&
+      completed.runId === runId &&
+      completed.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      completed.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(completed.producedRevisionId)
+        ? completed.producedRevisionId
+        : undefined;
+    // Missing public pointers retain the legacy document route; never substitute latest/current for an exact receipt.
     const subject = this.userService.user()?.sub ?? '';
-    this.navigation.set({ projectUid, subject, agentKey, ...(failed && { runId: this.publicRunId() }) });
+    this.navigation.set({ projectUid, subject, agentKey, ...(produced && { revisionId: produced }), ...(failed && { runId: this.publicRunId() }) });
     this.pendingPublicRunId = subject ? '' : this.publicRunId();
     // The conflict notice stays with writing progress; stored runs still land normally (144-E).
     if (subject) this.onRetryHandoff();
@@ -757,6 +808,15 @@ export class MktgAgentRunComponent {
       this.errorText.set('');
     }
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
+    if (
+      run?.state === 'completed' &&
+      run.project === this.publicProject() &&
+      run.agentKey === this.publicAgentKey() &&
+      run.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      run.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(run.producedRevisionId)
+    )
+      this.completedRun = run;
     const notice = this.answeredNotice();
     if (
       notice &&
@@ -934,6 +994,12 @@ export class MktgAgentRunComponent {
   }
 
   protected onContinueWaiting(): void {
+    const runId = this.existingRun()?.runId ?? this.waitingRun()?.runId;
+    const agentKey = this.assetType?.agentKey;
+    if (agentKey && runId && MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.openActiveRun(agentKey, runId, this.waitingQuestions());
+      return;
+    }
     if (this.waitingQuestions()) {
       // Removing entry-only mode uses the same restoration path as a plain run URL.
       this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
@@ -1319,11 +1385,7 @@ export class MktgAgentRunComponent {
           conflict = fresh;
           discard();
         },
-        onOpen: (fresh) => {
-          void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
-            queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: fresh.activeRunId },
-          });
-        },
+        onOpen: (fresh) => this.openActiveRun(fresh.agentKey, fresh.activeRunId),
         onError: () => {
           this.discardPendingNavigation();
           this.navigating.set(false);
@@ -1341,6 +1403,19 @@ export class MktgAgentRunComponent {
       },
       this.destroyRef
     );
+  }
+
+  /** 146-G: Keep/Open targets the server's active run, never the reader's current document. */
+  private openActiveRun(agentKey: MktgDocumentRunProgress['agentKey'], runId: string, replaceUrl = false): void {
+    const commands = mktgRunRouteFor(agentKey, mktgKitRootPath(this.router.url));
+    if (!commands || !MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.errorText.set('The active run could not be opened. Check its entry in Documents.');
+      return;
+    }
+    void this.router.navigate(commands, {
+      queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: runId },
+      ...(replaceUrl && { replaceUrl: true }),
+    });
   }
 
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
@@ -1880,6 +1955,9 @@ export class MktgAgentRunComponent {
     this.discardedRunId = null;
     this.discardEpoch++;
     this.conflictDiscardId = null;
+    this.privateReceiptRunId = '';
+    this.receiptRecoveryRunId = '';
+    this.completedRun = null;
     this.guardReadSub?.unsubscribe();
     this.guardReadSub = null;
     this.checkingGuard.set(false);
@@ -2017,6 +2095,7 @@ export class MktgAgentRunComponent {
   }
 
   private resumeAcceptedAttempt(pending: MktgPendingGeneration, projectUid: string): void {
+    this.privateReceiptRunId = pending.attempt?.runId ?? '';
     this.activeRequest = pending.request;
     this.restoreInputs(pending.request, 'returned');
     this.hasAcknowledgement.set(true);
@@ -2243,6 +2322,8 @@ export class MktgAgentRunComponent {
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
     if (progress.type === 'submitted') {
+      const accepted = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+      if (accepted?.attempt?.runId) this.privateReceiptRunId = accepted.attempt.runId;
       this.conflictDiscardId = null;
       this.hasAcknowledgement.set(true);
       this.consumeFreshEntry(projectUid);
@@ -2281,6 +2362,8 @@ export class MktgAgentRunComponent {
       return;
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
+      this.privateReceiptRunId = '';
+      this.receiptRecoveryRunId = '';
       this.discardPendingNavigation();
       this.navigating.set(false);
       this.recheckingAttempt.set(false);
@@ -2313,7 +2396,7 @@ export class MktgAgentRunComponent {
       if (projectUid !== this.projectContext.activeContextUid() || (request && (request.projectUid !== projectUid || request.agentId !== this.agent?.id)))
         return;
       this.dependencyService.notifyDocumentsChanged(projectUid);
-      if (this.navigation()) return;
+      if (this.navigation()?.revisionId) return;
       const run = progress.run;
       const attempt = progress.attempt;
       if (!request || !run || !attempt) {
@@ -2362,6 +2445,7 @@ export class MktgAgentRunComponent {
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
   private showQuestions(pending: MktgRunQuestionsPending, confirmed = false): void {
     if (pending.attempt.runId) {
+      this.privateReceiptRunId = pending.attempt.runId;
       this.discoveredRunId.set(pending.attempt.runId);
       this.publicReceiver.set(true);
       if (!confirmed) {
