@@ -4,7 +4,7 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, signal, viewChild, WritableSignal } from '@angular/core';
 import { IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
-import { UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingsRailBlock, UiTabItem } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
@@ -46,7 +46,7 @@ export class MeetingsRedesignComponent {
     { value: 'upcoming', label: 'Upcoming' },
     { value: 'past', label: 'Past' },
   ];
-  protected readonly railBlocks: { key: string; label: string }[] = [
+  protected readonly railBlocks: MeetingsRailBlock[] = [
     { key: 'next-meeting', label: 'Next meeting' },
     { key: 'last-meeting', label: 'Last meeting' },
     { key: 'pending-rsvps', label: 'Pending RSVPs' },

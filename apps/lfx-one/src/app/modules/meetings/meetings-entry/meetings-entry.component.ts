@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal, untracked, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { MEETINGS_REDESIGN_FLAG, MEETINGS_REDESIGN_READY_TIMEOUT_MS } from '@lfx-one/shared/constants';
@@ -19,7 +19,7 @@ import { MeetingsRedesignComponent } from '../meetings-redesign/meetings-redesig
   selector: 'lfx-meetings-entry',
   templateUrl: './meetings-entry.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MeetingsDashboardComponent, MeetingsRedesignComponent],
+  imports: [NgTemplateOutlet, MeetingsDashboardComponent, MeetingsRedesignComponent],
   host: { class: 'block' },
 })
 export class MeetingsEntryComponent {
@@ -39,6 +39,14 @@ export class MeetingsEntryComponent {
     if (this.isFlatMeetingsUrl && isPlatformBrowser(this.platformId)) {
       afterNextRender(() => void this.resolveFlag());
     }
+  }
+
+  private initView(): Signal<'loading' | 'v1' | 'redesign'> {
+    return computed(() => {
+      const showRedesign = this.showRedesign();
+      if (showRedesign === null) return 'loading';
+      return showRedesign ? 'redesign' : 'v1';
+    });
   }
 
   private async resolveFlag(): Promise<void> {
@@ -65,13 +73,5 @@ export class MeetingsEntryComponent {
   private resolve(flagOn: boolean): void {
     // Read the lens once, untracked: a later lens change must not swap the page.
     this.showRedesign.set(flagOn && untracked(() => this.lensService.activeLens()) === 'me');
-  }
-
-  private initView(): Signal<'loading' | 'v1' | 'redesign'> {
-    return computed(() => {
-      const showRedesign = this.showRedesign();
-      if (showRedesign === null) return 'loading';
-      return showRedesign ? 'redesign' : 'v1';
-    });
   }
 }

@@ -5,19 +5,25 @@
   @case ('redesign') {
     @defer (on immediate) {
       <lfx-meetings-redesign />
+    } @placeholder {
+      <ng-container [ngTemplateOutlet]="loading" />
     }
   }
   @case ('v1') {
     <lfx-meetings-dashboard />
   }
   @default {
-    <div class="flex min-h-[320px] items-center justify-center" role="status" data-testid="meetings-entry-loading">
-      <!-- CSS spinner (FA kit is deferred); 36px exact at the 14px root. -->
-      <div
-        class="h-[36px] w-[36px] shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500"
-        aria-hidden="true"
-        data-testid="meetings-entry-spinner"></div>
-      <span class="sr-only">Loading meetings</span>
-    </div>
+    <ng-container [ngTemplateOutlet]="loading" />
   }
 }
+
+<ng-template #loading>
+  <div class="flex min-h-[320px] items-center justify-center" role="status" data-testid="meetings-entry-loading">
+    <!-- CSS spinner (FA kit is deferred); 36px exact at the 14px root. -->
+    <div
+      class="h-[36px] w-[36px] shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500"
+      aria-hidden="true"
+      data-testid="meetings-entry-spinner"></div>
+    <span class="sr-only">Loading meetings</span>
+  </div>
+</ng-template>
