@@ -155,9 +155,8 @@ export class VotesTableComponent {
   /**
    * Fires immediately with the confirmed vote once extendVote() succeeds (GH-3823 review, @greptile-apps) —
    * refresh.emit()'s search-index refetch can echo back a not-yet-reindexed (stale) deadline, which would
-   * otherwise leave an already-open results drawer showing the pre-extension deadline indefinitely, since its
-   * listVote input would see no change. A host feeding this table's votes into that drawer's listVote should
-   * apply this override until its own votes/refresh source catches up.
+   * otherwise leave the row showing the pre-extension deadline. A host feeding this table's votes should apply
+   * this override until its own votes/refresh source catches up.
    */
   public readonly voteExtended = output<Vote>();
 

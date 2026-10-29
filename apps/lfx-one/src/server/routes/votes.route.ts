@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
@@ -28,10 +29,13 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // POST /votes/responses - submit a vote response (ballot)
 // Note: literal-segment routes must precede '/:uid' handlers so Express
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
-router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
+router.post('/responses', blockDuringImpersonation, (req, res, next) => voteController.createVoteResponse(req, res, next));
 
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
+
+// GET /votes/:uid/my-ballot - current user's submitted ballot (read-only Review and "Your ballot", #4331)
+router.get('/:uid/my-ballot', (req, res, next) => voteController.getMyVoteBallot(req, res, next));
 
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
@@ -39,7 +43,7 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
 
-// GET /votes/:uid/voters - invited voters with their current ballot (vote#writer only, named votes)
+// GET /votes/:uid/voters - invited voters with their current ballot, or participation only on pseudo-anonymous votes (vote#writer only)
 router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));
 
 // GET /votes/:uid - get a single vote

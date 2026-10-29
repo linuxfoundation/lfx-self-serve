@@ -3,8 +3,8 @@ title: Manage Votes
 description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link]
-last_updated: 2026-10-28
+tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -24,10 +24,10 @@ The buttons on a row depend on the vote's status and on whether you can manage v
 | Status     | Buttons on the row   | What they do                                                         |
 | ---------- | -------------------- | -------------------------------------------------------------------- |
 | **Draft**  | **Edit**, **Delete** | Edit the draft, or delete it. Drafts have no **⋮** menu.             |
-| **Active** | **View**             | Opens the [Results drawer](../vote-results/) with live results.      |
-| **Ended**  | **Results**          | Opens the [Results drawer](../vote-results/) with the final results. |
+| **Active** | **View**             | Opens the vote's page with live results.                             |
+| **Ended**  | **Results**          | Opens the vote's page on the **Results** tab with the final results. |
 
-Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name opens the same drawer as the main button.
+Active and ended votes also have a **⋮** (**More actions**) menu. Selecting a row's name does the same as the main button.
 
 ### The ⋮ menu
 
@@ -57,20 +57,31 @@ See [Create a Vote](../create-vote/) for what each field means.
 
 ## Cast your vote
 
-You vote from the **Me** lens, where **Votes** lists the votes you are invited to.
+You vote from the **Me** lens, where **Votes** lists the votes you are invited to. You can also open a vote's page, for example from a reminder email, and select **Cast vote**.
 
-1. Find the active vote. Its button reads **Vote** if you haven't voted yet.
-2. Select **Vote**. A drawer opens with the vote's details and questions.
-3. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
-4. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
-5. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
-6. Select **Submit Vote**.
+1. Find the active vote. Its button reads **Vote** if you haven't voted yet. Select **Vote**, or select the vote's name. A drawer opens with the vote's details and questions.
+2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
+3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
+4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
+5. Select **Submit Vote**.
 
-After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens a confirmation that your vote was recorded. You can't change a ballot after submitting it, and results stay hidden until the vote closes.
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. The drawer has no submit or change action, so a ballot is read-only here (a personalized ballot link can still update an active ballot). The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
+
+### While impersonating another user
+
+In **Admin Mode**, you cannot cast or change another user's ballot. You may inspect a named ballot read-only when your existing access permits it. Pseudo-anonymous ballots, and ballots whose privacy setting cannot be verified, hide the target voter's choices, abstention and ballot comments. My Votes, the vote page and Pending Actions explain the restriction. These limits apply only while impersonating; they do not change your own voting or normal vote-management permissions.
 
 ## Share a link
 
 Select **⋮ → Copy link** to copy a direct link to the vote. See [Sharing a link to a vote](../#sharing-a-link-to-a-vote) for who can open it.
+
+## View results
+
+Select a vote's name, or **View** on an active vote or **Results** on an ended vote, to open its page. Managers see live results while the vote is open. Voters see only their own response until the vote closes. See [Vote Results](../vote-results/) for what each tab shows.
+
+On a pseudo-anonymous vote, totals, abstentions and comments stay hidden until the vote closes and its results are finalized. Managers can see who has responded on the **Voters** tab, but not how anyone voted, both while the vote is open and after it closes. Comments appear without names or dates once results are released.
+
+When a vote closes, invited voters see the final totals and comments. Voters see comments without names. On named votes, only users who can manage the vote see who wrote each comment; pseudo-anonymous comments remain unattributed for everyone. For people who weren't invited to a vote, or were removed from it, the vote's page shows only its title, status and a message that they aren't a voter. The server blocks their access to results and comments.
 
 ## Send a reminder
 

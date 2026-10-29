@@ -8,7 +8,8 @@ import { AuthHelper } from './auth.helper';
 
 // Ensure .env is loaded before reading credentials
 try {
-  process.loadEnvFile(path.resolve(__dirname, '../../.env'));
+  // The app's older Node declarations do not include this Node 22 API yet.
+  (process as NodeJS.Process & { loadEnvFile: (path: string) => void }).loadEnvFile(path.resolve(__dirname, '../../.env'));
 } catch (err) {
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
     console.warn('[loadenvfile] failed to load .env:', err);
@@ -29,8 +30,8 @@ async function writeEmptyStorageState(): Promise<void> {
 
 async function globalSetup(config: FullConfig) {
   const credentials = {
-    username: process.env.TEST_USERNAME || '',
-    password: process.env.TEST_PASSWORD || '',
+    username: process.env['TEST_USERNAME'] || '',
+    password: process.env['TEST_PASSWORD'] || '',
   };
 
   // HALF a credential pair is a FAULT, not a choice to skip.

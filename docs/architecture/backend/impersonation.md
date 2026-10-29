@@ -217,6 +217,15 @@ Profile **writes** cannot act on the target (there is no CTE equivalent for the 
 - `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `skipCdpMutations` flag (derived from `isImpersonating(req)` inside `reconcileIdentities`), so viewing a target's identities never mutates their CDP records.
 - The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings — except **Edit profile** and **Public profile settings**, which stay enabled and open their drawers in read-only impersonation mode (form disabled client-side, mutations still blocked with 403 `IMPERSONATION_READ_ONLY`).
 
+### Voting ballots in Admin Mode (#4331)
+
+These restrictions apply only while actively impersonating another user, not to EDs or admins acting as themselves. Vote-management permissions and aggregate results visibility are unchanged.
+
+- `POST /api/votes/responses` uses `blockDuringImpersonation` and returns **403 `IMPERSONATION_READ_ONLY`** before submission side effects. The authenticated `/api/votes` router has no ballot replacement PUT; replacement goes through `PUT /public/api/votes/link-responses` (personalized link).
+- `GET /api/votes/:uid/my-ballot` permits read-only inspection only when the vote is explicitly named (`pseudo_anonymity === false`), subject to the existing invitation/access checks. Pseudo-anonymous or unknown privacy returns **403 `IMPERSONATION_BALLOT_PRIVATE`** before fetching ballot content; a failed metadata lookup never grants access.
+- During impersonation, `my-response` returns only invitation identifiers, participation status and removal state, never indexed answers, abstention, comments or submission times. Named content is available through the privacy-checked `my-ballot` endpoint.
+- My Votes Review, the vote page and the Pending Actions inline ballot explain the privacy/read-only restriction instead of showing an editable empty ballot. Normal self-voting, including seeing one's own pseudo-anonymous ballot, is unaffected.
+
 ### 6. SSR Handler
 
 **`apps/lfx-one/src/server/server.ts`**

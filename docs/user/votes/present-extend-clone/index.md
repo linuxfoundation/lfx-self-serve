@@ -17,7 +17,7 @@ This article is for people who manage votes. These actions are in the **⋮** (*
 1. Find an active or ended vote you manage.
 2. Select **⋮ → Present**. The presenter opens in a new browser tab at `/votes/:id/present`.
 
-You can also open it from the **Present** button in the vote's [Results drawer](../vote-results/).
+You can also open it from the **Present** button on the vote's [page](../vote-results/).
 
 You need permission to manage the vote. If you don't have it, **Present** isn't in the menu.
 
@@ -41,11 +41,13 @@ While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vo
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
 
+If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
+
 Press **Exit** or **Esc** to leave the presenter. Once the vote has ended it leaves straight away, with no question. It takes you to the vote's page in LFX.
 
 ### Copy slide
 
-The Results drawer for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
+The page for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
 
 ## Extend the deadline
 

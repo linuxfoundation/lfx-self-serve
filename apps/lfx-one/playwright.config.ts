@@ -154,7 +154,8 @@ export default defineConfig({
         // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
         // alone works on a machine that has built before and cannot compile on a clean checkout —
         // so the suite would fail to launch in CI while passing locally.
-        command: `yarn docs:build && yarn ng serve --port ${E2E_LAUNCH_PORT}`,
+        // SSR API reads use PORT (4000 by default), so it must match the dev server's actual listener.
+        command: `yarn docs:build && PORT=${E2E_LAUNCH_PORT} yarn ng serve --port ${E2E_LAUNCH_PORT}`,
         url: E2E_BASE_URL,
         reuseExistingServer: !process.env['CI'],
         timeout: 120000,

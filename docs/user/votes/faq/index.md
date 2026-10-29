@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 ## Can I change my vote after submitting?
 
-No. After you select **Submit Vote**, the **Review** button shows only a confirmation that your vote was recorded. There is no way to edit or resubmit.
+Not from the signed-in app: ballots are read-only there. (While a vote is active, your personalized ballot link, if you received one, still lets you update your ballot.) From **Votes**, select **Review** on an active vote you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. The signed-in drawer has no submit or change action. The **Your ballot** section on the vote's page also shows what is recorded.
 
 ## What does Abstain do?
 
@@ -26,18 +26,18 @@ If the creator turned on **Allow Abstain**, voters can select **Abstain from thi
 
 ## What are comment questions?
 
-Comment questions are optional open-ended questions the creator adds, such as "Why did you vote this way?" Voters answer them under **Additional Comments (Optional)**. Comment responses appear in the results with the commenter's name and the date. Managers see them, and voters see them too once the vote closes, so write comments as if others can read them.
+Comment questions are optional open-ended questions the creator adds, such as "Why did you vote this way?" Voters answer them under **Additional Comments (Optional)**. Comment responses appear in the results. On a named vote, managers see who wrote each comment. Voters see the comments too once the vote closes, without names. Comments on a pseudo-anonymous vote are unattributed for everyone. Write comments as if others can read them.
 
 ## Who can see the results?
 
-- **From the Me lens list**, you see the voter view. There are no tallies while the vote is open, and after it closes you see the final results.
-- **From the Project or Foundation Votes dashboard, or a group's Votes tab**, people who manage the vote see live results while it is open and final results after it closes.
-- A shared link to a vote opens the full results view if you manage the vote, unless you still have a ballot to cast. Then it opens the cast drawer.
+- **Voters** see only their own response while the vote is open, with no tallies. After it closes they see the final results.
+- **People who manage the vote** see live results while it is open and final results after it closes, on the vote's page.
+- A shared link to a vote opens its page. If you are invited and still have a ballot to cast, the cast drawer opens on top of it.
 - Anyone watching a [presenter screen](../present-extend-clone/#present-a-vote) sees only how many people have voted until the vote ends.
 
 ## Are votes anonymous?
 
-Votes created in LFX One are not secret ballots, and the Create Vote form has no setting for it. A vote that was set up as a secret ballot elsewhere is marked that way. For those votes, the presenter says **Ballots are secret**, and the voter results view doesn't show **You voted on this motion**. Secret-ballot votes can't be cloned yet. On any vote, comment responses show the commenter's name. For questions about how a specific vote handles anonymity, contact your project administrator.
+Votes created in LFX One are not secret ballots, and the Create Vote form has no setting for it. A vote that was set up as a secret ballot elsewhere is marked that way. For those votes, the presenter says **Ballots are secret**. Secret-ballot votes can't be cloned yet. On a named vote, only people who manage the vote see the commenter's name; on a pseudo-anonymous vote, comments are unattributed for everyone. For questions about how a specific vote handles anonymity, contact your project administrator.
 
 ## Can a vote be extended?
 

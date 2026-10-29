@@ -6,6 +6,8 @@ import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   INVITATION_NOT_FOUND,
   RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_BALLOT_READ_RETRY_COUNT,
+  VOTE_BALLOT_READ_RETRY_DELAY_MS,
   VOTE_CREATE_COMPLETED_AT_HEADER,
   VOTE_DETAIL_CACHE_TTL_MS,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
@@ -19,6 +21,7 @@ import {
   EnableVoteRequest,
   EnableVoteResponse,
   ExtendVoteRequest,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesApiResponse,
   MyVotesResponse,
@@ -34,11 +37,13 @@ import {
   PublicProjectSummary,
   VoteLinkBallot,
   VoteLinkResponseRequest,
+  VoteParticipationVoter,
   VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
   VoteStatusCounts,
   VoteSummary,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
@@ -390,6 +395,14 @@ export class VoteService {
     return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
   }
 
+  /**
+   * Every invited voter — vote managers only. Named votes return each voter's status and current ballot (#3911);
+   * pseudo-anonymous votes return participation-only rows (#3916).
+   */
+  public getVoteVoters(voteUid: string): Observable<VoteVoter[] | VoteParticipationVoter[]> {
+    return this.http.get<VoteVoter[] | VoteParticipationVoter[]>(`/api/votes/${encodeURIComponent(voteUid)}/voters`).pipe(take(1));
+  }
+
   /** Resends the vote email to the given recipients (#3769). */
   public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
     const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
@@ -613,7 +626,9 @@ export class VoteService {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
 
-  /** Wraps getMyVoteResponse + createVoteResponse; throws INVITATION_NOT_FOUND if no row exists. */
+  /**
+   * Wraps getMyVoteResponse + createVoteResponse for an initial ballot; throws INVITATION_NOT_FOUND if no row exists.
+   */
   public submitMyResponse(
     voteUid: string,
     params: { abstain: boolean; userVoteContent: VoteAnswerInput[] | undefined; commentResponses?: CommentResponseInput[] }
@@ -643,6 +658,21 @@ export class VoteService {
         // instead of misreporting it as "Unable to find your invitation".
         if (err?.status === 404) return of(null);
         console.error(`Failed to load my-response for vote ${voteUid}:`, err);
+        return throwError(() => err);
+      })
+    );
+  }
+
+  /** The caller's submitted ballot (#4331); retry index-lag 404s briefly, then return null. Other errors are rethrown. */
+  public getMyVoteBallot(voteUid: string): Observable<MyVoteBallot | null> {
+    return this.http.get<MyVoteBallot>(`/api/votes/${encodeURIComponent(voteUid)}/my-ballot`).pipe(
+      retry({
+        count: VOTE_BALLOT_READ_RETRY_COUNT,
+        delay: (err: HttpErrorResponse) => (err?.status === 404 ? timer(VOTE_BALLOT_READ_RETRY_DELAY_MS) : throwError(() => err)),
+      }),
+      catchError((err: HttpErrorResponse) => {
+        if (err?.status === 404) return of(null);
+        console.error(`Failed to load my-ballot for vote ${voteUid}:`, { status: err?.status, message: err?.message });
         return throwError(() => err);
       })
     );

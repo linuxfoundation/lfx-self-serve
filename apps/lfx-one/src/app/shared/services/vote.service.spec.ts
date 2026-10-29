@@ -9,7 +9,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
 import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -707,6 +707,133 @@ describe('VoteService', () => {
 
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
       expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
+  });
+
+  describe('own ballot (#4331)', () => {
+    const answers = [{ question_id: 'q-1', choice_ids: ['c-yes'] }];
+
+    it('getMyVoteBallot GETs the encoded my-ballot URL', () => {
+      const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote/1', abstained: false, poll_answers: [], comment_responses: [] };
+      http.get.mockReturnValue(of(ballot));
+      const next = vi.fn();
+
+      service.getMyVoteBallot('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/my-ballot');
+      expect(next).toHaveBeenCalledWith(ballot);
+    });
+
+    it('returns the accepted ballot when a bounded 404 retry observes index convergence', async () => {
+      vi.useFakeTimers();
+      try {
+        const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+        const read = vi
+          .fn()
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockReturnValue(ballot);
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(999);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2001);
+        expect(read).toHaveBeenCalledTimes(4);
+        expect(next).toHaveBeenCalledExactlyOnceWith(ballot);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('maps a persistent 404 to null after exactly three additional attempts', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(next).toHaveBeenCalledExactlyOnceWith(null);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels pending ballot retries on unsubscribe', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        const subscription = service.getMyVoteBallot('vote-1').subscribe(next);
+        subscription.unsubscribe();
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([0, 401, 403, 500])('getMyVoteBallot immediately rethrows non-404 status %s', (status) => {
+      const failure = new HttpErrorResponse({ status });
+      http.get.mockReturnValue(throwError(() => failure));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const error = vi.fn();
+
+      service.getMyVoteBallot('vote-1').subscribe({ error });
+
+      expect(error).toHaveBeenCalledWith(failure);
+    });
+
+    it('never silently replaces a recorded ballot when submitting from a stale first-vote form', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      http.put.mockReturnValue(of(undefined));
+      const error = vi.fn();
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe({ error });
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', expect.objectContaining({ vote_response_uid: 'vr-1' }));
+      expect(http.put).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 409 }));
+    });
+
+    it('submitMyResponse creates the ballot for a row still awaiting a response', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }));
+      http.post.mockReturnValue(of(undefined));
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', {
+        vote_response_uid: 'vr-1',
+        vote_uid: 'vote-1',
+        abstain: false,
+        user_vote_content: answers,
+        comment_responses: undefined,
+      });
+      expect(http.put).not.toHaveBeenCalled();
     });
   });
 

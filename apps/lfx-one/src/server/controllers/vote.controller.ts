@@ -18,7 +18,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { buildValidatedCommentResponses, buildValidatedVoteAnswers } from '../helpers/vote-response-validation.helper';
-import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { assertVoteWrite, hasVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -364,6 +364,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid/results
+   * Vote writers get today's results; everyone else goes through the service's non-writer gate (#4330).
    */
   public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -381,12 +382,15 @@ export class VoteController {
         return;
       }
 
-      const results = await this.voteService.getVoteResults(req, uid);
+      const canWrite = await hasVoteWrite(req, uid, 'get_vote_results');
+      const results = await this.voteService.getVoteResults(req, uid, { canWrite });
 
       logger.success(req, 'get_vote_results', startTime, {
         vote_uid: uid,
+        can_write: canWrite,
         num_poll_results: results?.poll_results?.length ?? 0,
         num_votes_cast: results?.num_votes_cast,
+        results_held: results?.results_held === true,
       });
 
       res.json(results);
@@ -503,6 +507,40 @@ export class VoteController {
     }
   }
 
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for read-only review and "Your ballot" (#4331). */
+  public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_vote_ballot',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const ballot = await this.voteService.getMyVoteBallot(req, uid);
+
+      if (!ballot) {
+        return next(
+          new ResourceNotFoundError('Vote ballot', uid, {
+            operation: 'get_my_vote_ballot',
+            service: 'vote_controller',
+            path: `/votes/${uid}/my-ballot`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
+      res.json(ballot);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * PUT /votes/:uid/enable
    */
@@ -576,9 +614,10 @@ export class VoteController {
   }
 
   /**
-   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * GET /votes/:uid/voters — every invited voter with their status, plus their current ballot on a
+   * named vote (#3911) or participation only on a pseudo-anonymous vote (#3916).
    * Gated on `vote#writer` before any read: every vote auditor can read the underlying
-   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   * `vote_response` rows. The service refuses drafts before reading them.
    */
   public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;

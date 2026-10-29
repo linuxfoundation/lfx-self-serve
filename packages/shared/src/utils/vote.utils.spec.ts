@@ -12,8 +12,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums';
-import type { PollCommentResponse, PollCommentResult, PollQuestionResult, Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums';
+import type {
+  MyVoteBallot,
+  MyVoteResponse,
+  PollAnswer,
+  PollCommentResponse,
+  PollCommentResult,
+  PollQuestionResult,
+  RankedQuestionView,
+  UserChoice,
+  Vote,
+  VoteFormValue,
+  VoteResultsOption,
+  VoteResultsQuestion,
+  VoteResultsResponse,
+  VoterResultsState,
+  VoteVoter,
+} from '../interfaces/poll.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
@@ -21,17 +37,35 @@ import {
   buildDraftVoteRequest,
   buildRankedQuestionViews,
   buildUpdateVoteRequest,
+  buildVoteBallotQuestions,
+  buildVoteParticipationRowView,
   buildVoteResultsQuestions,
+  buildVoteResultsSummary,
+  buildVoteVoterChoiceFilterOptions,
+  buildVoteVoterChoiceSummaries,
+  buildVoteVoterRowView,
+  canVoterFetchVoteResults,
   compareVotesByRecency,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  countVoteParticipationByStatus,
+  countVoteVotersByStatus,
+  getRecentCommentResponses,
+  getVoteVisibilityRules,
+  getVoteVoterStatus,
   isRankedPollType,
+  isVoteAwaitingMyBallot,
+  isVoteBallotReviewable,
   isVoteClosingSoon,
   mapFiltersToEligibility,
+  mapMyBallotToCastForm,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
+  matchesVoteVoterChoice,
   mergeCommentResults,
+  resolveVoterResultsState,
+  sortVoteVotersForDisplay,
   votePermalinkPath,
   truncateVoteTitle,
   votePresenterPath,
@@ -106,6 +140,54 @@ describe('matchesMyVotesQuickFilter', () => {
     expect(matchesMyVotesQuickFilter(active, 'closing-soon', nowMs)).toBe(true);
     expect(isVoteClosingSoon(active, nowMs)).toBe(true);
     expect(matchesMyVotesQuickFilter(active, 'needs-vote', nowMs)).toBe(true);
+  });
+});
+
+describe('isVoteAwaitingMyBallot', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    response_status: VoteResponseStatus.AWAITING_RESPONSE,
+    ...overrides,
+  });
+
+  it.each([PollStatus.ACTIVE, 'ACTIVE'])('is true for an awaiting response on status %s', (status) => {
+    expect(isVoteAwaitingMyBallot(vote({ status: status as PollStatus }))).toBe(true);
+  });
+
+  it('is false once the viewer has responded', () => {
+    expect(isVoteAwaitingMyBallot(vote({ response_status: VoteResponseStatus.RESPONDED }))).toBe(false);
+  });
+
+  it.each([PollStatus.ENDED, PollStatus.DISABLED])('is false for status %s', (status) => {
+    expect(isVoteAwaitingMyBallot(vote({ status }))).toBe(false);
+  });
+});
+
+describe('isVoteBallotReviewable (#4331)', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    response_status: VoteResponseStatus.RESPONDED,
+    ...overrides,
+  });
+
+  it('is true for an active vote the viewer already responded to', () => {
+    expect(isVoteBallotReviewable(vote())).toBe(true);
+  });
+
+  it('is false while the response is still awaited', () => {
+    expect(isVoteBallotReviewable(vote({ response_status: VoteResponseStatus.AWAITING_RESPONSE }))).toBe(false);
+  });
+
+  it('is false once the vote has ended', () => {
+    expect(isVoteBallotReviewable(vote({ status: PollStatus.ENDED }))).toBe(false);
   });
 });
 
@@ -436,7 +518,7 @@ describe('computeVoteParticipationStats', () => {
     }
   });
 
-  it('keeps a zero-person electorate at zero in the results drawer', () => {
+  it('keeps a zero-person electorate at zero in the participation stats', () => {
     expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
   });
 });
@@ -658,6 +740,111 @@ describe('buildRankedQuestionViews', () => {
   });
 });
 
+describe('buildVoteResultsSummary (#4450)', () => {
+  const option = (choiceId: string, text: string, voteCount: number, percentage: number, flags: Partial<VoteResultsOption> = {}): VoteResultsOption => ({
+    choiceId,
+    text,
+    voteCount,
+    percentage,
+    isWinner: false,
+    isTied: false,
+    isLeading: false,
+    ...flags,
+  });
+  const question = (questionId: string, options: VoteResultsOption[], prompt = `Prompt ${questionId}`): VoteResultsQuestion => ({
+    questionId,
+    question: prompt,
+    options,
+    totalVotes: options.reduce((sum, o) => sum + o.voteCount, 0),
+  });
+  const ranked = (questionId: string, counts: Record<string, number>): RankedQuestionView => ({
+    questionId,
+    prompt: `Prompt ${questionId}`,
+    hasRoundSummary: false,
+    choiceDistributions: Object.entries(counts).map(([choiceId, count]) => ({
+      choiceId,
+      choiceText: choiceId,
+      totalRanked: count,
+      rankCounts: [{ rank: 1, count, percentage: 100 }],
+    })),
+  });
+
+  it('names the open leader and its share', () => {
+    const q = question('q-1', [option('a', 'Yes', 87, 86.6, { isLeading: true }), option('b', 'No', 13, 13.4)]);
+    expect(buildVoteResultsSummary([q], [], true, false)).toEqual([{ questionId: 'q-1', question: 'Prompt q-1', text: 'Yes leads with 87%' }]);
+  });
+
+  it('reports an open tie of two', () => {
+    const q = question('q-1', [option('a', 'Yes', 5, 50, { isLeading: true }), option('b', 'No', 5, 50, { isLeading: true })]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('Tied: Yes and No (50% each)');
+  });
+
+  it('joins an open tie of three with commas and "and"', () => {
+    const q = question('q-1', [
+      option('a', 'A', 3, 33, { isLeading: true }),
+      option('b', 'B', 3, 33, { isLeading: true }),
+      option('c', 'C', 3, 33, { isLeading: true }),
+    ]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('Tied: A, B and C (33% each)');
+  });
+
+  it('describes zero choices without asserting no ballots were recorded on an open vote', () => {
+    const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
+    expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('No choices selected');
+  });
+
+  it('names the closed leader without declaring an elected winner', () => {
+    const q = question('q-1', [option('a', 'Yes', 8, 80, { isWinner: true, isLeading: true }), option('b', 'No', 2, 20)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes received the most votes with 80%');
+  });
+
+  it('uses neutral wording for a closed plurality-only leader', () => {
+    const q = question('q-1', [option('a', 'Yes', 4, 40, { isWinner: true, isLeading: true }), option('b', 'No', 3, 30), option('c', 'Later', 3, 30)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes received the most votes with 40%');
+  });
+
+  it('reports a closed tie', () => {
+    const q = question('q-1', [option('a', 'Yes', 4, 50, { isTied: true, isLeading: true }), option('b', 'No', 4, 50, { isTied: true, isLeading: true })]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Tied: Yes and No (50% each)');
+  });
+
+  it('describes zero choices without asserting no ballots were submitted on a closed vote', () => {
+    const q = question('q-1', [option('a', 'Yes', 0, 0), option('b', 'No', 0, 0)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('No choices selected');
+  });
+
+  it('names the ranked leader with a singular voter', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 1, b: 0 })], false, false)[0].text).toBe('Most first choices: a (1 voter)');
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true)[0].text).toBe('Most first choices: a (5 voters)');
+  });
+
+  it.each([
+    [false, 1, 'voter'],
+    [false, 3, 'voters'],
+    [true, 1, 'voter'],
+    [true, 3, 'voters'],
+  ] as const)('reports a ranked tie with voter units (closed=%s, count=%i)', (isClosed, count, unit) => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: count, b: count, c: 0 })], false, isClosed)[0].text).toBe(
+      `Most first choices: a and b (${count} ${unit} each)`
+    );
+  });
+
+  it('says no rankings are recorded when nobody ranked a first choice', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 0, b: 0 })], false, false)[0].text).toBe('No rankings recorded yet');
+    expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, false)[0].text).toBe('No rankings recorded yet');
+  });
+
+  it('does not imply more rankings can arrive after a vote closes', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 0, b: 0 })], false, true)[0].text).toBe('No rankings recorded');
+    expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, true)[0].text).toBe('No rankings recorded');
+  });
+
+  it('keeps question order across multiple questions', () => {
+    const qs = [question('q-2', [option('a', 'Yes', 1, 100, { isLeading: true })]), question('q-1', [option('a', 'No', 1, 100, { isLeading: true })])];
+    expect(buildVoteResultsSummary(qs, [], true, false).map((line) => line.questionId)).toEqual(['q-2', 'q-1']);
+  });
+});
+
 describe('mergeCommentResults', () => {
   function response(voteId: string, createdAt: string): PollCommentResponse {
     return { vote_id: voteId, comment_text: `Comment ${voteId}`, vote_creation_time: createdAt, abstained: false };
@@ -692,6 +879,81 @@ describe('mergeCommentResults', () => {
   it('does not mutate the API payload', () => {
     mergeCommentResults(commentResults, undefined);
     expect(commentResults[0].responses).toEqual([older, newer]);
+  });
+});
+
+describe('getRecentCommentResponses', () => {
+  function response(voteId: string, createdAt: string): PollCommentResponse {
+    return { vote_id: voteId, comment_text: `Comment ${voteId}\n\nSecond paragraph`, vote_creation_time: createdAt, abstained: false };
+  }
+
+  function result(promptId: string, responses: PollCommentResponse[]): PollCommentResult {
+    return { prompt: { prompt_id: promptId, prompt: `Prompt ${promptId}` }, responses };
+  }
+
+  it('orders timestamped responses newest-first across prompts and decorates them for display', () => {
+    const recent = getRecentCommentResponses(
+      [
+        result('p1', [response('a', '2025-06-04T00:00:00Z'), response('b', '2025-06-01T00:00:00Z')]),
+        result('p2', [response('c', '2025-06-05T00:00:00Z'), response('d', '2025-06-02T00:00:00Z')]),
+      ],
+      3
+    );
+    expect(recent.map((r) => r.vote_id)).toEqual(['c', 'a', 'd']);
+    expect(recent.map((r) => r.promptText)).toEqual(['Prompt p2', 'Prompt p1', 'Prompt p2']);
+    expect(recent.map((r) => r.position)).toEqual([0, 1, 2]);
+    expect(recent[0].paragraphs).toEqual(['Comment c', 'Second paragraph']);
+  });
+
+  it('keeps the input order for text-only responses', () => {
+    const recent = getRecentCommentResponses(
+      [result('p1', [{ comment_text: 'Apple' }, { comment_text: 'Cherry' }]), result('p2', [{ comment_text: 'Banana' }])],
+      3
+    );
+    expect(recent.map((r) => r.comment_text)).toEqual(['Apple', 'Cherry', 'Banana']);
+    expect(recent.map((r) => r.promptText)).toEqual(['Prompt p1', 'Prompt p1', 'Prompt p2']);
+  });
+
+  it('keeps prompt-aware ballot keys stable across fresh objects, prompt ordering and newer insertions', () => {
+    const before = getRecentCommentResponses(
+      [result('p1', [response('same-ballot', '2025-06-02T00:00:00Z')]), result('p2', [response('same-ballot', '2025-06-02T00:00:00Z')])],
+      3
+    );
+    const after = getRecentCommentResponses(
+      [
+        result('p2', [response('same-ballot', '2025-06-02T00:00:00Z')]),
+        result('p1', [response('new-ballot', '2025-06-03T00:00:00Z'), response('same-ballot', '2025-06-02T00:00:00Z')]),
+      ],
+      3
+    );
+
+    const beforeKeys = before.map((item) => item.previewKey).sort();
+    const afterKeys = after
+      .filter((item) => item.vote_id === 'same-ballot')
+      .map((item) => item.previewKey)
+      .sort();
+    expect(new Set(beforeKeys).size).toBe(2);
+    expect(afterKeys).toEqual(beforeKeys);
+  });
+
+  it('uses distinct prompt-local positions for text-only keys without inventing ballot metadata', () => {
+    const recent = getRecentCommentResponses(
+      [result('p1', [{ comment_text: 'Same text' }, { comment_text: 'Same text' }]), result('p2', [{ comment_text: 'Same text' }])],
+      3
+    );
+
+    expect(recent.map((item) => item.previewKey)).toEqual(['["p1",0]', '["p1",1]', '["p2",0]']);
+    expect(recent.every((item) => item.vote_id === undefined && item.vote_creation_time === undefined && item.user_name === undefined)).toBe(true);
+  });
+
+  it('respects the limit', () => {
+    const responses = ['a', 'b', 'c', 'd'].map((id, i) => response(id, `2025-06-0${i + 1}T00:00:00Z`));
+    expect(getRecentCommentResponses([result('p1', responses)], 2).map((r) => r.vote_id)).toEqual(['d', 'c']);
+  });
+
+  it('returns an empty list when there are no responses', () => {
+    expect(getRecentCommentResponses([], 3)).toEqual([]);
+    expect(getRecentCommentResponses([result('p1', [])], 3)).toEqual([]);
   });
 });
 
@@ -947,6 +1209,184 @@ describe('votePermalinkPath', () => {
   });
 });
 
+describe('voter results helpers', () => {
+  const vote = (overrides: Partial<Vote> = {}): Vote => ({
+    uid: 'synthetic-vote',
+    name: 'Synthetic election',
+    project_uid: 'synthetic-project',
+    status: PollStatus.ACTIVE,
+    end_time: '2026-10-10T12:00:00Z',
+    ...overrides,
+  });
+  const response = (overrides: Partial<MyVoteResponse> = {}): MyVoteResponse => ({
+    uid: 'synthetic-response',
+    vote_uid: 'synthetic-vote',
+    vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+    ...overrides,
+  });
+  const responded = response({ vote_status: IndexedVoteResponseStatus.RESPONDED });
+
+  describe('resolveVoterResultsState', () => {
+    it.each<[string, Vote | null, MyVoteResponse | null, boolean, boolean, VoteResponseStatus | undefined, VoterResultsState]>([
+      ['no vote loaded yet', null, null, false, false, undefined, 'not_voted'],
+      ['removed voter, even on a closed vote', vote({ status: PollStatus.ENDED }), response({ voter_removed: true }), false, false, undefined, 'access_denied'],
+      ['settled empty response (never invited)', vote({ status: PollStatus.ENDED }), null, false, false, undefined, 'not_participant'],
+      ['empty response still loading', vote(), null, true, false, undefined, 'not_voted'],
+      ['empty response after a failed lookup', vote(), null, false, true, undefined, 'not_voted'],
+      ['closed vote for a participant', vote({ status: PollStatus.ENDED }), responded, false, false, undefined, 'closed'],
+      ['closed vote for an invitee who never voted', vote({ status: PollStatus.ENDED }), response(), false, false, undefined, 'closed'],
+      ['mixed-case Ended status for a participant', vote({ status: 'Ended' as PollStatus }), responded, false, false, undefined, 'closed'],
+      ['upper-case ENDED status for a participant', vote({ status: 'ENDED' as PollStatus }), responded, false, false, undefined, 'closed'],
+      ['active vote with a recorded ballot', vote(), responded, false, false, undefined, 'submitted'],
+      ['active vote, list row says responded', vote(), response(), false, false, VoteResponseStatus.RESPONDED, 'submitted'],
+      ['active vote, vote row says responded', vote({ response_status: VoteResponseStatus.RESPONDED }), response(), false, false, undefined, 'submitted'],
+      [
+        'active vote, list row status wins over the vote row',
+        vote({ response_status: VoteResponseStatus.RESPONDED }),
+        response(),
+        false,
+        false,
+        VoteResponseStatus.AWAITING_RESPONSE,
+        'not_voted',
+      ],
+      ['active vote awaiting a ballot', vote(), response(), false, false, undefined, 'not_voted'],
+    ])('%s', (_label, v, my, loading, error, listStatus, expected) => {
+      expect(resolveVoterResultsState(v, my, loading, error, listStatus)).toBe(expected);
+    });
+  });
+
+  describe('canVoterFetchVoteResults', () => {
+    const ended = vote({ status: PollStatus.ENDED });
+
+    it.each<[string, Vote | null, MyVoteResponse | null, boolean, boolean, boolean]>([
+      ['ended vote with a settled matching response', ended, responded, false, false, true],
+      ['ended vote for an invitee who never voted', ended, response(), false, false, true],
+      ['mixed-case Ended status', vote({ status: 'Ended' as PollStatus }), responded, false, false, true],
+      ['upper-case ENDED status', vote({ status: 'ENDED' as PollStatus }), responded, false, false, true],
+      ['active vote', vote(), responded, false, false, false],
+      ['vote not loaded', null, responded, false, false, false],
+      ['removed voter', ended, response({ voter_removed: true }), false, false, false],
+      ['no response row', ended, null, false, false, false],
+      ['response still loading', ended, responded, true, false, false],
+      ['response lookup failed', ended, responded, false, true, false],
+      ['stale vote from another uid', vote({ uid: 'other-vote', status: PollStatus.ENDED }), responded, false, false, false],
+      ['stale response from another uid', ended, response({ vote_uid: 'other-vote', vote_status: IndexedVoteResponseStatus.RESPONDED }), false, false, false],
+    ])('%s', (_label, v, my, loading, error, expected) => {
+      expect(canVoterFetchVoteResults('synthetic-vote', v, my, loading, error)).toBe(expected);
+    });
+  });
+
+  describe('getVoteVisibilityRules', () => {
+    it.each<['voter' | 'creator', boolean]>([
+      ['creator', true],
+      ['creator', false],
+      ['voter', true],
+      ['voter', false],
+    ])('describes the %s view (closed: %s) of a pseudo-anonymous vote without exposing ballots', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, true, isClosed);
+      expect(rules.length).toBeGreaterThan(0);
+      expect(rules).toContain('No one sees how another voter voted on this page.');
+    });
+
+    it.each<['voter' | 'creator', boolean]>([
+      ['creator', true],
+      ['creator', false],
+      ['voter', true],
+      ['voter', false],
+    ])('never promises individual ballots with missing privacy metadata for %s (closed: %s)', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, undefined, isClosed);
+      expect(rules).toContain('No one sees how another voter voted on this page.');
+      expect(rules.at(-1)).toBe('No one sees how another voter voted on this page.');
+      expect(rules.join(' ')).not.toContain('Voters tab');
+      expect(rules.join(' ')).not.toContain('can see each voter');
+    });
+
+    it.each<['voter' | 'creator', boolean]>([
+      ['creator', true],
+      ['creator', false],
+      ['voter', true],
+      ['voter', false],
+    ])('treats null privacy as unavailable for %s (closed: %s)', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, null, isClosed);
+      expect(rules).toContain('No one sees how another voter voted on this page.');
+      expect(rules.at(-1)).toBe('No one sees how another voter voted on this page.');
+      expect(rules.join(' ')).not.toContain('Named ballot');
+      expect(rules.join(' ')).not.toContain('Voters tab');
+    });
+
+    it('says who can read ballots on a named vote (#3914)', () => {
+      expect(getVoteVisibilityRules('creator', false, false)).toContain(
+        "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."
+      );
+      expect(getVoteVisibilityRules('voter', false, true)).toContain("Vote managers can see each voter's ballot. Other voters can't see yours.");
+      expect(getVoteVisibilityRules('voter', false, true)).not.toContain('No one sees how another voter voted on this page.');
+    });
+
+    it('describes draft ballots as available only once voting opens', () => {
+      const rules = getVoteVisibilityRules('creator', false, false, false);
+      expect(rules).toContain("Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+      expect(rules).not.toContain("You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.");
+      expect(getVoteVisibilityRules('creator', true, false, false)).toContain('No one sees how another voter voted on this page.');
+    });
+
+    it.each([true, undefined, null])('tells managers of an open vote with privacy %s that totals and comments wait for close (#3916)', (pseudoAnonymous) => {
+      const rules = getVoteVisibilityRules('creator', pseudoAnonymous, false);
+      expect(rules[0]).toBe('As a manager, you can follow who has responded. Totals and comments appear when the vote closes.');
+      expect(rules.join(' ')).not.toContain('live totals');
+    });
+
+    it('keeps the closed pseudo-anonymous manager copy on final totals (#3916)', () => {
+      expect(getVoteVisibilityRules('creator', true, true)[0]).toBe('As a manager, you can see the final totals and comments.');
+    });
+
+    it.each(['creator', 'voter'] as const)('holds the visibility promise for %s until closed results are released', (audience) => {
+      const rules = getVoteVisibilityRules(audience, true, true, true, true);
+
+      expect(rules).toEqual([
+        'Voting has closed. Totals and comments will appear once they are finalized.',
+        'No one sees how another voter voted on this page.',
+      ]);
+      expect(getVoteVisibilityRules(audience, true, true, true, false)[0]).toContain('see the final totals and comments.');
+    });
+
+    it('tells managers they see live totals while voters wait for close', () => {
+      expect(getVoteVisibilityRules('creator', false, false)).toEqual([
+        'As a manager, you can follow live totals and comments until the vote closes.',
+        'Voters see only their own response until the vote closes.',
+        "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots.",
+      ]);
+    });
+
+    it('tells voters totals are hidden until close and shared with invited voters after', () => {
+      expect(getVoteVisibilityRules('voter', false, false)[0]).toBe('You see only your own response. Totals and comments stay hidden until the vote closes.');
+      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe(
+        'Invited voters see the final totals and comments. Only vote managers see who wrote each comment.'
+      );
+      expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments, without commenter names.');
+    });
+
+    it.each([true, undefined, null])('never promises comment attribution to managers for closed privacy %s', (pseudoAnonymous) => {
+      const rules = getVoteVisibilityRules('voter', pseudoAnonymous, true, true, false);
+
+      expect(rules[0]).toBe('Invited voters see the final totals and comments. Comments are shown without names, including for vote managers.');
+      expect(rules.join(' ')).not.toContain('Only vote managers see who wrote each comment.');
+    });
+
+    it('leaves ballot privacy to the page header', () => {
+      for (const audience of ['voter', 'creator'] as const) {
+        for (const isClosed of [true, false]) {
+          for (const pseudoAnonymous of [true, false, undefined, null]) {
+            const text = getVoteVisibilityRules(audience, pseudoAnonymous, isClosed).join(' ');
+            expect(text).not.toContain('Named ballot');
+            expect(text).not.toContain('Pseudo-anonymous ballot');
+            expect(text).not.toContain('unavailable');
+          }
+        }
+      }
+    });
+  });
+});
+
 describe('isRankedPollType', () => {
   it.each([
     ['generic', PollType.GENERIC, false],
@@ -959,6 +1399,465 @@ describe('isRankedPollType', () => {
     ['an unrecognized string', 'something_new', false],
   ] as const)('%s -> %s', (_label, input, expected) => {
     expect(isRankedPollType(input)).toBe(expected);
+  });
+});
+
+describe('voter list helpers (#3914)', () => {
+  const yes = { choice_id: 'c-yes', choice_text: 'Yes' };
+  const no = { choice_id: 'c-no', choice_text: 'No' };
+  const maybe = { choice_id: 'c-maybe', choice_text: 'Maybe' };
+  const alice = { choice_id: 'c-alice', choice_text: 'Alice' };
+  const bob = { choice_id: 'c-bob', choice_text: 'Bob' };
+  const cara = { choice_id: 'c-cara', choice_text: 'Cara' };
+  const dev = { choice_id: 'c-dev', choice_text: 'Dev' };
+
+  const singleVote: Vote = {
+    uid: 'vote-1',
+    name: 'Approve the budget',
+    end_time: '2026-11-01T00:00:00Z',
+    status: PollStatus.ENDED,
+    project_uid: 'project-1',
+    poll_type: PollType.GENERIC,
+    poll_questions: [{ question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', choices: [yes, no, maybe] }],
+  };
+  const multipleVote: Vote = {
+    ...singleVote,
+    poll_questions: [{ question_id: 'q-1', prompt: 'Pick topics', type: 'multiple_choice', choices: [yes, no, maybe, alice] }],
+  };
+  const rankedVote: Vote = {
+    ...singleVote,
+    poll_type: PollType.MEEK_STV,
+    poll_questions: [{ question_id: 'q-1', prompt: 'Rank the candidates', type: 'single_choice', choices: [alice, bob, cara, dev] }],
+  };
+  const multiQuestionVote: Vote = {
+    ...singleVote,
+    poll_questions: [
+      { question_id: 'q-1', prompt: 'Approve?', type: 'single_choice', choices: [yes, no] },
+      { question_id: 'q-2', prompt: 'Who chairs?', type: 'single_choice', choices: [alice, bob] },
+    ],
+  };
+
+  function voter(overrides: Partial<VoteVoter> = {}): VoteVoter {
+    return { uid: 'b-1', user_name: 'Avery Example', status: VoteVoterStatus.VOTED, poll_answers: [], ...overrides };
+  }
+
+  function answer(questionId: string, userChoice: UserChoice[], rankedChoice: UserChoice[] = []): PollAnswer {
+    return { question_id: questionId, prompt: '', type: 'single_choice', user_choice: userChoice, ranked_user_choice: rankedChoice };
+  }
+
+  describe('getVoteVoterStatus', () => {
+    it('keeps a recognized status', () => {
+      expect(getVoteVoterStatus({ status: VoteVoterStatus.ABSTAINED })).toBe(VoteVoterStatus.ABSTAINED);
+    });
+
+    it('reads an unrecognized status as not voted', () => {
+      expect(getVoteVoterStatus({ status: 'pending' as VoteVoterStatus })).toBe(VoteVoterStatus.NOT_VOTED);
+    });
+  });
+
+  describe('buildVoteVoterChoiceSummaries', () => {
+    it('shows a single-choice ballot as one chip without a question prefix', () => {
+      const summaries = buildVoteVoterChoiceSummaries(singleVote, voter({ poll_answers: [answer('q-1', [yes])] }));
+      expect(summaries).toEqual([{ questionId: 'q-1', ranked: false, chips: ['Yes'], overflow: 0 }]);
+    });
+
+    it('keeps two chips of a multiple-choice ballot and counts the rest', () => {
+      const summaries = buildVoteVoterChoiceSummaries(multipleVote, voter({ poll_answers: [answer('q-1', [yes, no, maybe, alice])] }));
+      expect(summaries[0]).toMatchObject({ chips: ['Yes', 'No'], overflow: 2 });
+    });
+
+    it('formats a ranked ballot by preference order', () => {
+      const ranked = [
+        { ...cara, choice_rank: 2 },
+        { ...bob, choice_rank: 1 },
+        { ...alice, choice_rank: 3 },
+      ];
+      const summaries = buildVoteVoterChoiceSummaries(rankedVote, voter({ poll_answers: [answer('q-1', [], ranked)] }));
+      expect(summaries[0]).toEqual({ questionId: 'q-1', ranked: true, chips: ['1 Bob', '2 Cara'], overflow: 1 });
+    });
+
+    it('prefixes each question of a multi-question ballot', () => {
+      const summaries = buildVoteVoterChoiceSummaries(multiQuestionVote, voter({ poll_answers: [answer('q-1', [no]), answer('q-2', [bob])] }));
+      expect(summaries.map((summary) => [summary.questionLabel, summary.chips])).toEqual([
+        ['Q1', ['No']],
+        ['Q2', ['Bob']],
+      ]);
+    });
+
+    it('uses the current choice text from the vote and falls back to the ballot', () => {
+      const summaries = buildVoteVoterChoiceSummaries(
+        singleVote,
+        voter({
+          poll_answers: [
+            answer('q-1', [
+              { choice_id: 'c-yes', choice_text: 'Old yes' },
+              { choice_id: 'c-gone', choice_text: 'Removed' },
+            ]),
+          ],
+        })
+      );
+      expect(summaries[0].chips).toEqual(['Yes', 'Removed']);
+    });
+
+    it('returns nothing for abstained and not-voted voters', () => {
+      expect(buildVoteVoterChoiceSummaries(singleVote, voter({ status: VoteVoterStatus.ABSTAINED }))).toEqual([]);
+      expect(buildVoteVoterChoiceSummaries(singleVote, voter({ status: VoteVoterStatus.NOT_VOTED }))).toEqual([]);
+    });
+  });
+
+  describe('buildVoteVoterChoiceFilterOptions', () => {
+    it('lists one option per choice, keyed by question and choice', () => {
+      expect(buildVoteVoterChoiceFilterOptions(singleVote)).toEqual([
+        { label: 'Yes', value: 'q-1:c-yes' },
+        { label: 'No', value: 'q-1:c-no' },
+        { label: 'Maybe', value: 'q-1:c-maybe' },
+      ]);
+    });
+
+    it('prefixes labels with the question number when there are several questions', () => {
+      expect(buildVoteVoterChoiceFilterOptions(multiQuestionVote).map((option) => option.label)).toEqual(['Q1: Yes', 'Q1: No', 'Q2: Alice', 'Q2: Bob']);
+    });
+
+    it('labels ranked options as first choices', () => {
+      expect(buildVoteVoterChoiceFilterOptions(rankedVote)[0]).toEqual({ label: 'First choice: Alice', value: 'q-1:c-alice' });
+    });
+  });
+
+  describe('matchesVoteVoterChoice', () => {
+    it('matches any selected choice of a generic question', () => {
+      const multi = voter({ poll_answers: [answer('q-1', [yes, maybe])] });
+      expect(matchesVoteVoterChoice(multi, 'q-1:c-maybe', multipleVote)).toBe(true);
+      expect(matchesVoteVoterChoice(multi, 'q-1:c-no', multipleVote)).toBe(false);
+    });
+
+    it('matches only the rank-1 choice of a ranked question', () => {
+      const ranked = voter({
+        poll_answers: [
+          answer(
+            'q-1',
+            [],
+            [
+              { ...bob, choice_rank: 1 },
+              { ...alice, choice_rank: 2 },
+            ]
+          ),
+        ],
+      });
+      expect(matchesVoteVoterChoice(ranked, 'q-1:c-bob', rankedVote)).toBe(true);
+      expect(matchesVoteVoterChoice(ranked, 'q-1:c-alice', rankedVote)).toBe(false);
+    });
+
+    it('matches no one for a choice that no longer exists or a malformed key', () => {
+      const yesVoter = voter({ poll_answers: [answer('q-1', [yes])] });
+      expect(matchesVoteVoterChoice(yesVoter, 'q-1:c-gone', singleVote)).toBe(false);
+      expect(matchesVoteVoterChoice(yesVoter, 'q-9:c-yes', singleVote)).toBe(false);
+      expect(matchesVoteVoterChoice(yesVoter, 'no-separator', singleVote)).toBe(false);
+    });
+
+    it('never matches an abstained or not-voted voter', () => {
+      expect(matchesVoteVoterChoice(voter({ status: VoteVoterStatus.ABSTAINED, poll_answers: [answer('q-1', [yes])] }), 'q-1:c-yes', singleVote)).toBe(false);
+    });
+  });
+
+  describe('buildVoteVoterRowView', () => {
+    it('maps identity, role and the current ballot time', () => {
+      const row = buildVoteVoterRowView(
+        singleVote,
+        voter({
+          user_org_name: 'Acme Motors',
+          user_voting_status: 'Voting Rep',
+          user_role: 'Chair',
+          submitted_at: '2026-10-20T10:00:00Z',
+          poll_answers: [answer('q-1', [yes])],
+        })
+      );
+      expect(row).toMatchObject({
+        uid: 'b-1',
+        displayName: 'Avery Example',
+        organization: 'Acme Motors',
+        role: 'Voting Rep',
+        committeeRole: 'Chair',
+        status: VoteVoterStatus.VOTED,
+        statusLabel: 'Voted',
+        submittedAt: '2026-10-20T10:00:00Z',
+        hasBallot: true,
+      });
+    });
+
+    it('labels a non-voter by vote state and gives them no ballot', () => {
+      const notVoted = voter({ status: VoteVoterStatus.NOT_VOTED });
+      expect(buildVoteVoterRowView(singleVote, notVoted)).toMatchObject({ statusLabel: 'Did not vote', hasBallot: false });
+      expect(buildVoteVoterRowView({ ...singleVote, status: PollStatus.ACTIVE }, notVoted).statusLabel).toBe('Not voted yet');
+    });
+
+    it('falls back to the username, then the email, for the name', () => {
+      expect(buildVoteVoterRowView(singleVote, voter({ user_name: '', username: 'avery' })).displayName).toBe('avery');
+      expect(buildVoteVoterRowView(singleVote, voter({ user_name: '', user_email: 'avery@acme-motors.example' })).displayName).toBe(
+        'avery@acme-motors.example'
+      );
+    });
+  });
+
+  describe('sortVoteVotersForDisplay', () => {
+    const rows = (vote: Vote) =>
+      [
+        voter({ uid: 'v-dana', user_name: 'Dana', status: VoteVoterStatus.NOT_VOTED }),
+        voter({ uid: 'v-cole', user_name: 'Cole', poll_answers: [answer('q-1', [no])] }),
+        voter({ uid: 'v-bea', user_name: 'Bea', status: VoteVoterStatus.ABSTAINED }),
+        voter({ uid: 'v-abe', user_name: 'Abe', poll_answers: [answer('q-1', [yes])] }),
+        voter({ uid: 'v-ari', user_name: 'Ari', status: VoteVoterStatus.NOT_VOTED }),
+        voter({ uid: 'v-al', user_name: 'Al', poll_answers: [answer('q-1', [no])] }),
+      ].map((row) => buildVoteVoterRowView(vote, row));
+
+    it('lists non-voters first while the vote is open, then by name', () => {
+      const vote = { ...singleVote, status: PollStatus.ACTIVE };
+      expect(sortVoteVotersForDisplay(rows(vote), vote).map((row) => row.uid)).toEqual(['v-ari', 'v-dana', 'v-abe', 'v-al', 'v-bea', 'v-cole']);
+    });
+
+    it('orders by choice, then abstained, then non-voters after close', () => {
+      expect(sortVoteVotersForDisplay(rows(singleVote), singleVote).map((row) => row.uid)).toEqual(['v-abe', 'v-al', 'v-cole', 'v-bea', 'v-ari', 'v-dana']);
+    });
+
+    it('orders a closed ranked vote by first choice', () => {
+      const ranked = [
+        voter({ uid: 'v-b', user_name: 'B', poll_answers: [answer('q-1', [], [{ ...bob, choice_rank: 1 }])] }),
+        voter({
+          uid: 'v-a',
+          user_name: 'A',
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...alice, choice_rank: 1 },
+                { ...bob, choice_rank: 2 },
+              ]
+            ),
+          ],
+        }),
+      ].map((row) => buildVoteVoterRowView(rankedVote, row));
+      expect(sortVoteVotersForDisplay(ranked, rankedVote).map((row) => row.uid)).toEqual(['v-a', 'v-b']);
+    });
+
+    it('does not mutate its input', () => {
+      const input = rows(singleVote);
+      const before = input.map((row) => row.uid);
+      sortVoteVotersForDisplay(input, singleVote);
+      expect(input.map((row) => row.uid)).toEqual(before);
+    });
+  });
+
+  describe('countVoteVotersByStatus', () => {
+    it('counts each status and the total', () => {
+      const counts = countVoteVotersByStatus([
+        { status: VoteVoterStatus.VOTED },
+        { status: VoteVoterStatus.VOTED },
+        { status: VoteVoterStatus.ABSTAINED },
+        { status: VoteVoterStatus.NOT_VOTED },
+      ]);
+      expect(counts).toEqual({ all: 4, voted: 2, abstained: 1, not_voted: 1 });
+    });
+
+    it('returns zeros for no rows', () => {
+      expect(countVoteVotersByStatus([])).toEqual({ all: 0, voted: 0, abstained: 0, not_voted: 0 });
+    });
+  });
+
+  describe('buildVoteParticipationRowView (#3916)', () => {
+    it('maps identity and a Responded / Not responded status', () => {
+      expect(
+        buildVoteParticipationRowView({
+          user_name: ' Avery Example ',
+          user_org_name: 'Acme Motors',
+          user_role: 'Chair',
+          user_voting_status: 'Voting Rep',
+          status: 'responded',
+        })
+      ).toEqual({
+        displayName: 'Avery Example',
+        organization: 'Acme Motors',
+        role: 'Voting Rep',
+        committeeRole: 'Chair',
+        status: 'responded',
+        statusLabel: 'Responded',
+      });
+    });
+
+    it('falls back to "Unknown voter" and drops empty identity fields', () => {
+      expect(buildVoteParticipationRowView({ user_name: ' ', user_org_name: '', status: 'pending' })).toEqual({
+        displayName: 'Unknown voter',
+        organization: undefined,
+        role: undefined,
+        committeeRole: undefined,
+        status: 'pending',
+        statusLabel: 'Not responded',
+      });
+    });
+  });
+
+  describe('countVoteParticipationByStatus (#3916)', () => {
+    it('counts each status and the total', () => {
+      expect(countVoteParticipationByStatus([{ status: 'responded' }, { status: 'pending' }, { status: 'responded' }])).toEqual({
+        all: 3,
+        responded: 2,
+        pending: 1,
+      });
+    });
+
+    it('returns zeros for no rows', () => {
+      expect(countVoteParticipationByStatus([])).toEqual({ all: 0, responded: 0, pending: 0 });
+    });
+  });
+
+  describe('buildVoteBallotQuestions', () => {
+    it('marks the selected choice of a single-choice question', () => {
+      const [question] = buildVoteBallotQuestions(singleVote, voter({ poll_answers: [answer('q-1', [no])] }));
+      expect(question).toMatchObject({ number: 1, prompt: 'Approve?', ranked: false, multiple: false });
+      expect(question.choices.map((choice) => [choice.text, choice.selected])).toEqual([
+        ['Yes', false],
+        ['No', true],
+        ['Maybe', false],
+      ]);
+    });
+
+    it('flags multiple-choice questions for checkbox markers', () => {
+      const [question] = buildVoteBallotQuestions(multipleVote, voter({ poll_answers: [{ ...answer('q-1', [yes, maybe]), type: 'multiple_choice' }] }));
+      expect(question.multiple).toBe(true);
+      expect(question.choices.filter((choice) => choice.selected).map((choice) => choice.text)).toEqual(['Yes', 'Maybe']);
+    });
+
+    it('splits a ranked question into ranked and unranked choices', () => {
+      const [question] = buildVoteBallotQuestions(
+        rankedVote,
+        voter({
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...cara, choice_rank: 2 },
+                { ...alice, choice_rank: 1 },
+              ]
+            ),
+          ],
+        })
+      );
+      expect(question.ranked).toBe(true);
+      expect(question.rankedChoices.map((choice) => [choice.rank, choice.text])).toEqual([
+        [1, 'Alice'],
+        [2, 'Cara'],
+      ]);
+      expect(question.unrankedChoices.map((choice) => choice.text)).toEqual(['Bob', 'Dev']);
+    });
+
+    it('numbers every question and leaves unanswered ones unselected', () => {
+      const questions = buildVoteBallotQuestions(multiQuestionVote, voter({ status: VoteVoterStatus.ABSTAINED }));
+      expect(questions.map((question) => question.number)).toEqual([1, 2]);
+      expect(questions.every((question) => question.choices.every((choice) => !choice.selected))).toBe(true);
+    });
+
+    it('keeps a selected choice that is no longer on the question', () => {
+      const [question] = buildVoteBallotQuestions(singleVote, voter({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }])] }));
+      expect(question.choices.at(-1)).toEqual({ choiceId: 'c-gone', text: 'Removed', selected: true });
+    });
+  });
+
+  describe('buildVoteBallotQuestions with an own ballot (#4331)', () => {
+    it('accepts a MyVoteBallot as the voter', () => {
+      const ballot: MyVoteBallot = {
+        vote_response_uid: 'b-1',
+        vote_uid: 'vote-1',
+        abstained: false,
+        poll_answers: [answer('q-1', [yes])],
+        comment_responses: [],
+      };
+      const [question] = buildVoteBallotQuestions(singleVote, ballot);
+      expect(question.choices.find((choice) => choice.selected)?.text).toBe('Yes');
+    });
+  });
+
+  describe('mapMyBallotToCastForm', () => {
+    function ballot(overrides: Partial<MyVoteBallot> = {}): MyVoteBallot {
+      return { vote_response_uid: 'b-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [], ...overrides };
+    }
+
+    it('maps a single-choice answer to its choice id', () => {
+      expect(mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [no])] })).answers).toEqual({ 'q-1': 'c-no' });
+    });
+
+    it('maps a multiple-choice answer to every selected choice id', () => {
+      const prefill = mapMyBallotToCastForm(multipleVote, ballot({ poll_answers: [{ ...answer('q-1', [yes, alice]), type: 'multiple_choice' }] }));
+      expect(prefill.answers).toEqual({ 'q-1': ['c-yes', 'c-alice'] });
+    });
+
+    it('keeps only the recorded partial ranked order without assigning unranked choices', () => {
+      const prefill = mapMyBallotToCastForm(
+        rankedVote,
+        ballot({
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...cara, choice_rank: 2 },
+                { ...dev, choice_rank: 1 },
+              ]
+            ),
+          ],
+        })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-dev', 'c-cara'] });
+    });
+
+    it('preserves a recorded single choice the vote no longer declares', () => {
+      const prefill = mapMyBallotToCastForm(singleVote, ballot({ poll_answers: [answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }])] }));
+      expect(prefill.answers).toEqual({ 'q-1': 'c-gone' });
+    });
+
+    it('preserves recorded-only multiple choices', () => {
+      const prefill = mapMyBallotToCastForm(
+        multipleVote,
+        ballot({ poll_answers: [{ ...answer('q-1', [{ choice_id: 'c-gone', choice_text: 'Removed' }, yes]), type: 'multiple_choice' }] })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-gone', 'c-yes'] });
+    });
+
+    it('preserves recorded-only ranks in saved order', () => {
+      const prefill = mapMyBallotToCastForm(
+        rankedVote,
+        ballot({
+          poll_answers: [
+            answer(
+              'q-1',
+              [],
+              [
+                { ...cara, choice_rank: 2 },
+                { choice_id: 'c-gone', choice_text: 'Removed', choice_rank: 1 },
+              ]
+            ),
+          ],
+        })
+      );
+      expect(prefill.answers).toEqual({ 'q-1': ['c-gone', 'c-cara'] });
+    });
+
+    it('omits unanswered questions and carries the abstention', () => {
+      const prefill = mapMyBallotToCastForm(multiQuestionVote, ballot({ abstained: true }));
+      expect(prefill).toEqual({ answers: {}, abstain: true, comments: {} });
+    });
+
+    it('maps comments by prompt id', () => {
+      const prefill = mapMyBallotToCastForm(
+        singleVote,
+        ballot({
+          comment_responses: [
+            { prompt_id: 'p-1', comment_text: 'Looks good' },
+            { prompt_id: 'p-2', comment_text: 'More detail please' },
+          ],
+        })
+      );
+      expect(prefill.comments).toEqual({ 'p-1': 'Looks good', 'p-2': 'More detail please' });
+    });
   });
 });
 

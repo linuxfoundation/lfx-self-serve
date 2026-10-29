@@ -11,7 +11,7 @@
       [totalRecords]="votes().length"
       [editQueryParamsFallback]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
-      (viewVote)="viewVoteResults($event)"
+      (viewVote)="viewVote($event)"
       (refresh)="refreshVotes()"
       (voteExtended)="onVoteExtended($event)">
       @if (canEdit()) {
@@ -47,9 +47,4 @@
       </div>
     </lfx-card>
   }
-
-  <!-- allowCastFromDrawer=false: see committee-overview.component.html for why — same drawer, same
-       data gap (getVotesByCommittee never carries response_status). -->
-  <lfx-vote-results-drawer [(visible)]="resultsDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()" [allowCastFromDrawer]="false">
-  </lfx-vote-results-drawer>
 </div>

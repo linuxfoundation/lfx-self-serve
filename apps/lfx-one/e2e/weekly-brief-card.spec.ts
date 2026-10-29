@@ -19,7 +19,7 @@
  * - Read-failure → retryable unavailable state → recovery
  * - Sources chips (LFXV2-3044): no row when source_refs is empty; one chip per ref with a
  *   kind-appropriate label/icon; meeting/vote/members chips click through (meeting-join route /
- *   vote drawer / Members tab); mailing-list and unrecognized-kind chips render unlinked (no
+ *   vote page / Members tab); mailing-list and unrecognized-kind chips render unlinked (no
  *   click target)
  * - Sources disclosure & dedupe (LFXV2-3335): the row collapses behind a click-to-expand
  *   "Sources (N)" toggle once raw source_refs count exceeds the collapse threshold; refs
@@ -579,6 +579,49 @@ test.describe('WG Weekly Brief card — generated state (flag ON)', () => {
   });
 });
 
+/** A weekly-brief vote chip's target vote, as the vote page fetches it by uid. */
+function buildChipVote(uid: string, name: string, endTime = '2026-06-01T00:00:00.000Z'): Vote {
+  return { uid, name, end_time: endTime, status: PollStatus.ACTIVE, project_uid: 'project-uid-wb' };
+}
+
+/**
+ * Stubs the vote page's reads for a chip's vote (#3915): the vote, a missing response row (a
+ * non-participant viewer), empty results and a non-writer project, so the page renders the voter
+ * view without reaching the live dev backend. The trailing `**` crosses `/`, covering the by-uid
+ * sub-resources. The page is entered client-side from the committee page, so these browser-side
+ * stubs apply (page.route can't intercept an SSR fetch).
+ */
+async function mockVotePage(page: Page, vote: Vote, options: { delayMs?: number } = {}): Promise<void> {
+  await page.route(`**/api/projects/${vote.project_uid}*`, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uid: vote.project_uid, writer: false }) })
+  );
+  await page.route(`**/api/votes/${vote.uid}**`, async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    const url = route.request().url();
+    if (url.includes('/results')) {
+      const results: VoteResultsResponse = {
+        poll_results: [],
+        comment_results: [],
+        num_recipients: 0,
+        num_votes_cast: 0,
+        num_abstained: 0,
+        poll_end_time: vote.end_time,
+      };
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+      return;
+    }
+    if (url.includes('/my-response')) {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(vote) });
+  });
+}
+
 test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
   test('no Sources row renders when source_refs is empty', async ({ page }) => {
     await mockCommitteeShell(page);
@@ -651,19 +694,13 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await meetingRequest;
   });
 
-  test('clicking a vote chip opens the vote results drawer for that vote (cache hit)', async ({ page }) => {
+  test('clicking a vote chip opens the vote page for that vote (cache hit)', async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
-    // Overrides mockCommitteeShell's default empty /api/votes* mock so the vote is present in
-    // committee-overview's votes() signal — openVoteDrawer's fast path (no by-uid fetch needed).
-    const voteFixture: Vote = {
-      uid: 'src-vote-1',
-      name: 'Q1 Budget',
-      end_time: '2026-06-01T00:00:00.000Z',
-      status: PollStatus.ACTIVE,
-      project_uid: 'project-uid-wb',
-    };
+    // Overrides mockCommitteeShell's default empty /api/votes* mock so the vote is also in
+    // committee-overview's own votes() list — the chip still opens the page by uid (#3915).
+    const voteFixture = buildChipVote('src-vote-1', 'Q1 Budget');
     await page.route('**/api/votes*', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [voteFixture] }) });
@@ -671,234 +708,90 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
       }
       await route.fallback();
     });
-    // '**/api/votes*' above only matches the list endpoint — Playwright's `*` doesn't cross
-    // `/`, so it can't also cover the drawer's own by-id fetches (getVote, getVoteResults,
-    // getMyVoteResponse) once it opens; without a trailing `**` here (which does cross `/`),
-    // those would escape to the live dev backend.
-    await page.route('**/api/votes/src-vote-1**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      const url = route.request().url();
-      if (url.includes('/results')) {
-        const results: VoteResultsResponse = {
-          poll_results: [],
-          comment_results: [],
-          num_recipients: 0,
-          num_votes_cast: 0,
-          num_abstained: 0,
-          poll_end_time: voteFixture.end_time,
-        };
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
-        return;
-      }
-      if (url.includes('/my-response')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteFixture) });
-    });
+    await mockVotePage(page, voteFixture);
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByTestId('vote-results-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
+    // The bare path is the page's default Overview tab — no ?tab query.
+    await expect(page).toHaveURL(/\/votes\/src-vote-1$/, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-detail-header-title')).toContainText('Q1 Budget', { timeout: DATA_LOAD_TIMEOUT });
   });
 
-  test("clicking a vote chip still opens the drawer when the vote is outside votes()'s cache (cache miss fallback)", async ({ page }) => {
+  test("clicking a vote chip opens the vote page when the vote is outside votes()'s cache (cache miss)", async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
     // Leaves mockCommitteeShell's default empty /api/votes* (list) mock in place — the vote is
-    // deliberately absent from committee-overview's votes() cache (page_size=100 by
-    // updated_at), matching a weekly-brief vote ref older than that window. Only the by-uid
-    // fetch is mocked, so the drawer opening at all proves openVoteDrawer's fetch-on-miss
-    // fallback fired (Copilot review, PR #1363) rather than the votes()-cache fast path.
-    const voteFixture: Vote = {
-      uid: 'src-vote-1',
-      name: 'Q1 Budget',
-      end_time: '2026-06-01T00:00:00.000Z',
-      status: PollStatus.ACTIVE,
-      project_uid: 'project-uid-wb',
-    };
-    await page.route('**/api/votes/src-vote-1**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      const url = route.request().url();
-      if (url.includes('/results')) {
-        const results: VoteResultsResponse = {
-          poll_results: [],
-          comment_results: [],
-          num_recipients: 0,
-          num_votes_cast: 0,
-          num_abstained: 0,
-          poll_end_time: voteFixture.end_time,
-        };
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
-        return;
-      }
-      if (url.includes('/my-response')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteFixture) });
-    });
+    // absent from committee-overview's votes() list (page_size=100, newest active-first), matching a
+    // weekly-brief vote ref older than that window. The page fetches it by uid itself.
+    await mockVotePage(page, buildChipVote('src-vote-1', 'Q1 Budget'));
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByTestId('vote-results-drawer')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q1 Budget');
+    await expect(page).toHaveURL(/\/votes\/src-vote-1$/, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-detail-header-title')).toContainText('Q1 Budget', { timeout: DATA_LOAD_TIMEOUT });
   });
 
-  test('clicking a vote chip shows a neutral unavailable toast when voting is disabled for the committee', async ({ page }) => {
-    // mockCommitteeShell's default fixture has enable_voting: false — committee-view hides the
-    // Votes tab in that state, so the toast must not point at a tab that doesn't exist (Copilot
-    // review, PR #1363: a weekly-brief vote chip deliberately still renders even when voting is
-    // off, since a brief's window can predate voting being disabled).
-    await mockCommitteeShell(page);
-    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
+  for (const enableVoting of [false, true]) {
+    test(`clicking a vote chip for an unavailable vote shows the vote page's not-found view (enable_voting: ${enableVoting})`, async ({ page }) => {
+      // A weekly-brief vote chip deliberately still renders when voting is off, since a brief's
+      // window can predate voting being disabled — either way the vote page, not a toast, reports a
+      // missing or forbidden vote, identically, so it never confirms the vote exists.
+      await mockCommitteeShell(page, { enable_voting: enableVoting });
+      await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
-    // Both the list cache (mockCommitteeShell's default) and the by-uid fetch miss — a genuine
-    // fetch failure, not just a cache-window gap, so the toast fallback is the correct outcome.
-    await page.route('**/api/votes/src-vote-1**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+      await page.route('**/api/votes/src-vote-1**', async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+      });
+
+      await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+      await expect(page).not.toHaveURL(/auth0\.com/);
+      await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+      await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+      await expect(page).toHaveURL(/\/votes\/src-vote-1$/, { timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('not-found-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('vote-detail-page')).toHaveCount(0);
+      await expect(page.getByText('Vote unavailable', { exact: true })).toHaveCount(0);
     });
+  }
 
-    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
-    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByText('This vote could not be found.', { exact: true })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByText(/Try the Votes tab instead/i)).toHaveCount(0);
-    // p-drawer's host element can remain in the DOM while closed (PrimeNG toggles visibility,
-    // not presence) — assert not-visible, not absent, so this holds regardless of that detail.
-    await expect(page.getByTestId('vote-results-drawer')).not.toBeVisible();
-  });
-
-  test('clicking a vote chip mentions the Votes tab in the unavailable toast when voting is enabled', async ({ page }) => {
-    await mockCommitteeShell(page, { enable_voting: true });
-    await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
-
-    await page.route('**/api/votes/src-vote-1**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
-    });
-
-    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
-    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
-    await expect(page.getByText(/This vote could not be found\. Try the Votes tab instead\./i)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-  });
-
-  test('a slower, superseded vote fetch does not overwrite a faster, newer selection (concurrent click race)', async ({ page }) => {
+  test("a slower, superseded vote fetch does not overwrite the newer vote's page (last click wins)", async ({ page }) => {
     await mockCommitteeShell(page);
     await mockCurrentBrief(page, { brief: BRIEF_WITH_TWO_VOTES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
-    // Vote A: absent from the list, so clicking it triggers openVoteDrawer's fetch fallback —
-    // deliberately delayed so it's still in flight when vote B is clicked next.
-    const voteA: Vote = {
-      uid: 'src-vote-1',
-      name: 'Q1 Budget',
-      end_time: '2026-06-01T00:00:00.000Z',
-      status: PollStatus.ACTIVE,
-      project_uid: 'project-uid-wb',
-    };
-    // Vote B: present in the list, so it's a votes()-cache hit — opens synchronously.
-    const voteB: Vote = {
-      uid: 'src-vote-2',
-      name: 'Q2 Budget',
-      end_time: '2026-06-08T00:00:00.000Z',
-      status: PollStatus.ACTIVE,
-      project_uid: 'project-uid-wb',
-    };
-    const resultsFor = (v: Vote): VoteResultsResponse => ({
-      poll_results: [],
-      comment_results: [],
-      num_recipients: 0,
-      num_votes_cast: 0,
-      num_abstained: 0,
-      poll_end_time: v.end_time,
-    });
-
-    await page.route('**/api/votes*', async (route) => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [voteB] }) });
-        return;
-      }
-      await route.fallback();
-    });
-    await page.route('**/api/votes/src-vote-1**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      // The delay is the point: vote B must be clicked and open before this resolves.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const url = route.request().url();
-      if (url.includes('/results')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resultsFor(voteA)) });
-        return;
-      }
-      if (url.includes('/my-response')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteA) });
-    });
-    // Vote B is a votes()-cache hit for committee-overview's own lookup, but
-    // VoteResultsDrawerComponent still independently re-fetches by uid once it's open.
-    await page.route('**/api/votes/src-vote-2**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.fallback();
-        return;
-      }
-      const url = route.request().url();
-      if (url.includes('/results')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resultsFor(voteB)) });
-        return;
-      }
-      if (url.includes('/my-response')) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(voteB) });
-    });
+    // Vote A's by-uid fetch is deliberately delayed so it's still in flight when the user goes
+    // back and opens vote B.
+    await mockVotePage(page, buildChipVote('src-vote-1', 'Q1 Budget'), { delayMs: 1000 });
+    await mockVotePage(page, buildChipVote('src-vote-2', 'Q2 Budget', '2026-06-08T00:00:00.000Z'));
 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Click A (starts its delayed fetch), then immediately click B (cached — opens synchronously)
-    // before A's fetch resolves.
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-1').click();
+    await expect(page).toHaveURL(/\/votes\/src-vote-1$/, { timeout: DATA_LOAD_TIMEOUT });
+    await page.goBack();
+    await expect(page.getByTestId('weekly-brief-card-sources')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId('weekly-brief-card-source-chip-src-vote-2').click();
-    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
+    await expect(page).toHaveURL(/\/votes\/src-vote-2$/, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('vote-detail-header-title')).toContainText('Q2 Budget', { timeout: DATA_LOAD_TIMEOUT });
 
-    // Give A's delayed (1s) mocked response comfortable room to land — a tight margin here
-    // previously left this assertion able to pass even if A would go on to clobber B moments
-    // later (Copilot review, PR #1363) — then confirm it did NOT clobber B's drawer. This is
-    // the regression this test exists to catch.
+    // Give A's delayed (1s) mocked response comfortable room to land, then confirm it did NOT
+    // replace B's page — the regression this test exists to catch.
     await page.waitForTimeout(2500);
-    await expect(page.getByTestId('vote-results-drawer-title')).toContainText('Q2 Budget');
+    await expect(page).toHaveURL(/\/votes\/src-vote-2$/);
+    await expect(page.getByTestId('vote-detail-header-title')).toContainText('Q2 Budget');
   });
 
   test('clicking a members chip switches the committee page to the Members tab', async ({ page }) => {
