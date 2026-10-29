@@ -27,6 +27,7 @@ export interface UiAvatarItem {
   src?: string;
   /** Colour role that tints the initials circle, to tell people apart in dense lists. */
   tone?: UiAvatarTone;
+}
 
 /** Options for `UiModalService.open`. Every field is optional. */
 export interface UiModalConfig<D = unknown> {

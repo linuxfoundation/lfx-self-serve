@@ -204,9 +204,9 @@
   @tailwind components;
   @tailwind utilities;
 }
-/* shortcut: CDK overlays above PrimeNG's 1100 modal layer. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
+/* shortcut: CDK overlays above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
 .cdk-overlay-container {
-  z-index: 1200;
+  z-index: 10000;
 }
 
 /* PrimeNG component overrides */

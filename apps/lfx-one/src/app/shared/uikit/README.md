@@ -10,7 +10,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Button, tabs and search-input still use `lfxColors` until they are realigned.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
-- **Stacking:** CDK overlays sit at z-index 1200, above PrimeNG's 1100 modal layer. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
+- **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Every component has** a `*.stories.ts` (JSDoc on every input and output feeds the autodocs) and a `*.component.spec.ts`.
 

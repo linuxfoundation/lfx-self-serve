@@ -8,19 +8,21 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiModalComponent } from './modal.component';
 import { UiModalService } from './modal.service';
 
 const HOST_TEMPLATE = `
   <button id="opener" (click)="open(tpl)">Open</button>
   <ng-template #tpl>
-    <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings." [size]="size" [sticky]="sticky" [singleAction]="single">
+    <lfx-ui-modal heading="Create Committee" [subtitle]="subtitle" [size]="size" [sticky]="sticky" [singleAction]="single">
       <input id="name" />
       <input id="slug" />
       <div modalInset id="inset">Create a mailing list</div>
       <ng-container modalActions>
         <button id="cancel" type="button">Cancel</button>
         <button id="create" type="button">Create Committee</button>
+        <lfx-ui-button id="ui-single">Done</lfx-ui-button>
       </ng-container>
     </lfx-ui-modal>
   </ng-template>
@@ -32,6 +34,7 @@ class TestHostComponent {
   public size: 'sm' | 'md' = 'md';
   public sticky = false;
   public single = false;
+  public subtitle = 'Committees get their own meetings.';
 
   private readonly modal = inject(UiModalService);
 
@@ -40,7 +43,11 @@ class TestHostComponent {
   }
 }
 
-@Component({ selector: 'lfx-ui-test-content', imports: [UiModalComponent], template: '<lfx-ui-modal heading="Hello">{{ data }}</lfx-ui-modal>' })
+@Component({
+  selector: 'lfx-ui-test-content',
+  imports: [UiModalComponent],
+  template: '<lfx-ui-modal heading="Hello">{{ data }}</lfx-ui-modal>',
+})
 class TestContentComponent {
   public readonly data = inject(DIALOG_DATA);
   public readonly ref = inject(DialogRef);
@@ -69,7 +76,7 @@ describe('UiModalComponent and UiModalService', () => {
   beforeEach(async () => {
     TestBed.configureTestingModule({ imports: [TestHostComponent] });
     // Set here because an inline template this long trips component-max-inline-declarations.
-    TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiModalComponent], template: HOST_TEMPLATE } });
+    TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiModalComponent, UiButtonComponent], template: HOST_TEMPLATE } });
     fixture = TestBed.createComponent(TestHostComponent);
     document.body.appendChild(fixture.nativeElement);
     container = TestBed.inject(OverlayContainer).getContainerElement();
@@ -119,6 +126,15 @@ describe('UiModalComponent and UiModalService', () => {
     expect(dialog()?.getAttribute('role')).toBe('alertdialog');
     const subtitle = container.querySelector('[data-testid="ui-modal-subtitle"]') as HTMLElement;
     expect(dialog()?.getAttribute('aria-describedby')).toBe(subtitle.id);
+  });
+
+  it('does not point an alertdialog at a subtitle that is not there', async () => {
+    await open((host) => {
+      host.config = { role: 'alertdialog' };
+      host.subtitle = '';
+    });
+    expect(dialog()?.getAttribute('role')).toBe('alertdialog');
+    expect(dialog()?.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('does not describe a plain dialog', async () => {
@@ -235,6 +251,11 @@ describe('UiModalComponent and UiModalService', () => {
     const actions = container.querySelector('[data-testid="ui-modal-actions"]');
     expect(actions?.className).toContain('[&>*]:flex-1');
     expect(actions?.className).toContain('[&_button]:w-full');
+    // jsdom does not resolve the arbitrary child selectors, so check what they target: the rendered button component is a direct child
+    // of the footer (flex-1) and holds a real button (w-full). The measured width is checked in Storybook.
+    const host = byId('ui-single');
+    expect(host.parentElement).toBe(actions);
+    expect(host.querySelector('button')).not.toBeNull();
   });
 
   it('opens a component with data and returns the close result', async () => {

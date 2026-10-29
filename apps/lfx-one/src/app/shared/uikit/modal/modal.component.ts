@@ -4,7 +4,8 @@
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { DialogRef } from '@angular/cdk/dialog';
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 
 /**
  * The layout of a modal: a title and optional subtitle, a body, an optional inset band and an actions footer. Make it the root of
@@ -33,6 +34,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } f
 })
 export class UiModalComponent {
   private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   /** Title, such as "Delete Project". Title Case, naming the action. */
   public readonly heading = input.required<string>();
@@ -52,6 +54,20 @@ export class UiModalComponent {
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly bodyClasses: Signal<string> = this.initBodyClasses();
   protected readonly actionsClasses: Signal<string> = this.initActionsClasses();
+
+  public constructor() {
+    // An alertdialog is described by its subtitle, the sentence that states the consequence; only while there is one.
+    toObservable(this.subtitle)
+      .pipe(takeUntilDestroyed(inject(DestroyRef)))
+      .subscribe((subtitle) => this.describeDialog(!!subtitle));
+  }
+
+  private describeDialog(hasSubtitle: boolean): void {
+    if (this.dialogRef?.config.role !== 'alertdialog') return;
+    const container = this.host.closest('.cdk-dialog-container');
+    if (hasSubtitle) container?.setAttribute('aria-describedby', this.subtitleId);
+    else container?.removeAttribute('aria-describedby');
+  }
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
