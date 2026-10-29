@@ -343,6 +343,7 @@ export class ContributorsComponent {
       // The Code tab's Maintainer pills and counts follow the range, project type and code count this tab lists the person with.
       range: this.timeRange(),
       codeFilters: this.commitFilters(),
+      teamMembers: this.teamMembers(),
     });
   }
 

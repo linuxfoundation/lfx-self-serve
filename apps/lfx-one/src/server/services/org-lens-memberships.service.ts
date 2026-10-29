@@ -209,13 +209,14 @@ export class OrgLensMembershipsService {
    * Unknown org/foundation pairs return an empty envelope, never a 404.
    */
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
-    // `v3`: a null MAINTAINER_ROLES now means "roles unavailable", not "no roles", so `v2` entries must miss.
-    // (`v2`: per-project maintainers became LF maintainer roles over the past 365 days, lfx-self-serve#4482.)
-    // Set by the fetcher, read by `storable`: rows without their roles (table missing) are served, never stored.
+    // `v4`: per-project maintainer roles leave CDP team members out (lfx-self-serve#4685). (`v3`: a null MAINTAINER_ROLES
+    // means "roles unavailable", not "no roles"; `v2`: per-project maintainers became LF maintainer roles over the past
+    // 365 days, lfx-self-serve#4482.) Set by the fetcher, read by `storable`: rows without their roles (table missing) or
+    // with team members counted (flag missing) are served, never stored.
     let rolesMissing = false;
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:v3:${foundationId}`,
+      `memberships-projects:v4:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFoundationProjectRows(accountId, foundationId);
@@ -408,13 +409,13 @@ export class OrgLensMembershipsService {
       ORDER BY COMMITS_COUNT DESC NULLS LAST, PROJECT_NAME ASC
     `;
 
-    const [result, roles] = await Promise.all([
+    const [result, { roles, teamMembersUnavailable }] = await Promise.all([
       this.snowflakeService.execute<Omit<RawFoundationProjectRow, 'MAINTAINER_ROLES'>>(query, [accountId, foundationId]),
       fetchLfProjectMaintainerRoles(this.snowflakeService, accountId),
     ]);
     return {
       rows: result.rows.map((row) => ({ ...row, MAINTAINER_ROLES: roles === null ? null : (roles.get(row.PROJECT_ID) ?? 0) })),
-      rolesMissing: roles === null,
+      rolesMissing: roles === null || teamMembersUnavailable,
     };
   }
 

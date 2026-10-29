@@ -1197,6 +1197,34 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(dailyReads()).toEqual([]);
     });
 
+    // lfx-self-serve#4685
+    it("shows no code for a CDP team member under the opener's Exclude pick, as their row counts none, and their code under Include", async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+
+      const excluded = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+      const included = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'include');
+      const codeFree = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d');
+
+      expect([excluded.code, excluded.totalCommits]).toEqual([[], 0]);
+      expect(included.totalCommits).toBe(4);
+      // Without the opener's code filters the drawer is not a page's view, so the pick does not apply.
+      expect(codeFree.totalCommits).toBe(12);
+    });
+
+    it('keeps the code view while the team-member flag is not in the warehouse yet', async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+      const warehouse = execute.getMockImplementation()!;
+      execute.mockImplementation(async (query: string, binds: string[]) => {
+        if (query.includes('IS_CDP_TEAM_MEMBER'))
+          throw Object.assign(new Error("SQL compilation error:\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+        return warehouse(query, binds);
+      });
+
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+
+      expect(detail.totalCommits).toBe(4);
+    });
+
     it('follows the view for a username opener and answers a live-only person with an empty view without a read', async () => {
       addRosterRow(ACCOUNT, personKey, 'mixeduser');
 

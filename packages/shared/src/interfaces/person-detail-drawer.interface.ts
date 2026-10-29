@@ -4,7 +4,7 @@
 import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
-import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
+import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView, OrgTeamMembersFilter } from './org-people.interface';
 
 /** The five content tabs of the shared person-detail drawer (LFXV2-2195). */
 export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance' | 'key-contacts';
@@ -43,6 +43,8 @@ export interface PersonDrawerContext {
    * the Code tab shows every commit of the trailing 12 months.
    */
   codeFilters?: OrgCommitFilters;
+  /** The opener's Team members pick, sent with `codeFilters` (lfx-self-serve#4685): under exclude a CDP team member's Code tab is empty. */
+  teamMembers?: OrgTeamMembersFilter;
 }
 
 /** One rendered address line in the drawer header. */

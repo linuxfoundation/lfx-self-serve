@@ -36,9 +36,16 @@ export class AllEmployeesService {
    * The expanded row's detail in the page's view: the Maintainer pills follow `range`, and the code rows count what the
    * row counts — `range` and the commit filters (lfx-self-serve#4404).
    */
-  public getEmployeeDetail(orgUid: string, personKey: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeeDetail> {
+  /** `teamMembers` is the page's pick: under exclude a CDP team member's code view is empty (lfx-self-serve#4685). */
+  public getEmployeeDetail(
+    orgUid: string,
+    personKey: string,
+    range: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter
+  ): Observable<OrgAllEmployeeDetail> {
     return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`, {
-      params: { range, ...filters },
+      params: { range, ...filters, teamMembers },
     });
   }
 }

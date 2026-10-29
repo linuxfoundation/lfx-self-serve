@@ -89,12 +89,13 @@ export class OrgLensFoundationsService {
   }
 
   public async getFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
-    // `foundations:v2`: per-project maintainers are now LF maintainer roles over the past 365 days (lfx-self-serve#4482).
-    // Set by the fetcher, read by `storable`: a response without its roles (table missing) is served, never stored.
+    // `foundations:v3`: per-project maintainer roles leave CDP team members out (lfx-self-serve#4685); `v2`: they are LF
+    // maintainer roles over the past 365 days (lfx-self-serve#4482). Set by the fetcher, read by `storable`: a response
+    // without its roles (table missing) or with team members counted (flag missing) is served, never stored.
     let rolesMissing = false;
     return withOrgCache(
       accountId,
-      'foundations:v2',
+      'foundations:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFoundationsAndProjects(accountId);
@@ -175,11 +176,11 @@ export class OrgLensFoundationsService {
         p.COMMITS_COUNT DESC NULLS LAST
     `;
 
-    const [result, roles] = await Promise.all([
+    const [result, { roles, teamMembersUnavailable }] = await Promise.all([
       this.snowflakeService.execute<RawRow>(query, [accountId]),
       fetchLfProjectMaintainerRoles(this.snowflakeService, accountId),
     ]);
-    const rolesMissing = roles === null;
+    const rolesMissing = roles === null || teamMembersUnavailable;
 
     if (result.rows.length === 0) {
       return { response: this.emptyResponse(accountId), rolesMissing };

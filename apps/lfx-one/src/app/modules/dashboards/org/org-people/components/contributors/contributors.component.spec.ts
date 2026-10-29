@@ -427,7 +427,12 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     );
 
     expect(open).toHaveBeenCalledWith(
-      expect.objectContaining({ personKey: 'p-1', range: '730d', codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' } })
+      expect.objectContaining({
+        personKey: 'p-1',
+        range: '730d',
+        codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+        teamMembers: 'exclude',
+      })
     );
   });
 });

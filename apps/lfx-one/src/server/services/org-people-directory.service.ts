@@ -20,6 +20,7 @@ import type {
   OrgLensTimeRange,
   OrgPersonSource,
   OrgProjectScope,
+  OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
@@ -277,7 +278,12 @@ export class OrgPeopleDirectoryService {
           () => formerResolved && isCurrent()
         );
       }),
-      this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
+      // A failed team-member read never takes the live roster down with it (the merge itself degrades source by
+      // source): it serves everyone, says so, and the client does not keep the answer.
+      this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include').catch((error: unknown): OrgTeamMemberKeys => {
+        logger.warning(req, 'get_org_people_directory', 'Team-member read failed; serving team members included', { org_uid: accountId, err: error });
+        return { excluded: null, unavailable: true };
+      }),
     ]);
     return toWireResponse(fromCompactDirectory(entry), filters, teamMemberKeys);
   }

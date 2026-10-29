@@ -106,9 +106,13 @@ export function toWireResponse(
 
 const NO_TEAM_MEMBERS: OrgTeamMemberKeys = { excluded: null, unavailable: false };
 
-/** A team member's row with its code counts removed, or nothing when code was their only engagement. */
+/**
+ * A team member's row with its code counts removed, or nothing when code was their only engagement. A live source
+ * (a board or committee seat, a key-contact role, Org Lens access) is engagement too, counted or not.
+ */
 function withoutCode(row: OrgAllEmployeeCountedRow): OrgAllEmployeeCountedRow[] {
-  if (row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
+  const liveEngagement = row.sources.some((source) => source !== 'snowflake');
+  if (!liveEngagement && row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
     return [];
   }
   return [{ ...row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0 }];

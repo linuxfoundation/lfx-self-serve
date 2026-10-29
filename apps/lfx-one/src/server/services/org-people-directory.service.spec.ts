@@ -118,7 +118,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
-  DEFAULT_ORG_TEAM_MEMBERS: 'include',
+  DEFAULT_ORG_TEAM_MEMBERS: 'exclude',
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 // The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
@@ -1210,6 +1210,26 @@ describe('OrgPeopleDirectoryService.getLive — team members filter', () => {
     expect([included.stats.codeContributors, excluded.stats.codeContributors]).toEqual([2, 0]);
     expect(excluded.teamMembersUnavailable).toBeUndefined();
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a team member with only code listed, without it, when a live source engages them (seat, key contact, access)', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'coder@lfx-partner.example', username: 'coder', name: 'coder' })]);
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows.find((row) => row.personKey === 'coder')).toMatchObject({ commitsCount: 0, codeActivitiesCount: 0 });
+  });
+
+  it('serves the live roster with everyone, and says so, when the team-member read fails', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockRejectedValue(new Error('Warehouse timeout'));
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
+    expect(roster.teamMembersUnavailable).toBe(true);
   });
 
   it('serves everyone and says so while the team-member flag is unavailable', async () => {

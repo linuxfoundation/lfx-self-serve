@@ -190,7 +190,8 @@ export class AllEmployeesComponent {
   // Follows `?projectScope=` / `?metric=`: the project scope picks who is listed, the code-count option (commits, merged
   // commits or all code contributions) picks the code count. Read by the BFF with the range.
   protected readonly selectedFilters = signal<OrgCommitFilters>(this.initialFilters);
-  // Follows `?teamMembers=`: CDP team members are left out of both rosters, and so of the tiles, unless included.
+  // Follows `?teamMembers=`: unless included, CDP team members' code is removed from both rosters and the code tile;
+  // someone whose only engagement was code is not listed.
   protected readonly selectedTeamMembers = signal<OrgTeamMembersFilter>(this.initialTeamMembers);
 
   // Default sort: the code count (commits or code contributions, per the metric) descending.
@@ -462,6 +463,7 @@ export class AllEmployeesComponent {
       // The Code tab's Maintainer pills and counts follow the page range, project type and code count.
       range: this.selectedRange(),
       codeFilters: this.selectedFilters(),
+      teamMembers: this.selectedTeamMembers(),
       isFormer: row.isFormer === true,
     });
   }
@@ -911,7 +913,7 @@ export class AllEmployeesComponent {
     this.clearDetailError(key);
     this.detailLoading.update((state) => ({ ...state, [key]: true }));
     this.dataService
-      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange(), this.selectedFilters())
+      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange(), this.selectedFilters(), this.selectedTeamMembers())
       .pipe(
         take(1),
         takeUntil(this.detailCancel$),

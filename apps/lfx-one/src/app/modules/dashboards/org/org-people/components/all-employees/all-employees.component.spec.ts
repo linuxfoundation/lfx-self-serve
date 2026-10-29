@@ -1160,7 +1160,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       (fixture.componentInstance as unknown as { onPersonClick(row: object): void }).onPersonClick({ personKey: 'person-one', name: 'Ada', initials: 'A' });
 
       expect(open).toHaveBeenCalledWith(
-        expect.objectContaining({ personKey: 'person-one', range: '90d', codeFilters: { projectScope: 'all', commitScope: 'merged', metric: 'commits' } })
+        expect.objectContaining({
+          personKey: 'person-one',
+          range: '90d',
+          codeFilters: { projectScope: 'all', commitScope: 'merged', metric: 'commits' },
+          teamMembers: 'exclude',
+        })
       );
     });
 
@@ -1377,7 +1382,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       const component = fixture.componentInstance as unknown as DetailHarness;
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', FILTERS);
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', FILTERS, 'exclude');
       expect(component.expansion()).toEqual({ 'person-one': true });
       expect(Object.keys(component.detailMap())).toHaveLength(1);
 
@@ -1387,7 +1392,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(component.detailMap()).toEqual({});
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d', FILTERS);
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d', FILTERS, 'exclude');
     });
 
     it('reads the code rows in the project type and code count the row shows, and reloads them when either changes', async () => {
@@ -1397,7 +1402,13 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       const component = fixture.componentInstance as unknown as DetailHarness;
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' });
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(
+        ORG,
+        'person-one',
+        '365d',
+        { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+        'exclude'
+      );
 
       component.onFiltersChange({ metric: 'code' });
       await settle();
@@ -1405,7 +1416,13 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(component.detailMap()).toEqual({});
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '365d', { projectScope: 'non_lf', commitScope: 'all', metric: 'code' });
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(
+        ORG,
+        'person-one',
+        '365d',
+        { projectScope: 'non_lf', commitScope: 'all', metric: 'code' },
+        'exclude'
+      );
     });
   });
 });

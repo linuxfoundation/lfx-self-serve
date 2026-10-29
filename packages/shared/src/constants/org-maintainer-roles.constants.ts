@@ -25,7 +25,7 @@ export const ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION =
 
 /** The counting rule per project on the Overview and in the Memberships projects drawer: LF projects, past 365 days. */
 export const ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days, team members left out.";
 
 /** The window of the Overview's maintainer counts (card headline, Foundations & Projects, Memberships drawer). */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = '365d';

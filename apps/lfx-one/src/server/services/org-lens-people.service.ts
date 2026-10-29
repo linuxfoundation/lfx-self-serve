@@ -217,14 +217,16 @@ export class OrgLensPeopleService {
    * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
    * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
    * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
-   * trailing 12 months.
+   * trailing 12 months. `teamMembers` is that page's Team members pick (lfx-self-serve#4685): under `exclude` a CDP team
+   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code.
    */
   public async getEmployeeDetail(
     req: Request,
     accountId: string,
     personKey: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
-    codeFilters: OrgCommitFilters | null = null
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail> {
     const codeView: OrgPersonCodeView | null = codeFilters ? { range: maintainerRange, ...codeFilters } : null;
     const codeViewField = codeView ? { codeView } : {};
@@ -234,11 +236,13 @@ export class OrgLensPeopleService {
       return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, ...codeViewField, events: [], training: [] };
     }
 
-    const [{ committeeRows, eventRows, trainingRows }, code, maintainerProjectIds] = await Promise.all([
+    const [{ committeeRows, eventRows, trainingRows }, viewCode, maintainerProjectIds, teamMemberKeys] = await Promise.all([
       this.fetchEmployeeActivityRaw(accountId, personKey),
       codeView ? this.readCodeViewContributions(accountId, personKey, codeView) : this.readTrailingYearCodeContributions(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
+      this.getTeamMemberPersonKeys(accountId, codeView ? teamMembers : 'include'),
     ]);
+    const code = teamMemberKeys.excluded?.has(personKey) ? { projects: [], total: 0 } : viewCode;
     const maintainerProjects = new Set(maintainerProjectIds ?? []);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
@@ -335,14 +339,15 @@ export class OrgLensPeopleService {
     accountId: string,
     username: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
-    codeFilters: OrgCommitFilters | null = null
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers) : null;
   }
 
   /**

@@ -134,6 +134,7 @@ describe('OrgContributionsComponent', () => {
         defaultTab: 'code',
         range: '730d',
         codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+        teamMembers: 'exclude',
       })
     );
   });

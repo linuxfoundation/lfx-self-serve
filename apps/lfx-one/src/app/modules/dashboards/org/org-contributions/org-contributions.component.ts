@@ -39,6 +39,7 @@ import {
   ORG_PROJECT_SCOPE_OPTIONS,
   ORG_TEAM_MEMBERS_LABEL,
   ORG_TEAM_MEMBERS_OPTIONS,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
   ORG_TEAM_MEMBERS_TOOLTIP,
   ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
@@ -141,9 +142,12 @@ export class OrgContributionsComponent {
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
-    teamMembers: new FormControl<OrgTeamMembersFilter>(parseOrgTeamMembersFilter(this.initialParams.get('teamMembers')) ?? DEFAULT_ORG_TEAM_MEMBERS, {
-      nonNullable: true,
-    }),
+    teamMembers: new FormControl<OrgTeamMembersFilter>(
+      parseOrgTeamMembersFilter(this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS,
+      {
+        nonNullable: true,
+      }
+    ),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -301,7 +305,7 @@ export class OrgContributionsComponent {
     // `?teamMembers=` follows a query-only navigation too; the guard skips the echo of the page's own URL writes.
     this.route.queryParamMap
       .pipe(
-        map((params) => parseOrgTeamMembersFilter(params.get('teamMembers')) ?? DEFAULT_ORG_TEAM_MEMBERS),
+        map((params) => parseOrgTeamMembersFilter(params.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS),
         distinctUntilChanged(),
         takeUntilDestroyed()
       )
@@ -329,6 +333,7 @@ export class OrgContributionsComponent {
       // The Code tab's Maintainer pills and counts follow the range, project type and code count the page shows.
       range: query.dateRange,
       codeFilters: { projectScope: query.projectScope, commitScope: query.commitScope, metric: query.metric },
+      teamMembers: query.teamMembers,
     });
   }
 
@@ -582,7 +587,7 @@ export class OrgContributionsComponent {
         foundation: query.foundation || null,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
-        teamMembers: orgTeamMembersUrlParam(query.teamMembers),
+        [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(query.teamMembers),
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
         commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,
@@ -668,7 +673,7 @@ export class OrgContributionsComponent {
   }
 
   private isTeamMembersParamNormalized(): boolean {
-    const raw = this.initialParams.get('teamMembers');
+    const raw = this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM);
     return raw !== null && raw !== orgTeamMembersUrlParam(this.filterForm.controls.teamMembers.value);
   }
 

@@ -474,16 +474,16 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
     await controller.getEmployeeDetail(detailReq({ range: '90d' }), buildRes(), vi.fn());
     await controller.getEmployeeDetailByUsername(detailReq({ range: 'all' }), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '90d', null);
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all', null);
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '90d', null, 'include');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all', null, 'include');
   });
 
   it('defaults to the past 365 days when the opener sends no range', async () => {
     await controller.getEmployeeDetail(detailReq({}), buildRes(), vi.fn());
     await controller.getEmployeeDetailByUsername(detailReq({}), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null);
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d', null);
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null, 'include');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d', null, 'include');
   });
 
   it("forwards the opener's code filters with its range, for a person key and for a username (lfx-self-serve#4404)", async () => {
@@ -492,18 +492,42 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
     await controller.getEmployeeDetailByUsername(detailReq(query), buildRes(), vi.fn());
 
     const filters = { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' };
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', filters);
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '730d', filters);
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', filters, 'exclude');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '730d', filters, 'exclude');
   });
 
   it('fills the code filters an opener leaves out with their defaults once it sends any', async () => {
     await controller.getEmployeeDetail(detailReq({ projectScope: 'all' }), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', {
-      projectScope: 'all',
-      commitScope: 'all',
-      metric: 'code',
-    });
+    expect(getEmployeeDetail).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'person-one',
+      '365d',
+      {
+        projectScope: 'all',
+        commitScope: 'all',
+        metric: 'code',
+      },
+      'exclude'
+    );
+  });
+
+  // lfx-self-serve#4685
+  it("forwards the opener's Team members pick with its code filters, and counts everyone for a code-free open", async () => {
+    await controller.getEmployeeDetail(detailReq({ projectScope: 'lf', teamMembers: 'include' }), buildRes(), vi.fn());
+    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', expect.any(Object), 'include');
+
+    await controller.getEmployeeDetail(detailReq({ teamMembers: 'exclude' }), buildRes(), vi.fn());
+    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null, 'include');
+  });
+
+  it('rejects an unknown teamMembers with code filters with a 400 before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(detailReq({ projectScope: 'lf', teamMembers: 'none' }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown code filter with a 400 before any read', async () => {
