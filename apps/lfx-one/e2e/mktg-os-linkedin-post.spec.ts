@@ -90,7 +90,11 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
     const questionsUrl = page.url();
     await page.goBack();
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    // Automatic document→questions navigation replaces its entry. Back resolves the same server turn on the plain intake URL.
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is waiting for your answers');
     await page.goForward();
     await expect(page).toHaveURL(questionsUrl);
     await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
@@ -203,7 +207,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await setupLinkedin(page, { saved: true });
     await openLinkedin(page);
     const crumb = page.getByTestId('mktg-linkedin-breadcrumb');
-    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('Draft a LinkedIn post');
     await expect(crumb.getByRole('link')).toHaveCount(2);
     await expect(crumb.getByTestId('mktg-breadcrumb-link-0')).toHaveAttribute('href', '/project/mktg-os-agents?project=linkedin-e2e');
     await expect(crumb.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', '/project/mktg-os-agents/families/social-community?project=linkedin-e2e');
@@ -211,7 +215,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
     await page.goBack();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('Draft a LinkedIn post');
     await page.screenshot({ path: info.outputPath('linkedin-fixed-parent-back.png'), fullPage: true });
   });
   test('profile edit keeps its URL until save, while Back and Cancel return to the draft inputs', async ({ page }, info) => {

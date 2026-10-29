@@ -44,9 +44,14 @@ test.describe('Marketing OS current revisions', () => {
       if (state === 'questions') {
         const link = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
         await expect(link).toHaveText('Answer the questions');
-        await expect(link).toHaveAttribute('href', new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}$`));
+        await expect(link).toHaveAttribute(
+          'href',
+          new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}&run=${run.runId}$`)
+        );
         await link.click();
-        await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers');
+        await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
         return;
       }
       await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
