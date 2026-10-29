@@ -28,6 +28,21 @@ export class MktgBrandKitPrintComponent {
   /** Only the family exporter supplies the document prefix. */
   public readonly number = input('');
   protected readonly head = computed(() => `${this.projectName()} Brand kit`);
+  protected readonly typeNote = computed(() => {
+    const { summary, note } = this.view().type;
+    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
+    return normalize(note) === normalize(summary) ? '' : note;
+  });
+  protected readonly typeSource = computed(() => {
+    const source = this.view().type.source.trim();
+    const url = source.match(/https?:\/\/[^\s<>"')]+/i)?.[0];
+    if (!url) return source;
+    try {
+      return `${new URL(url).hostname} site CSS`;
+    } catch {
+      return 'Site CSS';
+    }
+  });
   protected readonly specimens = this.initSpecimens();
   protected readonly colourways = this.initColourways();
   protected readonly usageRows = this.initUsageRows();

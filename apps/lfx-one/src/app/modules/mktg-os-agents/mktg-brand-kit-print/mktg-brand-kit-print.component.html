@@ -183,11 +183,13 @@
       </ul>
     </td>
   </tr>
-  <tr class="kit-block">
+  <tr class="kit-contrast-block">
     <td>
-      <h3>Contrast</h3>
-      <p>{{ v.color.contrast.rule }}</p>
-      <table class="kit-data-table" data-testid="kit-print-contrast">
+      <div class="kit-contrast-intro">
+        <h3>Contrast</h3>
+        <p>{{ v.color.contrast.rule }}</p>
+      </div>
+      <table class="kit-data-table kit-contrast-table" data-testid="kit-print-contrast">
         <thead>
           <tr>
             <th>Foreground</th>
@@ -221,11 +223,11 @@
     <td>
       <h3>{{ v.type.family }}</h3>
       <p>
-        Source: {{ v.type.source }} · {{ v.type.google_fonts ? 'Google Fonts' : 'Not served by Google Fonts' }} · Fallback:
+        Source: {{ typeSource() }} · {{ v.type.google_fonts ? 'Google Fonts' : 'Not served by Google Fonts' }} · Fallback:
         {{ v.type.fallback || 'sans-serif' }}
       </p>
-      @if (v.type.note) {
-        <p>{{ v.type.note }}</p>
+      @if (typeNote(); as note) {
+        <p>{{ note }}</p>
       }
       <p>
         Weights:
@@ -327,9 +329,11 @@
 <ng-template #voiceBody>
   <tr class="kit-block">
     <td>
+      <p class="kit-eyebrow">Umbrella message</p>
       <h3>{{ v.voice.umbrella }}</h3>
+      <p class="kit-eyebrow">Brand line</p>
       <p>{{ v.voice.line }}</p>
-      <p>{{ v.voice.source }}</p>
+      <p class="kit-voice-source">{{ v.voice.source }}</p>
       @if (v.voice.note) {
         <p>{{ v.voice.note }}</p>
       }

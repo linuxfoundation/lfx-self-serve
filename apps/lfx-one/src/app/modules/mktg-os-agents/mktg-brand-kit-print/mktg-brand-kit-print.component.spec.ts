@@ -67,9 +67,6 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(ending?.textContent).toContain('Watch-outs');
   kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
   expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
-  const contrast = root.querySelector('[data-testid="kit-print-contrast"]');
-  if (!contrast) throw new Error('Missing synthetic contrast table');
-  expect(getComputedStyle(contrast).breakInside).toBe('avoid');
   const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
   expect(specimens).toHaveLength(kit.chapters.type.scale.length);
   expect(specimens[0].style.fontSize).toBe('32pt');
@@ -79,6 +76,69 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
+});
+
+it('lets eleven contrast rows fill Colour and split only between rows with a repeating header', async () => {
+  const { root, view, fixture } = await setup();
+  const row = view.contrast[0];
+  if (!row) throw new Error('Missing synthetic contrast row');
+  fixture.componentRef.setInput('view', {
+    ...view,
+    contrast: Array.from({ length: 11 }, (_, index) => ({ ...row, foreground: `Synthetic foreground ${index}` })),
+  });
+  await fixture.whenStable();
+  const table = root.querySelector<HTMLElement>('[data-testid="kit-print-contrast"]');
+  const block = root.querySelector<HTMLElement>('.kit-contrast-block');
+  const intro = root.querySelector<HTMLElement>('.kit-contrast-intro');
+  const header = table?.querySelector('thead');
+  if (!table || !block || !intro || !header) throw new Error('Missing synthetic contrast pagination structure');
+  expect(block.closest('[data-testid="kit-print-colour"]')).not.toBeNull();
+  expect(getComputedStyle(block).breakInside).toBe('auto');
+  expect(getComputedStyle(table).breakInside).toBe('auto');
+  expect(getComputedStyle(block).breakBefore).toBe('auto');
+  expect(getComputedStyle(intro).breakAfter).toBe('avoid');
+  expect(getComputedStyle(header).display).toBe('table-header-group');
+  expect(getComputedStyle(header).breakAfter).toBe('avoid');
+  expect(table.querySelectorAll('tbody tr')).toHaveLength(11);
+  table.querySelectorAll('tbody tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
+});
+
+it('prints the typography description once while preserving a distinct font note', async () => {
+  const { root, view, fixture } = await setup();
+  const summary = 'Synthetic font description.';
+  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note: ' Synthetic font\n description. ' } });
+  await fixture.whenStable();
+  const descriptionParagraphs = () =>
+    Array.from(root.querySelectorAll('[data-testid="kit-print-type"] p')).map((p) => p.textContent?.replace(/\s+/g, ' ').trim());
+  expect(descriptionParagraphs().filter((text) => text === summary)).toHaveLength(1);
+  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note: 'Distinct synthetic font note.' } });
+  await fixture.whenStable();
+  expect(descriptionParagraphs()).toContain('Distinct synthetic font note.');
+});
+
+it('replaces stylesheet asset URLs with a human host source and retains supplied human source labels', async () => {
+  const { root, view, fixture } = await setup();
+  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, source: 'https://style.example.org/_next/static/chunks/font-abcd.css?v=1' } });
+  await fixture.whenStable();
+  const type = root.querySelector('[data-testid="kit-print-type"]');
+  expect(type?.textContent).toContain('Source: style.example.org site CSS');
+  expect(type?.textContent).not.toContain('https://');
+  expect(type?.textContent).not.toContain('_next');
+  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, source: 'Project design team' } });
+  await fixture.whenStable();
+  expect(type?.textContent).toContain('Source: Project design team');
+});
+
+it('labels umbrella message and brand line and separates the small framework-source note', async () => {
+  const { root, view } = await setup();
+  const voice = root.querySelector('[data-testid="kit-print-voice"]');
+  const eyebrows = voice?.querySelectorAll<HTMLElement>('.kit-eyebrow');
+  expect(Array.from(eyebrows ?? []).map((p) => p.textContent)).toEqual(['Umbrella message', 'Brand line']);
+  eyebrows?.forEach((p) => expect(getComputedStyle(p).textTransform).toBe('uppercase'));
+  expect(voice?.querySelector('h3')?.textContent).toBe(view.voice.umbrella);
+  expect(voice?.querySelector('.kit-eyebrow:nth-of-type(2)')?.nextElementSibling?.textContent).toBe(view.voice.line);
+  expect(voice?.querySelector('.kit-voice-source')?.textContent).toBe('From the messaging framework');
+  expect(voice?.textContent).toContain(view.voice.note);
 });
 
 it('omits missing logo slots and colourway samples without empty boxes or apology text', async () => {

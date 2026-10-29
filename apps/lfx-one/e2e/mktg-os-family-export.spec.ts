@@ -184,7 +184,14 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print [data-testid="kit-print-contrast"]')).toHaveCSS('break-inside', 'avoid');
+  const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
+  await expect(kitPrint.locator('.kit-contrast-block')).toHaveCSS('break-inside', 'auto');
+  await expect(kitPrint.getByTestId('kit-print-contrast')).toHaveCSS('break-inside', 'auto');
+  await expect(kitPrint.getByTestId('kit-print-contrast').locator('thead')).toHaveCSS('display', 'table-header-group');
+  await expect(kitPrint.getByTestId('kit-print-type')).toContainText('Source: one.example.org site CSS');
+  await expect(kitPrint.getByTestId('kit-print-type')).not.toContainText('https://');
+  await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-eyebrow')).toHaveText(['Umbrella message', 'Brand line']);
+  await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-voice-source')).toHaveText('From the messaging framework');
   const firstUsageFrame = printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first();
   await expect(firstUsageFrame).toHaveCSS('aspect-ratio', 'auto');
   const usageBox = await firstUsageFrame.boundingBox();

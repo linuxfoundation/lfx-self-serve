@@ -73,8 +73,7 @@ figcaption {
 }
 
 .kit-data-table {
-  /* Move a complete contrast/palette table to the next sheet when it fits
-     there, rather than leaving only its last few rows on a continuation. */
+  /* Short palette tables stay whole; contrast explicitly allows row fragments. */
   break-inside: avoid;
   width: 100%;
   table-layout: fixed;
@@ -88,6 +87,54 @@ figcaption {
     text-align: left;
     vertical-align: middle;
   }
+}
+
+/* Do not move an entire contrast table to a nearly empty continuation.
+   Compact rows fill Colour's remaining space; only row boundaries may split. */
+.kit-contrast-block,
+.kit-contrast-table {
+  break-before: auto;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.kit-contrast-intro {
+  break-inside: avoid;
+  break-after: avoid;
+}
+.kit-contrast-table {
+  thead {
+    display: table-header-group;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  th,
+  td {
+    padding: 3pt;
+  }
+  th:nth-child(-n + 2) {
+    width: 35%;
+  }
+  th:nth-child(n + 3) {
+    width: 15%;
+  }
+  .kit-swatch {
+    width: 10pt;
+    height: 10pt;
+    margin-right: 3pt;
+  }
+}
+.kit-eyebrow {
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 3pt;
+}
+.kit-voice-source {
+  font-size: 8pt;
 }
 
 .kit-lockups {
