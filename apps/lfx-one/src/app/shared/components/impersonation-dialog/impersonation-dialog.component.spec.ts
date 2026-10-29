@@ -237,6 +237,26 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
     });
 
+    it('does not start on the Enter that picked the person, only on the next one', () => {
+      dialog().onSuggestionSelected({ value: jane, originalEvent: { key: 'Enter' } } as unknown as AutoCompleteSelectEvent);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+      expect(startImpersonation).not.toHaveBeenCalled();
+
+      dialog().onEnter();
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('does not hold back Enter after a mouse pick', () => {
+      dialog().onSuggestionSelected({ value: jane, originalEvent: { type: 'click' } } as unknown as AutoCompleteSelectEvent);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
     it('submits on Enter once a person is picked', () => {
       pick(jane);
       startImpersonation.mockReturnValueOnce(NEVER);

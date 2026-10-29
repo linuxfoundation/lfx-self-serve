@@ -62,6 +62,9 @@ export class ImpersonationDialogComponent {
   // field still shows that name. The username and email are listed under the field for context.
   protected readonly picked = signal<ImpersonationSuggestion | null>(null);
   private pickedLabel = '';
+  // Set when the pick was made with Enter: that same keydown then bubbles to the wrapper's onEnter, which must not
+  // also start the impersonation before the admin has seen the username and email under the field.
+  private pickedByEnter = false;
 
   public constructor() {
     // Closing mid-request would drop the loading UI while the change still goes through and reloads the page.
@@ -71,6 +74,7 @@ export class ImpersonationDialogComponent {
     this.targetUserForm.controls.targetUser.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.picked() && value !== this.pickedLabel) {
         this.picked.set(null);
+        this.pickedByEnter = false;
       }
     });
   }
@@ -114,6 +118,11 @@ export class ImpersonationDialogComponent {
 
   // Enter starts the impersonation only once someone is picked; before that it belongs to the suggestion list.
   protected onEnter(): void {
+    if (this.pickedByEnter) {
+      this.pickedByEnter = false;
+      return;
+    }
+
     if (this.picked()) {
       this.submit();
     }
@@ -135,6 +144,7 @@ export class ImpersonationDialogComponent {
     if (!entry || typeof entry !== 'object') return;
 
     // Name first, falling back to what is known, so the box never shows a blank for a person with no name on record.
+    this.pickedByEnter = (event.originalEvent as KeyboardEvent | undefined)?.key === 'Enter';
     this.pickedLabel = entry.name || entry.username || entry.email;
     this.picked.set(entry);
     this.targetUserForm.controls.targetUser.setValue(this.pickedLabel);
