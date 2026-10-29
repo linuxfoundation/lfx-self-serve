@@ -4,14 +4,27 @@
 import {
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_FILTERS,
   ORG_CODE_MEASURE_OPTIONS,
+  ORG_CODE_METRIC_LABEL,
   ORG_CODE_METRIC_OPTIONS,
+  ORG_CODE_METRIC_UNIT,
   ORG_COMMIT_SCOPE_OPTIONS,
+  ORG_COMMITS_DEFINITION,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
 import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
-import type { OrgCodeFilterValues, OrgCodeMeasure, OrgCodeMetric, OrgCommitFilters, OrgCommitScope, OrgPersonCodeView, OrgProjectScope } from '../interfaces';
+import type {
+  OrgCodeFilterValues,
+  OrgCodeMeasure,
+  OrgCodeMetric,
+  OrgCommitFilters,
+  OrgCommitScope,
+  OrgPersonCodeCount,
+  OrgPersonCodeView,
+  OrgProjectScope,
+} from '../interfaces';
 
 type OrgCommitFilterParamReader = (name: keyof OrgCommitFilters) => string | null | undefined;
 
@@ -107,4 +120,20 @@ export function describeOrgPersonCodeView(view: OrgPersonCodeView): string {
   ]
     .filter((label): label is string => !!label)
     .join(' · ');
+}
+
+/**
+ * How a person's Code rows (the drawer, the All Employees expanded row) name their counts: after the detail's code view
+ * (lfx-self-serve#4404), else as every commit of the trailing 12 months.
+ */
+export function orgPersonCodeCount(view: OrgPersonCodeView | undefined): OrgPersonCodeCount {
+  if (!view) {
+    return { label: ORG_CODE_METRIC_LABEL.commits, definition: ORG_COMMITS_DEFINITION, unit: ORG_CODE_METRIC_UNIT.commits, viewLabel: null };
+  }
+  return {
+    label: ORG_CODE_METRIC_LABEL[view.metric],
+    definition: ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(view).metric],
+    unit: ORG_CODE_METRIC_UNIT[view.metric],
+    viewLabel: describeOrgPersonCodeView(view),
+  };
 }

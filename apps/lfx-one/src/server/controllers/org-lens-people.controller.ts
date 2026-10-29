@@ -130,8 +130,8 @@ export class OrgLensPeopleController {
 
   /**
    * GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] —
-   * `range` is the window the Maintainer pills follow (default `365d`). The commit filters are the opener page's
-   * (lfx-self-serve#4404): with any of them the Code projects and total count that page's row in `range`; with none,
+   * `range` is the window the Maintainer pills follow (default `365d`). The commit filters are the calling page's (the
+   * drawer's opener or the All Employees expanded row; lfx-self-serve#4404): with any of them the Code projects and total count that page's row in `range`; with none,
    * every commit of the trailing 12 months. An unknown value is a 400.
    */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {

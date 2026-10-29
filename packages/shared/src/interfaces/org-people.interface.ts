@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgCommitFilters, OrgProjectScope } from './org-commit-filters.interface';
+import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
@@ -209,6 +209,18 @@ export interface OrgAllEmployeeTraining {
  */
 export interface OrgPersonCodeView extends OrgCommitFilters {
   range: OrgLensTimeRange;
+}
+
+/** How a person's Code rows name their counts — in the drawer and the All Employees expanded row: the view's code count, else commits of the trailing 12 months. */
+export interface OrgPersonCodeCount {
+  /** Total / column label: "Commits" or "Code contributions". */
+  label: string;
+  /** Tooltip naming the counting rule. */
+  definition: string;
+  /** Unit of the per-project counts. */
+  unit: OrgCountUnit;
+  /** Range, project type and code count the counts follow ("Past 90 days · LF projects · Only main branch commits"); `null` without a view. */
+  viewLabel: string | null;
 }
 
 /**

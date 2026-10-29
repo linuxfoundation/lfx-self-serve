@@ -193,9 +193,10 @@ export class OrgLensPeopleService {
    * range for the All Employees row, the opener's range or the past 365 days for the drawer. When the roles table is
    * missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
    *
-   * `codeFilters` (lfx-self-serve#4404) are the opener page's project type and code count: the Code projects and total
-   * are then that page's row for this person in `maintainerRange`, and the detail echoes them as `codeView`. Without
-   * them the Code tab shows every commit of the trailing 12 months.
+   * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
+   * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
+   * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
+   * trailing 12 months.
    */
   public async getEmployeeDetail(
     req: Request,

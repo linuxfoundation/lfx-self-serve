@@ -8,6 +8,9 @@ import {
   DEFAULT_ORG_COMMIT_FILTERS,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_MEASURE_OPTIONS,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_UNIT,
+  ORG_COMMITS_DEFINITION,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
 import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
@@ -18,6 +21,7 @@ import {
   orgCommitFiltersFor,
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
+  orgPersonCodeCount,
   readOrgCommitFilters,
 } from './org-commit-filters.utils';
 
@@ -143,5 +147,26 @@ describe('Org Lens person drawer code view', () => {
       label(ORG_PROJECT_SCOPE_OPTIONS, projectScope),
       label(ORG_CODE_MEASURE_OPTIONS, measure),
     ]);
+  });
+
+  it('labels the counts after the code count of the view, and as trailing-year commits without one', () => {
+    expect(orgPersonCodeCount(undefined)).toEqual({
+      label: ORG_CODE_METRIC_LABEL.commits,
+      definition: ORG_COMMITS_DEFINITION,
+      unit: ORG_CODE_METRIC_UNIT.commits,
+      viewLabel: null,
+    });
+    const view = { range: '90d', projectScope: 'lf', commitScope: 'merged', metric: 'commits' } as const;
+    expect(orgPersonCodeCount(view)).toEqual({
+      label: ORG_CODE_METRIC_LABEL.commits,
+      definition: ORG_CODE_MEASURE_DEFINITION.merged,
+      unit: ORG_CODE_METRIC_UNIT.commits,
+      viewLabel: describeOrgPersonCodeView(view),
+    });
+    expect(orgPersonCodeCount({ ...view, commitScope: 'all', metric: 'code' })).toMatchObject({
+      label: ORG_CODE_METRIC_LABEL.code,
+      definition: ORG_CODE_MEASURE_DEFINITION.code,
+      unit: ORG_CODE_METRIC_UNIT.code,
+    });
   });
 });

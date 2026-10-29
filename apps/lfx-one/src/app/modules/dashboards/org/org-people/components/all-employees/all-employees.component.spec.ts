@@ -1300,22 +1300,23 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
-  describe('expanded row Maintainer pills (lfx-self-serve#4482)', () => {
+  describe('expanded row (lfx-self-serve#4482, #4404)', () => {
     interface DetailHarness {
       toggleRow(row: { personKey: string }): void;
       onRangeChange(range: string): void;
+      onFiltersChange(change: object): void;
       expansion(): Record<string, boolean>;
       detailMap(): Record<string, unknown>;
     }
 
-    it('reads an expanded row for the page range and drops every loaded row when the range changes', async () => {
+    it('reads an expanded row for the page range and filters and drops every loaded row when the range changes', async () => {
       await mount('browser');
       const service = TestBed.inject(AllEmployeesService) as unknown as { getEmployeeDetail: Mock };
       service.getEmployeeDetail.mockReturnValue(of({ personKey: 'person-one' }));
       const component = fixture.componentInstance as unknown as DetailHarness;
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d');
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', FILTERS);
       expect(component.expansion()).toEqual({ 'person-one': true });
       expect(Object.keys(component.detailMap())).toHaveLength(1);
 
@@ -1325,7 +1326,25 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(component.detailMap()).toEqual({});
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d');
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d', FILTERS);
+    });
+
+    it('reads the code rows in the project type and code count the row shows, and reloads them when either changes', async () => {
+      await mount('browser', '/?projectScope=non_lf&metric=merged');
+      const service = TestBed.inject(AllEmployeesService) as unknown as { getEmployeeDetail: Mock };
+      service.getEmployeeDetail.mockReturnValue(of({ personKey: 'person-one' }));
+      const component = fixture.componentInstance as unknown as DetailHarness;
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' });
+
+      component.onFiltersChange({ metric: 'code' });
+      await settle();
+      expect(component.expansion()).toEqual({});
+      expect(component.detailMap()).toEqual({});
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '365d', { projectScope: 'non_lf', commitScope: 'all', metric: 'code' });
     });
   });
 });

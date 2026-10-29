@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgCommitFilters, OrgCountUnit } from './org-commit-filters.interface';
+import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
 import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
@@ -43,18 +43,6 @@ export interface PersonDrawerContext {
    * the Code tab shows every commit of the trailing 12 months.
    */
   codeFilters?: OrgCommitFilters;
-}
-
-/** How the drawer's Code tab names its counts: the opener's code count and view, else commits of the trailing 12 months. */
-export interface PersonDrawerCodeCount {
-  /** Total tile label: "Commits" or "Code contributions". */
-  label: string;
-  /** Tooltip naming the counting rule. */
-  definition: string;
-  /** Unit of the per-project counts. */
-  unit: OrgCountUnit;
-  /** Range, project type and code count the counts follow ("Past 90 days · LF projects · Only main branch commits"); `null` without an opener view. */
-  viewLabel: string | null;
 }
 
 /** One rendered address line in the drawer header. */
