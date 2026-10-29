@@ -13,6 +13,7 @@ import {
   ORG_COMMITS_DEFINITION,
   ORG_LENS_DEFAULT_TIME_RANGE_LABEL,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
+  ORG_TEAM_MEMBERS_EMPTY_HINT,
 } from '@lfx-one/shared/constants';
 import type { OrgCommitFilters, OrgContributorsResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -381,6 +382,22 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
       `No contributors found for this organization in the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`
     );
     expect(text('org-people-contributors-empty')).not.toContain('match the current filters');
+  });
+
+  // lfx-self-serve#4685 — at the default view team members are excluded, so an org whose only coders are team members
+  // reads empty; the hint points at the Include pick, unless team members are already counted.
+  it('hints at Include team members on the empty default view', async () => {
+    getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
+    await mount();
+
+    expect(text('org-people-contributors-empty-team-members')).toBe(ORG_TEAM_MEMBERS_EMPTY_HINT);
+  });
+
+  it('drops the Include team members hint while team-member data is unavailable', async () => {
+    getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG, teamMembersUnavailable: true as const }));
+    await mount();
+
+    expect(el().querySelector('[data-testid="org-people-contributors-empty-team-members"]')).toBeNull();
   });
 
   it('shows a dash on the Maintainer roles tile when the roles are unavailable, and the count otherwise', async () => {

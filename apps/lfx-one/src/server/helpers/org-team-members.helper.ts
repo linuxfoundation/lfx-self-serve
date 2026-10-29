@@ -28,9 +28,10 @@ export function orgTeamMembersQueryOptions(teamMembers: OrgTeamMembersFilter, co
 }
 
 /**
- * Runs `read` for the pick; when `exclude` meets a missing `column` (the flag by default) it logs, runs `read` again
- * with `include` and reports `teamMembersUnavailable`, so a view keeps loading (with team members counted) instead of
- * failing. Callers must not cache an unavailable answer. Any other error rejects.
+ * Runs `read` for the pick; when `exclude` meets a missing `column` (the flag by default) it logs which column the
+ * `operation` missed, runs `read` again with `include` and reports `teamMembersUnavailable`, so a view keeps loading
+ * (reading what the `include` pick reads) instead of failing. Callers must not cache an unavailable answer. Any other
+ * error rejects.
  */
 export async function readWithOrgTeamMembersFallback<T>(
   teamMembers: OrgTeamMembersFilter,
@@ -44,7 +45,10 @@ export async function readWithOrgTeamMembersFallback<T>(
     if (teamMembers !== 'exclude' || !isInvalidIdentifierError(error, column)) {
       throw error;
     }
-    logger.warning(undefined, operation, 'Team-member flag is not in the warehouse yet; serving team members included', { err: error });
+    logger.warning(undefined, operation, `${column} is not in the warehouse yet; reading the Include team members query instead`, {
+      err: error,
+      column,
+    });
     return { value: await read('include'), teamMembersUnavailable: true };
   }
 }

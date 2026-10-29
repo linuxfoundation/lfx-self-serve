@@ -139,7 +139,8 @@ export class OrgLensPeopleController {
    * `range` is the window the Maintainer pills follow (default: the Org Lens default range). The commit filters are the calling page's (the
    * drawer's opener or the All Employees expanded row; lfx-self-serve#4404): with any of them the Code projects and total count that page's row in `range`; with none,
    * every commit of the trailing 12 months. With them, `teamMembers` (default exclude) is that page's pick: under
-   * `exclude` a CDP team member's code view is empty (lfx-self-serve#4685). An unknown value is a 400.
+   * `exclude` a CDP team member's code view is empty (lfx-self-serve#4685). With them, an unknown `teamMembers` value is a 400;
+   * without them it is ignored.
    */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];

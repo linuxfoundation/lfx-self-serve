@@ -121,7 +121,7 @@ export class OrgContributionsService {
       foundationOptionRows: foundationResult.rows,
       projectOptionRows: projectResult.rows,
       employeeOptionRows: employeeResult.rows,
-      ...('firstCommitUnavailable' in repoResult && repoResult.firstCommitUnavailable ? { firstCommitUnavailable: true as const } : {}),
+      ...(repoResult.firstCommitUnavailable ? { firstCommitUnavailable: true as const } : {}),
     };
   }
 
@@ -240,7 +240,7 @@ export class OrgContributionsService {
     repoSearch: SearchFilter,
     query: OrgContributionsQuery,
     pagination: ViewAwarePagination
-  ): Promise<{ rows: ContributionsRepoRow[] }> {
+  ): Promise<{ rows: ContributionsRepoRow[]; firstCommitUnavailable: boolean }> {
     const offset = (pagination.page - 1) * pagination.size;
     const orderBy = repoOrderByColumn(query.sort);
     const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
@@ -291,7 +291,13 @@ export class OrgContributionsService {
       ORDER BY ${orderBy} ${sortDir}, r.repository_url ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, accountId, ...scope.binds, ...repoSearch.binds], scope.queryOptions);
+    const result = await this.snowflakeService.execute<ContributionsRepoRow>(
+      sql,
+      [accountId, accountId, ...scope.binds, ...repoSearch.binds],
+      scope.queryOptions
+    );
+    // The first contribution comes from this query's own `repo_first`, which reads no rollout column.
+    return { rows: result.rows, firstCommitUnavailable: false };
   }
 
   private async fetchCommits(

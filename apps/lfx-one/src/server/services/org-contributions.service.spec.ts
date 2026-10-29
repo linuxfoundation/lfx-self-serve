@@ -401,8 +401,11 @@ describe('OrgContributionsService — team members', () => {
     const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
     expect(repoReads.at(-1)?.[0]).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
     expect(repoReads.at(-1)?.[0]).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
+    // The payload the service built is flagged, so `storable` keeps it out of the cache.
+    const raw = await (withOrgCache.mock.results[0].value as Promise<{ firstCommitUnavailable?: true }>);
+    expect(raw.firstCommitUnavailable).toBe(true);
     const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
-    expect(storable({ firstCommitUnavailable: true })).toBe(false);
+    expect(storable(raw)).toBe(false);
     expect(storable({ teamMembersUnavailable: true })).toBe(false);
     expect(storable({})).toBe(true);
   });

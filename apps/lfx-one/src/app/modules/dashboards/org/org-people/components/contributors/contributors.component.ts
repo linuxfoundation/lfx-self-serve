@@ -27,6 +27,7 @@ import {
   ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_TEAM_MEMBERS_EMPTY_HINT,
   ORG_TEAM_MEMBERS_LABEL,
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
@@ -108,6 +109,7 @@ export class ContributorsComponent {
   protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
   protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
   protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
+  protected readonly teamMembersEmptyHint = ORG_TEAM_MEMBERS_EMPTY_HINT;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly maintainerRolesLabel = ORG_MAINTAINER_ROLES_LABEL;
   protected readonly maintainerRolesTooltip = ORG_MAINTAINER_ROLES_DEFINITION;

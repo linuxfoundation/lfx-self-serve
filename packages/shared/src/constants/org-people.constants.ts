@@ -127,6 +127,9 @@ export const ORG_TEAM_MEMBERS_TOOLTIP =
 /** Note shown when Exclude team members is picked but the team-member data cannot be read (lfx-self-serve#4685). */
 export const ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE = 'Team-member data is unavailable; counts include team members.';
 
+/** Hint on the Contributors empty state at the default view, where team members are excluded and may be the only coders (lfx-self-serve#4685). */
+export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choose Include team members to see them.';
+
 /** The person-level CDP team-member flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
 export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
 

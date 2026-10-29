@@ -197,6 +197,9 @@
           } @else {
             <p class="text-sm text-gray-700">No contributors found for this organization in the {{ timeRangeLabel() }}.</p>
             <p class="text-xs text-gray-500">Choose All time to include older contributions.</p>
+            @if (!response().teamMembersUnavailable) {
+              <p class="text-xs text-gray-500" data-testid="org-people-contributors-empty-team-members">{{ teamMembersEmptyHint }}</p>
+            }
           }
         </div>
       } @else {
