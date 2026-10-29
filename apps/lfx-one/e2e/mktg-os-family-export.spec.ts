@@ -173,7 +173,7 @@ test('Download PDF prepares all four assets then opens print synchronously on th
   await page.emulateMedia({ media: 'print' });
   const cover = page.getByTestId('family-export-print-cover');
   await expect(cover).toBeVisible();
-  await expect(page.getByTestId('family-export-print-title')).toBeVisible();
+  await expect(page.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
   await expect(page.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
   await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
   const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
@@ -249,7 +249,7 @@ test('Download PDF prepares all four assets then opens print synchronously on th
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });
 
-test('Export the kit reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {
+test('Export the family reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openFamilyExports(page, { approvedFamily: true });
   const card = page.getByTestId('family-export-actions');
@@ -265,7 +265,7 @@ test('Export the kit reveals and focuses format choices without choosing one or 
       document.body.dataset['unexpectedPrint'] = 'yes';
     };
   });
-  await page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the kit' }).click();
+  await page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the family' }).click();
   await expect(card).toHaveClass(/lfx-mktg-export-highlight/);
   await expect(pdf).toBeFocused();
   await expect(card.getByTestId('family-export-format-hint')).toHaveText('Choose a format: Download PDF or Export to Google Slides');

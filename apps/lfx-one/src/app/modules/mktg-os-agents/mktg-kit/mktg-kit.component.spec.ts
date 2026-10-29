@@ -221,9 +221,9 @@ describe('Marketing kit home', () => {
       expect(action?.getAttribute('href')).toContain('mode=new');
       expect(step?.textContent).toContain('Nothing in the kit yet');
     } else if (kind === 'export') {
-      expect(action?.textContent).toContain('Export the kit');
-      expect(step?.textContent).toContain('The kit is complete; export it.');
-      expect(step?.textContent).toContain('Opens Positioning & brand, where the kit can be exported.');
+      expect(action?.textContent).toContain('Export the family');
+      expect(step?.textContent).toContain('Positioning & brand is complete; export it.');
+      expect(step?.textContent).toContain('Opens Positioning & brand for export.');
       expect(action?.getAttribute('href')).toContain('families/positioning-brand');
     } else if (kind === 'rebuild') {
       expect(step?.textContent).toContain('1 asset is stale');

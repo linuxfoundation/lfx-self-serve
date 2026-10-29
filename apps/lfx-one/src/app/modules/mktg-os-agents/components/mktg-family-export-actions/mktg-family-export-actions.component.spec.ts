@@ -345,7 +345,7 @@ describe('Family export slot', () => {
       'Boilerplates',
       'FAQ',
     ]);
-    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
+    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand');
     expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(cover?.classList.contains('h-screen')).toBe(false);

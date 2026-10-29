@@ -177,7 +177,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
       expect(query('mktg-slides-export-running')).not.toBeNull();
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
-      expect(query('brand-kit-web-view-footer')?.textContent).toContain('Export to Google Slides builds the kit as a deck');
+      expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
+      );
     });
 
     it('replaces draft exports with a quiet explanation and restores Slides then solid PDF on approval', async () => {
