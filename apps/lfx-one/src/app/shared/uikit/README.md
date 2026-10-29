@@ -40,6 +40,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset band and actions footer slots; 540px or 420px, sticky title, single-action footer                                           |
 | `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus return, scroll lock, `ui-overlay` backdrop, split Escape and backdrop close                             |
 | `lfxUiTooltip`          | `UiTooltipDirective`       | Attribute directive: hover and keyboard-focus tooltip in a CDK overlay, plain or rich, flips sides, hoverable, Escape closes, spoken description; SSR-safe             |
+| `lfx-ui-checkbox`       | `UiCheckboxComponent`      | Native 16px checkbox: checked, indeterminate, disabled, label; `[(checked)]` and reactive forms                                                                        |
 
 ## Design tokens
 
