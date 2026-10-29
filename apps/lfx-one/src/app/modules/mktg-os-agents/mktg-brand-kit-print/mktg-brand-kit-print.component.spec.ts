@@ -122,10 +122,14 @@ it('keeps captioned pairs indivisible with explicit frame heights and the intro 
     expect(pair.querySelectorAll('figcaption')).toHaveLength(2);
     pair.querySelectorAll<HTMLElement>('.kit-usage-frame').forEach((frame) => {
       const styles = getComputedStyle(frame);
-      const height = frame.getAttribute('data-layout') === 'report' ? '44mm' : '36mm';
-      expect(styles.height).toBe(height);
-      expect(styles.minHeight).toBe(height);
-      expect(styles.maxHeight).toBe(height);
+      const millimetres = frame.getAttribute('data-layout') === 'report' ? 44 : 36;
+      const expectedPixels = (millimetres * 96) / 25.4;
+      // Computed CSS resolves physical units to px; normalize either valid form.
+      for (const value of [styles.height, styles.minHeight, styles.maxHeight]) {
+        expect(value).toMatch(/(?:mm|px)$/);
+        const pixels = value.endsWith('mm') ? (Number.parseFloat(value) * 96) / 25.4 : Number.parseFloat(value);
+        expect(pixels).toBeCloseTo(expectedPixels, 3);
+      }
       expect(styles.aspectRatio).not.toContain('/');
     });
   });
