@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px gap between the label row and the track. -->
+<div class="flex flex-col gap-[8px]">
+  <div class="flex justify-between copy-13 tabular-nums text-ui-neutral-600">
+    <label [for]="inputId" data-testid="ui-slider-label">{{ label() }}</label>
+    <output [for]="inputId" [class.text-ui-neutral-900]="!isDisabled()" data-testid="ui-slider-value">{{ displayValue() }}</output>
+  </div>
+  <input
+    type="range"
+    class="ui-slider"
+    [id]="inputId"
+    [min]="min()"
+    [max]="max()"
+    [step]="step()"
+    [value]="clamped()"
+    [disabled]="isDisabled()"
+    [attr.aria-valuetext]="valueText() || null"
+    [style.--val]="percent() + '%'"
+    (input)="onInput($event)"
+    (blur)="onBlur()"
+    data-testid="ui-slider" />
+</div>

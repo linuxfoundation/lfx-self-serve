@@ -1,0 +1,72 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Track and thumb are browser pseudo-elements, which Tailwind utilities cannot style.
+// --val is the filled share of the track; the thumb's 16px sits on a 4px track, so it is pulled up 6px.
+.ui-slider {
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  --val: 50%;
+
+  &::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: var(--ui-radius-full);
+    background: linear-gradient(to right, var(--ui-accent-500) var(--val), var(--ui-neutral-alpha-200) var(--val));
+  }
+
+  &::-moz-range-track {
+    height: 4px;
+    border-radius: var(--ui-radius-full);
+    background: var(--ui-neutral-alpha-200);
+  }
+
+  &::-moz-range-progress {
+    height: 4px;
+    border-radius: var(--ui-radius-full);
+    background: var(--ui-accent-500);
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border-radius: var(--ui-radius-full);
+    background: var(--ui-white);
+    box-shadow:
+      0 0 0 1px var(--ui-neutral-alpha-300),
+      0 2px 4px rgba(15, 23, 43, 0.16);
+  }
+
+  &::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: var(--ui-radius-full);
+    background: var(--ui-white);
+    box-shadow:
+      0 0 0 1px var(--ui-neutral-alpha-300),
+      0 2px 4px rgba(15, 23, 43, 0.16);
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  &:focus-visible::-webkit-slider-thumb {
+    box-shadow: var(--ui-shadow-focus);
+  }
+
+  &:focus-visible::-moz-range-thumb {
+    box-shadow: var(--ui-shadow-focus);
+  }
+
+  &:disabled {
+    opacity: var(--ui-opacity-disabled);
+    cursor: not-allowed;
+  }
+}
