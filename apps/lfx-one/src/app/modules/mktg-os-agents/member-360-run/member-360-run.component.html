@@ -48,7 +48,7 @@
         </section>
       } @else {
         <section class="flex flex-col gap-3 rounded-xl border border-gray-200 p-5" data-testid="member-360-generating">
-          @if (result()?.status === 'ready') {
+          @if (result()?.status === 'ready' && (result()?.stored || result()?.persistence)) {
             @if (pending.request.documentId; as documentId) {
               <lfx-button label="Open document" [routerLink]="['../documents/member-360', documentId]" [queryParams]="projectQuery()" />
             }

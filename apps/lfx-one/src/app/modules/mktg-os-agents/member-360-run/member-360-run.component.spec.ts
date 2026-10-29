@@ -628,6 +628,21 @@ describe('Member360RunComponent', () => {
     pending.complete();
   });
 
+  it('keeps ready-but-unsaved output on progress and offers Open only after stored readiness', async () => {
+    await render();
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    await fixture.whenStable();
+    const pending = fixture.componentInstance['pending']();
+    if (!pending) throw new Error('Missing synthetic pending run');
+    fixture.componentInstance['resultContext'].set([pending, { status: 'ready', stored: false }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Open document');
+    expect(fixture.nativeElement.textContent).toContain('Member 360 is working on your report.');
+    fixture.componentInstance['resultContext'].set([pending, { status: 'ready', stored: true }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Open document');
+  });
   it('keeps the accepted capability after navigation without polling or navigating again', async () => {
     TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
     const http = TestBed.inject(HttpTestingController);
