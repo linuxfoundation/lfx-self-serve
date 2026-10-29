@@ -70,7 +70,9 @@
     }
   }
 
-  body.lfx-print-framework,
+  /* :has raises specificity above the legacy body height:0/overflow:hidden
+     rules emitted after this partial by styles.scss. */
+  body.lfx-print-framework:has(.lfx-framework-print),
   body.lfx-print-family,
   body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
     page: mktg-framework;
