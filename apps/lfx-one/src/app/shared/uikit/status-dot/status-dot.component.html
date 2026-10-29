@@ -1,0 +1,7 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span [class]="dotClasses()" aria-hidden="true" data-testid="ui-status-dot-marker"></span>
+@if (!dotOnly()) {
+  <span data-testid="ui-status-dot-label">{{ text() }}</span>
+}
