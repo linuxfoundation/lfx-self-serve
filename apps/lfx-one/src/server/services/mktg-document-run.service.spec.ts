@@ -446,10 +446,11 @@ describe('MktgDocumentRunService core', () => {
     });
     it.each([false, true])('rejects missing, extra or duplicate keys before a durable claim (creator=%s)', async (creator) => {
       await waiting();
+      const writer = writerRequest('synthetic-coverage-writer');
       const invoke = (value: typeof answers) =>
         creator
-          ? service.claimSessionAnswers(req, project, session, questionsId, types[0].catalogAgentId ?? '', value)
-          : service.claimAnswers(req, project, hash(session), questionsId, value);
+          ? service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '', value)
+          : service.claimAnswers(writer, project, hash(session), questionsId, value);
       for (const invalid of [[], [...answers, { ...answers[0], key: 'extra' }], [answers[0], answers[0]], [{ ...answers[0], key: 'unasked' }]]) {
         await expect(invoke(invalid)).rejects.toMatchObject({
           statusCode: 400,
@@ -1551,7 +1552,13 @@ describe('MktgDocumentRunService core', () => {
     expect(JSON.parse(completedBody).startedAt).toBe(JSON.parse(body).startedAt);
     vi.advanceTimersByTime(120_000);
     await service.start(req, project, type.agentKey, session, 0, 'renewed-turn');
-    expect(stored().body).toBe(completedBody);
+    expect(hash(stored().body)).not.toBe(hash(completedBody));
+    expect(JSON.parse(stored().body)).toMatchObject({
+      startedAt: JSON.parse(body).startedAt,
+      creatorSubject: JSON.parse(body).creatorSubject,
+      attemptId: 'renewed-turn',
+      state: 'writing',
+    });
     expect(stored().metadata).toMatchObject({ state: 'writing', 'prior-version': '0', 'started-at': '2026-10-19T12:00:00.000Z', 'attempt-id': 'renewed-turn' });
     await service.recordResult(req, session, ready(type.agentKey), project);
     expect(stored().metadata['state']).toBe('writing');
