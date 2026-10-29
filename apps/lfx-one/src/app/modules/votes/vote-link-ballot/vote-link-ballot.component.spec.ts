@@ -380,11 +380,12 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
   });
 
   it('shows the status chip and a localised deadline in the compact header', async () => {
-    await openWith(BALLOT);
+    // Midday UTC, mid-year: the same calendar day and year in every timezone, so the text does not depend on the runner's TZ.
+    await openWith({ ...BALLOT, end_time: '2099-06-15T12:00:00Z' });
 
     expect(text('vote-link-status')).toBe('Open');
     expect(text('vote-link-deadline')).toContain('Closes');
-    expect(text('vote-link-deadline')).toContain('2098');
+    expect(text('vote-link-deadline')).toContain('Jun 15, 2099');
   });
 
   it('shows a full thank-you screen with the chosen answers after a regular submit', async () => {
