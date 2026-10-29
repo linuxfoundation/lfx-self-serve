@@ -103,12 +103,10 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-sources')).toContainText('2 sources failed: README: Timed out; Analyst note: Login required.');
     await page.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Hide' }).click();
     await expect(sources).toBeHidden();
-    await expect(page.getByTestId('mktg-family-approve').getByRole('heading')).toContainText('Sign-off · roadmap: two-role sign-off arrives in November');
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeHidden();
-    await page.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Show' }).click();
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeVisible();
-    await page.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Hide' }).click();
-    await expect(page.locator('#mktg-family-sign-off-text')).toBeHidden();
+    await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+    await expect(page.locator('#mktg-family-sign-off-text')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-details')).not.toContainText('November');
     for (const id of ['family-export-pdf', 'family-export-slides']) {
       await expect(page.getByTestId(id).getByRole('button')).toBeDisabled();
     }
@@ -253,7 +251,7 @@ test.describe('Marketing family content', () => {
     await setupKit(page, { loaded: true, report: false, revisionHold });
     await openKit(page, '/families/positioning-brand');
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeVisible();
-    await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
+    await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
     release();
     await expect(page.getByTestId('mktg-family-sources-loading')).toBeEmpty();
     await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);

@@ -73,34 +73,38 @@ describe('Family-only source details', () => {
     fixture.componentRef.setInput('projectUid', 'synthetic');
     return fixture;
   }
-  it('collapses sources and Sign-off to honest summary lines with accessible Show and Hide', async () => {
+  it('collapses sources to an honest summary line with accessible Show and Hide', async () => {
     const fixture = create();
     await fixture.whenStable();
     expect(getRevision).toHaveBeenCalledWith('synthetic', 'foundation-message', 'living', revisionId);
     const root: HTMLElement = fixture.nativeElement;
     const sourceToggle = root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sources-toggle"] button');
-    const signOffToggle = root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sign-off-toggle"] button');
     const list = root.querySelector('#mktg-family-sources-list');
     expect(root.querySelector('h2')?.textContent?.replace(/\s+/g, ' ')).toContain('Where it comes from · 1 source read · 1 source failed');
     expect(list?.classList.contains('hidden')).toBe(true);
     expect(sourceToggle?.getAttribute('aria-controls')).toBe(list?.id);
     expect(sourceToggle?.getAttribute('aria-expanded')).toBe('false');
     sourceToggle?.click();
-    signOffToggle?.click();
     await fixture.whenStable();
     expect(sourceToggle?.textContent).toContain('Hide');
     expect(sourceToggle?.getAttribute('aria-expanded')).toBe('true');
     expect(list?.classList.contains('hidden')).toBe(false);
     expect(list?.textContent).toContain('Sources read on the last run: project.example.');
     expect(list?.textContent).toContain('README: Timed out');
-    expect(root.querySelector('#mktg-family-sign-off-text')?.classList.contains('hidden')).toBe(false);
-    expect(root.textContent).toContain('roadmap: two-role sign-off arrives in November');
-    expect(root.textContent).toContain('Any project writer approves an asset in October.');
     sourceToggle?.click();
-    signOffToggle?.click();
     await fixture.whenStable();
     expect(list?.classList.contains('hidden')).toBe(true);
-    expect(root.querySelector('#mktg-family-sign-off-text')?.classList.contains('hidden')).toBe(true);
+  });
+  it('omits the entire roadmap Sign-off section, toggle and dated copy', async () => {
+    const fixture = create();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+    expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
+    expect(root.textContent).not.toContain('Sign-off');
+    expect(root.textContent).not.toContain('October');
+    expect(root.textContent).not.toContain('November');
   });
   it('omits sources with no document or no report, never faking a source list', async () => {
     getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));
@@ -110,9 +114,9 @@ describe('Family-only source details', () => {
     fixture.componentRef.setInput('family', { ...family(), rows: [] });
     await fixture.whenStable();
     expect(getRevision).toHaveBeenCalledTimes(1);
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
   });
-  it('keeps loading/error separate and retries without losing the static explainer', async () => {
+  it('keeps loading/error separate and retries without revealing roadmap copy', async () => {
     getRevision.mockReturnValue(new Subject<MktgRevisionResponse>());
     const fixture = create();
     await fixture.whenStable();
