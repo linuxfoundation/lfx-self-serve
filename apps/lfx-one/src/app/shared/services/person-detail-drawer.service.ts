@@ -85,7 +85,9 @@ export class PersonDetailDrawerService {
         if (!path) {
           return of({ request, detail: null, error: false });
         }
-        return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`).pipe(
+        // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the past 365 days.
+        const range = request.context?.range;
+        return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params: range ? { range } : {} }).pipe(
           map((detail) => ({ request, detail, error: false })),
           catchError((err: unknown) => {
             console.error('Failed to load person detail:', err);

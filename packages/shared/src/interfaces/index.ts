@@ -281,6 +281,7 @@ export * from './org-key-contacts.internal.interface';
 export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+export * from './org-maintainer-roles.internal.interface';
 
 // Org Lens commit filters (lfx-self-serve#4164, #4322)
 export * from './org-commit-filters.interface';

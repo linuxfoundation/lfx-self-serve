@@ -151,3 +151,4 @@ export * from './display-name.utils';
 export * from './mktg-run-failure.utils';
 export * from './org-people-stats.utils';
 export * from './org-commit-filters.utils';
+export * from './org-employment.utils';
