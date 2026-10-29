@@ -10,7 +10,7 @@ for (const entry of [
   { name: 'Kit', suffix: '', row: 'mktg-kit-asset-messaging-framework' },
   { name: 'Family', suffix: '/families/positioning-brand', row: 'mktg-family-asset-messaging-framework' },
 ]) {
-  test(`${entry.name} re-reads on return and updates the same row without a loading flash`, async ({ page }, info) => {
+  test(`${entry.name} re-reads on return, bounds timer reads and keeps partial progress in the same row`, async ({ page }, info) => {
     await suppressCookieBanner(page);
     const listing = kitDocuments(false);
     let reads = 0;
@@ -36,8 +36,28 @@ for (const entry of [
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(row).toContainText('Writing');
     expect(reads).toBeGreaterThan(before);
+    listing.progressUnavailable = true;
+    listing.runs = [];
+    const timed = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('poll') === '1';
+    });
+    await timed;
+    await expect(row).toContainText('Writing');
+    const returned = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === MKTG_DOCUMENTS_API_PATH && !url.searchParams.has('poll');
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await returned;
+    await expect(row).toContainText('Writing');
+    listing.progressUnavailable = false;
+    const complete = page.waitForResponse((response) => new URL(response.url()).pathname === MKTG_DOCUMENTS_API_PATH);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await complete;
+    await expect(row).toContainText('Not run yet');
     expect(await mounted?.evaluate((node) => node.isConnected)).toBe(true);
     await expect(row).toBeVisible();
-    await page.screenshot({ path: info.outputPath('updated-row.png'), fullPage: true });
+    await page.screenshot({ path: info.outputPath('confirmed-row.png'), fullPage: true });
   });
 }

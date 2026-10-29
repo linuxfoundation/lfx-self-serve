@@ -45,7 +45,7 @@ export class MktgKitComponent {
           switchMap(({ denied }) =>
             denied
               ? EMPTY
-              : createVisibilityPoll(this.document, () => this.kit.refresh(), {
+              : createVisibilityPoll(this.document, (poll) => this.kit.refresh(poll), {
                   intervalMs: MKTG_RUN_POLL.intervalMs,
                   backoffBaseMs: MKTG_RUN_POLL.intervalMs,
                   backoffMaxMs: MKTG_RUN_POLL.intervalMs,

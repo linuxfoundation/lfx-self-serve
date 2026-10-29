@@ -40,6 +40,26 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
+  it('distinguishes scheduled polling from discovery on open and visible/focus return', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn((_poll: boolean) => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    vi.advanceTimersByTime(5000);
+    expect(fetch).toHaveBeenLastCalledWith(true);
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    setVisibility('hidden');
+    vi.advanceTimersByTime(10000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    setVisibility('visible');
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    vi.advanceTimersByTime(5000);
+    expect(fetch).toHaveBeenLastCalledWith(true);
+    sub.unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('never overlaps a slow in-flight request', () => {
     const inFlight = new Subject<number>();
     const fetch = vi.fn(() => inFlight);

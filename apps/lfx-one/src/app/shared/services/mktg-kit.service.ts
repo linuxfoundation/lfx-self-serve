@@ -14,6 +14,7 @@ import {
   distinctUntilChanged,
   EMPTY,
   finalize,
+  map,
   Observable,
   of,
   shareReplay,
@@ -34,8 +35,7 @@ export class MktgKitService {
   private readonly reload = signal(0);
   private contextSeen = false;
   private readonly cancelReads = new Subject<void>();
-  private inFlight: Observable<MktgDocumentsResponse> | null = null;
-  private inFlightProject = '';
+  private readonly inFlight = new Map<string, Observable<MktgDocumentsResponse>>();
 
   public readonly loading = signal(true);
   public readonly error = signal('');
@@ -89,12 +89,12 @@ export class MktgKitService {
   }
 
   /** Read the current server listing without replacing the mounted rows with a loading state. */
-  public refresh(): Observable<MktgDocumentsResponse | null> {
+  public refresh(poll = false): Observable<MktgDocumentsResponse | null> {
     return defer(() => {
       const project = this.projectUid();
       if (!isPlatformBrowser(this.platformId) || !project) return of(null);
       if (this.accessDenied() || this.refreshDenied()) return EMPTY;
-      return this.read(project).pipe(
+      return this.read(project, poll).pipe(
         tap((documents) => {
           if (project !== this.projectUid()) return;
           this.documents.set(documents);
@@ -114,19 +114,27 @@ export class MktgKitService {
     this.reload.update((value) => value + 1);
   }
 
-  /** Initial loads and quiet refreshes observe the same in-flight HTTP read. */
-  private read(project: string): Observable<MktgDocumentsResponse> {
-    if (this.inFlight && this.inFlightProject === project) return this.inFlight;
-    this.cancelReads.next();
-    const pending: Observable<MktgDocumentsResponse> = defer(() => this.store.listDocuments(project)).pipe(
+  /** Initial loads and quiet refreshes share reads only within the same project and discovery/poll mode. */
+  private read(project: string, poll = false): Observable<MktgDocumentsResponse> {
+    const key = JSON.stringify([project, poll]);
+    const current = this.inFlight.get(key);
+    if (current) return current;
+    const pending: Observable<MktgDocumentsResponse> = defer(() => this.store.listDocuments(project, poll)).pipe(
       takeUntil(this.cancelReads),
+      map((documents) => {
+        const previous = this.documents();
+        if (!documents.progressUnavailable || previous?.project !== project || documents.project !== project) return documents;
+        return {
+          ...documents,
+          runs: [...new Map([...(previous.runs ?? []), ...(documents.runs ?? [])].map((run) => [run.runId, run] as const)).values()],
+        };
+      }),
       finalize(() => {
-        if (this.inFlight === pending) this.inFlight = null;
+        if (this.inFlight.get(key) === pending) this.inFlight.delete(key);
       }),
       shareReplay({ bufferSize: 1, refCount: true })
     );
-    this.inFlightProject = project;
-    this.inFlight = pending;
+    this.inFlight.set(key, pending);
     return pending;
   }
 }

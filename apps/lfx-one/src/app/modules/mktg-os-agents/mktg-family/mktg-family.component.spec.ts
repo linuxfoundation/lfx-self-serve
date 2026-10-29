@@ -133,11 +133,12 @@ describe('Marketing family page', () => {
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const harness = await RouterTestingHarness.create('/project/mktg-os-agents/families/positioning-brand');
     await harness.fixture.whenStable();
-    expect(refresh).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
     const page = harness.routeNativeElement;
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await harness.fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(true);
     expect(harness.routeNativeElement).toBe(page);
     expect(loading()).toBe(false);
     visibility.mockReturnValue('hidden');
@@ -148,9 +149,11 @@ describe('Marketing family page', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     await harness.fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenLastCalledWith(false);
     window.dispatchEvent(new Event('focus'));
     await harness.fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(4);
+    expect(refresh).toHaveBeenLastCalledWith(false);
     harness.fixture.destroy();
     await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
     window.dispatchEvent(new Event('focus'));

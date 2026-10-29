@@ -74,11 +74,12 @@ describe('Marketing kit home', () => {
     });
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
-    expect(refresh).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
     const card = fixture.nativeElement.querySelector('article');
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(true);
     expect(fixture.nativeElement.querySelector('article')).toBe(card);
     expect(loading()).toBe(false);
     visibility.mockReturnValue('hidden');
@@ -89,9 +90,11 @@ describe('Marketing kit home', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     await fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenLastCalledWith(false);
     window.dispatchEvent(new Event('focus'));
     await fixture.whenStable();
     expect(refresh).toHaveBeenCalledTimes(4);
+    expect(refresh).toHaveBeenLastCalledWith(false);
     fixture.destroy();
     await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
     window.dispatchEvent(new Event('focus'));
