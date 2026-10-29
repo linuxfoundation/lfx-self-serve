@@ -1,11 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from './button.component';
+
+@Component({
+  selector: 'lfx-ui-button-test-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button [disabled]="true" (click)="save()">Save</lfx-ui-button>`,
+})
+class DisabledButtonHostComponent {
+  public save = vi.fn();
+}
 
 describe('UiButtonComponent', () => {
   let fixture: ComponentFixture<UiButtonComponent>;
@@ -42,6 +52,16 @@ describe('UiButtonComponent', () => {
   ])('styles the %s variant', async (variant, token) => {
     await set('variant', variant);
     expect(el().className).toContain(token);
+  });
+
+  it.each([
+    ['primary', true],
+    ['outline-neutral', false],
+    ['outline-accent', false],
+    ['ghost-neutral', true],
+  ])('gives the %s variant a transparent border: %s', async (variant, transparent) => {
+    await set('variant', variant);
+    expect(el().classList.contains('border-transparent')).toBe(transparent);
   });
 
   it.each([
@@ -87,6 +107,14 @@ describe('UiButtonComponent', () => {
   it('disables the native button', async () => {
     await set('disabled', true);
     expect((el() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('turns off pointer events on the host so a consumer click handler cannot fire', async () => {
+    const host = TestBed.createComponent(DisabledButtonHostComponent);
+    await host.whenStable();
+    const button = host.nativeElement.querySelector('lfx-ui-button') as HTMLElement;
+    // jsdom ignores CSS pointer-events, so assert the host class that blocks the click in a browser.
+    expect(button.classList).toContain('pointer-events-none');
   });
 
   it('does not navigate when a disabled link is clicked', async () => {

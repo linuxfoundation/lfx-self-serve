@@ -17,6 +17,7 @@ import { RouterLink } from '@angular/router';
   host: {
     '[class.inline-block]': '!fullWidth()',
     '[class.block]': 'fullWidth()',
+    '[class.pointer-events-none]': 'disabled()',
   },
 })
 export class UiButtonComponent {
@@ -56,7 +57,7 @@ export class UiButtonComponent {
   private initClasses(): Signal<string> {
     return computed(() => {
       const base =
-        'inline-flex items-center justify-center whitespace-nowrap border border-transparent font-medium no-underline cursor-pointer transition duration-150 active:scale-[.97] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50';
+        'inline-flex items-center justify-center whitespace-nowrap border font-medium no-underline cursor-pointer transition duration-150 active:scale-[.97] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50';
       const variants = {
         primary: 'bg-blue-500 text-white hover:bg-blue-600 hover:shadow active:bg-blue-700 active:shadow-none',
         'outline-neutral': 'border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-900 hover:shadow-sm active:bg-gray-200',
@@ -88,7 +89,9 @@ export class UiButtonComponent {
       };
       const size = sizes[this.size()];
       const width = this.fullWidth() ? 'w-full' : '';
-      return [base, variants[this.variant()], size.text, this.iconOnly() ? size.square : size.pad, width].filter(Boolean).join(' ');
+      // Tailwind emits border-transparent after border colors, so outline variants must omit it.
+      const border = this.variant().startsWith('outline') ? '' : 'border-transparent';
+      return [base, border, variants[this.variant()], size.text, this.iconOnly() ? size.square : size.pad, width].filter(Boolean).join(' ');
     });
   }
 }

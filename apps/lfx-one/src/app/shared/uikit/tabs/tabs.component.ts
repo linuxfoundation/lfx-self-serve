@@ -14,13 +14,13 @@ import { UiTabItem } from '@lfx-one/shared/interfaces';
 export class UiTabsComponent {
   /** The tabs to render, in order. */
   public readonly tabs = input.required<UiTabItem[]>();
-  /** The selected tab's value. Supports two-way binding with `[(value)]`. */
-  public readonly value = model<string>('');
   /** Accessible name for the tab list. */
   public readonly ariaLabel = input<string>('');
 
   /** Prefix for tab and panel ids. When set, each tab gets `{prefix}-tab-{value}` and `aria-controls="{prefix}-panel-{value}"`. */
   public readonly idPrefix = input<string>('');
+  /** The selected tab's value. Supports two-way binding with `[(value)]`. */
+  public readonly value = model<string>('');
 
   private readonly tabElements = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
 
