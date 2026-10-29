@@ -8,6 +8,8 @@ import { ControlValueAccessor, NgControl } from '@angular/forms';
  * Picks one number from a continuous range. Built on a native range input, so the browser supplies the
  * slider role, the value attributes, arrow keys (step), Page Up and Page Down (larger step), Home and End,
  * and pointer drag. The current value is always shown next to the label. Works with `[(value)]` and Angular forms.
+ * Pass in-range values that sit on a step: the thumb, fill, output and `aria-valuenow` show the value snapped to the
+ * nearest step and clamped to the range, and user input emits that snapped value. Setting a value from code never writes back.
  */
 @Component({
   selector: 'lfx-ui-slider',
@@ -18,6 +20,8 @@ import { ControlValueAccessor, NgControl } from '@angular/forms';
 })
 export class UiSliderComponent implements ControlValueAccessor {
   private static nextId = 0;
+
+  private readonly ngControl = inject(NgControl, { self: true, optional: true });
 
   /** Visible label. It names the slider for assistive technology. */
   public readonly label = input.required<string>();
@@ -37,12 +41,12 @@ export class UiSliderComponent implements ControlValueAccessor {
   protected readonly inputId = `lfx-ui-slider-${UiSliderComponent.nextId++}`;
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
-  protected readonly clamped: Signal<number> = computed(() => Math.min(Math.max(this.value(), this.min()), this.max()));
+  /** The value as shown: snapped to the nearest step from `min`, then clamped to the range. */
+  protected readonly snapped: Signal<number> = this.initSnapped();
   /** Share of the track to fill, 0 to 100. */
   protected readonly percent: Signal<number> = this.initPercent();
-  protected readonly displayValue: Signal<string> = computed(() => this.valueText() || String(this.clamped()));
+  protected readonly displayValue: Signal<string> = computed(() => this.valueText() || String(this.snapped()));
 
-  private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private onChange: ((value: number) => void) | null = null;
   private onTouched: (() => void) | null = null;
 
@@ -67,7 +71,7 @@ export class UiSliderComponent implements ControlValueAccessor {
   }
 
   protected onInput(event: Event): void {
-    const next = Number((event.target as HTMLInputElement).value);
+    const next = this.snap(Number((event.target as HTMLInputElement).value));
     this.value.set(next);
     this.onChange?.(next);
   }
@@ -76,10 +80,21 @@ export class UiSliderComponent implements ControlValueAccessor {
     this.onTouched?.();
   }
 
+  private initSnapped(): Signal<number> {
+    return computed(() => this.snap(this.value()));
+  }
+
+  /** Rounds to the nearest step from `min`, then clamps to `[min, max]`. */
+  private snap(raw: number): number {
+    const step = this.step();
+    const stepped = step > 0 ? Math.round((raw - this.min()) / step) * step + this.min() : raw;
+    return Math.min(Math.max(stepped, this.min()), this.max());
+  }
+
   private initPercent(): Signal<number> {
     return computed(() => {
       const span = this.max() - this.min();
-      return span > 0 ? ((this.clamped() - this.min()) / span) * 100 : 0;
+      return span > 0 ? ((this.snapped() - this.min()) / span) * 100 : 0;
     });
   }
 }

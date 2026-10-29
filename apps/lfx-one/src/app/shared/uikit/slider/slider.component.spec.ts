@@ -72,7 +72,28 @@ describe('UiSliderComponent', () => {
     await set('value', 500);
 
     expect(range().value).toBe('100');
+    expect(output().textContent?.trim()).toBe('100');
     expect(range().style.getPropertyValue('--val')).toBe('100%');
+  });
+
+  it('shows an off-step value snapped to the step, in the thumb, fill, output and model', async () => {
+    await set('step', 10);
+    await set('value', 64);
+
+    expect(range().value).toBe('60');
+    expect(output().textContent?.trim()).toBe('60');
+    expect(range().style.getPropertyValue('--val')).toBe('60%');
+    expect(fixture.componentInstance.value()).toBe(64);
+  });
+
+  it('emits the snapped value after interaction', async () => {
+    await set('step', 10);
+    range().value = '47';
+    range().dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe(50);
+    expect(output().textContent?.trim()).toBe('50');
   });
 
   it('writes the dragged or keyed value to the model', async () => {
@@ -92,7 +113,7 @@ describe('UiSliderComponent', () => {
 
   describe('with a reactive form control', () => {
     let formFixture: ComponentFixture<FormHostComponent>;
-    const formRange = (): HTMLInputElement => (formFixture.nativeElement as HTMLElement).querySelector('input') as HTMLInputElement;
+    const formRange = (): HTMLInputElement => (formFixture.nativeElement as HTMLElement).querySelector('[data-testid="ui-slider"]') as HTMLInputElement;
 
     beforeEach(async () => {
       formFixture = TestBed.createComponent(FormHostComponent);
@@ -109,6 +130,16 @@ describe('UiSliderComponent', () => {
 
       expect(formFixture.componentInstance.control.value).toBe(75);
       expect(formFixture.componentInstance.control.touched).toBe(true);
+      expect(formRange().value).toBe('75');
+    });
+
+    it('shows an out-of-range control value clamped but leaves the control untouched', async () => {
+      formFixture.componentInstance.control.setValue(250);
+      await formFixture.whenStable();
+
+      expect(formRange().value).toBe('100');
+      expect(formFixture.componentInstance.control.value).toBe(250);
+      expect(formFixture.componentInstance.control.dirty).toBe(false);
     });
 
     it('follows control.disable()', async () => {

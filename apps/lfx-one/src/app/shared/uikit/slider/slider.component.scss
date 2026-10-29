@@ -37,6 +37,7 @@
     margin-top: -6px;
     border-radius: var(--ui-radius-full);
     background: var(--ui-white);
+    // no token for the library's thumb shadow
     box-shadow:
       0 0 0 1px var(--ui-neutral-alpha-300),
       0 2px 4px rgba(15, 23, 43, 0.16);
@@ -48,6 +49,7 @@
     border: 0;
     border-radius: var(--ui-radius-full);
     background: var(--ui-white);
+    // no token for the library's thumb shadow
     box-shadow:
       0 0 0 1px var(--ui-neutral-alpha-300),
       0 2px 4px rgba(15, 23, 43, 0.16);
