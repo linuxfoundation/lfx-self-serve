@@ -374,6 +374,7 @@ describe('Member360RunComponent', () => {
     const pending = new Subject<{ sessionId: string; ownerToken: string; documentId: string }>();
     const conflict = {
       code: 'MKTG_RUN_ACTIVE',
+      message: 'Your Member 360 run is in progress.',
       activeRunId: 'b'.repeat(64),
       state: 'writing',
       agentKey: 'member-360',
@@ -389,6 +390,11 @@ describe('Member360RunComponent', () => {
     button().click();
     const starts = run.generate.mock.calls.length;
     const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    if (kind === 'guard') {
+      expect(prompt).toBeDefined();
+      expect(prompt).toMatchObject({ key: 'mktg-active-member360', header: 'Your Member 360 run is in progress' });
+      expect(starts).toBe(2); // The initial start and the guard's immediate server recheck both ran.
+    }
     context.activeContextUid.set('other-project');
     await fixture.whenStable();
     context.activeContextUid.set('sample-project');
