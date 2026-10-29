@@ -31,6 +31,7 @@ export class MktgDownstreamComponent {
   public readonly writer = input(false);
   public readonly settled = output<string>();
   private readKey = '';
+  private readProject = '';
   protected readonly familyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly listing = signal<MktgDocumentsResponse | null>(null);
   protected readonly failed = signal(false);
@@ -58,9 +59,12 @@ export class MktgDownstreamComponent {
         .pipe(
           switchMap(({ project, refresh }) => {
             this.readKey = JSON.stringify([project, refresh]);
-            this.listing.set(null);
+            if (project !== this.readProject) {
+              this.readProject = project;
+              this.listing.set(null);
+            }
             this.failed.set(false);
-            this.loading.set(!!project);
+            this.loading.set(!!project && this.listing() === null);
             if (!project) return of(null);
             return this.store.listDocuments(project).pipe(
               catchError(() => {
@@ -72,7 +76,7 @@ export class MktgDownstreamComponent {
           takeUntilDestroyed()
         )
         .subscribe((listing) => {
-          this.listing.set(listing);
+          if (!this.failed()) this.listing.set(listing);
           this.loading.set(false);
           this.settled.emit(this.readKey);
         });
