@@ -20,6 +20,10 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 Not from the signed-in app: ballots are read-only there. (While a vote is active, your personalized ballot link, if you received one, still lets you update your ballot.) From **Votes**, select **Review** on an active vote you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. The signed-in drawer has no submit or change action. The **Your ballot** section on the vote's page also shows what is recorded.
 
+## Can I follow a description link without leaving my ballot?
+
+Yes. Web links in a vote description are blue and underlined and open in a new tab, so the vote and any choices you have made stay in the original tab. This works on the vote's page, in the ballot drawer, and on a personalized ballot link. Email and phone links keep their usual behavior.
+
 ## What does Abstain do?
 
 If the creator turned on **Allow Abstain**, voters can select **Abstain from this vote** instead of choosing options. An abstention is recorded as a non-vote and replaces any choices you made. Abstentions are shown separately in the [results](../vote-results/), and any comments you wrote are still submitted.
