@@ -22,8 +22,8 @@ const HOST_TEMPLATE = `
       <lfx-ui-menu-group label="Share">
         <lfx-ui-menu-item id="invite" (triggered)="log('invite')">Invite Members</lfx-ui-menu-item>
         <lfx-ui-menu-item id="transfer" [disabled]="true" disabledReason="Only owners can transfer" (triggered)="log('transfer')">Transfer Ownership</lfx-ui-menu-item>
-      <lfx-ui-menu-item id="hidden-label" typeaheadLabel="zzz">Rename</lfx-ui-menu-item>
-      <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="hidden-label" typeaheadLabel="zzz">Rename</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
       </lfx-ui-menu-group>
       <lfx-ui-menu-separator />
       <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
@@ -103,6 +103,8 @@ describe('UiMenuComponent', () => {
     expect(item('delete').className).toContain('text-ui-danger-700');
     expect(item('edit').className).toContain('text-ui-neutral-900');
     expect(item('edit').className).toContain('h-ui-menu-item');
+    // Keyboard focus keeps the library's focus ring on top of the highlight.
+    expect(item('edit').className).toContain('focus-visible:shadow-focus');
   });
 
   it('draws separators and a labelled group', async () => {
