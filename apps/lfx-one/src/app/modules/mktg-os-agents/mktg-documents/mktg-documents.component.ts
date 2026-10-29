@@ -491,7 +491,9 @@ export class MktgDocumentsComponent {
 
   /** The row action and type badge use one policy; private questions can precede the next server projection. */
   private waitingForAnswers(type: MktgDocumentType, run?: MktgDocumentRunRow): boolean {
-    if (type.kind !== 'living' || !type.catalogAgentId || !run || run.state === 'failed') return false;
+    if (!type.catalogAgentId || !run || run.state === 'failed') return false;
+    if (type.agentKey === 'member-360') return run.state === 'questions';
+    if (type.kind !== 'living') return false;
     return (
       run.state === 'questions' ||
       this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions?.attempt.runId === run.runId

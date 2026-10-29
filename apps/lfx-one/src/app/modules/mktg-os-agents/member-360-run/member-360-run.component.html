@@ -4,12 +4,24 @@
 
 <!-- Run.dc.html uses exact pixel spacing because this app's rem base is 14px. The app shell supplies the global header. -->
 <div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
+  @if (loading()) {
+    <lfx-mktg-skeleton variant="run-page" />
+    @if (loadingError()) {
+      <lfx-message severity="error" [text]="loadingError()" data-testid="member-360-state-error" />
+      <lfx-button label="Refresh" [text]="true" (onClick)="retryHistory()" data-testid="member-360-state-refresh" />
+    }
+  } @else {
+    <ng-container [ngTemplateOutlet]="settledContent" />
+  }
+</div>
+
+<ng-template #settledContent>
   <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'member-360', label: 'Member 360' }" data-testid="member-360-breadcrumb" />
   <section class="flex w-full min-w-0 flex-col gap-[20px]">
     <header class="flex flex-col gap-[6px]">
       <h1 class="font-display font-light text-xl text-gray-900">Member 360</h1>
       <p class="text-[15px] text-gray-500">{{ intro }}</p>
-      <span class="text-sm text-gray-500" data-testid="member-360-last-run">
+      <span class="min-h-5 text-sm text-gray-500" data-testid="member-360-last-run">
         @if (latest(); as last) {
           Last run {{ latestPeriod() }}, {{ last.generated_at | date: 'd MMM' : 'UTC' }}
         }
@@ -19,8 +31,57 @@
       <p role="status">Select a project to run Member 360.</p>
     } @else if (!context.activeProject()) {
       <p role="status">Checking project access…</p>
-    } @else if (!context.canWrite()) {
+    } @else if (!context.canWrite() || serverDenied()) {
       <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
+    } @else if (pending(); as pending) {
+      @if (answersNotice()) {
+        <lfx-message severity="info" [text]="answersNotice()" data-testid="member-360-answered-notice" />
+      }
+      @if (questions().length) {
+        <section class="flex flex-col gap-3" data-testid="member-360-questions">
+          <h2 class="text-lg font-semibold">Member 360 needs your answers to finish.</h2>
+          <lfx-mktg-run-questions
+            [questions]="questions()"
+            [projectName]="context.activeContext()?.name ?? ''"
+            [busy]="answering()"
+            (answered)="onAnswers($event)" />
+        </section>
+      } @else {
+        <section class="flex flex-col gap-3 rounded-xl border border-gray-200 p-5" data-testid="member-360-generating">
+          @if (result()?.status === 'ready' && (result()?.stored || result()?.persistence)) {
+            @if (pending.request.documentId; as documentId) {
+              <lfx-button label="Open document" [routerLink]="['../documents/member-360', documentId]" [queryParams]="projectQuery()" />
+            }
+          } @else if (result()?.status !== 'failed') {
+            <p role="status">{{ progressNote() }}</p>
+            <h2 class="text-lg font-semibold" data-testid="mktg-run-activity-title">Member 360 is working on your report.</h2>
+            <lfx-mktg-run-progress
+              [project]="context.activeContextUid()"
+              agentKey="member-360"
+              [documentId]="pending.request.documentId ?? ''"
+              [runId]="progressRunId()"
+              [polling]="false"
+              [snapshot]="progressSnapshot()"
+              [externalActivity]="result()?.activity"
+              [runPage]="true"
+              [headless]="result()?.status === 'needs_input'"
+              (refresh)="pollRetry.set(pollRetry() + 1)" />
+          } @else {
+            @if (pending.request.documentId; as documentId) {
+              <lfx-button label="Open run details" [routerLink]="['../documents/member-360', documentId]" [queryParams]="projectQuery()" />
+            }
+          }
+        </section>
+      }
+      @if (error()) {
+        <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+        <lfx-button
+          label="Check again"
+          [text]="true"
+          [disabled]="answering()"
+          (onClick)="pollRetry.set(pollRetry() + 1)"
+          data-testid="member-360-check-again" />
+      }
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
         <!-- Exact px per Member360Run.dc.html: 10px gap and 10px/12px padding in the Project box, 13px hints. -->
@@ -127,10 +188,6 @@
                 Your trackers: {{ trackers().length }} {{ trackers().length === 1 ? 'file' : 'files' }}
               </div>
             </div>
-            <p class="text-sm text-gray-500">
-              Coming soon: HubSpot, social listening and Google Drive. The Member 360 method reads them too; until they are connected the scores are reweighted
-              without them.
-            </p>
           </div>
           @if (error()) {
             <div aria-live="polite">
@@ -149,7 +206,7 @@
           </div>
         </section>
       </form>
-      <section class="flex flex-col gap-2" data-testid="member-360-run-history">
+      <section class="flex min-h-[72px] flex-col gap-2" data-testid="member-360-run-history">
         <h2 class="font-semibold">Run history</h2>
         @if (historyLoading()) {
           <p role="status">Loading run history…</p>
@@ -168,4 +225,4 @@
       </section>
     }
   </section>
-</div>
+</ng-template>

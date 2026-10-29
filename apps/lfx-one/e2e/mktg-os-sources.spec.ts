@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
@@ -49,7 +50,7 @@ test.describe('Marketing OS new run Sources', () => {
       );
       await sources.open();
       await page.getByTestId('mktg-run-start').getByRole('button').click();
-      const dialog = page.getByRole('alertdialog');
+      const dialog = activeRunConfirmDialog(page);
       await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();

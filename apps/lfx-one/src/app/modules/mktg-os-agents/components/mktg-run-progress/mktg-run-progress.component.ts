@@ -66,6 +66,8 @@ export class MktgRunProgressComponent {
   public readonly retrying = input(false);
   public readonly errorText = input('');
   public readonly waitingForQuestions = input(false);
+  /** A dedicated receiver may answer elsewhere rather than through this public card. */
+  public readonly answersSupported = input<boolean | null>(null);
   public readonly runAgentId = input('');
   public readonly externalActivity = input<MktgRunActivity[] | undefined>();
   public readonly runPage = input(false);
@@ -106,7 +108,7 @@ export class MktgRunProgressComponent {
   protected readonly visibleRunActivity = this.initVisibleActivity();
   protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
   protected readonly pausedWithoutAnswers = computed(
-    () => this.selectedRun()?.state === 'questions' && !findMktgRunIntake(this.agentKey(), true)?.endpoints.answers
+    () => this.selectedRun()?.state === 'questions' && !(this.answersSupported() ?? !!findMktgRunIntake(this.agentKey(), true)?.endpoints.answers)
   );
   protected readonly runDocumentType = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === this.agentKey()));
   protected readonly unconfirmedFailure = computed(() => this.unconfirmed() && !this.selectedRun());

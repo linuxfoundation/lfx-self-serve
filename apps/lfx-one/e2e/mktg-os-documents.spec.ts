@@ -64,15 +64,19 @@ test.describe('Marketing OS current revisions', () => {
     });
   }
 
-  test('labels a Member 360 questions run as paused in the started list and navigation', async ({ page }) => {
+  test('links a Member 360 waiting-for-answers run to its run page from row and navigation', async ({ page }) => {
     const run: ReturnType<typeof startedDocumentRun> = { ...startedDocumentRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     await setupDocuments(page, { empty: true, runs: [run] });
     await openDocuments(page);
     const row = page.getByTestId(`mktg-documents-started-run-${run.runId}`);
-    await expect(row).toContainText('Paused — the run needs input');
-    await expect(row).not.toContainText('Waiting for your answers');
-    await expect(page.getByTestId('mktg-documents-nav-member-360')).toContainText('Paused');
-    await expect(page.getByTestId('mktg-documents-nav-member-360')).not.toContainText('Needs answers');
+    await expect(row).toContainText('Waiting for your answers');
+    await expect(row).not.toContainText('Paused — the run needs input');
+    const action = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
+    await expect(action).toHaveText('Answer the questions');
+    await expect(action).toHaveAttribute('href', /\/mktg-os-agents\/member-360\?project=[^&]+$/);
+    const nav = page.getByTestId('mktg-documents-nav-member-360');
+    await expect(nav).toContainText('Needs answers');
+    await expect(nav).toHaveAttribute('href', (await action.getAttribute('href')) ?? '');
   });
 
   for (const entry of ['Started runs Open', 'another-tab run URL'] as const) {

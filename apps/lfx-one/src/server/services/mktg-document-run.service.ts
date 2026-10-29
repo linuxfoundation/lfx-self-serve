@@ -49,8 +49,10 @@ import {
   MktgRunAnswer,
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
+  MktgMember360QuestionsClaim,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE, MKTG_RUN_CLOSED, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { createMember360Redactor } from '@lfx-one/shared/server';
 import { isMktgRunPendingQuestions, mktgRunClaimAnswers } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import {
   mktgDocumentLocationOfReceipt,
@@ -66,8 +68,16 @@ import {
   isMktgRunFailureReason,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { createHash } from 'node:crypto';
-import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ConflictError,
+  MicroserviceError,
+  PreconditionFailedError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+} from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
@@ -86,7 +96,7 @@ import { MktgDocumentRedraftContextService } from './mktg-document-redraft-conte
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
-/** Private session-keyed starts and question turns; the terminal cache is disposable. */
+/** Private session-keyed starts and question turns; answer/state transitions use conditional object versions. */
 export class MktgDocumentRunService {
   private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
@@ -584,7 +594,62 @@ export class MktgDocumentRunService {
     };
   }
 
-  /** Raw scoped closure marker; only the selected HTTP progress path enriches display-name attribution. */
+  /** Per-request ownership filter: cached public rows never carry or determine creator identity. */
+  public async ownProgress(req: Request, project: string, snapshot: MktgDocumentRunSnapshot): Promise<MktgDocumentRunSnapshot> {
+    const subject = getEffectiveSub(req);
+    if (!subject) throw new AuthorizationError('Sign in to read your runs.');
+    const runs: MktgDocumentRunProgress[] = [];
+    let memberLookupFailed = false;
+    const candidates = snapshot.runs.filter(
+      (row) => row.agentKey === 'member-360' && (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+    );
+    for (let offset = 0; offset < candidates.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        candidates.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
+          try {
+            const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
+            const record = stored.record;
+            if (record.creatorSubject !== subject || (record.state !== 'writing' && record.state !== 'questions' && record.state !== 'storing')) return null;
+            return mktgRunProgress(record, undefined, undefined, subject);
+          } catch (err) {
+            if (err instanceof ResourceNotFoundError) return null;
+            if (row.agentKey === 'member-360') memberLookupFailed = true;
+            logger.warning(req, 'mktg_owned_progress', 'Scoped run lookup unavailable; unrelated coverage does not decide ownership', {
+              project,
+              run: row.runId,
+              err,
+            });
+            return null;
+          }
+        })
+      );
+      runs.push(...batch.filter((row): row is MktgDocumentRunProgress => row !== null));
+    }
+    const unavailable = snapshot.progressUnavailable === true || (memberLookupFailed && runs.length === 0);
+    return { runs, ...(unavailable ? { progressUnavailable: true } : {}) };
+  }
+
+  /** Creator-only public selector; the private Guild session never leaves the BFF. */
+  public async ownedMember360Session(req: Request, project: string, runId: string): Promise<string> {
+    if (!MKTG_STARTED_RUN_ID_REGEX.test(runId)) throw ServiceValidationError.forField('runId', 'Select a recorded run.');
+    const canonical = await this.resolveProject(req, project);
+    const stored = await this.read(req, canonical, `${this.prefix(canonical)}${runId}.json`);
+    const subject = getEffectiveSub(req);
+    if (
+      !stored ||
+      !subject ||
+      stored.record.creatorSubject !== subject ||
+      stored.record.agentKey !== 'member-360' ||
+      stored.record.state === 'discarded' ||
+      stored.record.state === 'superseded'
+    ) {
+      throw new ResourceNotFoundError('Marketing OS run', runId);
+    }
+    return stored.record.sessionId;
+  }
+
+  /** Selected-run details alone may expose a closed marker; never reconcile or resolve an author here. */
+
   public async readClosedProgress(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     return this.closedMarker(stored.record);
@@ -634,6 +699,76 @@ export class MktgDocumentRunService {
       });
       await this.mark(req, stored, 'writing', mktgRunRenewAt(stored.record, Date.now()), undefined, stored.record.answeredQuestionsId, 0);
     }
+  }
+
+  /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
+  public async prepareMember360QuestionsClaim(req: Request, project: string, sessionId: string, questionsId: string): Promise<MktgMember360QuestionsClaim> {
+    if (!/^[a-f0-9]{64}$/.test(questionsId)) throw ServiceValidationError.forField('questionsId', 'Select the current questions.');
+    const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
+    if (!stored) throw new ResourceNotFoundError('Marketing OS run', this.hash(sessionId));
+    const subject = getEffectiveSub(req);
+    if (!subject || stored.record.agentKey !== 'member-360' || stored.record.creatorSubject !== subject) {
+      throw new AuthorizationError('Only the creator can answer this Member 360 run.');
+    }
+    if (stored.record.state !== 'questions' || stored.record.answeredQuestionsId === questionsId) {
+      throw await this.memberAnswersConflict(req, stored.record, questionsId);
+    }
+    // Prepare before the Guild read, but mutate only after that read validates the current turn.
+    let claimedWriteId: string | null = null;
+    const commit = async () => {
+      const answeredAt = new Date().toISOString();
+      const metadata = {
+        ...stored.metadata,
+        state: 'writing',
+        'retry-at': mktgRunRenewAt(stored.record, Date.now()),
+        'answered-questions-id': questionsId,
+        'answered-by': subject,
+        'answered-at': answeredAt,
+        'persist-retries': '0',
+      };
+      const writeId = randomUUID();
+      if (await this.putMemberState(req, stored, metadata, writeId)) {
+        claimedWriteId = writeId;
+        return;
+      }
+      const winner = await this.read(req, project, stored.key);
+      if (!winner) throw new ResourceNotFoundError('Marketing OS run', stored.record.runId);
+      throw await this.memberAnswersConflict(req, winner.record, questionsId);
+    };
+    return Object.assign(commit, {
+      release: async (): Promise<boolean> => {
+        if (!claimedWriteId) return false;
+        try {
+          const current = await this.read(req, project, stored.key);
+          if (
+            !current ||
+            current.record.storageWriteId !== claimedWriteId ||
+            current.record.agentKey !== 'member-360' ||
+            current.record.creatorSubject !== subject ||
+            current.record.state !== 'writing' ||
+            current.record.answeredQuestionsId !== questionsId ||
+            current.record.answeredBySubject !== subject
+          )
+            return false;
+          const metadata: Record<string, string> = { ...stored.metadata, state: 'questions' };
+          delete metadata['answered-questions-id'];
+          delete metadata['answered-by'];
+          delete metadata['answered-at'];
+          // Both the nonce check and If-Match are required: a stale release must never reopen a newer claim.
+          const released = await this.putMemberState(req, current, metadata);
+          if (released) claimedWriteId = null;
+          logger.debug(req, 'member_360_claim_release', 'Conditional non-delivery release checked', { project, run: stored.record.runId, released });
+          return released;
+        } catch (err) {
+          logger.warning(req, 'member_360_claim_release', 'Claim release unavailable; keeping the run claimed to prevent duplicate delivery', {
+            project,
+            run: stored.record.runId,
+            err,
+          });
+          return false;
+        }
+      },
+    });
   }
 
   /** Resolve the private session only after canonical project-writer authorization; public IDs cannot select another partition. */
@@ -996,6 +1131,8 @@ export class MktgDocumentRunService {
         ...(revisionId && { 'revision-id': revisionId }),
         ...(run.priorRevisionId && { 'prior-revision-id': run.priorRevisionId }),
         ...(questionsId && { 'answered-questions-id': questionsId }),
+        ...(run.answeredBySubject ? { 'answered-by': run.answeredBySubject } : {}),
+        ...(run.answeredAt ? { 'answered-at': run.answeredAt } : {}),
         ...(persistRetries !== undefined && { 'persist-retries': String(persistRetries) }),
         ...(failureText !== undefined && { 'failure-text': this.snapshot(failureText) }),
         ...(isMktgRunFailureReason(failureReason) && { 'failure-reason': failureReason }),
@@ -1044,12 +1181,13 @@ export class MktgDocumentRunService {
     body: string,
     metadata: Record<string, string>,
     refreshMetadataWhen: (value: Record<string, string>) => boolean,
-    snapshot?: MktgStoredStartedRun
+    stored?: MktgStoredStartedRun
   ): Promise<boolean> {
     MktgDocumentRunService.terminalCache.delete(key);
-    if (snapshot) {
-      if (!snapshot.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token.');
-      if (!refreshMetadataWhen(snapshot.metadata)) return false;
+    if (stored) {
+      if (!refreshMetadataWhen(stored.metadata)) return false;
+      if (stored.record.agentKey === 'member-360') return this.putMemberState(req, stored, metadata);
+      if (!stored.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token.');
       const currentMetadata = await this.store.headObject(req, 'marketing-os-artifacts', key);
       if (!currentMetadata || !refreshMetadataWhen(currentMetadata)) return false;
       return this.store.putConditionalObject(
@@ -1061,7 +1199,7 @@ export class MktgDocumentRunService {
           contentType: 'application/json; charset=utf-8',
           cacheControl: 'private',
           metadata,
-          ifMatch: snapshot.etag,
+          ifMatch: stored.etag,
         },
         true
       );
@@ -1070,6 +1208,34 @@ export class MktgDocumentRunService {
       refreshMetadataWhen,
     });
   }
+  /** Mutating the body makes even metadata-only transitions advance S3's content ETag. */
+  private putMemberState(req: Request, stored: MktgStoredStartedRun, metadata: Record<string, string>, writeId: string = randomUUID()): Promise<boolean> {
+    if (!stored.etag) throw new PreconditionFailedError('The run has no version token. Refresh before answering.');
+    MktgDocumentRunService.terminalCache.delete(stored.key);
+    const record = JSON.parse(stored.body) as MktgStartedRunRecord;
+    const body = Buffer.from(JSON.stringify({ ...record, storageWriteId: writeId }));
+    return this.store.putConditionalObject(
+      req,
+      'marketing-os-artifacts',
+      stored.key,
+      { body, contentType: 'application/json; charset=utf-8', cacheControl: 'private', metadata, ifMatch: stored.etag },
+      true
+    );
+  }
+
+  private async memberAnswersConflict(req: Request, run: MktgStartedRunRecord, questionsId: string): Promise<ConflictError> {
+    if (run.answeredQuestionsId !== questionsId || !run.answeredAt)
+      return new ConflictError('The questions are no longer waiting. Refresh the run.', 'MEMBER_360_QUESTIONS_CHANGED');
+    const author = await this.authors.resolveAuthor(req, run.answeredBySubject, 'mktg_run_answers_claim');
+    const name = author?.name?.trim();
+    const answeredBy = name && createMember360Redactor([])(name) === name ? name : 'Another writer';
+    return new ConflictError('These questions have already been answered.', MKTG_RUN_ANSWERED, {
+      operation: 'mktg_run_answers_claim',
+      service: 'object_store',
+      details: { answeredBy, answeredAt: run.answeredAt },
+    });
+  }
+
   private acceptedAttempts(metadata: Record<string, string>, attemptId: string): string[] {
     const history = metadata['attempt-history'] ?? attemptId;
     const ids = history.split(',');
@@ -1196,7 +1362,8 @@ export class MktgDocumentRunService {
         priorVersion < 0 ||
         !Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, state) ||
         !isMktgRunAttemptId(attemptId) ||
-        (m['retry-at'] !== undefined && !Number.isFinite(Date.parse(m['retry-at'])))
+        (m['retry-at'] !== undefined && !Number.isFinite(Date.parse(m['retry-at']))) ||
+        (m['answered-at'] !== undefined && !Number.isFinite(Date.parse(m['answered-at'])))
       ) {
         throw ServiceValidationError.forField('run', 'Invalid stored run.');
       }
@@ -1207,8 +1374,8 @@ export class MktgDocumentRunService {
       return {
         key,
         body: object.body,
-        etag: object.etag,
         metadata: m,
+        etag: object.etag,
         record: {
           ...record,
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
@@ -1221,6 +1388,9 @@ export class MktgDocumentRunService {
           acceptedAttemptIds: this.acceptedAttempts(m, attemptId),
           retryAt: m['retry-at'],
           answeredQuestionsId: m['answered-questions-id'],
+          answeredBySubject: m['answered-by'],
+          answeredBy: m['answered-by'] ?? record.answeredBy,
+          answeredAt: m['answered-at'] ?? record.answeredAt,
           pendingQuestions: state === 'questions' ? record.pendingQuestions : undefined,
           priorRevisionId: m['prior-revision-id'],
           persistRetries: Number(m['persist-retries'] ?? 0),
