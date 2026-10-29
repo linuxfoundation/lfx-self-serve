@@ -300,7 +300,12 @@ describe('Family export slot', () => {
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
     expect(cover?.textContent).toContain('Synthetic project');
     expect(cover?.textContent).toContain('28 Oct 2026');
-    expect(cover?.querySelectorAll('dd')).toHaveLength(4);
+    expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
+      'Messaging framework',
+      'Brand kit',
+      'Boilerplates',
+      'FAQ',
+    ]);
     expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
     expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
     expect(cover?.classList.contains('grid')).toBe(true);
