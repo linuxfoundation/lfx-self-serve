@@ -1446,7 +1446,7 @@ describe('MktgDocumentViewComponent', () => {
         MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.tracksDocumentRun &&
         MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
     )
-  )('uses shared-receiver one-off writing and saving wording for $itemLabel', async (type) => {
+  )('keeps one board leave line without redundant writing and saving blocks for $itemLabel', async (type) => {
     const documentId = 'run-' + 'a'.repeat(24);
     const progress = { ...started('writing'), agentKey: type.agentKey, documentId };
     const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [progress] };
@@ -1455,15 +1455,16 @@ describe('MktgDocumentViewComponent', () => {
     const noun = type.itemLabel.toLowerCase().endsWith('post') ? 'post' : 'report';
     expect(query('mktg-document-view-live-state')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
     expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing…');
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('It will appear here when it is ready.');
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent).not.toContain('It will appear here when it is ready.');
     store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...progress, state: 'storing' }] }));
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['onRefreshProgress']();
     await settle();
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Written');
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving…');
-    expect(query('mktg-document-view-run-steps')?.textContent).not.toContain('revision');
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent).not.toContain('Saving…');
   });
 
   it.each(['writing', 'questions', 'storing'] as const)('redirects living %s progress and renders no live document blocks', async (state) => {
