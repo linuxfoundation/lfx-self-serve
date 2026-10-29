@@ -11,31 +11,32 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
-- **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
 - **Every component has** a `*.stories.ts` (JSDoc on every input and output feeds the autodocs) and a `*.component.spec.ts`.
 
 ## Components
 
-| Selector                | Class                      | Purpose                                                                                                                                                                |
-| ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only, leading and trailing icon, disabled, full width; renders a button or a router link                                             |
-| `lfx-ui-tabs`           | `UiTabsComponent`          | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                                                                              |
-| `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                                                                         |
-| `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
-| `lfx-ui-status-dot`     | `UiStatusDotComponent`     | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                                                                    |
-| `lfx-ui-skeleton`       | `UiSkeletonComponent`      | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                                                                   |
-| `lfx-ui-spinner`        | `UiSpinnerComponent`       | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                                                                           |
-| `lfx-ui-note`           | `UiNoteComponent`          | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"` or `alert`                                                           |
-| `lfx-ui-description`    | `UiDescriptionComponent`   | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon                                                          |
-| `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; three sizes; `role="alert"` unless `announce` is off                                               |
-| `lfx-ui-keyboard-input` | `UiKeyboardInputComponent` | Key or shortcut as one `<kbd>` per key, 24 or 20px; `[keys]`                                                                                                           |
-| `lfx-ui-gauge`          | `UiGaugeComponent`         | Circular percentage, 20 to 128px; level colours at 67 and 34 or accent; indeterminate; `role="progressbar"`                                                            |
-| `lfx-ui-progress`       | `UiProgressComponent`      | 10px bar from `value / max`; accent, success, warning, error or secondary; `role="progressbar"` with a label                                                           |
-| `lfx-ui-avatar`         | `UiAvatarComponent`        | Photo, initials, icon or placeholder circle; tints, provider badge, image fallback; `lfx-ui-avatar-group` stacks them with +N                                          |
-| `lfx-ui-menu`           | `UiMenuComponent`          | Menu panel on CDK Menu: `role="menu"`, arrows, Home, End, type-ahead, Escape returns focus; open it with `cdkMenuTriggerFor` from any button; flips at the window edge |
-| `lfx-ui-menu-item`      | `UiMenuItemComponent`      | Menu row, 40px: default or danger, leading and trailing icon, shortcut hint, disabled (`aria-disabled`); emits `triggered`                                             |
-| `lfx-ui-menu-group`     | `UiMenuGroupComponent`     | Labelled `role="group"` of menu items with a 12px heading                                                                                                              |
-| `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                |
+| Selector                | Class                      | Purpose                                                                                                                                                                     |
+| ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only, leading and trailing icon, disabled, full width; renders a button or a router link                                                  |
+| `lfx-ui-tabs`           | `UiTabsComponent`          | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                                                                                   |
+| `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                                                                              |
+| `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                           |
+| `lfx-ui-status-dot`     | `UiStatusDotComponent`     | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                                                                         |
+| `lfx-ui-skeleton`       | `UiSkeletonComponent`      | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                                                                        |
+| `lfx-ui-spinner`        | `UiSpinnerComponent`       | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                                                                                |
+| `lfx-ui-note`           | `UiNoteComponent`          | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"` or `alert`                                                                |
+| `lfx-ui-description`    | `UiDescriptionComponent`   | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon                                                               |
+| `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; three sizes; `role="alert"` unless `announce` is off                                                    |
+| `lfx-ui-keyboard-input` | `UiKeyboardInputComponent` | Key or shortcut as one `<kbd>` per key, 24 or 20px; `[keys]`                                                                                                                |
+| `lfx-ui-gauge`          | `UiGaugeComponent`         | Circular percentage, 20 to 128px; level colours at 67 and 34 or accent; indeterminate; `role="progressbar"`                                                                 |
+| `lfx-ui-progress`       | `UiProgressComponent`      | 10px bar from `value / max`; accent, success, warning, error or secondary; `role="progressbar"` with a label                                                                |
+| `lfx-ui-avatar`         | `UiAvatarComponent`        | Photo, initials, icon or placeholder circle; tints, provider badge, image fallback; `lfx-ui-avatar-group` stacks them with +N                                               |
+| `lfx-ui-menu`           | `UiMenuComponent`          | Menu panel on CDK Menu: `role="menu"`, arrows, Home, End, type-ahead, Escape returns focus; open it with `cdkMenuTriggerFor` from any button; flips at the window edge      |
+| `lfx-ui-menu-item`      | `UiMenuItemComponent`      | Menu row, 40px: default or danger, leading and trailing icon, shortcut hint, disabled (`aria-disabled`); emits `triggered`                                                  |
+| `lfx-ui-menu-group`     | `UiMenuGroupComponent`     | Labelled `role="group"` of menu items with a 12px heading                                                                                                                   |
+| `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                     |
+| `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset band and actions footer slots; 540px or 420px, sticky title, single-action footer                                                |
+| `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus returns, scroll lock, `ui-overlay` backdrop, Escape and backdrop close each configurable, `alertdialog` role |
 
 ## Design tokens
 
