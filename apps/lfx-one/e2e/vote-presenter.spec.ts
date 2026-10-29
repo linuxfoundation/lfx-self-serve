@@ -9,6 +9,7 @@
  *     render with `/results` requested only after the transition
  *   - Close vote (#4143): the confirm dialog gates POST /api/votes/:uid/end, the next poll flips the presenter to the
  *     result state with `/results` requested once, and an upstream rejection shows a toast and leaves the vote open
+ *   - Exit (#4691): asks first while the vote is open (Stay, Esc and backdrop keep the presenter, focus returns to Exit), and leaves at once when ended
  *   - a non-writer is redirected away and never sees the presenter
  *   - network loss shows "Reconnecting" with the last count kept, then recovers without a reload
  *   - the link-first share panel fits at 1920x1080, 1024x768 and a 390x844 phone with no horizontal scroll
@@ -145,11 +146,51 @@ test.describe('Vote presenter (#4140)', () => {
     expect(state.endRequests ?? 0).toBe(0);
     expect(state.resultsRequests).toBe(0);
 
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
+    await page.getByRole('alertdialog', { name: 'Close vote' }).getByRole('button', { name: 'Close vote' }).click();
 
     await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: POLL_TIMEOUT });
     expect(state.endRequests).toBe(1);
     expect(state.resultsRequests).toBe(1);
+  });
+
+  test('writer: Exit asks first while the vote is open; Stay and Esc keep the presenter, Leave goes to the vote', async ({ page }) => {
+    const state: StubState = { vote: buildVote(), writer: true, offline: false, resultsRequests: 0 };
+    await stubVote(page, state);
+    await openPresenter(page);
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
+
+    const exit = page.getByTestId('vote-presenter-exit').getByRole('button');
+    await exit.click();
+    const dialog = page.getByRole('alertdialog', { name: 'Leave presenter' });
+    await expect(dialog.getByText('Leave the presenter? The vote stays open.')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Stay' })).toBeFocused();
+
+    await dialog.getByRole('button', { name: 'Stay' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(exit).toBeFocused();
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible();
+
+    await exit.click();
+    await dialog.getByRole('button', { name: 'Leave' }).click();
+    await expect(page).not.toHaveURL(/\/present$/, { timeout: RENDER_TIMEOUT });
+  });
+
+  test('writer: Exit leaves without a dialog once the vote has ended', async ({ page }) => {
+    const state: StubState = { vote: buildVote({ status: 'ended', early_end_time: '2099-05-02T10:00:00Z' }), writer: true, offline: false, resultsRequests: 0 };
+    await stubVote(page, state);
+    await openPresenter(page);
+    await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: RENDER_TIMEOUT });
+
+    await page.getByTestId('vote-presenter-exit').getByRole('button').click();
+
+    await expect(page.getByRole('alertdialog', { name: 'Leave presenter' })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/\/present$/, { timeout: RENDER_TIMEOUT });
   });
 
   test('writer: a rejected Close shows the upstream message and leaves the vote open', async ({ page }) => {
@@ -159,7 +200,7 @@ test.describe('Vote presenter (#4140)', () => {
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
 
     await page.getByTestId('vote-presenter-close').getByRole('button').click();
-    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
+    await page.getByRole('alertdialog', { name: 'Close vote' }).getByRole('button', { name: 'Close vote' }).click();
 
     await expect(page.getByText('poll has not started')).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible();

@@ -4,9 +4,11 @@
 import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import { VoteSendBallotsComponent } from '../components/vote-send-ballots/vote-send-ballots.component';
 import { VoteService } from '@services/vote.service';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -55,7 +57,9 @@ describe('VotePresenterComponent', () => {
   const closeButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="vote-presenter-close"] button');
   /** Replaces the dialog with a spy so a test can read its copy and accept or reject it; nothing is sent until accept runs. */
   const captureConfirm = () => {
-    const captured: { options?: { message?: string; header?: string; acceptLabel?: string; rejectLabel?: string; accept?: () => void } } = {};
+    const captured: {
+      options?: { message?: string; header?: string; acceptLabel?: string; rejectLabel?: string; defaultFocus?: string; accept?: () => void };
+    } = {};
     vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm').mockImplementation((options) => {
       captured.options = options as typeof captured.options;
       return fixture.debugElement.injector.get(ConfirmationService);
@@ -342,10 +346,156 @@ describe('VotePresenterComponent', () => {
     expect(has('vote-presenter-loading')).toBe(true);
   });
 
-  it('exits to the vote permalink', async () => {
-    await mount();
-    (fixture.componentInstance as unknown as { exit(): void }).exit();
-    expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+  describe('Exit (#4691)', () => {
+    const exitButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="vote-presenter-exit"] button');
+    const escape = (): void => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    };
+    const hide = async (): Promise<void> => {
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+    };
+
+    it('asks first while the vote is active, with Leave / Stay and Stay focused, and leaves nothing behind until Leave', async () => {
+      await mount();
+      const confirm = captureConfirm();
+
+      exitButton()!.click();
+      await tick(0);
+
+      expect(confirm.options?.message).toBe('Leave the presenter? The vote stays open.');
+      expect(confirm.options?.acceptLabel).toBe('Leave');
+      expect(confirm.options?.rejectLabel).toBe('Stay');
+      expect(confirm.options?.defaultFocus).toBe('reject');
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('navigates to the vote permalink on Leave', async () => {
+      await mount();
+      const confirm = captureConfirm();
+      exitButton()!.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+
+      expect(navigateByUrl).toHaveBeenCalledOnce();
+      expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+    });
+
+    it('keeps the presenter mounted on Stay', async () => {
+      await mount();
+      captureConfirm();
+      exitButton()!.click();
+      await tick(0);
+
+      await hide();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(has('vote-presenter-open')).toBe(true);
+    });
+
+    it('treats Esc on the active presenter as Exit, which asks first', async () => {
+      await mount();
+      const confirm = captureConfirm();
+
+      escape();
+      await tick(0);
+
+      expect(confirm.options?.header).toBe('Leave presenter');
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('treats Esc inside the dialog as Stay: no second dialog, no navigation', async () => {
+      await mount();
+      const confirmSpy = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+      captureConfirm();
+      exitButton()!.click();
+      await tick(0);
+
+      escape();
+      await hide();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(has('vote-presenter-open')).toBe(true);
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves Esc to the Send ballots dialog while it is open, and restores Exit afterwards', async () => {
+      await mount();
+      const confirm = captureConfirm();
+      const send = fixture.debugElement.query(By.directive(VoteSendBallotsComponent)).componentInstance as VoteSendBallotsComponent;
+
+      send.confirmOpenChange.emit(true);
+      escape();
+      expect(confirm.options).toBeUndefined();
+      expect(navigateByUrl).not.toHaveBeenCalled();
+
+      send.confirmOpenChange.emit(false);
+      await tick(1);
+      escape();
+      expect(confirm.options?.header).toBe('Leave presenter');
+    });
+
+    it('leaves immediately, with no dialog, once the vote has ended', async () => {
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+      await mount();
+      const confirm = captureConfirm();
+
+      exitButton()!.click();
+      await tick(0);
+
+      expect(confirm.options).toBeUndefined();
+      expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+    });
+
+    it('leaves immediately on Esc once the vote has ended', async () => {
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+      await mount();
+      const confirm = captureConfirm();
+
+      escape();
+
+      expect(confirm.options).toBeUndefined();
+      expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+    });
+
+    it('ignores Leave if the route moved to another vote while the dialog was open', async () => {
+      const paramMap = new BehaviorSubject(convertToParamMap({ id: 'v1' }));
+      TestBed.resetTestingModule();
+      fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+          { provide: ActivatedRoute, useValue: { paramMap } },
+          { provide: Router, useValue: { navigateByUrl } },
+          { provide: MessageService, useValue: { add: messageAdd } },
+        ],
+      });
+      await mount();
+      const confirm = captureConfirm();
+      exitButton()!.click();
+      await tick(0);
+
+      paramMap.next(convertToParamMap({ id: 'v2' }));
+      await tick(0);
+      confirm.options?.accept?.();
+
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('returns focus to the Exit button once the dialog closes', async () => {
+      await mount();
+      captureConfirm();
+      const button = exitButton()!;
+      button.focus();
+      button.click();
+      await tick(0);
+      button.blur();
+
+      await hide();
+
+      expect(document.activeElement).toBe(button);
+    });
   });
 
   describe('Close vote (#4143)', () => {
@@ -381,8 +531,47 @@ describe('VotePresenterComponent', () => {
 
       expect(endVote).not.toHaveBeenCalled();
       expect(closeButton()?.disabled).toBe(false);
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-      expect(navigateByUrl).toHaveBeenCalledOnce();
+    });
+
+    it('ignores an accept for a vote the presenter has since navigated away from', async () => {
+      const paramMap = new BehaviorSubject(convertToParamMap({ id: 'v1' }));
+      TestBed.resetTestingModule();
+      fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+          { provide: ActivatedRoute, useValue: { paramMap } },
+          { provide: Router, useValue: { navigateByUrl } },
+          { provide: MessageService, useValue: { add: messageAdd } },
+        ],
+      });
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      paramMap.next(convertToParamMap({ id: 'v2' }));
+      await tick(0);
+      confirm.options?.accept?.();
+      await tick(0);
+
+      expect(endVote).not.toHaveBeenCalled();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('returns focus to the Close button once the dialog is dismissed', async () => {
+      await mount();
+      captureConfirm();
+      const button = closeButton()!;
+      button.focus();
+      button.click();
+      await tick(0);
+      button.blur();
+
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+
+      expect(document.activeElement).toBe(button);
     });
 
     it('ends the vote once on accept and keeps Close disabled while the request is in flight', async () => {
@@ -470,19 +659,16 @@ describe('VotePresenterComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining("couldn't confirm") }));
     });
 
-    it('keeps Esc from leaving the presenter while the Close dialog is open, and restores it afterwards', async () => {
+    it('keeps Esc from opening Exit while the Close dialog is open', async () => {
       await mount();
-      captureConfirm();
+      const confirm = captureConfirm();
       closeButton()!.click();
       await tick(0);
 
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-      expect(navigateByUrl).not.toHaveBeenCalled();
 
-      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
-      await tick(1);
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-      expect(navigateByUrl).toHaveBeenCalledOnce();
+      expect(confirm.options?.header).toBe('Close vote');
+      expect(navigateByUrl).not.toHaveBeenCalled();
     });
   });
 });

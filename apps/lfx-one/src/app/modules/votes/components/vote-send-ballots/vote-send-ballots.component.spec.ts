@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteSendBallotsComponent } from './vote-send-ballots.component';
@@ -81,6 +81,51 @@ describe('VoteSendBallotsComponent (#4363)', () => {
 
     expect(sendBallots).not.toHaveBeenCalled();
     expect(success()).toBeNull();
+  });
+
+  it('ignores Send if the vote changed while the dialog was open (#4691)', () => {
+    const captured = clickAndCapture();
+
+    fixture.componentRef.setInput('voteUid', 'v-2');
+    fixture.detectChanges();
+    captured?.accept?.();
+
+    expect(sendBallots).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('opens no dialog if the vote changed before the voter list answered (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+
+    fixture.componentRef.setInput('voteUid', 'v-2');
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports the dialog opening and closing so the presenter can leave Esc to it (#4691)', () => {
+    const states: boolean[] = [];
+    fixture.componentInstance.confirmOpenChange.subscribe((open) => states.push(open));
+
+    clickAndCapture();
+    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+
+    expect(states).toEqual([true, false]);
+  });
+
+  it('returns focus to the Send ballots button once the dialog closes (#4691)', async () => {
+    button().focus();
+    clickAndCapture();
+    button().blur();
+
+    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(document.activeElement).toBe(button());
   });
 
   it('skips the dialog and tells the writer when everyone has voted', () => {

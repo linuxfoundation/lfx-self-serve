@@ -3,7 +3,8 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
@@ -29,8 +30,11 @@ export class VoteSendBallotsComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly doc = inject(DOCUMENT);
 
   public readonly voteUid = input.required<string>();
+  /** True while the confirmation is up, so a parent that handles Esc can leave it to the dialog. */
+  public readonly confirmOpenChange = output<boolean>();
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
@@ -39,6 +43,7 @@ export class VoteSendBallotsComponent {
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+  private returnFocusTo: HTMLElement | null = null;
 
   public constructor() {
     inject(DestroyRef).onDestroy(() => this.clearCooldownTimer());
@@ -48,24 +53,41 @@ export class VoteSendBallotsComponent {
   protected onClick(): void {
     if (this.busy() || this.cooling()) return;
 
+    // The uid is captured now: if the parent switches to another vote while a request or the dialog is pending, the
+    // answer is dropped so a send can never go to a different vote than the one clicked.
+    const uid = this.voteUid();
     this.checking.set(true);
     this.voteService
-      .getReminderRecipients(this.voteUid())
+      .getReminderRecipients(uid)
       .pipe(finalize(() => this.checking.set(false)))
       .subscribe({
         next: (recipients) => {
+          if (uid !== this.voteUid()) return;
           const count = recipients.length;
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });
             return;
           }
-          this.confirm(count);
+          this.confirm(uid, count);
         },
         error: () => this.loadFailed(),
       });
   }
 
-  private confirm(count: number): void {
+  /** Runs after Send, Cancel, Esc or the close button: hands focus back to the button that opened the dialog. */
+  protected onConfirmHidden(): void {
+    this.confirmOpenChange.emit(false);
+    // A tick later, so the dialog has released focus and the button is enabled again where it will be.
+    setTimeout(() => {
+      this.returnFocusTo?.focus();
+      this.returnFocusTo = null;
+    });
+  }
+
+  private confirm(uid: string, count: number): void {
+    const active = this.doc.activeElement;
+    this.returnFocusTo = active instanceof HTMLElement ? active : null;
+    this.confirmOpenChange.emit(true);
     this.confirmationService.confirm({
       message: `Email a personal ballot link to the ${count} ${count === 1 ? "member who hasn't" : "members who haven't"} voted?`,
       header: 'Send ballots now',
@@ -73,14 +95,16 @@ export class VoteSendBallotsComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-info p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => this.send(),
+      accept: () => {
+        if (uid === this.voteUid()) this.send(uid);
+      },
     });
   }
 
-  private send(): void {
+  private send(uid: string): void {
     this.sending.set(true);
     this.voteService
-      .sendBallots(this.voteUid())
+      .sendBallots(uid)
       .pipe(finalize(() => this.sending.set(false)))
       .subscribe({
         next: ({ sent, skipped }) => {
