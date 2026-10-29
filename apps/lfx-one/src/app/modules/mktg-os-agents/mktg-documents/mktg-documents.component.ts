@@ -162,10 +162,7 @@ export class MktgDocumentsComponent {
   protected readonly questionRunIds = computed<Record<string, string | undefined>>(() =>
     Object.fromEntries(
       this.runs()
-        .filter(
-          (run) =>
-            run.state === 'questions' && MKTG_DOCUMENT_TYPES.some((type) => type.kind === 'living' && type.agentKey === run.agentKey && type.catalogAgentId)
-        )
+        .filter((run) => run.state === 'questions' && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.catalogAgentId))
         .map((run) => [run.agentKey, run.runId])
     )
   );
@@ -178,7 +175,7 @@ export class MktgDocumentsComponent {
             run.runId,
             {
               label: 'Answer the questions',
-              commands: [this.kitRoot(), type.catalogAgentId],
+              commands: mktgRunRouteFor(run.agentKey, this.kitRoot()) ?? [],
               params: {
                 project: this.projectSlug(),
                 type: null,
@@ -186,7 +183,7 @@ export class MktgDocumentsComponent {
                 questions: null,
                 generation: null,
                 revision: null,
-                run: run.state === 'questions' ? run.runId : null,
+                run: type.kind === 'living' ? run.runId : null,
               },
             },
           ];
@@ -506,10 +503,10 @@ export class MktgDocumentsComponent {
    * and the link carries run=<runId> (land on the active run from any device, rule 1).
    * Replaces #4588 b0e6ed9f4 local-attempt matching (attempts.load(...).pendingQuestions)
    * and its component test, dropped in the main merge f8d007d7d deliberately.
+   * Creator-scoped one-off entries instead use server-owned discovery on their plain route (#4591).
    */
   private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
-    if (type.kind !== 'living' || !type.catalogAgentId) return false;
-    return state === 'questions';
+    return !!type.catalogAgentId && state === 'questions';
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {

@@ -256,6 +256,7 @@
         }
 
         <ng-container>
+          <!-- F1c/136-A: publicReceiver stays true for live observation; nulling this switch hid confirmed private questions behind a header-only page. -->
           @switch (phase()) {
             @case ('form') {
               <form

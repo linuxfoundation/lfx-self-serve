@@ -446,10 +446,14 @@ test.describe('Marketing OS new run Sources', () => {
       const sources = await setupFreshSources(page, { state });
       await sources.open();
       if (state === 'loading') {
-        await expect(page.getByTestId('mktg-run-sources-loading')).toBeVisible();
-        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
-        await expect(page.getByTestId('mktg-run-start-reason')).toContainText('Wait for your sources');
+        // Rule 5 /119.2: no partial Sources form before its first server observation resolves.
+        await expect(page.getByTestId('mktg-agent-run-checking')).toBeVisible();
+        await expect(page.getByTestId('mktg-agent-run-checking')).toHaveAttribute('aria-busy', 'true');
+        await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
+        expect(sources.generated).toHaveLength(0);
+        expect(sources.polls()).toBe(0);
         sources.releaseHistory();
+        await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
         await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
       } else if (state === 'denied') {
         await expect(page.getByTestId('mktg-run-sources-denied')).toContainText('write access');

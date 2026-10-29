@@ -53,11 +53,7 @@
                       Writing the document
                     }
                     @case ('questions') {
-                      @if (run.agentKey === 'member-360') {
-                        Paused — the run needs input
-                      } @else {
-                        Waiting for your answers
-                      }
+                      Waiting for your answers
                     }
                     @case ('storing') {
                       Storing the revision
@@ -103,18 +99,10 @@
           <div class="px-3 pt-3 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-nav-family">{{ family.name }}</div>
           @for (item of family.items; track item.type.agentKey) {
             <a
-              [routerLink]="item.badge === 'Needs answers' && item.type.catalogAgentId ? [kitRoot(), item.type.catalogAgentId] : []"
+              [routerLink]="item.badge === 'Needs answers' ? runTargets()[questionRunIds()[item.type.agentKey] ?? '']?.commands : []"
               [queryParams]="
-                item.badge === 'Needs answers' && item.type.catalogAgentId
-                  ? {
-                      project: projectSlug(),
-                      type: null,
-                      mode: null,
-                      questions: null,
-                      generation: null,
-                      revision: null,
-                      run: questionRunIds()[item.type.agentKey] ?? null,
-                    }
+                item.badge === 'Needs answers'
+                  ? runTargets()[questionRunIds()[item.type.agentKey] ?? '']?.params
                   : { type: item.type.agentKey, project: projectSlug() }
               "
               queryParamsHandling="merge"

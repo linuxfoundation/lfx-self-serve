@@ -58,7 +58,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       await page.screenshot({ path: info.outputPath('linkedin-active-run-choice.png'), fullPage: true });
     });
-  test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
+  test('Back from a first generating draft follows its server-recorded run without reopening setup', async ({ page }, info) => {
     await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
     await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
     let generates = 0;
@@ -73,11 +73,11 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
     await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
     await page.goBack();
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
-      await expect(page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea')).toHaveValue(value);
-    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is being written on its document page');
-    await expect(page.getByTestId('mktg-linkedin-open-pending').getByRole('button')).toHaveAccessibleName('Open the document');
+    // Rule 1 / land-on-active-run: the plain entry resolves the recorded run, not cached setup as a new form.
+    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(page).toHaveURL(/\/documents\/linkedin-post\/run-/);
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     expect(generates).toBe(1);
     await page.screenshot({ path: info.outputPath('walk-L2b-prefilled-setup-pending-notice.png'), fullPage: true });
   });

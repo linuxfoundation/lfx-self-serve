@@ -669,17 +669,18 @@ describe('MktgDocumentsComponent', () => {
     expect(action?.getAttribute('href')).toContain('run=' + run.runId);
   });
 
-  it('labels a Member 360 questions run as paused in the started list and navigation', async () => {
+  it('links a Member 360 questions row and navigation to its server-first run entry without a selector', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=member-360');
-    expect(query('mktg-documents-started-runs')?.textContent).toContain('Paused — the run needs input');
-    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Waiting for your answers');
-    expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Paused');
-    expect(query('mktg-documents-nav-member-360')?.textContent).not.toContain('Needs answers');
-    expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toContain('type=member-360');
-    expect(query('mktg-documents-open-started-' + run.runId)?.textContent?.trim()).toBe('Open');
-    expect(query('mktg-documents-open-started-' + run.runId)?.getAttribute('href')).toContain('run=' + run.runId);
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
+    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused');
+    const nav = query('mktg-documents-nav-member-360');
+    const action = query('mktg-documents-open-started-' + run.runId);
+    expect(nav?.textContent).toContain('Needs answers');
+    expect(action?.textContent?.trim()).toBe('Answer the questions');
+    expect(action?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
+    expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {

@@ -1755,6 +1755,62 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
+    it('renders questions after Start ACK, private result and canonical turn while retaining the public observer', async () => {
+      await configure('browser', type.catalogAgentId);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const field of intake.fields) {
+        if (field.optional || field.kind === 'url-list') continue;
+        let value = 'Synthetic researched project';
+        if (field.prefill === 'project-name') value = PROJECT_1.name;
+        if (field.format?.startsWith('github')) value = 'https://github.com/synthetic/orbit';
+        else if (field.format) value = 'https://synthetic.example';
+        component['intakeForm'].controls[field.key].setValue(value);
+      }
+      const result = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(result);
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(generate).toHaveBeenCalledOnce();
+      const request = component['activeRequest'];
+      if (!request) throw new Error('Missing accepted synthetic request');
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-mid-run', ownerToken: 'synthetic-proof' } };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      attempts.save({ request, attempt, state: 'writing', updatedAt: new Date().toISOString() });
+      result.next({ type: 'submitted' });
+      const pending = {
+        attempt,
+        questionsId: 'f'.repeat(64),
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which researched goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+      };
+      const metadata = new Subject<MktgDocumentDetailResponse>();
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(metadata);
+      attempts.save({ request, attempt, state: 'questions', pendingQuestions: pending, updatedAt: new Date().toISOString() });
+      result.next({ type: 'questions', pending });
+      await fixture.whenStable();
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(query('mktg-run-progress-loading')).not.toBeNull();
+      const measured = record('questions');
+      metadata.next({
+        ...measured,
+        current: null,
+        runs: measured.runs.map((row) => ({
+          ...row,
+          pendingQuestions: { questionsId: pending.questionsId, questions: pending.questions, askedAt: row.startedAt },
+        })),
+      });
+      await fixture.whenStable();
+      expect(component['publicReceiver']()).toBe(true);
+      expect(component['phase']()).toBe('questions');
+      expect(component['checkingRun']()).toBe(false);
+      expect(query('mktg-run-questions')?.textContent).toContain('Which researched goal?');
+      expect(query('mktg-run-questions')?.querySelector('textarea')).not.toBeNull();
+      expect(query('mktg-agent-run-form')).toBeNull();
+      expect(query('mktg-run-progress-loading')).toBeNull();
+      expect(generate).toHaveBeenCalledOnce();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
     it('does not paint a private result questions event before the canonical record confirms it', async () => {
       await configure('browser', type.catalogAgentId);
       activeContext.set(PROJECT_1);
