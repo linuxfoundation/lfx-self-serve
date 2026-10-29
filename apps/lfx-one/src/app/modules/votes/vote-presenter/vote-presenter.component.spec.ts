@@ -298,6 +298,47 @@ describe('VotePresenterComponent', () => {
       expect(has('vote-presenter-results-held')).toBe(true);
       expect(has('vote-presenter-results')).toBe(false);
     });
+
+    it('keeps finalizing through a failed held-result retry and displays the later release', async () => {
+      getVoteResults
+        .mockReturnValueOnce(of(held()))
+        .mockReturnValueOnce(throwError(() => new Error('temporarily unavailable')))
+        .mockReturnValue(of(results()));
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, allow_abstain: true })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await mount();
+
+      await tick(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS);
+      expect(getVoteResults).toHaveBeenCalledTimes(2);
+      expect(has('vote-presenter-results-held')).toBe(true);
+      expect(has('vote-presenter-results-error')).toBe(false);
+      expect(has('vote-presenter-results')).toBe(false);
+      expect(has('vote-presenter-turnout')).toBe(false);
+      expect(has('vote-presenter-abstain')).toBe(false);
+
+      await tick(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS);
+      expect(getVoteResults).toHaveBeenCalledTimes(3);
+      expect(has('vote-presenter-results-held')).toBe(false);
+      expect(has('vote-presenter-results-error')).toBe(false);
+      expect(has('vote-presenter-results')).toBe(true);
+      expect(has('vote-presenter-abstain')).toBe(true);
+      expect(text('vote-presenter-turnout')).toContain('of 10 cast');
+    });
+
+    it('counts failed retries toward the attempt limit without dropping the held state', async () => {
+      getVoteResults.mockReturnValueOnce(of(held())).mockReturnValue(throwError(() => new Error('temporarily unavailable')));
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, allow_abstain: true })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await mount();
+
+      await tick(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS * (VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS + 3));
+      expect(getVoteResults).toHaveBeenCalledTimes(VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS);
+      expect(has('vote-presenter-results-held')).toBe(true);
+      expect(has('vote-presenter-results-error')).toBe(false);
+      expect(has('vote-presenter-results')).toBe(false);
+      expect(has('vote-presenter-turnout')).toBe(false);
+      expect(has('vote-presenter-abstain')).toBe(false);
+    });
   });
 
   it('formats the closed time as a clock time, never the raw timestamp', async () => {

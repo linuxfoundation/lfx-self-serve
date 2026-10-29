@@ -31,12 +31,12 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   return 'closed';
 }
 
-/** Tooltip copy when a vote auto-ended because all eligible voters responded. */
+/** Tooltip copy for an early closure; the timestamp does not establish why voting ended. */
 export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
-  return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
+  return `Vote closed early on ${earlyEndTimeFormatted}.`;
 }
 
-/** True when ITX auto-ended the poll because all eligible voters responded. */
+/** True when an early-close timestamp is recorded, without inferring the closure reason. */
 export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
   return Boolean(vote.early_end_time);
 }

@@ -129,11 +129,18 @@ describe('VoteDetailHeaderComponent', () => {
     expect(exists('vote-detail-header-ended-early')).toBe(false);
   });
 
-  it('notes an early close, since end_time stays the scheduled deadline', () => {
-    render({ vote: makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }) });
+  it('notes an early close without claiming full participation', () => {
+    render({
+      vote: makeVote({
+        status: PollStatus.ENDED,
+        early_end_time: '2026-10-20T12:00:00Z',
+        total_voting_request_invitations: 10,
+        num_response_received: 3,
+      }),
+    });
 
     expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
-    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026. All voters have responded.');
+    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
   });
 
   describe('actions', () => {

@@ -31,6 +31,8 @@ On the right it shows a **Copy link** button and a QR code with the text **In th
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
 
+If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
+
 Press **Esc** to leave the presenter. It takes you to the vote's page in LFX.
 
 ### Copy slide

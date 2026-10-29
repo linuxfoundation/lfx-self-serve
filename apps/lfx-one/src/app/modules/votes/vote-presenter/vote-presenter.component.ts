@@ -262,7 +262,7 @@ export class VotePresenterComponent {
             ? this.loadResults(uid).pipe(
                 expand((results, index) =>
                   results?.results_held === true && index + 1 < VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS
-                    ? timer(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS).pipe(switchMap(() => this.loadResults(uid)))
+                    ? timer(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS).pipe(switchMap(() => this.loadResults(uid, results)))
                     : EMPTY
                 ),
                 tap(() => this.resultsLoading.set(false))
@@ -274,10 +274,12 @@ export class VotePresenterComponent {
     );
   }
 
-  private loadResults(uid: string): Observable<VoteResultsResponse | null> {
+  private loadResults(uid: string, heldResults: VoteResultsResponse | null = null): Observable<VoteResultsResponse | null> {
     return this.voteService.getVoteResults(uid).pipe(
       catchError((error) => {
         console.error('Failed to load vote results for the presenter', error);
+        // A failed retry cannot release the hold or end the bounded finalization loop.
+        if (heldResults?.results_held === true) return of(heldResults);
         this.resultsError.set(true);
         return of(null);
       })

@@ -7,7 +7,19 @@ import { describe, expect, it } from 'vitest';
 
 import { PollStatus } from '../enums';
 import type { PollCommentResponse } from '../interfaces/poll.interface';
-import { countVotesByStatus, normalizePollStatus, sortCommentResponsesByRecency, sortCommentResponsesByText } from './poll.utils';
+import {
+  countVotesByStatus,
+  getVoteEndedEarlyDetailTooltip,
+  normalizePollStatus,
+  sortCommentResponsesByRecency,
+  sortCommentResponsesByText,
+} from './poll.utils';
+
+describe('getVoteEndedEarlyDetailTooltip', () => {
+  it('states the early-close date without inferring the closure reason or participation', () => {
+    expect(getVoteEndedEarlyDetailTooltip('Oct 20, 2026')).toBe('Vote closed early on Oct 20, 2026.');
+  });
+});
 
 describe('normalizePollStatus', () => {
   it('returns an already-lowercase status unchanged', () => {
