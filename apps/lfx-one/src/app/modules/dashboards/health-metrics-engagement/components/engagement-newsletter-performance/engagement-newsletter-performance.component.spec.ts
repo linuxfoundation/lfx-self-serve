@@ -133,6 +133,16 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(verdicts).toEqual([false]);
   });
 
+  it.each([
+    [0.5004, 60],
+    [0.7, 70],
+  ])('tops the rates axis at the next 10%% above the highest rate (%s → %s%%)', async (openRate, max) => {
+    await render({ ...PERFORMANCE, newsletters: [{ ...LATEST, openRate }] });
+
+    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
+    expect((chart.options() as { scales: { y: { max: number } } }).scales.y.max).toBe(max);
+  });
+
   it('switches the chart to recipients and unique opens, and keeps the choice in the URL', async () => {
     await render();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

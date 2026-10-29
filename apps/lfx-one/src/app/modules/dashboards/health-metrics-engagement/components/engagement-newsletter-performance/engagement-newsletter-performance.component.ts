@@ -253,7 +253,8 @@ export class EngagementNewsletterPerformanceComponent {
   private buildChartOptions(points: HealthMetricsEngagementNewsletterPointView[]): ChartOptions<'line'> {
     const audience = this.audienceMode();
     const peak = Math.max(0, ...points.flatMap((point) => [point.openPct ?? 0, point.clickPct ?? 0, point.clickToOpenPct ?? 0]));
-    const top = Math.min(100, Math.max(10, Math.ceil(Math.round(peak * 10) / 100) * 10));
+    // Float noise is trimmed first, so 0.7 × 100 tops out at 70% rather than 80%, without dropping a real 50.04%.
+    const top = Math.min(100, Math.max(10, Math.ceil(Math.round(peak * 1000) / 10_000) * 10));
     const tick = { color: lfxColors.gray[500], font: { size: 10 } };
 
     return {
