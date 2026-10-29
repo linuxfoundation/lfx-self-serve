@@ -129,7 +129,30 @@ export async function setupLinkedin(
     (route) => {
       if (route.request().method() !== 'GET' || new URL(route.request().url()).searchParams.get('project') !== project.uid)
         return route.abort('blockedbyclient');
-      return json(route, { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })) }, options.writer === false ? 403 : 200);
+      const own = new URL(route.request().url()).searchParams.get('ownRuns') === '1';
+      const recordedRuns: MktgDocumentRunProgress[] = [];
+      if (own)
+        for (const [session, run] of runs) {
+          if (run.completed) continue;
+          recordedRuns.push({
+            project: project.uid,
+            agentKey: type.agentKey,
+            documentId: run.documentId,
+            runId: Number(session.split('-').at(-1)).toString(16).padStart(64, '0'),
+            state: run.failed ? 'failed' : 'writing',
+            startedAt: '2026-10-28T10:00:00Z',
+          });
+        }
+      if (options.questions)
+        recordedRuns.forEach((row) => {
+          const source = [...runs.values()].find((run) => run.documentId === row.documentId);
+          if (source && !source.answered && !source.failed) row.state = 'questions';
+        });
+      return json(
+        route,
+        { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: recordedRuns },
+        options.writer === false ? 403 : 200
+      );
     }
   );
   await page.route(

@@ -31,9 +31,11 @@ export class MktgDocumentStoreService {
   private readonly http = inject(HttpClient);
 
   /** Every document of the project, grouped by type in the Documents area's order. */
-  public listDocuments(projectUid: string, poll = false): Observable<MktgDocumentsResponse> {
+  public listDocuments(projectUid: string, poll = false, ownRuns = false): Observable<MktgDocumentsResponse> {
+    let params = this.projectParams(projectUid, poll);
+    if (ownRuns) params = params.set('ownRuns', '1');
     return this.http
-      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params: this.projectParams(projectUid, poll) })
+      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load Marketing OS documents', error)));
   }
 
@@ -122,7 +124,9 @@ export class MktgDocumentStoreService {
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {
-    console.error(message, error);
+    if (error instanceof HttpErrorResponse) console.error(message, { status: error.status });
+    else if (error instanceof Error) console.error(message, { errorType: error.name });
+    else console.error(message, { errorType: typeof error });
     return throwError(() => error);
   }
 

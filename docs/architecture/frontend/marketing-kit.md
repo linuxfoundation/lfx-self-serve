@@ -192,6 +192,25 @@ skipping it. Member 360 ranking filters use `tier=`, `owner=`, `search=` and its
 filters locally as typed but pushes only once per settled term, after a 300 ms debounce and a current-URL
 equality check; Back restores the previous settled term, not individual keystrokes. URL echoes do not
 rewrite the search input while typing.
+
+### LinkedIn entry observation
+
+Before choosing intake or an existing run, the LinkedIn entry reads the creator-scoped
+`GET /api/mktg-agents/documents?project=<uid>&poll=1&ownRuns=1` projection (the #4591 contract),
+then the personal profile. The BFF filters by its authenticated effective subject; the existing
+safe DTO gains no identity, private session or capability fields. The client never infers
+ownership from activity or a display name. A local attempt can continue only the exact
+server-listed run/document pair; without it, an active run still opens its document's
+recorded state rather than a new intake. Private questions remain creator-only.
+
+The header and body share the first-observation loading boundary. Fixed identity and note
+slots keep profile resolution and input-provenance messages from shifting layout. A seeded
+visibility-aware observer rechecks idle entry on timers and focus without repeating profile
+reads or resetting unsent inputs; the document observer owns an already selected run.
+Initial discovery failures never become a false no-run/first-run form. Background failures
+retain the last observed state and show a warning. AEO/GEO discovery needs backend run
+recording before this mechanism applies to it.
+
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
 Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
 Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`

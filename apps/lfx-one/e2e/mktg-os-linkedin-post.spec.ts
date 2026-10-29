@@ -12,18 +12,59 @@ import {
   linkedinEnvelope,
   LINKEDIN_RUN_TIMEOUT,
   LINKEDIN_TEST_PROFILE,
+  LINKEDIN_TEST_PROJECT,
   openLinkedin,
   setupLinkedin,
   stubLinkedinClipboard,
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  for (const state of ['writing', 'questions'] as const)
+    test(`a fresh browser lands on its server-owned ${state} run without a header or intake flash`, async ({ page }, info) => {
+      const runs = createLinkedinRuns();
+      const documentId = 'run-' + 'a'.repeat(24);
+      runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
+      await setupLinkedin(page, { runs, saved: true, questions: state === 'questions' }); // suppressCookieBanner is in the helper.
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        async (route) => {
+          expect(new URL(route.request().url()).searchParams.get('project')).toBe(LINKEDIN_TEST_PROJECT.uid);
+          await gate;
+          await route.fallback();
+        }
+      );
+      const starts: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`${LINKEDIN_API}/generate`)) starts.push(request.url());
+      });
+      await openLinkedin(page);
+      await expect(page.getByTestId('mktg-linkedin-header-loading')).toBeVisible();
+      await expect(page.getByTestId('mktg-linkedin-first-run')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath('server-owned-neutral.png'), fullPage: true });
+      release();
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+      await expect(page).toHaveURL(new RegExp(`/documents/linkedin-post/${documentId}\\?`));
+      expect(new URL(page.url()).searchParams.get('run')).toBe('1'.padStart(64, '0'));
+      expect(starts).toHaveLength(0);
+      await page.screenshot({ path: info.outputPath(`server-owned-${state}.png`), fullPage: true });
+    });
   for (const choice of ['Open it', 'Discard and start over'])
     test(`LinkedIn active-run conflict: ${choice}`, async ({ page }, info) => {
       const runs = createLinkedinRuns();
       const documentId = 'run-' + 'a'.repeat(24);
       runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
       await setupLinkedin(page, { runs, saved: true }); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+      // The competing run begins AFTER the initial own-run lookup, immediately before Generate.
+      await page.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        (route) => json(route, { project: LINKEDIN_TEST_PROJECT.uid, groups: [], runs: [] })
+      );
       const bodies: Record<string, unknown>[] = [];
       const activeRunId = 'b'.repeat(64);
       await page.route(`**${LINKEDIN_API}/generate`, (route) => {

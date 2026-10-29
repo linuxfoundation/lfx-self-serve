@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, Location } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   LINKEDIN_ABOUT_FIELDS,
   LINKEDIN_INTAKE_LABEL,
@@ -27,6 +28,8 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_VOICE_FIELDS,
   MKTG_RUN_NEW_MODE,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_POLL,
   MKTG_RUN_ACTIVE_DIALOG_KEYS,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
@@ -38,6 +41,8 @@ import {
   MktgAgentIntake,
   MktgGenerateRequest,
   MktgDocumentReadCycle,
+  MktgDocumentRunProgress,
+  MktgDocumentsResponse,
   MktgPendingGeneration,
   MktgRunAnswer,
   MktgRunQuestion,
@@ -56,6 +61,8 @@ import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -63,7 +70,7 @@ import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { FileSelectEvent } from 'primeng/fileupload';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, map, of, Subscription, switchMap, take } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
@@ -82,12 +89,15 @@ import { MktgRunProgressComponent } from '../mktg-run-progress/mktg-run-progress
     MktgBreadcrumbComponent,
     MktgRunQuestionsComponent,
     MktgRunProgressComponent,
+    MktgSkeletonComponent,
   ],
   templateUrl: './linkedin-post-run.component.html',
   styleUrl: './linkedin-post-run.component.scss',
 })
 export class LinkedinPostRunComponent {
   private readonly api = inject(LinkedinPostService);
+  private readonly documents = inject(MktgDocumentStoreService);
+  private readonly document = inject(DOCUMENT);
   private readonly attempts = inject(MktgRunAttemptService);
   private readonly runs = inject(MktgAgentRunService);
   protected readonly context = inject(ProjectContextService);
@@ -135,6 +145,7 @@ export class LinkedinPostRunComponent {
   protected readonly lastIntakeDenied = signal(false);
   protected readonly lastIntakeNote = signal('');
   protected readonly loading = signal(true);
+  protected readonly profileResolved = signal(false);
   protected readonly writer = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
@@ -146,9 +157,20 @@ export class LinkedinPostRunComponent {
   protected readonly reload = signal(0);
   protected readonly questions = signal<MktgRunQuestion[]>([]);
   protected readonly recordedPending = signal<MktgPendingGeneration | null>(null);
+  protected readonly serverRun = signal<MktgDocumentRunProgress | null>(null);
+  protected readonly recordedRequest = signal<MktgGenerateRequest | null>(null);
+  protected readonly runLookupFailed = signal(false);
+  protected readonly runWarning = signal('');
+  protected readonly intakeNote = computed(() => {
+    if (this.runWarning()) return this.runWarning();
+    if (this.lastIntakeLoading()) return 'Loading last run inputs…';
+    return this.lastIntakeNote();
+  });
+  private readonly ownRunsSeed = signal<MktgDocumentsResponse | null>(null);
+  private ownRunsSubject = '';
   protected readonly checkingPending = signal(false);
-  protected readonly recordedDocumentId = computed(() => this.recordedPending()?.request.documentId ?? this.recordedPending()?.attempt?.documentId ?? '');
-  protected readonly recordedRunId = computed(() => this.recordedPending()?.attempt?.runId ?? '');
+  protected readonly recordedDocumentId = computed(() => this.serverRun()?.documentId ?? '');
+  protected readonly recordedRunId = computed(() => this.serverRun()?.runId ?? '');
   protected readonly previousAnswers = signal<Record<string, string>>({});
   protected readonly answering = signal(false);
   protected readonly linkError = signal('');
@@ -158,6 +180,7 @@ export class LinkedinPostRunComponent {
   private readonly contentUrl = signal(this.contentForm.controls.url.value);
   protected readonly linkWarning = computed(() => mktgLinkWarnings({ url: this.contentUrl() })['url']);
   protected readonly projectName = computed(() => this.context.activeContext()?.name ?? '');
+  protected readonly documentsLink = computed(() => [mktgKitRootPath(this.router.url), 'documents']);
   protected readonly writingAs = computed(() => this.saved()?.profile.about.name ?? this.setup()?.name ?? '');
   private readonly scope$ = toObservable(computed(() => ({ context: this.context.activeContext(), sub: this.user.user()?.sub, reload: this.reload() })));
 
@@ -209,6 +232,12 @@ export class LinkedinPostRunComponent {
           this.generation?.unsubscribe();
           this.questionsPending = null;
           this.recordedPending.set(null);
+          this.serverRun.set(null);
+          this.recordedRequest.set(null);
+          this.runLookupFailed.set(false);
+          this.runWarning.set('');
+          this.ownRunsSeed.set(null);
+          this.ownRunsSubject = '';
           this.checkingPending.set(false);
           this.acceptedRequest.set(null);
           this.pendingNotice.set(null);
@@ -218,6 +247,7 @@ export class LinkedinPostRunComponent {
           this.answering.set(false);
           this.busy.set(false);
           this.loading.set(true);
+          this.profileResolved.set(false);
           this.writer.set(false);
           this.historyGrant.set('');
           this.saved.set(null);
@@ -229,20 +259,32 @@ export class LinkedinPostRunComponent {
           this.profileForm.reset();
           this.contentForm.reset();
           this.source.set(parseLinkedinContentSource(this.route.snapshot.queryParamMap.get('source')));
-          if (!context || !sub) {
-            this.error.set(context ? 'Sign in to load your LinkedIn profile.' : 'Select a project to continue.');
+          if (!context) {
+            this.error.set('Select a project to continue.');
             this.loading.set(false);
             return of(null);
           }
+          if (!sub) return EMPTY;
           return this.projects.getProject(context.slug, false).pipe(
             switchMap((project) => {
               if (!project) throw new Error('Project unavailable');
               this.writer.set(!!project.writer);
               this.historyGrant.set(project.writer ? JSON.stringify([context.uid, sub]) : '');
-              return project.writer ? this.api.profile() : of(null);
+              if (!project.writer) return of(null);
+              return this.documents.listDocuments(context.uid, true, true).pipe(
+                switchMap((snapshot) => {
+                  if (snapshot.progressUnavailable) {
+                    this.runLookupFailed.set(true);
+                    this.error.set('Your recorded run could not be checked. Try again before drafting.');
+                    return of(null);
+                  }
+                  return this.api.profile().pipe(map((profile) => ({ ...profile, snapshot })));
+                })
+              );
             }),
             catchError(() => {
-              this.error.set('Your profile or project could not be loaded. Try again.');
+              this.runLookupFailed.set(true);
+              this.error.set('Your profile, project or recorded run could not be loaded. Try again.');
               return of(null);
             })
           );
@@ -253,6 +295,7 @@ export class LinkedinPostRunComponent {
         this.loading.set(false);
         this.saved.set(response?.profile ?? null);
         if (!response) return;
+        this.profileResolved.set(true);
         const params = this.route.snapshot.queryParamMap;
         const editProfile = params.get('profile') === 'edit';
         const profileDocument = params.get('profileDocument');
@@ -269,16 +312,11 @@ export class LinkedinPostRunComponent {
         const prepared = token && !editProfile ? this.attempts.consumeQuestions(token, this.context.activeContextUid(), this.intake().agentId) : null;
         const latest =
           !this.freshMode() && !prepared && !editProfile ? this.attempts.latestPending(this.context.activeContextUid(), this.intake().agentId) : null;
-        this.pendingNotice.set(latest);
         const pending = prepared?.pending ?? (latest ? this.attempts.load(this.context.activeContextUid(), this.intake().agentId, latest.documentId) : null);
-        if (pending && (pending.request.documentId || pending.attempt?.documentId) && pending.state !== 'failed') {
-          this.checkingPending.set(true);
-          this.recordedPending.set(pending);
-        } else if (pending?.pendingQuestions && pending.state !== 'failed') {
-          this.questionsPending = pending;
-          this.questions.set(pending.pendingQuestions.questions);
-          this.editing.set(false);
-        } else if (prepared?.pending.state === 'failed') {
+        this.reconcileOwnRuns(response.snapshot, pending);
+        this.ownRunsSubject = this.user.user()?.sub ?? '';
+        this.ownRunsSeed.set(response.snapshot);
+        if (prepared?.pending.state === 'failed' && !this.serverRun()) {
           let action = 'paste it again';
           if (this.source() === 'file') action = 'choose the file again';
           if (this.source() === 'url') action = 'enter the link again';
@@ -291,27 +329,75 @@ export class LinkedinPostRunComponent {
           }
         }
       });
+    toObservable(computed(() => ({ seed: this.ownRunsSeed(), project: this.context.activeContextUid(), subject: this.user.user()?.sub ?? '' })))
+      .pipe(
+        switchMap(({ seed, project, subject }) => {
+          if (!seed || seed.project !== project || !subject || subject !== this.ownRunsSubject) return EMPTY;
+          let initial = true;
+          return createVisibilityPoll(
+            this.document,
+            () => {
+              if (initial) {
+                initial = false;
+                return of(seed);
+              }
+              return this.documents.listDocuments(project, true, true);
+            },
+            {
+              intervalMs: MKTG_RUN_POLL.questionsIntervalMs,
+              backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+              backoffMaxMs: MKTG_RUN_POLL.questionsIntervalMs,
+              shouldContinue: () => !this.serverRun(),
+            }
+          ).pipe(map((event) => ({ event, project, subject })));
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ event, project, subject }) => {
+        if (project !== this.context.activeContextUid() || subject !== this.user.user()?.sub) return;
+        if (event.kind === 'error' || event.value.progressUnavailable) {
+          this.runWarning.set('Could not refresh recorded runs. Showing the last checked state.');
+          return;
+        }
+        this.runWarning.set('');
+        this.reconcileOwnRuns(event.value);
+      });
   }
 
   protected onRecordedProgress(cycle: MktgDocumentReadCycle): void {
     const pending = this.recordedPending();
-    if (!pending || cycle.detail.progressUnavailable || cycle.detail.project !== this.context.activeContextUid()) return;
-    this.checkingPending.set(false);
+    const request = this.recordedRequest();
+    if (
+      !request ||
+      cycle.detail.project !== this.context.activeContextUid() ||
+      cycle.detail.documentId !== this.recordedDocumentId() ||
+      cycle.detail.type.agentKey !== this.serverRun()?.agentKey
+    )
+      return;
+    if (cycle.detail.progressUnavailable) {
+      this.onRecordedReadError();
+      return;
+    }
+    if (this.runLookupFailed()) {
+      this.runLookupFailed.set(false);
+      this.error.set('');
+    }
     const run = cycle.detail.runs?.find((row) => row.runId === this.recordedRunId());
-    if (readMktgRetiredRunHint(run) && this.acceptedRequest() !== pending.request) {
+    if (readMktgRetiredRunHint(run) && this.acceptedRequest() !== request) {
       this.generation?.unsubscribe();
       this.answering.set(false);
       this.questionsPending = null;
       this.questions.set([]);
       this.pendingNotice.set(null);
-      this.acceptedRequest.set(pending.request);
-      void this.returnToDocument(pending.request, null);
+      this.acceptedRequest.set(request);
+      void this.returnToDocument(request, null);
       return;
     }
-    if (this.answering() || this.acceptedRequest() === pending.request) return;
-    if (run?.state === 'questions') {
+    if (this.answering() || this.acceptedRequest() === request) return;
+    if (run?.state === 'questions' && pending?.pendingQuestions) {
+      this.checkingPending.set(false);
       this.pendingNotice.set({ documentId: run.documentId, state: 'questions' });
-      if (pending.pendingQuestions && !this.questions().length) {
+      if (!this.questions().length) {
         this.questionsPending = pending;
         this.questions.set(pending.pendingQuestions.questions);
         this.editing.set(false);
@@ -321,17 +407,25 @@ export class LinkedinPostRunComponent {
     this.questionsPending = null;
     this.questions.set([]);
     this.pendingNotice.set(null);
+    if (pending?.pendingQuestions && run && run.state !== 'questions') {
+      this.attempts.save({ ...pending, pendingQuestions: undefined, state: run.state === 'failed' ? 'failed' : 'writing' });
+    }
     if (!run && !cycle.detail.revisions.length) {
       this.attempts.clear(this.context.activeContextUid(), this.intake().agentId, this.attempts.subject(), this.recordedDocumentId());
       this.recordedPending.set(null);
+      this.recordedRequest.set(null);
+      this.serverRun.set(null);
+      this.checkingPending.set(false);
+      this.ownRunsSeed.update((snapshot) => (snapshot ? { ...snapshot, runs: [] } : null));
       return;
     }
-    this.acceptedRequest.set(pending.request);
-    void this.returnToDocument(pending.request, null);
+    this.acceptedRequest.set(request);
+    void this.returnToDocument(request, null);
   }
 
   protected onRecordedReadError(): void {
     this.checkingPending.set(false);
+    this.runLookupFailed.set(true);
     this.questions.set([]);
     this.error.set('The recorded run could not be checked. Open its document or try again before answering.');
   }
@@ -585,6 +679,56 @@ export class LinkedinPostRunComponent {
     if (request && !this.busy()) void this.returnToDocument(request, null); // Public server record needs no browser capability.
   }
 
+  /** The ownRuns projection, not private storage or activity/name inference, chooses this writer's run. */
+  private reconcileOwnRuns(snapshot: MktgDocumentsResponse, hint: MktgPendingGeneration | null = null): void {
+    const project = this.context.activeContextUid();
+    if (snapshot.project !== project || this.route.snapshot.queryParamMap.get('profile') === 'edit') return;
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === this.intake().agentId);
+    const selected = this.route.snapshot.queryParamMap.get('run');
+    const row = snapshot.runs?.find(
+      (run) =>
+        run.project === project &&
+        run.agentKey === type?.agentKey &&
+        (selected ? run.runId === selected : run.state === 'writing' || run.state === 'storing' || run.state === 'questions')
+    );
+    if (!row) {
+      if (hint?.pendingQuestions && !this.serverRun()) {
+        // Retain input hints, never a questions turn/capability contradicted by a successful server lookup.
+        this.attempts.save({ request: hint.request, state: 'draft', requiresReattachment: true, updatedAt: new Date().toISOString() });
+      }
+      if (this.serverRun()) this.recordedProgress()?.recheck();
+      else if (selected) {
+        this.runLookupFailed.set(true);
+        this.error.set('This recorded run could not be found. Open Documents to check its current state.');
+      }
+      return;
+    }
+    if (this.recordedRunId() === row.runId) {
+      this.serverRun.set(row);
+      if (row.state !== 'questions' && this.questions().length) {
+        this.questionsPending = null;
+        this.questions.set([]);
+        this.checkingPending.set(true);
+        this.recordedProgress()?.recheck();
+      }
+      return;
+    }
+    const pending = hint ?? this.attempts.load(project, this.intake().agentId, row.documentId);
+    const matched =
+      pending && pending.attempt && pending.attempt.runId === row.runId && (pending.request.documentId ?? pending.attempt.documentId) === row.documentId
+        ? pending
+        : null;
+    this.recordedPending.set(matched);
+    this.recordedRequest.set(
+      matched?.request ?? { projectUid: project, agentId: this.intake().agentId, intake: this.intake(), documentId: row.documentId, answers: {} }
+    );
+    this.serverRun.set(row);
+    this.questionsPending = null;
+    this.questions.set([]);
+    this.pendingNotice.set(null);
+    this.checkingPending.set(true);
+  }
+
   private async returnToDocument(request: MktgGenerateRequest, generation: string | null = this.attempts.prepare(request, true)): Promise<void> {
     if (!request.documentId || generation === '') {
       this.busy.set(false);
@@ -610,7 +754,10 @@ export class LinkedinPostRunComponent {
     } catch {
       // Acceptance is durable; expose Open rather than pretending the server run failed.
     } finally {
-      if (!this.destroyRef.destroyed && version === this.scopeVersion) this.busy.set(false);
+      if (!this.destroyRef.destroyed && version === this.scopeVersion) {
+        this.busy.set(false);
+        this.checkingPending.set(false);
+      }
     }
   }
   private async consumeFreshMode(): Promise<void> {
@@ -633,7 +780,7 @@ export class LinkedinPostRunComponent {
         fresh: this.freshMode(),
         grant: this.historyGrant(),
         reload: this.reload(),
-        ready: !this.loading(),
+        ready: !this.loading() && !this.checkingPending() && !this.serverRun() && !this.runLookupFailed(),
       }))
     )
       .pipe(

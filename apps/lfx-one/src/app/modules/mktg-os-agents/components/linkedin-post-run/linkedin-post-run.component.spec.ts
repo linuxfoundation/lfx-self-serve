@@ -4,7 +4,7 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { Location } from '@angular/common';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
@@ -22,7 +22,14 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
 } from '@lfx-one/shared/constants';
-import { MktgLastIntake, MktgPendingGeneration, ProjectContext, MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces';
+import {
+  MktgLastIntake,
+  MktgPendingGeneration,
+  ProjectContext,
+  MktgDocumentDetailResponse,
+  MktgDocumentsResponse,
+  LinkedinStoredProfile,
+} from '@lfx-one/shared/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -48,7 +55,7 @@ describe('LinkedIn profile and post surface', () => {
   const projects = { getProject: vi.fn() };
   const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   const history = { lastIntake: vi.fn() };
-  const documents = { getDocument: vi.fn() };
+  const documents = { getDocument: vi.fn(), listDocuments: vi.fn() };
   const documentType = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === LINKEDIN_POST_INTAKE.agentId);
   if (!documentType) throw new Error('Missing synthetic LinkedIn document type');
   const emptyDetail: MktgDocumentDetailResponse = {
@@ -65,6 +72,7 @@ describe('LinkedIn profile and post surface', () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     localStorage.clear();
     api.startForDocument.mockReset();
+    documents.listDocuments.mockReset().mockReturnValue(of({ project: 'project-one', groups: [], runs: [] }));
     documents.getDocument.mockReset().mockReturnValue(
       of({
         ...emptyDetail,
@@ -117,6 +125,116 @@ describe('LinkedIn profile and post surface', () => {
     fixture.detectChanges();
     return fixture;
   }
+  it('emits only the neutral run-page loading shape during SSR without profile or intake', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const fixture = TestBed.createComponent(LinkedinPostRunComponent);
+    fixture.componentRef.setInput('intake', LINKEDIN_POST_INTAKE);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-linkedin-loading"] [data-variant="run-page"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="mktg-linkedin-loading"]')?.textContent?.trim()).toBe('Checking the run…');
+    expect(root.querySelector('form')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-linkedin-identity"]')).toBeNull();
+    expect(api.profile).not.toHaveBeenCalled();
+    expect(documents.listDocuments).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('holds the whole header/intake neutral until server run discovery and profile resolve (saved=%s)', async (saved) => {
+    const runs = new Subject<MktgDocumentsResponse>();
+    const profileRead = new Subject<{ profile: LinkedinStoredProfile | null }>();
+    documents.listDocuments.mockReturnValue(runs);
+    api.profile.mockReturnValue(profileRead);
+    const fixture = await render();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-linkedin-header-loading"]')).not.toBeNull();
+    expect(root.querySelector('form')).toBeNull();
+    expect(root.textContent).not.toContain('First run');
+    expect(api.profile).not.toHaveBeenCalled();
+    runs.next({ project: 'project-one', groups: [], runs: [] });
+    runs.complete();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-linkedin-header-loading"]')).not.toBeNull();
+    profileRead.next({ profile: saved ? { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } : null });
+    profileRead.complete();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-linkedin-header-loading"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-linkedin-identity-slot"]')?.classList.contains('h-12')).toBe(true);
+    expect(root.querySelector('[data-testid="mktg-linkedin-note-slot"]')?.classList.contains('h-10')).toBe(true);
+    expect(root.textContent).toContain(saved ? 'Writing as Example author' : 'First run');
+    expect(documents.listDocuments).toHaveBeenCalledExactlyOnceWith('project-one', true, true);
+  });
+
+  it.each(['writing', 'questions'] as const)('lands directly on a server-owned %s run with empty browser storage', async (state) => {
+    const row = {
+      project: 'project-one',
+      agentKey: documentType.agentKey,
+      documentId: emptyDetail.documentId,
+      runId: 'b'.repeat(64),
+      state,
+      startedAt: '2026-10-28T10:00:00Z',
+    };
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [row] }));
+    documents.getDocument.mockReturnValue(of({ ...emptyDetail, runs: [row] }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    const fixture = await render();
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, row.documentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ run: row.runId, generation: null }) })
+    );
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"]')).not.toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it('discovers this writer’s new run on focus without resetting inputs during a transient read failure', async () => {
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    component['contentForm'].controls.text.setValue('Synthetic unsent edit');
+    documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(component['contentForm'].controls.text.value).toBe('Synthetic unsent edit');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
+    expect(component['runWarning']()).toContain('last checked state');
+    documents.listDocuments.mockReturnValue(
+      of({
+        project: 'project-one',
+        groups: [],
+        runs: [
+          {
+            project: 'project-one',
+            agentKey: documentType.agentKey,
+            documentId: emptyDetail.documentId,
+            runId: 'b'.repeat(64),
+            state: 'writing',
+            startedAt: '2026-10-28T10:00:00Z',
+          },
+        ],
+      })
+    );
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(component['runWarning']()).toBe('');
+    expect(navigate).toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it('does not turn a failed run lookup into a first-run profile or intake', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const fixture = await render();
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-first-run"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')?.textContent).toContain('could not be loaded');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-load"]')).not.toBeNull();
+    expect(api.profile).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   async function fresh() {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
@@ -416,11 +534,14 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
-  it('keeps Open the document as the only solid action when a first-run profile has a pending draft', async () => {
+  it('keeps Open draft as the only primary after a first-run recorded draft cannot navigate', async () => {
     TestBed.inject(MktgRunAttemptService).save(intakePending('writing'));
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
     const fixture = await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-save-profile"] button')?.classList.contains('p-button-outlined')).toBe(true);
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-pending"] button')?.classList.contains('p-button-outlined')).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-profile-form"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"] button')?.classList.contains('p-button-outlined')).toBe(false);
+    expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
   it('prefills first-run setup from creator/project live memory on return, not in a fresh visit', async () => {
@@ -441,10 +562,14 @@ describe('LinkedIn profile and post surface', () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     TestBed.inject(MktgRunAttemptService).save(intakePending());
     documents.getDocument.mockReturnValue(of(emptyDetail));
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [] }));
     const fixture = await render();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')).toBeNull();
     expect(fixture.componentInstance['recordedPending']()).toBeNull();
+    const retained = TestBed.inject(MktgRunAttemptService).load('project-one', LINKEDIN_POST_INTAKE.agentId, emptyDetail.documentId);
+    expect(retained?.pendingQuestions).toBeUndefined();
+    expect(retained?.attempt).toBeUndefined();
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
@@ -456,7 +581,8 @@ describe('LinkedIn profile and post surface', () => {
     documents.getDocument.mockReturnValue(measured);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const fixture = await render();
-    expect(fixture.nativeElement.textContent).toContain('Checking the run');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-header-loading"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
     const detail: MktgDocumentDetailResponse = {
       ...emptyDetail,
@@ -482,21 +608,22 @@ describe('LinkedIn profile and post surface', () => {
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
-  it('uses the server questions notice instead of the local writing hint on plain load or reload', async () => {
+  it('opens server questions on the document instead of restoring a stale local writing intake on load or reload', async () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     const attempts = TestBed.inject(MktgRunAttemptService);
     const pending = intakePending('writing');
     attempts.save(pending);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const first = await render();
-    expect(navigate).not.toHaveBeenCalled();
-    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is waiting for your answers');
-    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.classList.contains('p-button-outlined')).toBe(true);
-    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
-    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-open-pending"] button')?.classList.contains('p-button-outlined')).toBe(false);
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, pending.request.documentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ run: pending.attempt?.runId }) })
+    );
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    expect(first.nativeElement.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
     first.destroy();
     await render();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledTimes(2);
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
   });
@@ -504,6 +631,15 @@ describe('LinkedIn profile and post surface', () => {
   function intakePending(state: MktgPendingGeneration['state'] = 'questions'): MktgPendingGeneration {
     const intake = LINKEDIN_POST_INTAKE;
     const documentId = 'run-' + 'a'.repeat(24);
+    // Synthetic BFF fixture is independent from browser persistence; stale-cache cases override it explicitly.
+    if (state === 'writing' || state === 'questions' || state === 'failed')
+      documents.listDocuments.mockReturnValue(
+        of({
+          project: 'project-one',
+          groups: [],
+          runs: [{ project: 'project-one', agentKey: documentType.agentKey, documentId, runId: 'b'.repeat(64), state, startedAt: '2026-10-28T10:00:00Z' }],
+        })
+      );
     const attempt = {
       documentId,
       runId: 'b'.repeat(64),
@@ -533,7 +669,7 @@ describe('LinkedIn profile and post surface', () => {
       }),
     };
   }
-  it.each([true, false])('only implicitly recovers older same-project questions without fresh mode (fresh=%s)', async (freshMode) => {
+  it.each([true, false])('server-owned questions win over both plain and new-mode intake (fresh=%s)', async (freshMode) => {
     const attempts = TestBed.inject(MktgRunAttemptService);
     attempts.save(intakePending());
     const latest = vi.spyOn(attempts, 'latestPending');
@@ -547,20 +683,13 @@ describe('LinkedIn profile and post surface', () => {
     await router.navigateByUrl('/project/mktg-os-agents/linkedin-post?project=example-project' + (freshMode ? '&mode=new' : ''));
     const fixture = await render();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]') !== null).toBe(freshMode);
-    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]') !== null).toBe(!freshMode);
-    expect(fixture.componentInstance['questions']()).toHaveLength(freshMode ? 0 : 1);
-    expect(fixture.componentInstance['pendingNotice']() !== null).toBe(!freshMode);
-    if (freshMode) {
-      expect(latest).not.toHaveBeenCalled();
-      expect(load).not.toHaveBeenCalled();
-      expect(history.lastIntake).toHaveBeenCalledWith('project-one', 'linkedin-post');
-      expect(fixture.componentInstance['contentForm'].getRawValue()).toMatchObject({ text: 'Synthetic last input', share_link: '' });
-    } else {
-      expect(latest).toHaveBeenCalledWith('project-one', 'linkedin-post');
-      expect(load).toHaveBeenCalledWith('project-one', 'linkedin-post', intakePending().request.documentId);
-      expect(history.lastIntake).not.toHaveBeenCalled();
-    }
+    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]')).not.toBeNull();
+    expect(fixture.componentInstance['questions']()).toHaveLength(1);
+    expect(fixture.componentInstance['pendingNotice']()).toMatchObject({ state: 'questions', documentId: 'run-' + 'a'.repeat(24) });
+    if (freshMode) expect(latest).not.toHaveBeenCalled();
+    else expect(latest).toHaveBeenCalledWith('project-one', 'linkedin-post');
+    expect(load).toHaveBeenCalledWith('project-one', 'linkedin-post', 'run-' + 'a'.repeat(24));
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
   });
@@ -694,18 +823,15 @@ describe('LinkedIn profile and post surface', () => {
     const fixture = await render();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="mktg-linkedin-questions"]') !== null).toBe(mode === 'memory');
-    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]') !== null).toBe(mode !== 'memory');
-    const notice = root.querySelector('[data-testid="mktg-linkedin-pending-notice"]');
-    if (mode === 'none') expect(notice).toBeNull();
-    else {
-      expect(notice?.textContent).toContain('Your draft is waiting for your answers on its document page');
-      expect(attempts.latestPending('project-one', LINKEDIN_POST_INTAKE.agentId)).not.toHaveProperty('attempt');
-      fixture.componentInstance['onOpenPending']();
+    expect(root.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+    if (mode === 'memory') {
+      expect(root.querySelector('[data-testid="mktg-linkedin-pending-notice"]')?.textContent).toContain('Your draft is waiting for your answers');
+      expect(navigate).not.toHaveBeenCalled();
+    } else
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
         expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, pending.request.documentId]),
-        expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ questions: null, generation: null }) })
+        expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ questions: null, generation: null, run: pending.attempt?.runId }) })
       );
-    }
     expect(api.startForDocument).not.toHaveBeenCalled();
     TestBed.inject(HttpTestingController).expectNone(LINKEDIN_POST_INTAKE.endpoints.result);
   });
