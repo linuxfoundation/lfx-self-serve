@@ -118,7 +118,9 @@ function toEmployee(row: OrgAllEmployeeRow & { email: string }): KeyContactEmplo
     initials: deriveInitials(firstName, lastName, fullName),
     avatarUrl: row.avatarUrl,
     lfUsername: row.lfUsername,
-    roles: row.keyContactRoles,
+    // A rolling deploy serves this bundle against pods that predate the field, so the wire row can
+    // omit it entirely; `roles` is declared as an array, so normalize rather than hand on undefined.
+    roles: row.keyContactRoles ?? [],
   };
 }
 
