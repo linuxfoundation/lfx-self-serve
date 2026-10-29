@@ -38,7 +38,8 @@ Available scales:
 - Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form still uses the header. Full spec: `docs/architecture/frontend/component-architecture.md` § Page header.
 - Exception: Health Metrics (`health-metrics-gate`) builds its own sticky header, because its design sets a different title type (Roboto Slab light at 24px, 13px subtitle) and pins the tab bar inside it.
 
-## Tailwind & PrimeNG wrappers
+## Tailwind, PrimeNG wrappers & uikit
 
 - Tailwind first; reach for custom SCSS only for PrimeNG overrides, complex animations, or pseudo-elements
 - All PrimeNG components are accessed through LFX wrapper components in `shared/components/` — don't reach for raw `<p-*>` components directly in feature module templates if a wrapper exists
+- `shared/uikit/` (`lfx-ui-*`) is the PrimeNG-free component library; prefer a uikit component when one covers the need, and never import PrimeNG inside it
