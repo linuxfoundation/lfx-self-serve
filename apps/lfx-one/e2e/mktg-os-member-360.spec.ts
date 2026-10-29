@@ -501,7 +501,7 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
     if (state === 'load-error') {
       await expect(page.getByTestId('member-360-error')).toContainText('could not be checked', { timeout: 15000 });
     } else if (state === 'empty') {
-      await expect(page.getByTestId('member-360-generating')).toContainText('The questions are not available yet.', { timeout: 15000 });
+      await expect(page.getByTestId('member-360-generating')).toContainText('Member 360 is working on your report.', { timeout: 15000 });
       await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
     } else {
       await expect(page.getByTestId('member-360-questions')).toContainText('Member 360 needs your answers to finish.', { timeout: 15000 });
