@@ -235,8 +235,12 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         await expect(label).toHaveCSS('word-break', 'normal');
         await expect(label).toHaveCSS('overflow-wrap', 'normal');
         await expect(label).toHaveCSS('hyphens', 'none');
-        await expect(label).toHaveCSS('letter-spacing', 'normal');
-        await expect(label).toHaveCSS('text-transform', 'none');
+        await expect(label).toHaveCSS('text-transform', 'uppercase');
+        const tracking = await label.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
+        });
+        expect(tracking).toBeCloseTo(0.16);
       }
       // Visibility-only hiding leaves screen canvas height behind. The entire
       // ancestor chain must be white/content-sized, and siblings out of flow.

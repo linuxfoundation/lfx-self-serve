@@ -326,6 +326,8 @@ describe('Family export slot', () => {
       expect(getComputedStyle(label).overflowWrap).toBe('normal');
       expect(getComputedStyle(label).wordBreak).toBe('normal');
       expect(getComputedStyle(label).hyphens).toBe('none');
+      expect(label.classList.contains('uppercase')).toBe(true);
+      expect(label.classList.contains('tracking-[0.16em]')).toBe(true);
     });
     expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
     expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
