@@ -9,6 +9,7 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES } from '@lfx-one/shared/constants';
 import type { MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MktgFieldCommentsComponent } from '../../modules/mktg-os-agents/components/mktg-field-comments/mktg-field-comments.component';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { ProjectContextService } from './project-context.service';
 import { UserService } from './user.service';
@@ -114,6 +115,43 @@ describe('MktgDocumentCommentsService', () => {
     finishRead();
     expect(service.fieldDraft('mf.vision', create)).toBe(immediate);
     http.expectNone((request) => request.method === 'POST');
+  });
+
+  it('keeps an open field composer, text and focus through two real same-scope HTTP refreshes', async () => {
+    service.select(SCOPE);
+    finishRead([thread()]);
+    const fixture = TestBed.createComponent(MktgFieldCommentsComponent);
+    fixture.componentRef.setInput('field', 'mf.tagline');
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    element.querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button')?.click();
+    await fixture.whenStable();
+    const textarea = element.querySelector('textarea');
+    if (!textarea) throw new Error('Missing synthetic field composer');
+    textarea.value = 'Synthetic draft kept while comments refresh.';
+    textarea.dispatchEvent(new Event('input'));
+    textarea.focus();
+    await fixture.whenStable();
+    const draft = service.fieldDraft('mf.tagline');
+    for (let cycle = 0; cycle < 2; cycle++) {
+      service.refresh(); // The panel delegates directly to this existing same-scope read.
+      fixture.detectChanges();
+      expect(service.loading()).toBe(true);
+      expect(service.loaded()).toBe(true);
+      expect(element.querySelector('textarea')).toBe(textarea);
+      expect(document.activeElement).toBe(textarea);
+      finishRead([{ ...thread(), text: `Server thread update ${cycle + 1}` }]);
+      await fixture.whenStable();
+      expect(service.fieldDraft('mf.tagline')).toBe(draft);
+      expect(draft.opened()).toBe(true);
+      expect(element.querySelector('textarea')).toBe(textarea);
+      expect(textarea.value).toBe('Synthetic draft kept while comments refresh.');
+      expect(draft.form.controls.text.value).toBe(textarea.value);
+      expect(document.activeElement).toBe(textarea);
+      expect(element.textContent).toContain(`Server thread update ${cycle + 1}`);
+    }
+    http.expectNone((request) => request.method !== 'GET');
+    fixture.destroy();
   });
 
   it('shows the authoritative list without writing when a stored view is reopened', () => {

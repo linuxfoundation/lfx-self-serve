@@ -8,6 +8,8 @@
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
 @use 'styles/mktg-family-print';
+/* LFX UI Library tokens (generated); see shared/uikit/README.md */
+@use 'styles/ui-tokens.css';
 
 @layer tailwind-base, primeng, tailwind-utilities;
 
@@ -202,6 +204,11 @@
   @tailwind components;
   @tailwind utilities;
 }
+/* shortcut: CDK overlays above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
+.cdk-overlay-container {
+  z-index: 10000;
+}
+
 /* PrimeNG component overrides */
 .p-toggleswitch .p-toggleswitch-handle {
   border-radius: 9999px;
@@ -530,6 +537,29 @@ html {
   width: 100% !important;
   max-width: 100% !important;
   white-space: normal !important;
+}
+
+// Health Metrics help tips: the design's dark bubble, 8px off the icon, with no arrow. Appended to <body> like the
+// tooltips above, so styled globally; PrimeNG flips the bubble above the icon when there's no room below.
+.p-tooltip.lfx-hm-tip {
+  max-width: 320px !important;
+  padding: 8px 0 !important;
+}
+
+.p-tooltip.lfx-hm-tip .p-tooltip-arrow {
+  display: none;
+}
+
+.p-tooltip.lfx-hm-tip .p-tooltip-text {
+  padding: 10px 12px !important;
+  border-radius: 8px !important;
+  background: theme('colors.gray.900') !important;
+  box-shadow: 0 4px 12px theme('colors.gray.900 / 18%') !important;
+  color: theme('colors.white') !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 17px !important;
+  white-space: pre-line !important;
 }
 
 // Public-profile visibility drawer Private/Public master control. PrimeNG appends the drawer to <body>,

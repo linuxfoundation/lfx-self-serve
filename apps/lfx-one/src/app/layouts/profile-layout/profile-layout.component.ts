@@ -512,6 +512,11 @@ export class ProfileLayoutComponent {
   // Re-fetch identities on the Identities tab's refresh signal (LFXV2-2767) so the panel's GitHub
   // handle and tab-notification dots stay current without a full reload.
   private initIdentities(): Signal<EnrichedIdentity[]> {
+    // Browser only, like the Identities tab: an SSR fetch is a second GET that re-runs the server's
+    // CDP identity reconcile alongside the browser's (#4523).
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal([] as EnrichedIdentity[]);
+    }
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),

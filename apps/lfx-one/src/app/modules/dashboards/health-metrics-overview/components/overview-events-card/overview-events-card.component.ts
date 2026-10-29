@@ -77,7 +77,7 @@ export class OverviewEventsCardComponent {
     const data: HealthMetricsOverviewTrendDialogData = { event, isPast: row.isPast };
     const ref = this.dialogService.open(OverviewEventTrendDialogComponent, {
       showHeader: false,
-      width: 'min(720px, calc(100vw - 32px))',
+      width: 'min(1040px, calc(100vw - 32px))',
       contentStyle: { padding: '22px' },
       modal: true,
       draggable: false,

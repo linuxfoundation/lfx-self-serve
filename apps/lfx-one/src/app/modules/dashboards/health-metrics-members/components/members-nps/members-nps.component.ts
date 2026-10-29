@@ -60,8 +60,8 @@ export class MembersNpsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -100,6 +100,8 @@ export class MembersNpsComponent {
   protected readonly trendNote: Signal<HealthMetricsMembersNpsTrendNote | null> = computed(() => buildHealthMetricsMembersNpsTrendNote(this.trend()));
   protected readonly hasLowConfidenceWave = computed(() => this.trend().some((point) => point.isLowConfidence));
   protected readonly noSurvey = computed(() => this.selectedAudience() === null);
+  /** No audience was surveyed in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noSurvey());
   protected readonly distributionLabel = computed(
     () =>
       `Response distribution: ${this.segments()
@@ -203,7 +205,9 @@ export class MembersNpsComponent {
               }
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && !response.audiences.some((candidate) => candidate.audience === response.selectedAudience));
+              }
             })
           )
         )

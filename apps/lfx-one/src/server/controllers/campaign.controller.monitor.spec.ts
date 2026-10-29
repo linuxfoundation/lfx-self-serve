@@ -23,6 +23,8 @@ const {
   svcTwitter,
   svcHubSpot,
   svcConnection,
+  svcGoogleAccounts,
+  svcTwitterAccounts,
   legacyMeta,
   legacyReddit,
   legacyGoogle,
@@ -43,6 +45,8 @@ const {
   svcTwitter: vi.fn(),
   svcHubSpot: vi.fn(),
   svcConnection: vi.fn(),
+  svcGoogleAccounts: vi.fn(),
+  svcTwitterAccounts: vi.fn(),
   legacyMeta: vi.fn(),
   legacyReddit: vi.fn(),
   legacyGoogle: vi.fn(),
@@ -68,6 +72,8 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getTwitterAdsAccountMonitor = svcTwitter;
       public getHubSpotAccountMonitor = svcHubSpot;
       public getConnection = svcConnection;
+      public listGoogleAdsAccounts = svcGoogleAccounts;
+      public listTwitterAdsAccounts = svcTwitterAccounts;
       public getGoogleAdsKeywords = svcKeywords;
       public getGoogleAdsAudience = svcAudience;
     },
@@ -485,6 +491,201 @@ describe('CampaignController.getHubSpotMonitor', () => {
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(503);
     expect(error.toResponse()['error']).toBe('HubSpot metrics are temporarily unavailable. Please try again shortly.');
+  });
+});
+
+describe('CampaignController.getGoogleAdsAccounts', () => {
+  it('answers 404 while the flag is off, reading nothing', async () => {
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(404);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it("maps campaign-service's accounts onto the Meta/Reddit option shape, labelling an unlabelled one by its id", async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({
+      accounts: [{ id: '1000000001', label: 'CNCF Search' }, { id: '1000000002', label: '' }, { id: '1000000003' }],
+    });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: ' tlf ' }), res, vi.fn());
+
+    expect(svcGoogleAccounts).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(res.json).toHaveBeenCalledWith([
+      { key: '1000000001', label: 'CNCF Search' },
+      { key: '1000000002', label: '1000000002' },
+      { key: '1000000003', label: '1000000003' },
+    ]);
+  });
+
+  it('answers an empty list as an empty list', async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({ accounts: [] });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('requires a project', async () => {
+    flag(true);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({}), buildRes(), next);
+
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-root caller before any upstream call, whatever the flag says', async () => {
+    flag(true);
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.toResponse()['code']).toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['absent', {}],
+    ['not an array', { accounts: null }],
+  ])('fails the read with a 502 when accounts is %s, never an empty list', async (_case, payload) => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+  });
+
+  it("passes campaign-service's own failure through with its status", async () => {
+    flag(true);
+    const upstream = MicroserviceError.fromMicroserviceResponse(
+      404,
+      'Not Found',
+      { name: 'NotFound', message: 'no Google Ads connection configured for this project' },
+      'LFX_V2_CAMPAIGN_SERVICE',
+      '/p'
+    );
+    svcGoogleAccounts.mockRejectedValueOnce(upstream);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect(nextError(next)).toBe(upstream);
+  });
+});
+
+/**
+ * Which X ad account an X create uses (LFXV2-3319): the account list beside the project's own X
+ * connection. Gated on X creation (cutover + TWITTER_CREATE), and root-only because a project with
+ * no X connection of its own is answered from the LF system credential.
+ */
+describe('CampaignController.getTwitterCreateCapability', () => {
+  it.each([
+    ['off', () => false, false],
+    ['on with the create cutover', () => true, true],
+    ['on without the create cutover', (f: unknown) => f === ServerFeatureFlag.CampaignServiceTwitterCreate, false],
+  ])('answers X creation %s as the deployment-wide capability', (_label, flags, enabled) => {
+    isServerFeatureEnabled.mockImplementation(flags);
+    const res = buildRes();
+
+    new CampaignController().getTwitterCreateCapability(buildReq({}), res);
+
+    expect(res.json).toHaveBeenCalledWith({ enabled });
+  });
+});
+
+describe('CampaignController.getTwitterAdsAccounts', () => {
+  const twitterOn = (): void => {
+    isServerFeatureEnabled.mockImplementation((f) => f !== ServerFeatureFlag.CampaignServiceMonitor);
+  };
+
+  it('answers 404 while X creation is off, reading nothing', async () => {
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(404);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
+    expect(svcConnection).not.toHaveBeenCalled();
+  });
+
+  it('answers the accounts and the bound account of the project connection', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }, { id: '8r7gb' }] });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: ' tlf ' }), res, vi.fn());
+
+    expect(svcTwitterAccounts).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'twitter-ads');
+    expect(res.json).toHaveBeenCalledWith({
+      accounts: [
+        { key: '18ce54d4x5t', label: 'Linux Foundation' },
+        { key: '8r7gb', label: '8r7gb' },
+      ],
+      connection: { state: 'connected', accountId: '18ce54d4x5t', label: 'LF X' },
+    });
+  });
+
+  it('reports a connection with no account bound, which the create would be refused for', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '', has_credentials: true, status: 'active' });
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ connection: { state: 'no_account', accountId: null } });
+  });
+
+  it('refuses a non-root caller before any upstream call', async () => {
+    twitterOn();
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.toResponse()['code']).toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
+  });
+
+  it('fails the read with a 502 when accounts is not an array, never an empty list', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: null });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: 'a', has_credentials: true, status: 'active' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+  });
+
+  it('requires a project', async () => {
+    twitterOn();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({}), buildRes(), next);
+
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
   });
 });
 

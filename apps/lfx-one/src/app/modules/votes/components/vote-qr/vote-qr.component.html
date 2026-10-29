@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<svg
+  [attr.viewBox]="'0 0 ' + size() + ' ' + size()"
+  role="img"
+  [attr.aria-label]="label()"
+  shape-rendering="crispEdges"
+  class="block w-full h-auto bg-white text-black"
+  data-testid="vote-qr">
+  <path [attr.d]="path()" fill="currentColor" />
+</svg>

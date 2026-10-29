@@ -5,7 +5,7 @@ import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { injectOverviewCardRead } from './overview-card-read';
 
@@ -14,7 +14,7 @@ import type { HealthMetricsOverviewCardRead } from '@lfx-one/shared/interfaces';
 describe('injectOverviewCardRead', () => {
   let foundation: WritableSignal<{ slug: string } | null>;
   let responses: Record<string, Subject<string>>;
-  let read: ReturnType<typeof vi.fn>;
+  let read: Mock;
 
   function setup(platform = 'browser'): HealthMetricsOverviewCardRead<string> {
     TestBed.configureTestingModule({

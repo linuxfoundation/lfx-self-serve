@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@for (item of visible(); track item) {
+  <lfx-ui-avatar
+    [name]="item.name"
+    [src]="item.src ?? ''"
+    [tone]="item.tone ?? 'neutral'"
+    [size]="size()"
+    [stacked]="true"
+    [style.margin-left.px]="$index === 0 ? 0 : overlap()" />
+}
+@if (overflow() > 0) {
+  <lfx-ui-avatar
+    [name]="overflow() + ' more'"
+    [initials]="'+' + overflow()"
+    [size]="size()"
+    [stacked]="true"
+    [style.margin-left.px]="overlap()"
+    data-testid="ui-avatar-group-more" />
+}

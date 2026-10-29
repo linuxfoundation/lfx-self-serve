@@ -10,26 +10,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 // Defaults to null so every suite here bypasses the cache; the cache-contract suite opts in.
-const { buildOrgCacheKey, getJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn() }));
+const { buildOrgCacheKey, getJson, setJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn(), setJson: vi.fn() }));
 
-vi.mock('./snowflake.service', () => ({
-  SnowflakeService: class {
-    public static getInstance() {
-      return { execute };
-    }
-    public static isMissingObjectError() {
-      return false;
-    }
-  },
-}));
+vi.mock('./snowflake.service', async () => {
+  // The real predicate, so a missing-object degrade (and which object is blamed) runs as in production.
+  const { isMissingObjectError } = await import('../helpers/snowflake-error.helper');
+  return {
+    SnowflakeService: class {
+      public static getInstance() {
+        return { execute };
+      }
+      public static isMissingObjectError(error: unknown, expectedObject?: string) {
+        return isMissingObjectError(error, expectedObject);
+      }
+    },
+  };
+});
 vi.mock('./valkey.service', () => ({
   buildOrgCacheKey,
-  valkeyService: { getJson, setJson: vi.fn() },
+  valkeyService: { getJson, setJson },
 }));
 // See org-lens-projects.service.spec.ts for why this delegates to the real classification utils instead of stubbing.
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
+    ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
     buildInsightsUrl: () => '',
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
@@ -472,6 +477,30 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   });
 });
 
+describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('TECH_COMMITS_PCT')) return { rows: [{ TECH_COMMITS_PCT: 12.34 }] };
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return { rows: [] };
+    });
+  });
+
+  it('labels the card "Commits" under a versioned cache key', async () => {
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+
+    const commits = block!.technical.find((card) => card.key === 'commits');
+    expect(commits?.label).toBe('Commits');
+    expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v3:/));
+  });
+});
+
 /**
  * The board is cached for an hour, so entries written before it began serving `organizationId`
  * outlive the deploy that needs it. Those rows are structurally valid but cannot open the drawer:
@@ -551,6 +580,142 @@ describe('OrgLensProjectDetailService.getCardRoster paging', () => {
     await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10);
 
     expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});
+
+describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('AS MAINTAINER_ROLES')) return { rows: [{ MAINTAINER_ROLES: 3 }] };
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      if (sql.includes(' AS N ')) return { rows: [{ N: 2 }] };
+      if (sql.includes('MAINTAINER_NAME')) {
+        return {
+          rows: [
+            { MAINTAINER_NAME: 'Ada Lovelace', ROLE_START_DATE: '2000-01-01', ROLE_END_DATE: null },
+            { MAINTAINER_NAME: 'Grace Hopper', ROLE_START_DATE: '2024-03-05', ROLE_END_DATE: '2025-06-30' },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+  });
+
+  function callsOn(table: string): [string, unknown[]][] {
+    return (execute.mock.calls as [string, unknown[]][]).filter(([sql]) => sql.includes(table));
+  }
+
+  it.each([
+    ['1y', [ORG, SLUG, 365]],
+    ['2y', [ORG, SLUG, 730]],
+    ['all', [ORG, SLUG]],
+  ] as const)('counts the card for toggle %s from the roles overlapping its range', async (range, binds) => {
+    const block = await service.getInfluenceBlock(ORG, SLUG, range);
+
+    const card = block!.technical.find((entry) => entry.key === 'maintainers');
+    expect(card?.label).toBe('Maintainer roles');
+    expect(card?.caption).toEqual({ prefix: 'Our company holds ', emphasis: '3', suffix: ' maintainer roles on this project.' });
+    const [[sql, bound]] = callsOn('ORG_MAINTAINER_ROLES');
+    expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+    expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE()');
+    expect(sql.includes('ROLE_END_DATE')).toBe(range !== 'all');
+    expect(bound).toEqual(binds);
+    expect(callsOn('ORG_LENS_PROJECT_DETAIL_CARDS')[0]?.[0]).not.toContain('TECH_MAINTAINERS_COUNT');
+  });
+
+  it('shows the maintainers card as unavailable, not "no roles", and does not store the block, when the roles table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('influence-key');
+    getJson.mockResolvedValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return { rows: sql.includes('PROJECT_NAME') ? [heroRow] : [] };
+    });
+
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+
+    expect(block!.technical.find((entry) => entry.key === 'maintainers')?.caption).toEqual({
+      prefix: 'No data for this metric yet.',
+      emphasis: '',
+      suffix: '',
+    });
+    // The hero row may still be cached; the influence block (the one carrying the cards) must not be.
+    expect(setJson).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ technical: expect.anything() }), expect.anything());
+  });
+
+  it.each([
+    ['1y', [ORG, SLUG, 365]],
+    ['all', [ORG, SLUG]],
+  ] as const)('lists one roster row per role overlapping toggle %s, the same rows the card counts', async (range, binds) => {
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', range, 0, 10);
+
+    expect(page.total).toBe(2);
+    expect(page.rows.map((row) => row.cells.slice(1).map((cell) => cell.text))).toEqual([
+      ['Unknown', 'Current'],
+      ['Mar 5, 2024', 'Jun 30, 2025'],
+    ]);
+    const rosterCalls = callsOn('ORG_MAINTAINER_ROLES');
+    expect(rosterCalls).toHaveLength(2);
+    for (const [sql, bound] of rosterCalls) {
+      expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+      expect(sql).toContain('ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID');
+      expect(bound).toEqual(binds);
+    }
+    // The roster total counts the same distinct roles as the card.
+    expect(rosterCalls.some(([sql]) => sql.includes('SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS N'))).toBe(true);
+    expect(callsOn('ORG_LENS_PROJECT_DETAIL_MAINTAINERS')).toEqual([]);
+  });
+
+  it('pages the roster without avatars, and does not store it, when only the avatar table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('roster-key');
+    getJson.mockResolvedValue(null);
+    setJson.mockClear();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_PROJECT_PEOPLE' does not exist or not authorized.");
+      }
+      if (sql.includes(' AS N ')) return { rows: [{ N: 1 }] };
+      return { rows: [{ MAINTAINER_NAME: 'Ada Lovelace', PERSON_AVATAR_URL: null, ROLE_START_DATE: '2024-03-05', ROLE_END_DATE: null }] };
+    });
+
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+
+    expect(page.total).toBe(1);
+    expect(page.rows.map((row) => row.cells.slice(1).map((cell) => cell.text))).toEqual([['Mar 5, 2024', 'Current']]);
+    const fallbackCalls = callsOn('ORG_MAINTAINER_ROLES').filter(([sql]) => !sql.includes('ORG_LENS_PROJECT_PEOPLE'));
+    expect(fallbackCalls).toHaveLength(2);
+    for (const [sql, bound] of fallbackCalls) {
+      expect(sql).toContain('WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?');
+      expect(bound).toEqual([ORG, SLUG, 365]);
+    }
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('degrades the roster to empty, and does not store it, when the roles table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('roster-key');
+    getJson.mockResolvedValue(null);
+    setJson.mockClear();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return { rows: [] };
+    });
+
+    expect(await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).toEqual({ rows: [], total: 0 });
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('still fails the roster on any other error', async () => {
+    execute.mockRejectedValue(new Error('Warehouse timeout'));
+
+    await expect(service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).rejects.toThrow('Warehouse timeout');
   });
 });
 

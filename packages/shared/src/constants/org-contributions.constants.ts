@@ -2,26 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  ContributionsDateRange,
-  ContributionsDateRangeOption,
+  ContributionsMetricLabels,
+  OrgCodeMetric,
   OrgContributionsKpis,
   OrgContributionsQuery,
   OrgContributionsResponse,
+  OrgProjectScope,
 } from '../interfaces';
+import { DEFAULT_ORG_COMMIT_FILTERS, ORG_CODE_METRIC_LABEL } from './org-commit-filters.constants';
+import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
-// Org Lens → Code Contributions page (LFXV2-1894). Date-range vocab 30d/90d/12mo/all
-// mirrors the People → Contributors tab; default = Past 12 Months per the prototype.
-
-/** Default date-range window — Past 12 Months per the prototype default. */
-export const CONTRIBUTIONS_DEFAULT_DATE_RANGE: ContributionsDateRange = '12mo';
-
-/** Date-range dropdown options — ordered widest-first to match the prototype. */
-export const CONTRIBUTIONS_DATE_RANGE_OPTIONS: readonly ContributionsDateRangeOption[] = [
-  { label: 'Past 12 Months', value: '12mo' },
-  { label: 'Past 90 Days', value: '90d' },
-  { label: 'Past 30 Days', value: '30d' },
-  { label: 'All Time', value: 'all' },
-] as const;
+// Org Lens → Code Contributions page (LFXV2-1894). Range set shared with the People tabs (org-lens-time-range.constants).
 
 /** Default Repositories page size — Org Lens convention is 10 (open question pending; see ticket). */
 export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
@@ -29,21 +20,36 @@ export const CONTRIBUTIONS_DEFAULT_PAGE_SIZE = 10;
 /** Page-size selector options on the Repositories pagination footer. */
 export const CONTRIBUTIONS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50] as const;
 
+/** Repositories-table headers per metric. */
+export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, ContributionsMetricLabels>> = {
+  commits: { count: ORG_CODE_METRIC_LABEL.commits, firstDate: 'First Commit', lastDate: 'Last Commit' },
+  code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution' },
+};
+
+/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, since the default is LF projects (lfx-self-serve#4160). */
+export const CONTRIBUTIONS_PROJECT_SCOPE_PHRASE: Readonly<Record<OrgProjectScope, string>> = {
+  all: ' in LF and non-LF projects',
+  lf: ' in LF projects',
+  non_lf: ' outside LF projects',
+};
+
 /** Server-accepted page-size ceiling (clamps the `size` query param; not exposed in the table footer). */
 export const CONTRIBUTIONS_MAX_PAGE_SIZE = 100;
 
 /**
  * Most distinct values accepted per `projects` / `employees` filter.
- * @description Each value becomes Snowflake bind variables (three per project, one per employee), so the
+ * @description Each value becomes Snowflake bind variables (two per project, one per employee), so the
  * server rejects a longer list with a 400 before building SQL, and the filter dropdowns stop selection here.
  */
 export const CONTRIBUTIONS_MAX_FILTER_VALUES = 50;
 
-/** Default empty filter/pagination state — Repositories tab, Commits desc, page 1. */
+/** Default empty filter/pagination state — Repositories tab, Commits desc, page 1, default commit filters. */
 export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
+  ...DEFAULT_ORG_COMMIT_FILTERS,
   view: 'repositories',
-  dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
   search: '',
+  foundation: '',
   projects: [],
   employees: [],
   sort: 'commits',
@@ -64,10 +70,11 @@ export const EMPTY_ORG_CONTRIBUTIONS_KPIS: OrgContributionsKpis = {
 /** Zero-valued Contributions response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTIONS_RESPONSE: OrgContributionsResponse = {
   accountId: '',
-  dateRange: CONTRIBUTIONS_DEFAULT_DATE_RANGE,
+  dateRange: ORG_LENS_DEFAULT_TIME_RANGE,
   kpis: EMPTY_ORG_CONTRIBUTIONS_KPIS,
   repositories: [],
   commits: [],
+  foundationOptions: [],
   projectOptions: [],
   employeeOptions: [],
   totalRecords: 0,

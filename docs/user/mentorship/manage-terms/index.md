@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 A **term** is a dated run of a program. Applications are always made to a term, not to the program as a whole. Only a Program Admin can create or change a term.
 
+![A program’s Terms tab, with each term’s status, application counts and dates](/images/docs/mentorship/manage-terms.png)
+
 ## Before you begin
 
 - You must be a Program Admin on the program.

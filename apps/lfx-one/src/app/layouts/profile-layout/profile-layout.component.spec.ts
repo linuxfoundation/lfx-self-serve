@@ -8,6 +8,7 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_CALLBACK_RETRY_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
@@ -467,7 +468,11 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     };
   }
 
-  async function setup(identities: EnrichedIdentity[], refresh$ = new Subject<void>()): Promise<ComponentFixture<ProfileLayoutComponent>> {
+  async function setup(
+    identities: EnrichedIdentity[],
+    refresh$ = new Subject<void>(),
+    platformId: 'browser' | 'server' = 'browser'
+  ): Promise<ComponentFixture<ProfileLayoutComponent>> {
     const userServiceMock = {
       user: signal({ user_id: 'u1' } as unknown as User),
       impersonating: signal(false),
@@ -485,7 +490,7 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
     TestBed.configureTestingModule({
       imports: [ProfileLayoutComponent],
       providers: [
-        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: PLATFORM_ID, useValue: platformId },
         { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
         { provide: UserService, useValue: userServiceMock },
@@ -504,6 +509,20 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
   beforeEach(() => {
     sessionStorage.clear();
     TestBed.resetTestingModule();
+  });
+
+  // #4523: an SSR fetch is a second identities GET that re-runs the server's CDP reconcile.
+  it('does not fetch identities during SSR', async () => {
+    const fixture = await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })], new Subject<void>(), 'server');
+
+    expect(TestBed.inject(UserService).getIdentities).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.emailInfo()).toBe('old-primary@example.org');
+  });
+
+  it('fetches identities once in the browser', async () => {
+    await setup([makeIdentity({ id: 'primary-email', value: 'new-primary@example.org', isPrimary: true })]);
+
+    expect(TestBed.inject(UserService).getIdentities).toHaveBeenCalledOnce();
   });
 
   it('shows the identities primary instead of a stale profile email', async () => {
@@ -679,6 +698,24 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
         email_status: status,
       },
       'server'
+    );
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBe(pendingSave);
+  });
+
+  // #4327: the social already-connected marker belongs to the Identities tab (or the mentorship
+  // card), never to this layout — a second toast or refresh here would duplicate the child's notice.
+  it.each(['browser', 'server'])('leaves the social already-connected marker to the child consumer (%s)', async (platform) => {
+    const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
+
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(
+      `/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`,
+      { success: IDENTITY_ALREADY_CONNECTED_STATUS },
+      platform
     );
 
     expect(add).not.toHaveBeenCalled();

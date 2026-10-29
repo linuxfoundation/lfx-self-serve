@@ -40,6 +40,10 @@ export class InputTextComponent {
   public invalid = input<boolean>(false);
   /** Marks the control mandatory for assistive tech (wired to aria-required). */
   public required = input<boolean>(false);
+  /** Accessible name for an input with no visible `<label>` (e.g. a search box whose only hint is its placeholder). */
+  public ariaLabel = input<string>();
+  /** The virtual keyboard to offer (e.g. `decimal` for an amount kept as text), or none when omitted. */
+  public inputmode = input<string>();
 
   /**
    * Combobox wiring, for the typeahead pickers that put a results list under this field.

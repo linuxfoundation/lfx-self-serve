@@ -42,9 +42,22 @@ export class Member360WorkbookController {
         throw ServiceValidationError.forField('filename', 'Use a URI-encoded tracker filename header.', { operation });
       }
       const tracker = await this.service.parseTracker(req, this.query(req, 'project'), filename, req.body);
-      logger.success(req, operation, start, { rows: tracker.rows.length });
+      logger.success(req, operation, start, { rows: tracker.rowCount });
       res.setHeader('Cache-Control', 'private, no-store');
       res.json(tracker);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async deleteTracker(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'member_360_tracker_delete';
+    const start = logger.startOperation(req, operation, {});
+    try {
+      await this.service.deleteTracker(req, this.query(req, 'project'), String(req.params['id'] ?? ''));
+      res.setHeader('Cache-Control', 'private, no-store');
+      logger.success(req, operation, start, {});
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

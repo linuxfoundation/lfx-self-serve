@@ -1,10 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The export's panel: shown once there is a last export or an export under way; the header's button drives it. -->
+<!-- Reserve the first lookup's panel before showing export history; the header's button drives export actions. -->
 <div class="flex flex-col gap-3" aria-live="polite" data-testid="mktg-slides-export">
   @if (visible()) {
     <div class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3" data-testid="mktg-slides-export-panel">
+      @if (lookupPending()) {
+        <!-- Match the last-export row's text-xs line box, with the same panel padding/border. -->
+        <lfx-mktg-skeleton variant="rows" [rows]="1" class="block h-[1lh] overflow-hidden text-xs" data-testid="mktg-slides-export-lookup-loading" />
+      }
       @switch (phase()) {
         @case ('choosing') {
           <div class="flex flex-col gap-2" data-testid="mktg-slides-export-choice">

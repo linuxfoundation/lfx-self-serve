@@ -207,6 +207,22 @@ export const EMAIL_ALREADY_CONNECTED_SUMMARY = 'Already connected';
  */
 export const EMAIL_ALREADY_CONNECTED_MESSAGE = 'This email is already connected to your account.';
 
+/**
+ * Social callback `success` marker: the reconnected social identity resolved to the caller's own
+ * account (same subject), so the callback returned without linking, verifying, or syncing anything.
+ * A UI notice only — never proof of verification or ownership.
+ */
+export const IDENTITY_ALREADY_CONNECTED_STATUS = 'identity_already_connected';
+
+/** Shared toast heading for a social identity already connected to the caller's account. */
+export const IDENTITY_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
+/**
+ * Success copy for a social identity already connected to the caller's account. Deliberately avoids
+ * the "already linked" markers, so it can never trigger the linked-to-another-account support link.
+ */
+export const IDENTITY_ALREADY_CONNECTED_MESSAGE = 'This identity is already connected to your account.';
+
 /** Query parameter carrying the pending-email outcome on the Flow C authorization-success redirect. */
 export const EMAIL_CALLBACK_STATUS_PARAM = 'email_status';
 

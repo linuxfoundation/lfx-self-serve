@@ -4,7 +4,7 @@ description: How to view initiative details, edit settings, and archive or activ
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
-last_updated: 2026-10-13
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
@@ -19,37 +19,41 @@ This article explains how to edit, archive, and activate crowdfunding initiative
 
 The detail page is organized into a header and two tabs.
 
+Select **Back to Initiatives** above the header to return to your initiatives list.
+
 **Header** shows:
 
 - Initiative name and fund type — see [Fund types](#fund-types) below
 - Description and industry tags
 - Initiative logo or fund-type icon
 - Current status badge
+- **On behalf of** and the organization or project name, for an attributed initiative
+- Actions: **View Public Page** (opens the initiative on the public crowdfunding site in a new tab), **Edit attribution** (see [Change an initiative's attribution](#change-an-initiatives-attribution)), **Settings**, and the **More** menu (⋯)
 
-**Overview tab** — sponsors, financial summary, and announcements.
+**Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description. A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
 
-**Financials tab** — detailed funding goals, distribution breakdown, and transaction history.
+**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table.
 
 ## Edit an initiative
 
 1. Open an initiative from the [View Initiatives](../view-initiatives/) page.
-1. Select **Edit Initiative** to open the settings drawer.
+1. Select **Settings** in the initiative header to open the **Initiative Settings** drawer.
 1. Update fields across the settings tabs:
-   - **Initiative Details** — name, description, topics, website URL
+   - **Initiative details** — name, elevator pitch, topics, website URL
    - **Branding** — logo image
    - **Beneficiaries** — add or remove by name and email
    - **Funding** — goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation
    - **Sponsorship Tiers** — choose a donation option (open amount or tiered), then configure the goal and benefits for each enabled tier
    - **Announcements** — add, edit, or delete announcements shown to sponsors on the initiative's Overview tab
-1. Save your changes.
+1. Select **Save changes**.
 
-> **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's Save button.
+> **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's **Save changes** button.
 
 ## Change an initiative's attribution
 
 An initiative can be attributed to you personally, to an organization, or to a project or foundation. An attributed initiative shows that organization's or project's name and logo on its public page. In LFX Self Serve, the initiative header shows it as **On behalf of** followed by the name, and the initiatives list shows a building (organization) or folder (project) icon next to the initiative name; hover over either for details. Personal initiatives show neither.
 
-Only the person who created the initiative can change its attribution, and only while the initiative is **Submitted**. Once it moves on, the attribution is fixed.
+Only the person who created the initiative can change its attribution, and only while the initiative is **Submitted**. Once it moves on, the attribution is fixed. **Edit attribution** appears only when you open the initiative from **Crowdfunding → Initiatives** in the **Me** lens, not from a [lens-scoped Initiatives](../lens-initiatives/) page.
 
 1. Open a **Submitted** initiative from the [View Initiatives](../view-initiatives/) page.
 1. Select **Edit attribution** in the initiative header.
@@ -66,7 +70,7 @@ Archiving an initiative changes its status to Hidden. The initiative no longer a
 1. Open a **Published** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
 3. Select **Archive Initiative**.
-4. Confirm the action.
+4. Select **Archive** to confirm.
 
 The initiative moves to the **Archived** group in the initiatives list.
 
@@ -77,11 +81,11 @@ Activating an initiative changes its status back to Published. The initiative be
 1. Open an **Archived** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
 3. Select **Activate Initiative**.
-4. Confirm the action.
+4. Select **Activate** to confirm.
 
 The initiative moves to the **Active** group in the initiatives list.
 
-> **Note:** The **More** menu is only available for Published or Archived initiatives. Initiatives with a Pending or Submitted status do not have status-change actions available.
+> **Note:** The **More** menu is only available for Published or Archived (Hidden) initiatives. Initiatives with a Pending, Submitted, or Declined status do not have status-change actions available.
 
 ## Fund types
 
@@ -101,9 +105,10 @@ Archiving an initiative stops it from accepting new donations and cancels all ac
 Yes. An archived initiative can be reactivated at any time by selecting **Activate Initiative** from the **More** menu (⋯). The initiative will return to Published status and resume accepting donations.
 
 **Why can't I see the More menu on my initiative?**
-The **More** menu for archiving and activating is only available for initiatives with a Published or Archived (Hidden) status. Initiatives that are Pending or Submitted are still under review and cannot be manually archived or activated until the review is complete.
+The **More** menu for archiving and activating is only available for initiatives with a Published or Archived (Hidden) status. Initiatives that are Pending or Submitted are still under review and cannot be manually archived or activated until the review is complete. Declined initiatives have no status-change actions.
 
 ## Related
 
 - [View Initiatives](../view-initiatives/) — browse and filter your full list of initiatives
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
 - [Donations](../my-donations/) — view your donation history and manage payment methods

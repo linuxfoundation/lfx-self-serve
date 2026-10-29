@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<dl [class]="listClasses()" data-testid="ui-description-list">
+  <!-- Exact px gap, not rem; 14px root. -->
+  <dt class="label-14 inline-flex items-center gap-[6px] font-medium text-ui-neutral-600" data-testid="ui-description-label">
+    {{ label() }}
+    @if (help()) {
+      <!-- shortcut: native title tooltip, hover only. revisit: when lfx-ui-tooltip lands (#4661) -->
+      <i
+        class="fa-light fa-circle-question text-[12px] text-ui-neutral-500"
+        role="img"
+        [attr.aria-label]="help()"
+        [attr.title]="help()"
+        data-testid="ui-description-help"></i>
+    }
+  </dt>
+  <dd [class]="valueClasses()" [attr.title]="ellipsis() ? value() : null" data-testid="ui-description-value">{{ value() }}</dd>
+</dl>

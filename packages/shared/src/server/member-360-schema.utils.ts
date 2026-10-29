@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Required output fields mirror agents/member-360/src/envelope.ts at marketing-os-agents 45734bc6.
-// Additive envelope/input/row keys are stripped for 2.0 compatibility; required fields
-// and rendering constraints remain validated. Hash verification belongs to the BFF.
+// Unknown additive envelope/input/row keys are stripped for compatibility; known
+// optional inputs.research mirrors agent 2.1.1. Hash verification belongs to the BFF.
 import { z } from 'zod';
 import {
   CATEGORY_KEYS,
@@ -249,6 +249,16 @@ export const envelopeSchema = z
         trackers_count: z.number().int().min(1).optional(),
         prior_run_provided: z.boolean(),
         weight_overrides_provided: z.boolean(),
+        research: z
+          .object({
+            fetches: z.array(z.object({ url: z.string(), ok: z.boolean(), status: z.number().nullable(), final_url: z.string().nullable() }).strict()),
+            searches: z.array(z.string()),
+            lfx_reads: z.array(z.string()),
+            questions: z.array(z.object({ id: z.string(), question: z.string(), why: z.string(), suggested_answer: z.string(), basis: z.string() }).strict()),
+            answers: z.array(z.object({ id: z.string(), origin: z.enum(['requester', 'accepted', 'edited']), text: z.string() }).strict()),
+          })
+          .strict()
+          .optional(),
       })
       .strip(),
     intake: z.object({ completed_at: z.iso.datetime(), mode: z.literal('form') }).strict(),

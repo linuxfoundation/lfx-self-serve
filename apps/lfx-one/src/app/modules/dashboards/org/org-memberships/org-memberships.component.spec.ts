@@ -5,7 +5,7 @@ import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { Account, OrgActiveMembership, OrgActiveMembershipsResponse, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
+import type { Account, OrgActiveMembership, OrgActiveMembershipsResponse, OrgLensEmptyStateName, OrgMembershipProject } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
@@ -43,7 +43,27 @@ function activeResponse(memberships: OrgActiveMembership[] = []): OrgActiveMembe
   };
 }
 
-async function render(memberships: OrgActiveMembership[] = []) {
+function project(projectId: string, projectSlug: string, overrides: Partial<OrgMembershipProject> = {}): OrgMembershipProject {
+  return {
+    projectId,
+    projectSlug,
+    projectName: projectSlug,
+    isLfProject: true,
+    influence: 'Leading',
+    maintainers: 2,
+    contributors: 9,
+    collaborators: 4,
+    commits: 120,
+    ...overrides,
+  };
+}
+
+const DEFAULT_PROJECTS: OrgMembershipProject[] = [
+  project('p-1', 'k8s', { projectName: 'Kubernetes' }),
+  project('p-2', 'envoy', { projectName: 'Envoy', influence: 'Silent', maintainers: 0, contributors: 1, collaborators: 0, commits: 3 }),
+];
+
+async function render(memberships: OrgActiveMembership[] = [], projects: OrgMembershipProject[] = DEFAULT_PROJECTS) {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
   const settled = signal(true);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
@@ -77,35 +97,7 @@ async function render(memberships: OrgActiveMembership[] = []) {
           getActiveMemberships: () => of(activeResponse(memberships)),
           getExpiredMemberships: vi.fn(),
           getDiscoverOpportunities: vi.fn(),
-          getFoundationProjects: () =>
-            of({
-              accountId: 'acc-1',
-              foundationId: 'cncf',
-              projects: [
-                {
-                  projectId: 'p-1',
-                  projectSlug: 'k8s',
-                  projectName: 'Kubernetes',
-                  isLfProject: true,
-                  influence: 'Leading',
-                  maintainers: 2,
-                  contributors: 9,
-                  collaborators: 4,
-                  commits: 120,
-                },
-                {
-                  projectId: 'p-2',
-                  projectSlug: 'envoy',
-                  projectName: 'Envoy',
-                  isLfProject: true,
-                  influence: 'Silent',
-                  maintainers: 0,
-                  contributors: 1,
-                  collaborators: 0,
-                  commits: 3,
-                },
-              ],
-            }),
+          getFoundationProjects: () => of({ accountId: 'acc-1', foundationId: 'cncf', projects }),
         },
       },
     ],
@@ -131,6 +123,17 @@ async function settleActiveFetch(fixture: ComponentFixture<OrgMembershipsCompone
   await new Promise((resolve) => setTimeout(resolve, 350));
   await fixture.whenStable();
   fixture.detectChanges();
+}
+
+async function openProjectsPanel(fixture: ComponentFixture<OrgMembershipsComponent>): Promise<void> {
+  (fixture.nativeElement.querySelector('[data-testid="memberships-org-projects-cncf"]') as HTMLButtonElement).click();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
+function maintainerRolesText(projectSlug: string): string {
+  return document.querySelector(`[data-testid="membership-project-${projectSlug}-maintainer-roles"] > span`)?.textContent?.trim() ?? '';
 }
 
 describe('OrgMembershipsComponent', () => {
@@ -218,5 +221,24 @@ describe('OrgMembershipsComponent', () => {
     await settleActiveFetch(fixture);
 
     expect(has(fixture, 'memberships-org-projects-cncf')).toBe(false);
+  });
+
+  it('shows LF maintainer roles per project, and a dash, not zero, for unavailable roles or a non-LF project (lfx-self-serve#4482)', async () => {
+    const { fixture } = await render(
+      [membershipRow(3)],
+      [
+        project('p-1', 'k8s', { maintainers: 1234 }),
+        project('p-2', 'envoy', { maintainers: 0 }),
+        project('p-3', 'unavailable', { maintainers: null }),
+        project('p-4', 'non-lf', { isLfProject: false, maintainers: 0 }),
+      ]
+    );
+    await settleActiveFetch(fixture);
+    await openProjectsPanel(fixture);
+
+    expect(maintainerRolesText('k8s')).toBe('1,234');
+    expect(maintainerRolesText('envoy')).toBe('0');
+    expect(maintainerRolesText('unavailable')).toBe('—');
+    expect(maintainerRolesText('non-lf')).toBe('—');
   });
 });

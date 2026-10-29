@@ -1,0 +1,9 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Tailwind transitions use its own timing tokens; the library's 250ms standard ease runs only when motion is allowed.
+@media (prefers-reduced-motion: no-preference) {
+  .progress-fill {
+    transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}

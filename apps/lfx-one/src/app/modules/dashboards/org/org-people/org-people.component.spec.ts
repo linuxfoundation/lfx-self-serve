@@ -3,7 +3,7 @@
 
 import { Component, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import type { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -13,6 +13,7 @@ import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
+import { TraineesComponent } from './components/trainees/trainees.component';
 import { OrgPeopleComponent } from './org-people.component';
 
 // The shared drawer is mounted unconditionally and pulls HttpClient/feature flags; it is not under test here.
@@ -22,6 +23,9 @@ class PersonDetailDrawerStubComponent {}
 // The default tab fetches its own data; only the page shell is under test.
 @Component({ selector: 'lfx-org-people-all-employees', template: '' })
 class AllEmployeesStubComponent {}
+
+@Component({ selector: 'lfx-org-people-trainees', template: '' })
+class TraineesStubComponent {}
 
 describe('OrgPeopleComponent', () => {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
@@ -53,8 +57,8 @@ describe('OrgPeopleComponent', () => {
       ],
     })
       .overrideComponent(OrgPeopleComponent, {
-        remove: { imports: [PersonDetailDrawerComponent, AllEmployeesComponent] },
-        add: { imports: [PersonDetailDrawerStubComponent, AllEmployeesStubComponent] },
+        remove: { imports: [PersonDetailDrawerComponent, AllEmployeesComponent, TraineesComponent] },
+        add: { imports: [PersonDetailDrawerStubComponent, AllEmployeesStubComponent, TraineesStubComponent] },
       })
       .compileComponents();
 
@@ -92,5 +96,18 @@ describe('OrgPeopleComponent', () => {
     expect(el.querySelector('[data-testid="org-people-skeleton"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-people-tab-bar"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-people-title"]')?.textContent).toContain('Acme');
+  });
+
+  // Every People tab with a range reads `?range=`; switching tabs keeps it (and any other shared param) in the URL.
+  it('keeps the range in the URL when switching tabs', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?range=90d&projectScope=lf');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    (fixture.componentInstance as unknown as { switchTab(tabId: string): void }).switchTab('training');
+    await fixture.whenStable();
+
+    expect(router.url).toBe('/?range=90d&projectScope=lf&tab=training');
   });
 });

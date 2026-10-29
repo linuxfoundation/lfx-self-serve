@@ -6,17 +6,21 @@
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensAccessService } from '@services/org-lens-access.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import {
+  DEFAULT_ORG_EMPLOYMENT,
   EMPTY_ORG_ACCESS_LIST_RESPONSE,
   ORG_ACCESS_INITIAL_LIMIT,
   ORG_ACCESS_ROLE_BADGE_LABEL,
   ORG_ACCESS_ROLE_BADGE_TOOLTIP,
   ORG_ACCESS_TYPE_FILTER_OPTIONS,
+  ORG_EMPLOYMENT_LABEL,
+  ORG_EMPLOYMENT_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessFilter,
@@ -26,7 +30,10 @@ import type {
   OrgAccessSummary,
   OrgAccessTypeFilterOption,
   OrgAccessUser,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
 } from '@lfx-one/shared/interfaces';
+import { parseOrgEmploymentFilter } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -71,9 +78,13 @@ export class OrgLensAccessComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly initialLimit = ORG_ACCESS_INITIAL_LIMIT;
   protected readonly typeFilterOptions: OrgAccessTypeFilterOption[] = [...ORG_ACCESS_TYPE_FILTER_OPTIONS];
+  protected readonly employmentOptions: OrgEmploymentOption[] = [...ORG_EMPLOYMENT_OPTIONS];
+  protected readonly employmentLabel = ORG_EMPLOYMENT_LABEL;
   protected readonly roleBadgeLabel = ORG_ACCESS_ROLE_BADGE_LABEL;
   protected readonly roleBadgeTooltip = ORG_ACCESS_ROLE_BADGE_TOOLTIP;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4];
@@ -85,6 +96,8 @@ export class OrgLensAccessComponent {
   // Toolbar + pagination state.
   protected readonly searchTerm = signal<string>('');
   protected readonly typeFilter = signal<OrgAccessFilter>('all');
+  // Follows `?employment=` (lfx-self-serve#4627), shared with the other People tabs; written back on change, dropped at the default.
+  protected readonly employment = signal<OrgEmploymentFilter>(readEmployment(this.route.snapshot.queryParamMap.get('employment')));
   protected readonly limit = signal<number>(ORG_ACCESS_INITIAL_LIMIT);
   protected readonly retryTrigger = signal<number>(0);
 
@@ -114,6 +127,8 @@ export class OrgLensAccessComponent {
   protected readonly users: Signal<OrgAccessUser[]> = computed(() => this.listData().users);
   protected readonly summary: Signal<OrgAccessSummary> = computed(() => this.listData().summary);
   protected readonly canManage: Signal<boolean> = computed(() => this.listData().canManage);
+  // The former employees could not be read: nobody is flagged former, so a Current or Former pick cannot be trusted.
+  protected readonly showEmploymentUnavailable = computed(() => this.listData().employmentUnavailable === true && this.employment() !== 'all');
 
   protected readonly filteredUsers: Signal<OrgAccessUser[]> = computed(() => this.initFilteredUsers());
   protected readonly totalFiltered = computed(() => this.filteredUsers().length);
@@ -124,7 +139,9 @@ export class OrgLensAccessComponent {
   );
   protected readonly canShowAll = computed(() => this.limit() < this.totalFiltered());
   protected readonly dataState = computed(() => this.initDataState());
-  protected readonly isFiltering = computed(() => this.searchTerm().trim().length > 0 || this.typeFilter() !== 'all');
+  protected readonly isFiltering = computed(
+    () => this.searchTerm().trim().length > 0 || this.typeFilter() !== 'all' || this.employment() !== DEFAULT_ORG_EMPLOYMENT
+  );
   protected readonly footerCountLabel = computed(() => `Showing ${Math.min(this.limit(), this.totalFiltered())} of ${this.totalFiltered()} users`);
 
   // Disable the modal's Viewer option when the principal under edit is the last accepted Admin.
@@ -164,9 +181,36 @@ export class OrgLensAccessComponent {
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetState());
 
     // Reset pagination to the cap whenever a filter input changes.
-    combineLatest([toObservable(this.searchTerm), toObservable(this.typeFilter)])
+    combineLatest([toObservable(this.searchTerm), toObservable(this.typeFilter), toObservable(this.employment)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.limit.set(ORG_ACCESS_INITIAL_LIMIT));
+
+    // A query-only navigation (back/forward, another People tab writing the shared param) sets the picker.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => readEmployment(params.get('employment'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((employment) => this.employment.set(employment));
+  }
+
+  protected onEmploymentChange(employment: OrgEmploymentFilter): void {
+    this.employment.set(employment);
+    if (employment === readEmployment(this.route.snapshot.queryParamMap.get('employment'))) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { employment: employment === DEFAULT_ORG_EMPLOYMENT ? null : employment },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  /** Every filter back to its default; `?employment=` is dropped from the URL, other params are kept. */
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.typeFilter.set('all');
+    this.onEmploymentChange(DEFAULT_ORG_EMPLOYMENT);
   }
 
   protected retry(): void {
@@ -357,6 +401,7 @@ export class OrgLensAccessComponent {
   private initFilteredUsers(): OrgAccessUser[] {
     const q = this.searchTerm().trim().toLowerCase();
     const filter = this.typeFilter();
+    const employment = this.employment();
     return this.users().filter((user) => {
       if (q) {
         const inName = user.name.toLowerCase().includes(q);
@@ -364,6 +409,9 @@ export class OrgLensAccessComponent {
         const inEmail = user.email.toLowerCase().includes(q);
         if (!inName && !inTitle && !inEmail) return false;
       }
+      // A pending invite has no username to classify, so it is neither current nor former: listed only under All employees.
+      if (employment === 'current' && (user.isPending || user.isFormer === true)) return false;
+      if (employment === 'former' && user.isFormer !== true) return false;
       switch (filter) {
         case 'admin':
           return !user.isPending && user.role === 'admin';
@@ -378,6 +426,7 @@ export class OrgLensAccessComponent {
   }
 
   private resetState(): void {
+    // The employment filter is page-level URL state, not per-org, so an org switch keeps it.
     this.searchTerm.set('');
     this.typeFilter.set('all');
     this.limit.set(ORG_ACCESS_INITIAL_LIMIT);
@@ -385,4 +434,9 @@ export class OrgLensAccessComponent {
     this.editingUser.set(null);
     this.addModalVisible.set(false);
   }
+}
+
+/** `?employment=` value → employment filter; anything unknown (or absent) is everyone. */
+function readEmployment(value: string | null): OrgEmploymentFilter {
+  return parseOrgEmploymentFilter(value) ?? DEFAULT_ORG_EMPLOYMENT;
 }

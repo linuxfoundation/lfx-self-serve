@@ -3,9 +3,10 @@
 
 import { Component, computed, signal } from '@angular/core';
 import {
+  HEALTH_METRICS_ENGAGEMENT_BLANK,
   HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
-  HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementSubNavItems } from '@lfx-one/shared/utils';
 
@@ -49,6 +50,7 @@ export class HealthMetricsEngagementComponent {
   protected readonly sections = HEALTH_METRICS_ENGAGEMENT_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS;
+  protected readonly blank = HEALTH_METRICS_ENGAGEMENT_BLANK;
 
   // `null` until that section reports, which renders no badge rather than a misleading zero.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);

@@ -40,6 +40,13 @@ describe('shouldRecordReplay', () => {
  * Drives `gateReplayRecording` with a fake router stream, popstate stream and replay controller.
  * `href` stands in for the address bar; each test moves it the way the browser or router would.
  */
+describe('shouldRecordReplay with a fragment (#4363)', () => {
+  it('refuses a URL that carries a fragment so replay never records a vote link token', () => {
+    expect(shouldRecordReplay(`${ORIGIN}/votes/v-1#vote_token=synthetic`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/votes/v-1`, ORIGIN)).toBe(true);
+  });
+});
+
 describe('gateReplayRecording', () => {
   const setup = (initialHref: string) => {
     const routerEvents = new Subject<Event>();
@@ -148,6 +155,28 @@ describe('redactRumEvent', () => {
     expect(event.view.url).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
     expect(event.view.referrer).toBe(`${ORIGIN}/invite?token=redacted`);
     expect(event.view.performance.lcp.resource_url).toBe(`${ORIGIN}/meetings/m-1?passcode=redacted`);
+  });
+
+  it('strips a vote link fragment from view and resource URLs (#4363)', () => {
+    const fragment = '#vote_token=v1.synthetic.secret';
+    const view = { type: 'view', view: { url: `${ORIGIN}/votes/v-1${fragment}`, referrer: `${ORIGIN}/votes/v-1${fragment}` } };
+    const resource = { type: 'resource', resource: { url: `${ORIGIN}/votes/v-1${fragment}` } };
+
+    redactRumEvent(view, ORIGIN);
+    redactRumEvent(resource, ORIGIN);
+
+    expect(view.view.url).toBe(`${ORIGIN}/votes/v-1`);
+    expect(view.view.referrer).toBe(`${ORIGIN}/votes/v-1`);
+    expect(resource.resource.url).toBe(`${ORIGIN}/votes/v-1`);
+    expect(JSON.stringify([view, resource])).not.toContain('vote_token');
+  });
+
+  it('strips a fragment from any route, keeping the path and query', () => {
+    const event = { view: { url: `${ORIGIN}/anywhere?tab=2#section` } };
+
+    redactRumEvent(event, ORIGIN);
+
+    expect(event.view.url).toBe(`${ORIGIN}/anywhere?tab=2`);
   });
 
   it('redacts a relative referrer and leaves it relative', () => {

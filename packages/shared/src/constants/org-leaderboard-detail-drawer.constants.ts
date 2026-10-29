@@ -18,7 +18,7 @@ import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } fr
 export const ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES: OrgLeaderboardDetailCategory[] = [
   { key: 'maintainer', name: 'Maintainers' },
   { key: 'contributors', name: 'Contributors' },
-  { key: 'commits', name: 'Commit Activities' },
+  { key: 'commits', name: 'Commits' },
   { key: 'prs', name: 'PRs Opened' },
 ];
 
@@ -83,8 +83,12 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     bullets: [
       { label: 'Maintainers', text: '— 10 pts if the company has 1+ project maintainers, else 0.' },
       {
-        label: 'Contributors, Commit Activities, PRs Opened',
+        label: 'Contributors, PRs Opened',
         text: '— each 0.1% share of the project total earns 0.1 pt, plus a +1 bonus for any share above 0%.',
+      },
+      {
+        label: 'Commits',
+        text: '— scored the same way, but points use all commit credit (including co-authored commits), while the count and share shown are authored commits only. A company can show 0 authored commits and still earn points.',
       },
     ],
     levelMapping: 'Total score maps to a level: 0 = Silent, 1–4 = Participating, 5–14 = Contributing, 15+ = Leading.',

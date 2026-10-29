@@ -135,6 +135,14 @@ export class PlanningTabComponent implements OnInit {
   public readonly savedBriefRefreshToken = input(0);
 
   /**
+   * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`, read
+   * by the parent for the open brief. `CAMPAIGN_PLATFORMS` keeps X `disabled: true` as the static
+   * default, and only an explicit yes lifts it here. `null` (no brief saved yet) defers to
+   * `deploymentTwitterCreateEnabled`; `false`, or no yes from either, keeps the tile "Coming soon".
+   */
+  public readonly twitterCreateEnabled = input<boolean | null>(null);
+
+  /**
    * DOM id for the readonly UTM field, unique per INSTANCE.
    *
    * Two `lfx-planning-tab` instances stay mounted at once -- paid and email are
@@ -147,11 +155,26 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly utmFieldId = computed(() => `planning-hubspot-utm-value-${this.deliveryType()}`);
 
+  /**
+   * Whether Refine can change anything. An X-only brief has nothing generated: the generator writes
+   * no X copy and no keywords for it, so a refine would skip every stage and still report the brief
+   * refined. Any other selected platform gets copy or keywords regenerated.
+   */
+  protected readonly refineApplies = computed(() => [...this.selectedPlatforms()].some((p) => p !== 'twitter-ads'));
+
   /** Whether this planner is planning an email rather than paid ads. */
   protected readonly isEmail = computed(() => this.deliveryType() === 'email');
 
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
+
+  /**
+   * The generated brief was discarded (`reset()`: Cancel, New Brief, a foundation or stage switch)
+   * or replaced by an accepted `generate()`, so the next proceed is a new generation, not a refine
+   * of this one. The page uses it to stop
+   * carrying the typed X fields onto that brief.
+   */
+  public readonly briefDiscarded = output<void>();
 
   /**
    * A brief RESTORED from campaign-service, as opposed to one just generated.
@@ -185,7 +208,14 @@ export class PlanningTabComponent implements OnInit {
   }>();
 
   // === Constants ===
-  protected readonly platforms: CampaignPlatformOption[] = [...CAMPAIGN_PLATFORMS];
+  /**
+   * The picker's tiles: `CAMPAIGN_PLATFORMS`, with X's static `disabled` lifted on an explicit yes
+   * from `twitterCreateEnabled`. Every other platform keeps its own flag untouched.
+   */
+  protected readonly platforms = computed<CampaignPlatformOption[]>(() => {
+    const twitterSelectable = (this.twitterCreateEnabled() ?? this.deploymentTwitterCreateEnabled()) === true;
+    return CAMPAIGN_PLATFORMS.map((p) => (p.id === 'twitter-ads' && twitterSelectable ? { ...p, disabled: false } : p));
+  });
   protected readonly goals = computed(() => {
     const goalLabel = this.programTypeConfig().goalLabel;
     return CAMPAIGN_GOALS.map((g) => (g.id === 'conversions' ? { ...g, label: goalLabel } : g));
@@ -646,6 +676,28 @@ export class PlanningTabComponent implements OnInit {
    */
   private readonly activeFoundationSlug$ = toObservable(this.activeFoundationSlug);
 
+  /**
+   * The deployment's own X answer, read in the browser with no brief
+   * (`GET /api/campaigns/twitter/create-capability`), once per foundation: the route sits behind the
+   * campaign-manager guard, which needs the project to authorise a project-scoped caller. The parent's
+   * per-brief answer is only there once a brief is saved, so without this a fresh Plan page kept X
+   * "Coming soon" even with X creation on. The parent's answer wins whenever it has one; a failed or
+   * refused read is `null`, unanswered.
+   */
+  private readonly deploymentTwitterCreateEnabled = toSignal(
+    this.activeFoundationSlug$.pipe(
+      switchMap((slug) =>
+        isPlatformBrowser(this.platformId) && slug !== ''
+          ? this.campaignService.getTwitterCreateCapability(slug).pipe(
+              map((capability): boolean | null => capability?.enabled === true),
+              catchError(() => of(null))
+            )
+          : of(null)
+      )
+    ),
+    { initialValue: null }
+  );
+
   // Part of the restore lookup key, not just a parameter passed to it. Switching Paid <-> Email
   // with a url already entered has to re-ask, because the answer genuinely differs per surface:
   // the same event can have a stored paid brief and no email one. Without this in `combineLatest`
@@ -868,6 +920,7 @@ export class PlanningTabComponent implements OnInit {
 
   // === Public Methods ===
   public reset(): void {
+    this.briefDiscarded.emit();
     this.briefSubscription?.unsubscribe();
     this.briefSubscription = null;
     // Belt-and-suspenders alongside the unsubscribe() above -- see the generateGeneration field
@@ -931,6 +984,16 @@ export class PlanningTabComponent implements OnInit {
 
   protected isPlatformSelected(platformId: CampaignPlatform): boolean {
     return this.selectedPlatforms().has(platformId);
+  }
+
+  /**
+   * Whether a tile can be clicked: an enabled one always, a disabled one only to DESELECT it. X can
+   * be chosen while `twitterCreateEnabled` says yes and then lose the capability (a foundation
+   * switch, a flag turned off), and a selected tile nobody can clear would carry X into the brief
+   * with no way back but a new one. The Implement tab blocks a held X with its own Remove.
+   */
+  protected isPlatformClickable(platform: CampaignPlatformOption): boolean {
+    return !platform.disabled || this.isPlatformSelected(platform.id);
   }
 
   protected asArray(value: unknown): unknown[] | null {
@@ -1300,6 +1363,9 @@ export class PlanningTabComponent implements OnInit {
 
   protected generate(): void {
     if (!this.canGenerate()) return;
+    // A generation replaces whatever brief Planning held, including one restored without passing
+    // through `reset()`, so the next proceed must not carry that brief's X fields onto this one.
+    this.briefDiscarded.emit();
 
     this.step.set('generating');
     this.statusMessages.set([]);

@@ -2652,6 +2652,20 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBeNull();
   });
 
+  /** The X sibling of the Microsoft pair: nothing else executes the `'twitter-ads': 'twitterConfig'` entry. */
+  it('dispatches an X campaign once twitterConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-0000000000aa' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {
+      twitterConfig: { budgetAmount: 75, startDate: '2099-08-01', endDate: '2099-08-31', tweetText: 'Join us' },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-0000000000aa');
+    expect(res.error).toBeNull();
+  });
+
   it('still refuses a Microsoft campaign whose microsoftConfig is missing', async () => {
     // A non-empty envelope carrying the WRONG key — the shape a half-built builder produces.
     // `unmarshalPlatformConfig` reads the absent `microsoftConfig` as a ZERO VALUE, which would
@@ -2998,12 +3012,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000b');
   });
 
-  it('refuses a platform it has no config mapping for', async () => {
+  it('refuses a platform whose config the envelope does not carry', async () => {
     // An earlier revision waved unmapped platforms through, reasoning this should not police the
     // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is
     // `disabled: true` in the UI constants, but that is a CLIENT guarantee, and the upstream
-    // contract accepts twitter/microsoft/hubspot. This service builds no config for any of them,
-    // so waving them through queued a job whose dispatcher reads an absent key as a zero value.
+    // contract accepts it regardless. X is mapped now (`buildTwitterConfig`), so this is the
+    // missing-config half: waving it through would queue a job whose dispatcher reads an absent
+    // `twitterConfig` as a zero value.
     bothFlagsOn();
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {});
@@ -4697,9 +4712,22 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
+      googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: false,
     });
   });
 
@@ -4858,6 +4886,127 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
   });
 
   /**
+   * The Meta Instagram/DSA capability needs the create cutover AND its own flag: the legacy creator
+   * never reads the three keys, and the flag says campaign-service enforces the EU disclosure rule.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, metaDsa: true }, true],
+    [{ create: true, briefs: true, jobs: true, metaDsa: false }, false],
+    [{ create: false, briefs: true, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: false, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: true, jobs: false, metaDsa: true }, false],
+  ])('reports the meta instagram/dsa capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaInstagramDsa) return flags.metaDsa;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaInstagramDsaEnabled).toBe(expected);
+      // Its own key, not the Microsoft schedule one: that flag is off in every row.
+      expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Microsoft flight-date capability needs the create cutover AND its own flag: the legacy
+   * creator never reads the dates, and a campaign-service without #409 drops them — either would
+   * create the campaign with no flight while the operator set one.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, schedule: true }, true],
+    [{ create: true, briefs: true, jobs: true, schedule: false }, false],
+    [{ create: false, briefs: true, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: false, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: true, jobs: false, schedule: true }, false],
+  ])('reports the microsoft schedule capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftSchedule) return flags.schedule;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftScheduleEnabled).toBe(expected);
+      // Its own key, not the bidding one: the bidding flag is off in every row.
+      expect(result.biddingEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  it.each([
+    [{ create: true, briefs: true, jobs: true, geo: true }, true],
+    [{ create: true, briefs: true, jobs: true, geo: false }, false],
+    [{ create: false, briefs: true, jobs: true, geo: true }, false],
+    [{ create: true, briefs: false, jobs: true, geo: true }, false],
+    [{ create: true, briefs: true, jobs: false, geo: true }, false],
+  ])('reports the google geo search capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleGeoSearch) return flags.geo;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.googleGeoSearchEnabled).toBe(expected);
+      // Its own key, not the schedule one: the schedule flag is off in every row.
+      expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The X create capability needs the create cutover AND its own flag: the legacy creator has no X
+   * path, and the flag is the product decision to open X creation at all.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, twitter: true }, true],
+    [{ create: true, briefs: true, jobs: true, twitter: false }, false],
+    [{ create: false, briefs: true, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: false, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: true, jobs: false, twitter: true }, false],
+  ])('reports the X create capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceTwitterCreate) return flags.twitter;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+      expect(result.twitterCreateEnabled).toBe(expected);
+      // Reported on the refused-scope answer too, read the same way.
+      const refused = await new CampaignServiceClient().listBriefCampaigns(req, '', 'b-1');
+      expect(refused.twitterCreateEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
    * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
    * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
    * refuses it.
@@ -4882,6 +5031,33 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
       expect(result.redditAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Reddit conversion pixel override (#3484) needs exactly the create cutover: campaign-service
+   * prefers it over the connection's pixel, and the legacy creator never reads it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true }, true],
+    [{ create: false, briefs: true, jobs: true }, false],
+    [{ create: true, briefs: false, jobs: true }, false],
+    [{ create: true, briefs: true, jobs: false }, false],
+  ])('reports the Reddit conversion pixel capability only when the cutover owns the create (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditConversionPixelEnabled).toBe(expected);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -4920,6 +5096,113 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Meta image capabilities: the image itself is the cutover gate alone (the legacy creator
+   * reads no Meta image), the upload additionally its own flag — and not Reddit's or Google's.
+   */
+  it.each([
+    [
+      { create: true, briefs: true, jobs: true, meta: true, others: false },
+      { creative: true, upload: true },
+    ],
+    [
+      { create: true, briefs: true, jobs: true, meta: false, others: true },
+      { creative: true, upload: false },
+    ],
+    [
+      { create: false, briefs: true, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+    [
+      { create: true, briefs: false, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+  ])('reports the Meta image capabilities from the cutover and the Meta-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaAssets) return flags.meta;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleAssets || flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaCreativeEnabled).toBe(expected.creative);
+      expect(result.metaAssetUploadEnabled).toBe(expected.upload);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The LinkedIn upload capability: the cutover AND its own flag, and not any sibling's. There is no
+   * LinkedIn image-URL capability to pair it with, since LinkedIn takes no image URL.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, linkedIn: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, linkedIn: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, linkedIn: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, linkedIn: true, others: false }, false],
+  ])('reports the LinkedIn upload capability from the cutover and the LinkedIn-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.linkedIn;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, microsoft: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, microsoft: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, microsoft: true, others: false }, false],
+  ])('reports the Microsoft upload capability from the cutover and the Microsoft-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftAssets) return flags.microsoft;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4953,9 +5236,22 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
       redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
+      googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: false,
     });
   });
 });
@@ -5719,6 +6015,90 @@ describe('CampaignServiceClient.getConnection', () => {
   });
 });
 
+describe('CampaignServiceClient.listGoogleAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Google Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '1000000001', label: 'CNCF Search' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-google-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAccounts(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.suggestGoogleAdsGeoTargets', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's geo target suggest with only the query when nothing else narrows it", async () => {
+    const suggestions = { suggestions: [], suggestion_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(suggestions);
+
+    const result = await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'lf/ai', { q: 'Austin' });
+
+    expect(result).toBe(suggestions);
+    // No `limit` key at all: upstream applies its own default of 20, and `limit=0` would be refused.
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/geo-targets', 'GET', { q: 'Austin' });
+  });
+
+  it('passes the country, the location types as an array and the limit under their wire names', async () => {
+    proxyRequest.mockResolvedValueOnce({ suggestions: [], suggestion_count: 0, truncated: false });
+
+    await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'tlf', { q: '78701', country_code: 'US', target_types: ['Postal Code'], limit: 20 });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/google-ads/geo-targets', 'GET', {
+      q: '78701',
+      country_code: 'US',
+      target_types: ['Postal Code'],
+      limit: 20,
+    });
+  });
+
+  it('leaves an empty location type list off the wire', async () => {
+    proxyRequest.mockResolvedValueOnce({ suggestions: [], suggestion_count: 0, truncated: false });
+
+    await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'tlf', { q: 'Austin', target_types: [] });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/google-ads/geo-targets', 'GET', { q: 'Austin' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, '', { q: 'Austin' }).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'cncf', { q: 'Austin' })).rejects.toBe(upstream);
+  });
+});
+
 describe('CampaignServiceClient.uploadCreativeAsset', () => {
   const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
@@ -6113,5 +6493,28 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
       expect(proxyRequest).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CampaignServiceClient.listTwitterAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's X Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listTwitterAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-twitter-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listTwitterAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

@@ -222,12 +222,6 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getNonMembersConversion({ foundationSlug: 'aaif', range: 'YTD' }),
     },
     {
-      name: 'getTrainingPresence',
-      url: '/api/analytics/training-presence',
-      // A swallowed failure would read as a foundation with no training programme.
-      call: () => service.getTrainingPresence({ foundationSlug: 'aaif' }),
-    },
-    {
       name: 'getTrainingEnrollment',
       url: '/api/analytics/training-enrollment',
       // A swallowed failure would read as a foundation with no enrollments.

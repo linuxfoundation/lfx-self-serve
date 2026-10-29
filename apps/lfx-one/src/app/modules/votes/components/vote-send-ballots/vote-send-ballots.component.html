@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col items-center gap-2" data-testid="vote-send-ballots">
+  <lfx-button
+    label="Send ballots now"
+    icon="fa-light fa-paper-plane"
+    severity="secondary"
+    styleClass="min-h-[44px]"
+    [loading]="busy()"
+    [disabled]="busy() || cooling()"
+    (onClick)="onClick()"
+    data-testid="vote-send-ballots-button" />
+  @if (sent(); as result) {
+    <p class="m-0 text-sm text-gray-600 text-center" role="status" data-testid="vote-send-ballots-success">
+      Ballots sent to {{ result.count }} {{ result.count === 1 ? 'member' : 'members' }} · {{ result.at | date: 'HH:mm' }}
+    </p>
+  }
+</div>
+<p-confirmDialog />

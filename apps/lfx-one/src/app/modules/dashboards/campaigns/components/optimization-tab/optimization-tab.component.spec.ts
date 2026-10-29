@@ -3822,6 +3822,37 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
   });
 
+  // The table's "Add as negative" writes through the same lever as the row's editor, so it is offered
+  // for exactly the Reddit rows whose editor is available, and never for a Reddit id two rows share.
+  it('hands the Reddit keyword table the brief and the Reddit campaigns that take negatives now', () => {
+    render([
+      doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-2', platform: 'reddit-ads', platform_campaign_id: 't3_del', status: 'deleted' }),
+      doc({ id: 'c-3', platform: 'reddit-ads', platform_campaign_id: undefined }),
+      doc({ id: 'c-4', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-5', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-6', platform: 'microsoft-ads', platform_campaign_id: '99' }),
+    ]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.briefId()).toBe('b-1');
+    expect(table.negativeTargets()).toEqual({ t3_abc: { campaignId: 'c-1', campaignName: 'Reddit one' } });
+  });
+
+  // Unknown is not empty: a list still loading hands the table `null`, which a pending add waits out.
+  // A FAILED list read ends nothing on its own, so it hands `{}` and the add stops, saying so.
+  it('hands the Reddit keyword table null while the campaign list loads, and no targets once it fails', () => {
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.detectChanges();
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.negativeTargets()).toBeNull();
+
+    fixture.componentRef.setInput('campaignsUnavailable', true);
+    fixture.detectChanges();
+    expect(table.negativeTargets()).toEqual({});
+  });
+
   // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
   it('holds the keyword-targeting panel open while its removal is in flight', () => {
     const pending = new Subject<unknown>();

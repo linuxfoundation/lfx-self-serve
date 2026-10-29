@@ -59,6 +59,7 @@ describe('MembersAtRiskComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let notes: string[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
   async function render(
@@ -86,7 +87,10 @@ describe('MembersAtRiskComponent', () => {
     fixture = TestBed.createComponent(MembersAtRiskComponent);
     fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -109,6 +113,7 @@ describe('MembersAtRiskComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     notes = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation, renders the hero, aging and count, and settles with the note', async () => {
@@ -125,6 +130,7 @@ describe('MembersAtRiskComponent', () => {
     expect(text('members-at-risk-aging-60_89_days')).toContain('60–89 days · 2 members');
     expect(text('members-at-risk-aging-90_plus_days-value')).toBe('$90K');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', '3 overdue · $120K']);
   });
 
@@ -246,15 +252,16 @@ describe('MembersAtRiskComponent', () => {
     expect(query('members-at-risk-outstanding')).toBeNull();
   });
 
-  it('shows the empty state and no note when no member is at risk', async () => {
+  it('settles empty, with no body and no note, when no member is at risk', async () => {
     await render(NONE_AT_RISK);
 
-    expect(query('members-at-risk-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('members-at-risk-controls')).toBeNull();
     expect(query('members-at-risk-table')).toBeNull();
     expect(notes.at(-1)).toBe('');
   });
 
-  it('shows the rows with a dashed hero, not the empty state, when the model leaves the totals unset', async () => {
+  it('shows the rows with a dashed hero, not settling empty, when the model leaves the totals unset', async () => {
     await render(
       response({
         summary: { outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: null, memberCount: null },
@@ -265,7 +272,7 @@ describe('MembersAtRiskComponent', () => {
       })
     );
 
-    expect(query('members-at-risk-empty')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(query(`members-at-risk-row-${ACCOUNT_ID}`)).not.toBeNull();
     expect(text('members-at-risk-outstanding')).toBe('—');
     expect(text('members-at-risk-members')).toBe('—');
@@ -293,9 +300,9 @@ describe('MembersAtRiskComponent', () => {
     await settle();
 
     expect(query('members-at-risk-error')).not.toBeNull();
-    expect(query('members-at-risk-empty')).toBeNull();
     expect(notes).toEqual(['']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -305,6 +312,5 @@ describe('MembersAtRiskComponent', () => {
     expect(getMembersAtRisk).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
     expect(query('members-at-risk-loading')).not.toBeNull();
-    expect(query('members-at-risk-empty')).toBeNull();
   });
 });

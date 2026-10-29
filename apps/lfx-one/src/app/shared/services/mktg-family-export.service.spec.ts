@@ -10,6 +10,8 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { familyExportMember, familyExportRecord, familyExportStarted } from '@shared/testing/mktg-family-export-test-data';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyExportService } from './mktg-family-export.service';
+import boilerplatesEnvelope from '@lfx-one/shared/utils/__fixtures__/boilerplates.envelope.json';
+import faqEnvelope from '@lfx-one/shared/utils/__fixtures__/faq-envelope.json';
 
 describe('Family export client', () => {
   const target = { project: 'synthetic-project', familyId: 'positioning-brand' };
@@ -132,16 +134,53 @@ describe('Family export client', () => {
     };
   }
 
-  it('composes the existing approved kit book and excludes members without print renderings', () => {
+  it('composes the approved kit book with branded boilerplates and FAQ from the same approved snapshots', () => {
     let view: MktgFamilyPrintView | undefined;
     service
-      .printView(target, [familyExportMember({ agentKey: 'brand-kit' }), familyExportMember({ agentKey: 'faq' })], 'Synthetic project')
+      .printView(
+        target,
+        (['brand-kit', 'boilerplates', 'faq'] as const).map((agentKey) => familyExportMember({ agentKey })),
+        'Synthetic project'
+      )
       .subscribe((value) => (view = value));
     const revision = http.expectOne((request) => request.url.includes('/documents/brand-kit/living/revisions/'));
     revision.flush(approvedKit());
+    for (const [agentKey, envelope] of [
+      ['boilerplates', boilerplatesEnvelope],
+      ['faq', faqEnvelope],
+    ] as const) {
+      const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === agentKey);
+      http
+        .expectOne((request) => request.url.includes(`/documents/${agentKey}/living/revisions/`))
+        .flush({
+          ...approvedKit(),
+          type,
+          markdown: JSON.stringify(envelope.content),
+          sidecar: envelope,
+        });
+    }
+    expect(view?.boilerplates?.lengths).toHaveLength(4);
+    expect(view?.faq?.groups).toHaveLength(2);
+    expect(view?.faq?.groups[0].questions[2]).toMatchObject({ answered: false, source: '' });
+    expect(view?.boilerplates?.brand.fontStack).toBe(view?.brand.fontStack);
+    expect(view?.faq?.brand.source).toBe('kit');
     expect(view?.kit?.projectName).toBe('Project One');
     expect(view?.framework).toBeNull();
     expect(view?.fontFamily).toBe('Montserrat');
+  });
+
+  it.each(['boilerplates', 'faq'] as const)('rejects unreadable approved %s instead of silently omitting it', (agentKey) => {
+    const error = vi.fn();
+    service.printView(target, [familyExportMember({ agentKey })], 'Synthetic project').subscribe({ error });
+    http
+      .expectOne((request) => request.url.includes(`/documents/${agentKey}/living/revisions/`))
+      .flush({
+        ...approvedKit(),
+        type: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === agentKey),
+        markdown: '{}',
+        sidecar: null,
+      });
+    expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('could not be read') }));
   });
 
   it('rejects a changed approval before PDF composition rather than falling back to draft bytes', () => {

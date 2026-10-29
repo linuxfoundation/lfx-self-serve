@@ -243,6 +243,32 @@ describe('VotePermalinkComponent', () => {
     });
   });
 
+  // #4148: the QR lands here, so the cast drawer must open on arrival exactly when the viewer can cast.
+  describe('cast drawer on arrival (#4148)', () => {
+    const cases: { name: string; vote: Vote; response: MyVoteResponse | null; cast: boolean }[] = [
+      {
+        name: 'active vote, eligible voter who has not responded',
+        vote: makeVote(),
+        response: makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE),
+        cast: true,
+      },
+      { name: 'ended vote', vote: makeVote({ status: PollStatus.ENDED }), response: makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE), cast: false },
+      { name: 'non-voter (no invitation row)', vote: makeVote(), response: null, cast: false },
+      { name: 'voter who already cast', vote: makeVote(), response: makeResponse(IndexedVoteResponseStatus.RESPONDED), cast: false },
+    ];
+
+    it.each(cases)('$name -> cast drawer open: $cast', async ({ vote, response, cast }) => {
+      voteService.fetchVote.mockReturnValue(of(vote));
+      voteService.getMyVoteResponse.mockReturnValue(of(response));
+      await setup();
+
+      const target = stateOf().target;
+
+      expect(target?.drawer).toBe(cast ? 'cast' : 'results');
+      expect(target?.audience).toBe('voter');
+    });
+  });
+
   it('navigates to /votes with replaceUrl when the permalink drawer closes', async () => {
     await setup();
     const fixture = TestBed.createComponent(VotePermalinkComponent);

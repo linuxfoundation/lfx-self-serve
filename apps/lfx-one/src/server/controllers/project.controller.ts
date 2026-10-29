@@ -10,6 +10,7 @@ import {
   PastMeeting,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  PublicProjectSummary,
   RemoveUserFromProjectRequest,
   UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
@@ -1234,6 +1235,59 @@ export class ProjectController {
       logger.success(req, 'get_lens_redirect', startTime, { project_slug: slug, resource, fallback: 'error' });
       res.setHeader('Cache-Control', 'no-store');
       res.redirect(302, `/${resource}?project=${encodeURIComponent(slug)}`);
+    }
+  }
+
+  /**
+   * GET /public/api/projects/:identifier/summary — the name, slug, logo and foundation flag the login-free vote page
+   * shows as branding. A hidden project (not public, or Formation - Confidential) and an unknown identifier get the
+   * same non-cacheable 404, so the route confirms nothing about a project that is not publicly discoverable.
+   */
+  public async getPublicProjectSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const identifier = req.params['identifier'] ?? '';
+    const startTime = logger.startOperation(req, 'get_public_project_summary', { project_id: maskIdentifierForLogs(identifier) });
+
+    if (!identifier || !/^[A-Za-z0-9_-]+$/.test(identifier)) {
+      next(ServiceValidationError.forField('identifier', 'Invalid project identifier', { operation: 'get_public_project_summary' }));
+      return;
+    }
+
+    try {
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      // Misses and hidden projects must never be cached; only a discoverable project's summary is (set below).
+      res.setHeader('Cache-Control', 'no-store');
+
+      const isProjectUid = isUuid(identifier);
+      const projectUid = await this.resolveProjectIdentifier(req, identifier);
+
+      // Slug metadata failures read as an unknown slug; UID failures still propagate (lfx-self-serve-ops#437).
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid).catch((error: unknown) => {
+        if (isProjectUid) {
+          throw error;
+        }
+        logger.warning(req, 'get_public_project_summary', 'Project lookup failed; answering slug as not found', { project_uid: projectUid, err: error });
+        return null;
+      });
+      if (!project) {
+        throw this.projectNotFoundError(identifier);
+      }
+
+      const summary: PublicProjectSummary = {
+        name: project.name,
+        slug: project.slug,
+        logo_url: project.logo_url || null,
+        is_foundation: computeIsFoundation(project),
+      };
+
+      logger.success(req, 'get_public_project_summary', startTime, { project_uid: projectUid });
+
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json(summary);
+    } catch (error) {
+      next(error);
     }
   }
 

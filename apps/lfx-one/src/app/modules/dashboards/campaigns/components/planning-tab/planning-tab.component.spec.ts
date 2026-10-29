@@ -18,8 +18,8 @@ import type {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { EMPTY, Observable, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -51,7 +51,7 @@ describe('PlanningTabComponent brief read-back', () => {
   };
 
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let campaignService: { loadBrief: ReturnType<typeof vi.fn> };
+  let campaignService: { loadBrief: Mock };
   let projectContextService: ProjectContextService;
 
   // Debounce is 500ms; add 50ms slack for timer jitter (consistent with newsletter.component.spec.ts)
@@ -829,7 +829,7 @@ describe('PlanningTabComponent brief read-back', () => {
  */
 describe('PlanningTabComponent delivery-type mode', () => {
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let generateBrief: ReturnType<typeof vi.fn>;
+  let generateBrief: Mock;
 
   const programTypeConfig: CampaignProgramTypeOption = {
     id: 'events',
@@ -1227,6 +1227,116 @@ describe('PlanningTabComponent delivery-type mode', () => {
     expect(generateBrief).toHaveBeenCalledTimes(1);
     expect(generateBrief.mock.calls[0][0]).toBe('foundation-a');
     expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads']);
+  });
+
+  /**
+   * X in the picker (`twitterCreateEnabled`). `CAMPAIGN_PLATFORMS` keeps it `disabled: true`; only an
+   * explicit yes makes the tile selectable, and a chosen X travels to the generator, which serves it
+   * with no copy or keywords.
+   */
+  describe('X tile', () => {
+    const tile = (): HTMLButtonElement =>
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-platform-twitter-ads"]') as HTMLButtonElement;
+
+    it.each([
+      ['unanswered', null],
+      ['answered no', false],
+    ])('keeps X "Coming soon" and unclickable while the capability is %s', async (_label, enabled) => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', enabled);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(true);
+      expect(tile().textContent).toContain('Coming soon');
+      tile().click();
+      expect((fixture.componentInstance as unknown as { isPlatformSelected(p: string): boolean }).isPlatformSelected('twitter-ads')).toBe(false);
+    });
+
+    it('makes X selectable on an explicit yes, and sends it to the generator with the rest', async () => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', true);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(false);
+      expect(tile().textContent).not.toContain('Coming soon');
+      tile().click();
+      fixture.detectChanges();
+      fillRequiredFields();
+      (fixture.componentInstance as unknown as { generate(): void }).generate();
+      await fixture.whenStable();
+
+      expect(generateBrief.mock.calls[0][1].platforms).toEqual(['google-ads', 'twitter-ads']);
+      const selected = (fixture.componentInstance as unknown as { selectedPlatforms(): Set<string> }).selectedPlatforms();
+      expect([...selected]).toEqual(['google-ads', 'twitter-ads']);
+    });
+
+    /**
+     * Before any brief exists the parent has no per-brief answer, so the picker reads the
+     * deployment's own (`GET /api/campaigns/twitter/create-capability`), and the parent's wins once it has one.
+     */
+    it.each([
+      [{ enabled: true }, null, false],
+      [{ enabled: false }, null, true],
+      [{ enabled: true }, false, true],
+    ])('reads the deployment answer %o with a parent answer of %s, leaving the tile disabled: %s', async (deployment, parent, disabled) => {
+      vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of(deployment));
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', parent);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(disabled);
+    });
+
+    it('reads the deployment answer for the active foundation, sending its slug', async () => {
+      const read = vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of({ enabled: true }));
+      await build('paid-marketing');
+
+      expect(read).toHaveBeenCalledWith('foundation-a');
+    });
+
+    it('does not read the deployment answer with no foundation selected, and keeps X disabled', async () => {
+      const read = vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(of({ enabled: true }));
+      TestBed.inject(ProjectContextService).clearFoundation(false);
+      await build('paid-marketing');
+
+      expect(read).not.toHaveBeenCalled();
+      expect(tile().disabled).toBe(true);
+    });
+
+    it('keeps X disabled when the deployment read fails and the parent has no answer', async () => {
+      vi.spyOn(TestBed.inject(CampaignService), 'getTwitterCreateCapability').mockReturnValue(throwError(() => new Error('down')));
+      await build('paid-marketing');
+
+      expect(tile().disabled).toBe(true);
+    });
+
+    it('does not offer Refine for an X-only selection, which has nothing generated to refine', async () => {
+      await build('paid-marketing');
+      const c = fixture.componentInstance as unknown as { refineApplies(): boolean; selectedPlatforms: { set(v: Set<string>): void } };
+
+      expect(c.refineApplies()).toBe(true);
+      c.selectedPlatforms.set(new Set(['twitter-ads']));
+      expect(c.refineApplies()).toBe(false);
+      c.selectedPlatforms.set(new Set(['twitter-ads', 'microsoft-ads']));
+      expect(c.refineApplies()).toBe(true);
+    });
+
+    it('lets a selected X be cleared after the capability is withdrawn, and not chosen again', async () => {
+      await build('paid-marketing');
+      fixture.componentRef.setInput('twitterCreateEnabled', true);
+      fixture.detectChanges();
+      tile().click();
+      fixture.componentRef.setInput('twitterCreateEnabled', false);
+      fixture.detectChanges();
+
+      expect(tile().disabled).toBe(false);
+      tile().click();
+      fixture.detectChanges();
+
+      const selected = (fixture.componentInstance as unknown as { isPlatformSelected(p: string): boolean }).isPlatformSelected('twitter-ads');
+      expect(selected).toBe(false);
+      expect(tile().disabled).toBe(true);
+    });
   });
 
   /**
@@ -1973,8 +2083,8 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   };
 
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let lookup: ReturnType<typeof vi.fn>;
-  let create: ReturnType<typeof vi.fn>;
+  let lookup: Mock;
+  let create: Mock;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({

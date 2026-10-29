@@ -161,7 +161,6 @@ describe.each([
   ['/non-members-orgs', 'foundationSlug'],
   ['/non-members-people', 'foundationSlug'],
   ['/non-members-conversion', 'foundationSlug'],
-  ['/training-presence', 'foundationSlug'],
   ['/training-enrollment', 'foundationSlug'],
   ['/training-courses', 'foundationSlug'],
   ['/overview-participating-orgs', 'foundationSlug'],

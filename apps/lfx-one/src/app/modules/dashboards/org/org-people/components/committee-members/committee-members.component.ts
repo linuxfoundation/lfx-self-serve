@@ -16,7 +16,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE, votingStatusPillClass } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE, ORG_ALL_FOUNDATIONS_LABEL, votingStatusPillClass } from '@lfx-one/shared/constants';
 import type {
   CommitteeMemberAssignmentVm,
   CommitteeMemberPersonGroup,
@@ -383,7 +383,7 @@ export class CommitteeMembersComponent {
           .filter(Boolean)
       ),
     ].sort((a, b) => a.localeCompare(b));
-    return [{ label: 'All Foundations', value: '' }, ...labels.map((l) => ({ label: l, value: l }))];
+    return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...labels.map((l) => ({ label: l, value: l }))];
   }
 
   private initCommitteeOptions(): OrgDropdownOption[] {

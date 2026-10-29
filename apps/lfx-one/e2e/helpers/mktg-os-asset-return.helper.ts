@@ -59,7 +59,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
     if (path.endsWith('/documents'))
       return fulfillDocumentJson(route, {
         project: DOCUMENT_PROJECT.uid,
-        runs: ready ? [] : [run],
+        runs: generates > 0 && !ready ? [run] : [],
         groups: MKTG_DOCUMENT_TYPES.map((candidate) => ({ type: candidate, documents: [] })),
       });
     if (path.endsWith(`/documents/${type.agentKey}/living`))
@@ -72,7 +72,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
               type,
               documentId: 'living',
               revisions: [],
-              runs: [run],
+              runs: generates > 0 ? [run] : [],
             }
       );
     if (path.endsWith(`/revisions/${fixture.revision.revision.id}`)) return fulfillDocumentJson(route, fixture.revision);

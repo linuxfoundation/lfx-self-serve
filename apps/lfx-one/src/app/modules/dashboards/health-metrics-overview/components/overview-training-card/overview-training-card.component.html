@@ -43,8 +43,9 @@
         </div>
       </div>
 
+      <!-- The design drops the divider at a ≤900px viewport, not where the columns wrap. -->
       <div
-        class="flex min-w-0 flex-[2_1_300px] flex-col justify-center gap-[10px] self-stretch md:border-l md:border-gray-200 md:pl-[32px]"
+        class="flex min-w-0 flex-[2_1_300px] flex-col justify-center gap-[10px] self-stretch min-[901px]:border-l min-[901px]:border-gray-200 min-[901px]:pl-[32px]"
         data-testid="overview-training-programs">
         <span class="text-[12px] text-gray-500">By program</span>
         @for (item of view.items; track item.key) {

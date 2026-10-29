@@ -15,6 +15,7 @@ import {
   EnrichedPastMeetingParticipant,
   GuestInviteScope,
   Meeting,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -26,6 +27,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
+  buildMeetingOrganizerKeys,
   compareMeetingPeopleByHostThenName,
   filterPastMeetingParticipants,
   getRegistrantAttendanceStatus,
@@ -33,6 +35,7 @@ import {
   isMeetingInviteResponsesEnabled,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
+  resolveMeetingGuestRole,
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
 } from '@lfx-one/shared/utils';
@@ -101,10 +104,29 @@ export class MeetingRegistrantsDisplayComponent {
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
   // disappears without waiting for the async refetch to complete.
   private readonly deletedRegistrantUids = signal<Set<string>>(new Set());
+  // Host flags the organizer just changed — applied over the displayed list so the badge and sort order
+  // update at once. A refetch is also requested, but the list can lag the write, so the override is kept
+  // until the drawer closes rather than dropped when a fetch lands (a lagging fetch would flip the badge back).
+  private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
+  protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<EnrichedPastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrants();
+  // Each guest's host-toggle accessible name, by uid, so the template reads a lookup instead of building a string per render.
+  protected readonly hostToggleLabels: Signal<Map<string, string>> = this.initHostToggleLabels();
+  // Whether each guest is a listed organizer or just a Meeting Host, by uid. An organizer is a host already, so
+  // the two never overlap: the badge, the toggle and the role filter all read this instead of the raw host flag.
+  protected readonly guestRoles: Signal<Map<string, MeetingGuestRole>> = this.initGuestRoles();
+  // Rows the server hasn't confirmed yet — their uid is a placeholder, so there is nothing to update.
+  protected readonly unconfirmedGuestUids: Signal<Set<string>> = computed(
+    () =>
+      new Set(
+        this.optimisticRegistrants()
+          .filter((r) => r.uid?.startsWith('optimistic-'))
+          .map((r) => r.uid)
+      )
+  );
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => !this.pastMeeting() && isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly registrantsLoading: Signal<boolean> = computed(() => {
     if (this.externallyManaged() && !this.pastMeeting()) {
@@ -167,6 +189,7 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly organizerFilterOptions = [
     { label: 'All Roles', value: 'all' },
     { label: 'Organizers', value: 'organizer' },
+    { label: 'Hosts', value: 'host' },
   ];
 
   // Past-meeting attendance / invitation options (mirror the past-meeting-details filters)
@@ -271,6 +294,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.stagedGuests.set([]);
         this.optimisticRegistrants.set([]);
         this.deletedRegistrantUids.set(new Set());
+        this.hostOverrides.set(new Map());
       });
   }
 
@@ -343,6 +367,51 @@ export class MeetingRegistrantsDisplayComponent {
 
   public onRequestResendInvite(registrant: MeetingRegistrant): void {
     this.inviteResend.confirmAndResend(this.confirmationService, this.meeting().id, registrant);
+  }
+
+  /** Saves a Meeting Host change for one guest straight away; there is no wider form to submit. */
+  public onToggleHost(registrant: MeetingRegistrant): void {
+    const uid = registrant.uid;
+    if (!uid || uid.startsWith('optimistic-') || this.hostUpdatingUids().has(uid)) return;
+
+    const host = !registrant.host;
+    const label = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'The guest';
+    const setUpdating = (updating: boolean): void =>
+      this.hostUpdatingUids.update((uids) => {
+        const next = new Set(uids);
+        if (updating) {
+          next.add(uid);
+        } else {
+          next.delete(uid);
+        }
+        return next;
+      });
+
+    setUpdating(true);
+    this.meetingService
+      .updateMeetingRegistrants(this.meeting().id, [{ uid, changes: this.meetingService.getChangedFields({ ...registrant, host, state: 'modified' }) }])
+      .pipe(take(1))
+      .subscribe({
+        next: (response) => {
+          setUpdating(false);
+          if (response.summary.successful > 0) {
+            this.hostOverrides.update((map) => new Map(map).set(uid, host));
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: `${label} is ${host ? 'now' : 'no longer'} a meeting host` });
+            // Ask whoever owns the list to reload it, so views built from it (the join page's "Organized by" chip) catch up.
+            if (this.externallyManaged()) {
+              this.refreshRequested.emit(0);
+            } else {
+              this.refresh$.next(true);
+            }
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.failures[0]?.error?.message || 'Failed to update host' });
+          }
+        },
+        error: () => {
+          setUpdating(false);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update host. Please try again.' });
+        },
+      });
   }
 
   // === Protected Methods (template helpers) ===
@@ -616,6 +685,19 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
 
+  /** Falls back to the email, then `guest`, for a registrant with no name. */
+  private initHostToggleLabels(): Signal<Map<string, string>> {
+    return computed(
+      () =>
+        new Map(
+          this.registrants().map((registrant) => {
+            const name = [registrant.first_name, registrant.last_name].filter(Boolean).join(' ') || registrant.email || 'guest';
+            return [registrant.uid, registrant.host ? `Remove ${name} as meeting host` : `Make ${name} a meeting host`] as const;
+          })
+        )
+    );
+  }
+
   private initRegistrants(): Signal<MeetingRegistrant[]> {
     return computed(() => {
       const deletedUids = this.deletedRegistrantUids();
@@ -638,7 +720,16 @@ export class MeetingRegistrantsDisplayComponent {
         const email = r.email?.trim().toLowerCase();
         return !email || !fetchedEmails.has(email);
       });
-      return pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+      const merged = pending.length ? ([...pending, ...list].sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]) : list;
+
+      const overrides = this.hostOverrides();
+      if (!overrides.size) {
+        return merged;
+      }
+
+      return merged
+        .map((r) => (overrides.has(r.uid) ? { ...r, host: overrides.get(r.uid) as boolean } : r))
+        .sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[];
     });
   }
 
@@ -672,7 +763,8 @@ export class MeetingRegistrantsDisplayComponent {
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
       const group = this.groupFilter();
-      const organizerOnly = this.organizerFilter() === 'organizer';
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
 
       return registrants
         .map((registrant) => ({
@@ -708,9 +800,10 @@ export class MeetingRegistrantsDisplayComponent {
           // Group (Committee) filter
           const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-          const matchesOrganizer = !organizerOnly || !!registrant.host;
+          // Role filter: `host` is hosts who are not organizers, as an organizer is a host already.
+          const matchesRole = roleFilter === 'all' || roles.get(registrant.uid) === roleFilter;
 
-          return matchesSearch && matchesRsvp && matchesGroup && matchesOrganizer;
+          return matchesSearch && matchesRsvp && matchesGroup && matchesRole;
         });
     });
   }
@@ -723,7 +816,18 @@ export class MeetingRegistrantsDisplayComponent {
         invitation: this.invitationFilter(),
         group: this.groupFilter(),
       });
-      return this.organizerFilter() === 'organizer' ? filtered.filter((participant) => participant.host) : filtered;
+      const roleFilter = this.organizerFilter();
+      const roles = this.guestRoles();
+      return roleFilter === 'all' ? filtered : filtered.filter((participant) => roles.get(participant.uid) === roleFilter);
+    });
+  }
+
+  private initGuestRoles(): Signal<Map<string, MeetingGuestRole>> {
+    return computed(() => {
+      const organizerKeys = buildMeetingOrganizerKeys((this.meeting() as Meeting).organizers);
+      const people: (MeetingHostCandidate & { uid: string })[] = this.pastMeeting() ? this.pastMeetingParticipants() : this.registrants();
+
+      return new Map(people.map((person) => [person.uid, resolveMeetingGuestRole(person, organizerKeys)] as const));
     });
   }
 }

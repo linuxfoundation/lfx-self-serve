@@ -5,10 +5,11 @@ import type { Page } from '@playwright/test';
 import type { MktgDocumentComment } from '@lfx-one/shared/interfaces';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { structuredCommentAsset } from './mktg-os-structured-comments.helper';
+import { readFaqContent } from '@lfx-one/shared/utils/faq.utils';
 import { ASSET_PROJECT, ASSET_REVISION, setupAsset } from './mktg-os-assets.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
-export async function setupStructuredComments(page: Page, agentKey: 'brand-kit' | 'boilerplates', writer = true) {
+export async function setupStructuredComments(page: Page, agentKey: 'brand-kit' | 'boilerplates' | 'faq', writer = true) {
   await suppressCookieBanner(page);
   const { base, kit, key } = await structuredCommentAsset(page, agentKey);
   const fixture = await setupAsset(page, { mode: 'ready', writer, asset: base });
@@ -55,7 +56,12 @@ export async function setupStructuredComments(page: Page, agentKey: 'brand-kit' 
         json: {
           revisionId: url.searchParams.get('revision') ?? ASSET_REVISION,
           threads: state.done
-            ? state.rows.map((row) => ({ ...row, status: 'resolved', resultRevisionId: nextId, resolution: 'Shortened the selected passage.' }))
+            ? state.rows.map((row) => ({
+                ...row,
+                status: 'resolved',
+                resultRevisionId: nextId,
+                resolution: agentKey === 'faq' ? 'Added the supplied answer as Notes.' : 'Shortened the selected passage.',
+              }))
             : state.rows,
         },
       });
@@ -80,6 +86,13 @@ export async function setupStructuredComments(page: Page, agentKey: 'brand-kit' 
         const nextKit = brandKitTestRevision();
         nextKit.chapters.voice.line = 'Revised synthetic brand line.';
         Object.assign(sidecar, { chapters: nextKit.chapters, version: 2, mode: 'redraft' });
+      } else if (agentKey === 'faq') {
+        const content = readFaqContent(markdown);
+        if (!content) throw new Error('Missing synthetic FAQ content');
+        content.faq[0][1][2][1] = state.rows[0]?.text ?? '';
+        content.faq[0][1][2][2] = 'Notes';
+        markdown = JSON.stringify(content);
+        Object.assign(sidecar, { version: 2, mode: 'redraft', checks: { findings: [], unanswered: [] }, report: { ...kit.report, gaps: [] } });
       } else {
         const content = JSON.parse(markdown);
         content.bp[1].t = 'Revised synthetic boilerplate.';

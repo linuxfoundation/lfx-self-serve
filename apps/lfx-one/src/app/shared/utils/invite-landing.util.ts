@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
 import { isInviteLandingPath, isMentorshipMentorInvitePath } from '@lfx-one/shared/utils';
 
 /**
@@ -21,5 +22,13 @@ export function isBrowserInviteLandingPath(): boolean {
  * are unaffected.
  */
 export function isBrowserCredentialUrlPath(): boolean {
-  return typeof window !== 'undefined' && (isInviteLandingPath(window.location.pathname) || isMentorshipMentorInvitePath(window.location.pathname));
+  return (
+    typeof window !== 'undefined' &&
+    (isInviteLandingPath(window.location.pathname) || isMentorshipMentorInvitePath(window.location.pathname) || isVoteLinkUrl(window.location))
+  );
+}
+
+/** A login-free vote link (`/votes/:id#vote_token=...`): the credential rides in the fragment, which URL-capturing SDKs would otherwise record. */
+function isVoteLinkUrl(location: Pick<Location, 'pathname' | 'hash'>): boolean {
+  return /^\/votes\/[^/]+\/?$/.test(location.pathname) && new URLSearchParams(location.hash.replace(/^#/, '')).has(VOTE_LINK_TOKEN_FRAGMENT_PARAM);
 }

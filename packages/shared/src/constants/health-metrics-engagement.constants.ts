@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
@@ -14,7 +15,7 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
-import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
+import { HEALTH_METRICS_L2_EMPTY_SOURCES, HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /** Health Metrics tab bar, in render order; every tab routes to its Level 2 page. */
 export const HEALTH_METRICS_TABS = [
@@ -43,6 +44,7 @@ export const HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS = {
 export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   {
     key: 'participation',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Meeting participation',
     heading: 'Meeting participation',
     description:
@@ -58,6 +60,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'committees',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Group attendance',
     heading: 'Group attendance',
     description:
@@ -69,6 +72,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'trend',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board, snapshot: true },
     label: 'Attendance trend',
     heading: 'Attendance trend',
     description:
@@ -82,6 +86,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Organization participation',
     heading: 'Organization participation',
     description:
@@ -98,6 +103,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'reps',
+    empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Representatives',
     heading: 'Representatives',
     description: 'The people behind the organizations. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
@@ -108,6 +114,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'nonmem',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Non-member participation',
     heading: 'Non-member participation',
     description:
@@ -119,7 +126,16 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     ],
     footnoteCaution: true,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_ENGAGEMENT_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-users',
+  noun: 'engagement',
+  lead: 'Engagement fills in as members take part in meetings, events, code, surveys and newsletters.',
+  reasons: ['Members may not be linked to the foundation yet', 'New activity can take 24–48 hours to appear', 'Your Program Manager can help connect its data'],
+  pastActivity: 'member activity',
+};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a

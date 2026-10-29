@@ -34,6 +34,7 @@ import {
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
   CommitteeOrganizationReference,
+  GroupEditLink,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -54,6 +55,8 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
+  getGroupEditLink,
   hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -67,6 +70,8 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { DocumentService } from '@services/document.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
@@ -196,6 +201,7 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly surveyService = inject(SurveyService);
   private readonly voteService = inject(VoteService);
   private readonly documentService = inject(DocumentService);
@@ -380,6 +386,43 @@ export class CommitteeViewComponent {
   public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /**
+   * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
+   * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
+   * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   * Tagged with the committee uid it was fetched for: this view is reused across `/groups/:id`
+   * navigations, so an untagged result from the previous group would stay visible until the next
+   * lookup settles.
+   */
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean } | null> = toSignal(
+    toObservable(this.committee).pipe(
+      map((committee) =>
+        committee?.writer ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) } : null
+      ),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key),
+      switchMap((target) => {
+        if (!target) {
+          return of(null);
+        }
+        if (!target.key) {
+          return of({ uid: target.uid, writer: false });
+        }
+        return this.projectService.getProject(target.key, false).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true })),
+          catchError(() => of({ uid: target.uid, writer: false }))
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
+  /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
+  public editLink: Signal<GroupEditLink | null> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
+  });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {
@@ -701,6 +744,25 @@ export class CommitteeViewComponent {
       this.lensService.setLens('me');
     }
     this.router.navigate(['/', 'groups']);
+  }
+
+  /**
+   * Settings saved. Normally a plain refetch by the route id — but a rename regenerates `sso_group_name`
+   * for public / SSO groups, so a page opened through the old vanity slug would refetch a slug that no
+   * longer resolves. Move to the stable UID route first; the param change drives the refetch.
+   */
+  public onSettingsSaved(): void {
+    const committee = this.committee();
+    if (committee?.uid && this.committeeId() !== committee.uid) {
+      // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+        queryParams: { tab: this.activeTab() },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      return;
+    }
+    this.refreshCommittee();
   }
 
   public refreshCommittee(): void {

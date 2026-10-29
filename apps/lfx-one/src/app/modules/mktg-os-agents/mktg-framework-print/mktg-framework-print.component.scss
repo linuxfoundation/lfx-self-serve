@@ -24,6 +24,70 @@
   -webkit-print-color-adjust: exact;
 }
 
+@media print {
+  .lfx-framework-print {
+    page: mktg-framework;
+  }
+
+  .mfp-cover {
+    /* The named page reserves 0.55in at each edge on A4 and Letter. */
+    min-height: calc(100vh - 1.1in);
+    box-sizing: border-box;
+    break-inside: avoid;
+  }
+}
+
+/* Shared chapter chrome is always Inter; brand typography belongs to content/samples. */
+.lfx-print-chapter-title {
+  display: flex;
+  align-items: center;
+  gap: 10pt;
+  margin: 0 0 8pt;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 22pt;
+  font-weight: 500;
+  line-height: 1.1;
+  break-after: avoid;
+
+  > span {
+    color: var(--mfp-chapter-accent);
+    font-size: 11pt;
+    font-weight: 600;
+  }
+
+  &::after {
+    content: '';
+    flex: 1;
+    min-width: 18pt;
+    height: 1pt;
+    background-color: var(--mfp-chapter-accent);
+  }
+}
+
+/* One semantic goals table: prefer a whole table, otherwise break only between
+   value/key-message and proof/sound-bite pairs, never orphan the sound bite. */
+[data-testid='mktg-framework-print-goals'] {
+  /* Keep the upstream uppercase/tracked eyebrow; wrap its words, not letters,
+     rather than inheriting the document's anywhere wrapping. */
+  tbody th {
+    min-width: 1.1in;
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+  }
+
+  thead {
+    display: table-header-group;
+    break-after: avoid;
+  }
+  thead,
+  tbody,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
 /* styles.scss sets Inter on headings, paragraphs and controls in the base
    layer, which beats inheritance: inside the print they inherit the brand's
    typeface from the document instead, as in the brand kit book. */

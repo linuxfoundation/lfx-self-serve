@@ -94,6 +94,8 @@ export class VoteCastDrawerComponent {
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
+  protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
@@ -316,6 +318,13 @@ export class VoteCastDrawerComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initDrawerPt(): Signal<Record<string, unknown>> {
+    return computed(() => {
+      const hasBallot = !this.loadingVote() && this.questions().length > 0;
+      return { footer: { class: hasBallot ? 'border-t border-slate-200' : 'hidden' } };
+    });
   }
 
   private initIsRankedPoll(): Signal<boolean> {

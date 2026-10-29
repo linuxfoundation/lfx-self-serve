@@ -12,21 +12,7 @@
       data-testid="events-revenue-error" />
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-revenue-loading" aria-hidden="true" />
-  } @else if (!view().foundationMeasured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="Event revenue unavailable"
-      subtitle="No event revenue has been recorded for this foundation yet."
-      data-testid="events-revenue-foundation-unmeasured" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="Event revenue unavailable for this period"
-      subtitle="Revenue for the selected period has not been measured yet. Pick another period to see it."
-      data-testid="events-revenue-unmeasured" />
-  } @else {
+  } @else if (!empty()) {
     <span class="self-end text-[12px] text-gray-400" data-testid="events-revenue-pending">{{ pendingNote }}</span>
 
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-revenue-hero">

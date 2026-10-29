@@ -126,3 +126,152 @@ describe('CdpService.getWorkExperiencesForKnownUser', () => {
     expect(requestedUrls(fetchMock).some((url) => url.includes(`/v1/members/${MEMBER_ID}/work-experiences`))).toBe(true);
   });
 });
+
+/** A write whose settlement the test controls, recording when it starts. */
+function deferredWrite(started: string[], name: string): { write: () => Promise<void>; resolve: () => void; reject: (err: Error) => void } {
+  let resolve!: () => void;
+  let reject!: (err: Error) => void;
+  const settled = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return {
+    write: () => {
+      started.push(name);
+      return settled;
+    },
+    resolve,
+    reject,
+  };
+}
+
+/**
+ * #4523 — parallel identity writes against one member deadlock CDP, so a reconcile runs its writes
+ * one at a time and a second reconcile for the same member on this pod is dropped.
+ */
+describe('CdpService.runMemberIdentityWrites', () => {
+  it('runs the writes one at a time, in order', async () => {
+    const started: string[] = [];
+    const first = deferredWrite(started, 'first');
+    const second = deferredWrite(started, 'second');
+
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-serial', [first.write, second.write])).toBe(true);
+
+    await vi.waitFor(() => expect(started).toEqual(['first']));
+    await Promise.resolve();
+    expect(started).toEqual(['first']);
+    first.resolve();
+    await vi.waitFor(() => expect(started).toEqual(['first', 'second']));
+    second.resolve();
+  });
+
+  it('skips a second chain for a member already writing, across CdpService instances, until the first settles', async () => {
+    const started: string[] = [];
+    const first = deferredWrite(started, 'first');
+    const duplicate = deferredWrite(started, 'duplicate');
+    const other = deferredWrite(started, 'other-member');
+
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [first.write])).toBe(true);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [duplicate.write])).toBe(false);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-other', [other.write])).toBe(true);
+    await vi.waitFor(() => expect(started).toEqual(['first', 'other-member']));
+
+    first.resolve();
+    other.resolve();
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-busy', [duplicate.write])).toBe(true));
+    expect(started).toEqual(['first', 'other-member', 'duplicate']);
+    duplicate.resolve();
+  });
+
+  it('keeps going after a failed write and logs it as a warning', async () => {
+    const started: string[] = [];
+    const failing = deferredWrite(started, 'failing');
+    const next = deferredWrite(started, 'next');
+
+    new CdpService().runMemberIdentityWrites(undefined, 'member-failing', [failing.write, next.write]);
+    failing.reject(new Error('deadlock'));
+
+    await vi.waitFor(() => expect(started).toEqual(['failing', 'next']));
+    expect(loggerCalls.some(([, operation]) => operation === 'run_cdp_member_identity_writes')).toBe(true);
+    next.resolve();
+  });
+
+  // A queued verify landing after the removal would set the identity back to verified.
+  it('holds an identity removal until the member chain running on this pod settles', async () => {
+    const started: string[] = [];
+    const pendingVerify = deferredWrite(started, 'verify');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: 'member-removal' })).mockResolvedValueOnce(jsonResponse({}));
+    new CdpService().runMemberIdentityWrites(undefined, 'member-removal', [pendingVerify.write]);
+
+    const removal = new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    pendingVerify.resolve();
+    await removal;
+    expect(requestedUrls(fetchMock)[1]).toContain(`${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES('member-removal')}/identity-1`);
+  });
+
+  // The removal holds the slot while its PATCH runs, so a reconcile can't write alongside it.
+  it('skips a reconcile chain while a removal holds the member slot', async () => {
+    let releasePatch!: (response: Response) => void;
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ memberId: 'member-holding' }))
+      .mockReturnValueOnce(new Promise<Response>((resolve) => (releasePatch = resolve)));
+    const verify = vi.fn(async () => undefined);
+
+    const removal = new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-holding', [verify])).toBe(false);
+
+    releasePatch(jsonResponse({}));
+    await removal;
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-holding', [verify])).toBe(true));
+  });
+
+  it('propagates a failed removal and frees the member slot', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: 'member-failed-removal' })).mockResolvedValueOnce(jsonResponse({ message: 'boom' }, 500));
+
+    await expect(new CdpService().rejectIdentityForUser(undefined, LFID, 'identity-1')).rejects.toThrow('CDP identity reject failed');
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-failed-removal', [])).toBe(true));
+  });
+
+  // An empty list must not leave a settled chain registered, or every later reconcile is skipped.
+  it('leaves no slot behind for an empty write list', async () => {
+    const verify = vi.fn(async () => undefined);
+    expect(new CdpService().runMemberIdentityWrites(undefined, 'member-empty', [])).toBe(true);
+
+    await vi.waitFor(() => expect(new CdpService().runMemberIdentityWrites(undefined, 'member-empty', [verify])).toBe(true));
+    await vi.waitFor(() => expect(verify).toHaveBeenCalledOnce());
+  });
+});
+
+describe('CdpService.getMemberIdentitiesForUser', () => {
+  it('returns the resolved member id alongside the identities', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ memberId: MEMBER_ID }))
+      .mockResolvedValueOnce(
+        jsonResponse({ identities: [{ id: 'id-1', platform: 'github', type: 'username', value: 'dev-gh', verified: true, source: 'cdp' }] })
+      );
+
+    const result = await new CdpService().getMemberIdentitiesForUser(undefined, LFID);
+
+    expect(result.memberId).toBe(MEMBER_ID);
+    expect(result.identities).toEqual([expect.objectContaining({ id: 'id-1', platform: 'github', value: 'dev-gh' })]);
+    expect(requestedUrls(fetchMock)[1]).toContain(CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(MEMBER_ID));
+  });
+
+  // A 404 on the identities read must not drop a member that already resolved, or reconcile skips its writes.
+  it('keeps the resolved member id when only the identities read 404s', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ memberId: MEMBER_ID })).mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404));
+
+    await expect(new CdpService().getMemberIdentitiesForUser(undefined, LFID)).resolves.toEqual({ memberId: MEMBER_ID, identities: [] });
+  });
+
+  it('reports no member when resolving the member itself 404s', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'Member not found' }, 404)).mockResolvedValueOnce(jsonResponse({ message: 'Not found' }, 404));
+
+    await expect(new CdpService().getMemberIdentitiesForUser(undefined, LFID)).resolves.toEqual({ memberId: null, identities: [] });
+  });
+});

@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 A program's detail page is where a mentor does their day-to-day work: reading applicants, setting and reviewing tasks, and recording notes for the other reviewers.
 
+![A mentor’s Applicants tab for a program, with status filters](/images/docs/mentorship/mentor-program-detail.png)
+
 ## Before you begin
 
 - You must be an approved mentor on the program. See [Your Mentor Programs](../mentor-programs/).

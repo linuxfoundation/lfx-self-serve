@@ -46,6 +46,7 @@ vi.mock('../utils/mktg-session-token.util', () => ({
   verifySessionOwnerToken: mocks.verifySessionOwnerToken,
 }));
 import { AeoGeoController } from './aeo-geo.controller';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
 
 const body = () => ({ answers: { domain: 'project.example' }, project: 'project-1' });
 async function call(kind: 'generate' | 'result' | 'answers', payload: unknown) {
@@ -102,6 +103,25 @@ describe('AeoGeoController', () => {
       expect((await call('generate', payload)).next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     }
     expect(mocks.startGeneration).not.toHaveBeenCalled();
+  });
+  it('refuses empty answers with the plain 400 before sending', async () => {
+    for (const text of ['', '   ']) {
+      const result = await call('answers', {
+        project: 'project-1',
+        sessionId: 'session-a',
+        ownerToken: 'owner-proof',
+        documentId: 'run-012345678901234567890123',
+        answers: [{ id: 'exclude', text, origin: 'requester' }],
+      });
+      expect(result.next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          validationErrors: [{ code: 'FIELD_VALIDATION_ERROR', field: 'answers', message: MKTG_ANSWERS_INCOMPLETE_MESSAGE }],
+        })
+      );
+      expect(result.json).not.toHaveBeenCalled();
+    }
+    expect(mocks.sendAnswers).not.toHaveBeenCalled();
   });
   it('reports intake errors without misleading revision instructions', async () => {
     const invalid = await call('generate', { ...body(), answers: { domain: 'invalid' } });

@@ -83,6 +83,10 @@ describe('OverviewEventTrendDialogComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function labels(testId: string): string[] {
+    return [...(query(testId)?.children ?? [])].map((child) => child.textContent?.trim() ?? '');
+  }
+
   const oneFormat: HealthMetricsEventsForecastCurve = {
     eventId: 'e1',
     formats: [{ format: 'In Person', points: [point(-90, 100, null), point(-46, 330, null), point(0, null, 620)] }],
@@ -92,17 +96,23 @@ describe('OverviewEventTrendDialogComponent', () => {
     await render(oneFormat);
 
     expect(fixture.nativeElement.querySelector(`#${OverviewEventTrendDialogComponent.headingId}`)?.textContent?.trim()).toBe('Acme Summit');
-    expect(query('overview-trend-dialog')?.textContent).toContain('Springfield · Dec 8–10, 2026');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Springfield · Starts Dec 8, 2026');
     expect(query('overview-trend-kpi-current')?.textContent).toContain('330');
     expect(query('overview-trend-kpi-predicted')?.textContent).toContain('620');
+    expect(labels('overview-trend-kpi-predicted-range')).toEqual(['680 high', '560 low']);
+    expect(query('overview-trend-kpi-goal')?.textContent).toContain('1,000');
+    expect(query('overview-trend-kpi-days-left')?.textContent).toContain('46');
     expect(query('overview-trend-chart')?.querySelectorAll('path').length).toBeGreaterThanOrEqual(3);
     expect(query('overview-trend-format')).toBeNull();
   });
 
-  it('draws the goal line and names every line, the range and the goal in its legend', async () => {
+  it('draws the goal line, the axis ticks and the Today marker, and names every line, the range and the goal in its legend', async () => {
     await render(oneFormat);
 
     expect(query('overview-trend-goal')).not.toBeNull();
+    expect(labels('overview-trend-y-ticks')).toEqual(['1,250', '1,000', '750', '500', '250', '0']);
+    expect(labels('overview-trend-x-ticks')).toEqual(['180', '150', '120', '90', '60', '30', '0']);
+    expect(query('overview-trend-today')?.textContent?.trim()).toBe('Today');
     expect(query('overview-trend-dialog')?.textContent).toContain('Predicted range');
     expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
   });
@@ -130,6 +140,7 @@ describe('OverviewEventTrendDialogComponent', () => {
     expect(query('overview-trend-dialog')?.textContent).not.toContain('Predicted');
     expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
     expect(query('overview-trend-chart')?.querySelector('line[stroke-dasharray="3 3"]')).toBeNull();
+    expect(query('overview-trend-today')).toBeNull();
   });
 
   it('says so in place of an empty chart when a past event has no history', async () => {

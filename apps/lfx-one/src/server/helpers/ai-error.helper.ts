@@ -72,6 +72,42 @@ export function aiErrorSummary(error: unknown): string {
  */
 export async function aiErrorDetail(response: Response, apiKey: string): Promise<string> {
   const text = await response.text().catch(() => '');
+  return redactedDetail(text, apiKey);
+}
+
+/**
+ * The body of a successful AI proxy response, parsed as the JSON object a chat completion is.
+ *
+ * A bare `response.json()` is not enough here (#4500). A 2xx whose body is not JSON — an HTML page
+ * from a gateway in front of the proxy, a truncated body, plain text — throws V8's `SyntaxError`,
+ * which names neither the proxy nor the status, and whose message quotes a fragment of the body
+ * with no redaction and no bound. `aiErrorSummary` passes a non-`AiProxyError` message through
+ * unchanged, so that fragment could reach the browser. A body that parses to something other than
+ * an object (`null`, a string, an array) is refused the same way, so a caller reading `.choices`
+ * reaches its own "malformed response" check instead of a `TypeError`.
+ *
+ * Both are thrown as an `AiProxyError`: the summary is our sentence and the status, and the body
+ * goes into the detail with the same redaction and bound `aiErrorDetail` applies. A failed body
+ * READ is not caught: it is a transport failure, not a malformed response, and it propagates
+ * exactly as it did from `response.json()`.
+ */
+export async function readAiJson<T extends object>(response: Response, apiKey: string): Promise<T> {
+  const text = await response.text();
+  const summary = `AI proxy returned a response that is not a JSON object (${response.status})`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new AiProxyError(summary, redactedDetail(text, apiKey));
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new AiProxyError(summary, redactedDetail(text, apiKey));
+  }
+  return parsed as T;
+}
+
+/** A proxy body as a message suffix: the key stripped first, then the length bounded. */
+function redactedDetail(text: string, apiKey: string): string {
   if (!text) return '';
   const redacted = apiKey ? text.split(apiKey).join('[redacted]') : text;
   if (redacted.length <= AI_ERROR_DETAIL_LIMIT) return `: ${redacted}`;

@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The apply page confirms your profile and your eligibility, then submits your application for the term. Anything the program wants you to produce comes afterwards, as prerequisite tasks.
 
+![The apply page, showing the LFX profile and mentee profile used for the application](/images/docs/mentorship/apply-to-a-program.png)
+
 ## Before you begin
 
 - You need a mentee profile. See [Become a Mentee](../become-a-mentee/).

@@ -4,10 +4,20 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import type { OrgAllEmployeeDetail, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
+import { ORG_CODE_MEASURE_DEFINITION, ORG_CODE_METRIC_LABEL, ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import type {
+  OrgAllEmployeeDetail,
+  OrgKeyContactAssignment,
+  OrgPersonCodeView,
+  OrgPersonCompanyEmailsResponse,
+  PersonDrawerContext,
+} from '@lfx-one/shared/interfaces';
+import { describeOrgPersonCodeView } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { Tooltip } from 'primeng/tooltip';
 import { finalize, Observable, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -29,6 +39,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     boardSeats: [],
     committeeSeats: [],
     code: [],
+    totalCommits: 0,
     events: [
       {
         eventId: 'event-1',
@@ -47,6 +58,18 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     primaryEmail,
     companyEmailsStatus: 'resolved',
   });
+  const assignment: OrgKeyContactAssignment = {
+    contactUid: 'contact-1',
+    membershipUid: 'membership-1',
+    email: 'first.person@vendor-corp.example',
+    firstName: 'First',
+    lastName: 'Person',
+    displayName: 'First Person',
+    title: 'Events Manager',
+    role: 'Billing Contact',
+    foundationSlug: 'foundation-one',
+    foundationName: 'Foundation One',
+  };
   // One subject per URL, created on first request, so each test answers activity and addresses independently.
   const reply = (url: string): Subject<unknown> => {
     let subject = responses.get(url);
@@ -179,6 +202,45 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')).not.toBeNull();
   });
 
+  it('tags a former employee with the Former employee badge', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')?.textContent?.trim()).toBe('Former employee');
+  });
+
+  it.each([
+    { label: 'isFormer false', context: { name: 'First person', personKey: 'first-person', isFormer: false } },
+    { label: 'isFormer absent', context: { name: 'First person', personKey: 'first-person' } },
+  ])('shows no Former employee badge with $label', async ({ context }) => {
+    drawer.open(context);
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
+  it('drops the Former employee badge when the drawer switches from a former employee to a current one', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    drawer.open({ name: 'Second person', personKey: 'second-person' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
+  it('drops the Former employee badge when the account changes, since employment is per organization', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', isFormer: true });
+    await render();
+    expect(byTestId('person-detail-drawer-former-badge')).not.toBeNull();
+
+    selectedAccount.set({ uid: 'org-2' });
+    await render();
+
+    expect(byTestId('person-detail-drawer-former-badge')).toBeNull();
+  });
+
   it('ignores an old address response before the switch effect runs, then cancels its subscription', async () => {
     const cancelled = vi.fn();
     const firstEmails = new Subject<unknown>();
@@ -266,6 +328,119 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')).toBeNull();
   });
 
+  it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {
+    drawer.open(person);
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).next({
+      status: 'resolved',
+      assignments: [
+        { ...assignment, contactUid: 'contact-2', role: 'Marketing Contact', foundationName: 'Foundation Two' },
+        { ...assignment, contactUid: 'contact-1', role: 'Billing Contact', foundationName: 'Foundation One' },
+      ],
+    });
+    await render();
+
+    const rows = [...document.querySelectorAll('[data-testid="person-detail-drawer-key-contacts-list"] li')].map((li) =>
+      li.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toEqual(['Billing ContactFoundation One', 'Marketing ContactFoundation Two']);
+    expect(byTestId('person-detail-drawer-key-contacts-empty')).toBeNull();
+  });
+
+  it('asks for the roles only once the tab is opened, then keeps them across tab switches', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    // Most drawer opens never visit this tab, and the read costs a company-address lookup.
+    expect(requested()).not.toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+
+    drawer.setTab('events');
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    expect(requested().filter((url) => url === `${BY_PERSON_KEY}/key-contacts`)).toHaveLength(1);
+  });
+
+  it('opens straight into the roles request when the opener defaults to that tab', async () => {
+    drawer.open({ ...person, defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_USERNAME}/key-contacts`);
+  });
+
+  // The server resolves the roster username for a person key, so no identity rides in the URL.
+  it('never puts a username in the roles request for a person key', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', username: 'first-person', defaultTab: 'key-contacts' });
+    await render();
+    expect(requested()).toContain(`${BY_PERSON_KEY}/key-contacts`);
+    expect(requested().some((url) => url.includes('username='))).toBe(false);
+  });
+
+  // The drawer stays open across an account switch, and every other read drops its stale answer at once.
+  // Supplied roles belong to the organization they were read under, so they must not outlive it.
+  it('drops opener-supplied roles when the account changes, and fetches for the new one', async () => {
+    drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
+    await render();
+    expect(drawer.keyContacts()).toEqual([assignment]);
+    expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
+
+    selectedAccount.set({ uid: 'org-2' });
+    // Synchronously, before any new response lands: the previous org's roles are already gone.
+    expect(drawer.keyContacts()).toEqual([]);
+    expect(drawer.keyContactsIdentified()).toBe(false);
+
+    await render();
+    expect(requested()).toContain('/api/orgs/org-2/lens/people/by-username/first-person/key-contacts');
+    expect(document.body.textContent).not.toContain('Billing Contact');
+  });
+
+  it('renders roles supplied by the opener without requesting them', async () => {
+    drawer.open({ ...person, keyContactAssignments: [assignment], defaultTab: 'key-contacts' });
+    await render();
+
+    expect(requested()).not.toContain(`${BY_USERNAME}/key-contacts`);
+    expect(drawer.keyContactsLoading()).toBe(false);
+    expect(drawer.keyContactsIdentified()).toBe(true);
+    expect(document.body.textContent).toContain('Billing Contact');
+  });
+
+  it.each([
+    { label: 'an identified person with no roles', response: { status: 'resolved', assignments: [] }, testId: 'empty' },
+    { label: 'a person the lookup never identified', response: { status: 'unidentified', assignments: [] }, testId: 'unavailable' },
+    { label: 'a lookup that errored upstream', response: { status: 'failed', assignments: [] }, testId: 'error' },
+    // A response with no status at all is a failure, never a verified empty list.
+    { label: 'a response missing its status', response: { assignments: [] }, testId: 'error' },
+  ])('keeps $label distinct in the Key Contacts tab', async ({ response, testId }) => {
+    drawer.open(person);
+    await render();
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).next(response);
+    await render();
+
+    expect(byTestId(`person-detail-drawer-key-contacts-${testId}`)).not.toBeNull();
+  });
+
+  it('shows a failed roles read without disturbing the activity tabs', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next(detail());
+    drawer.setTab('key-contacts');
+    await render();
+    reply(`${BY_USERNAME}/key-contacts`).error(new HttpErrorResponse({ status: 500 }));
+    await render();
+    expect(byTestId('person-detail-drawer-key-contacts-error')).not.toBeNull();
+
+    drawer.setTab('events');
+    await render();
+    expect(drawer.error()).toBe(false);
+    expect(document.body.textContent).toContain('Member Summit');
+  });
+
   it('loads activity and governance for a username-only opener (lfx-self-serve-ops#894)', async () => {
     drawer.open(person);
     await render();
@@ -290,6 +465,100 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.setTab('governance');
     await render();
     expect(document.body.textContent).toContain('Gold Members');
+  });
+
+  it('labels the Code tab total "Commits" with the shared commits definition tooltip', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next({
+      ...detail(),
+      code: [
+        {
+          projectId: 'project-1',
+          projectName: 'Project One',
+          foundationId: 'foundation-1',
+          foundationName: 'Foundation One',
+          commits: 7,
+          lastActivityDate: null,
+          isMaintainer: false,
+        },
+      ],
+      totalCommits: 7,
+    });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
+    const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+    expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+    // Without an opener view the tab keeps today's trailing-year commits and names no view.
+    expect(byTestId('person-detail-drawer-code-view')).toBeNull();
+  });
+
+  it("shows a mirrored commit in each project's count and once in the Commits total", async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    // 3 commits only in project-1 and 4 mirrored in project-1 and project-2: 7 distinct commits.
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 7), project('project-2', 4)], totalCommits: 7 });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('7');
+    expect(byTestId('person-detail-drawer-code-project-project-1')?.textContent).toContain('7 commits');
+    expect(byTestId('person-detail-drawer-code-project-project-2')?.textContent).toContain('4 commits');
+  });
+
+  it('says "1 commit" for a project with one commit and "N commits" otherwise', async () => {
+    drawer.open(person);
+    await render();
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 1), project('project-2', 2)], totalCommits: 3 });
+    drawer.setTab('code');
+    await render();
+
+    const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+    expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
+  });
+
+  it.each([
+    { flagged: true, shown: true },
+    { flagged: false, shown: false },
+  ])('notes maintainer roles as unavailable on the Code tab only when the detail flags it (flagged: $flagged)', async ({ flagged, shown }) => {
+    drawer.open(person);
+    await render();
+    const code = [
+      {
+        projectId: 'project-1',
+        projectName: 'project-1',
+        foundationId: 'foundation-1',
+        foundationName: 'Foundation One',
+        commits: 1,
+        lastActivityDate: null,
+        isMaintainer: false,
+      },
+    ];
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code, totalCommits: 1, ...(flagged ? { maintainerRolesUnavailable: true as const } : {}) });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-maintainer-unavailable') !== null).toBe(shown);
   });
 
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {
@@ -455,5 +724,87 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     expect(emailState('none')).not.toBeNull();
     expect(emailState('0')).toBeNull();
+  });
+
+  it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({ name: 'First person', personKey: 'first-person', range: '90d' });
+    await render();
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '90d' } });
+    // The address read is keyed on the live directory, not on the pill range, so it is unchanged.
+    expect(optionsFor(`${BY_PERSON_KEY}/company-emails`)).toEqual({ params: undefined });
+
+    httpGet.mockClear();
+    drawer.open({ name: 'First person', username: 'first-person' });
+    await render();
+    expect(optionsFor(`${BY_USERNAME}/detail`)).toEqual({ params: {} });
+  });
+
+  it("sends the opener's code filters with its range on the activity read (lfx-self-serve#4404)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({
+      name: 'First person',
+      personKey: 'first-person',
+      range: '730d',
+      codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+    });
+    await render();
+
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '730d', projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' } });
+  });
+
+  describe("Code tab in the opener's view (lfx-self-serve#4404)", () => {
+    const view: OrgPersonCodeView = { range: '90d', projectScope: 'lf', commitScope: 'all', metric: 'code' };
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+
+    it('names the range, project type and code count, and labels the total and rows with that count', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 5), project('project-2', 1)], totalCommits: 6, codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+      expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('6');
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.code);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.code);
+      const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+      expect([count('project-1'), count('project-2')]).toEqual([`5 ${ORG_CODE_METRIC_UNIT.code.other}`, `1 ${ORG_CODE_METRIC_UNIT.code.one}`]);
+    });
+
+    it('tells main-branch commits apart from all commits in the tooltip', async () => {
+      const merged: OrgPersonCodeView = { ...view, commitScope: 'merged', metric: 'commits' };
+      drawer.open({ ...person, range: merged.range, codeFilters: merged });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 2)], totalCommits: 2, codeView: merged });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.commits);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.merged);
+    });
+
+    it('still names the view when the person has no code in it', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-empty')).not.toBeNull();
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+    });
   });
 });

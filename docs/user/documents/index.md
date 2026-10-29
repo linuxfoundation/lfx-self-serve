@@ -4,7 +4,7 @@ description: Browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, files, governance, project]
-last_updated: 2026-10-01
+last_updated: 2026-10-28
 intercom_collection: Documents
 ---
 
@@ -15,11 +15,29 @@ The Documents section lets you browse and manage documents associated with your 
 ## What you can do
 
 - Browse documents for your project or foundation
-- View document details
+- Filter documents by source and search by name, group, or meeting
+- Open folders and move between them with the breadcrumb
+- Download files, open links, play meeting recordings, and preview meeting summaries
+- With write access, upload files, create folders, and add links
 
 ## Navigation
 
-Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists documents from all sources for that context: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts. Use search and the **All Sources** filter (Project / Committee / Meeting / Mailing List) to narrow the list.
+Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists documents from all sources for that context: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts.
+
+Use the tabs above the list to narrow it by source: **All**, **Project**, **Groups**, **Meetings**, or **Mailing Lists**. Use the search box to find a document by name, or by the group or meeting it belongs to (meeting attachments are found by file name).
+
+The Documents section is available only in the project and foundation lenses. The old Me-lens **My Documents** page has been removed, and an old `/documents` link opens Documents for your active project or foundation. If you are in the Me or Organization lens, it opens that lens's home page instead.
+
+## Where documents come from
+
+The list brings together documents from different parts of LFX, and each source is managed in its own place:
+
+- **Project** documents are added and organized on this page, if you have write access.
+- **Groups** documents are managed on each group's **Documents** tab.
+- **Meetings** attachments are managed on the meeting. Recordings, transcripts, and summaries are created after a meeting runs and can't be edited here.
+- **Mailing Lists** files come from the mailing list and can't be added or edited in LFX.
+
+Folders work only for project documents and for documents on a group's own **Documents** tab. See [Manage Documents](manage-documents/#where-documents-come-from) for the full breakdown.
 
 ## Project context
 

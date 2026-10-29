@@ -27,6 +27,7 @@ import {
   renderFaqFormText,
   toFaqFormDocument,
   validateFaqEnvelope,
+  validateMktgRedraftResult,
 } from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
@@ -34,6 +35,7 @@ import { Request } from 'express';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 
 /**
  * FAQ generation flow (faq-output/v1; Guild linux-foundation~faq 1.0.0).
@@ -74,6 +76,7 @@ export class FaqService {
 
   /** The Marketing OS document store: every validated FAQ is recorded as a revision of the project's FAQ document. */
   private readonly documentStore: MktgDocumentStoreService;
+  private readonly comments = new MktgDocumentCommentsService();
 
   /** The FAQ knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['faq'];
@@ -145,9 +148,12 @@ export class FaqService {
    * on the answers) or `refused` (the reply that ended the run); `pending`
    * when it said neither. `projectUid` decides the storage partition and is
    * entitlement-checked before anything is written; without it the FAQ is
-   * still returned, just not stored.
+   * still returned, just not stored. Bound redrafts must match their frozen
+   * scope and comment echoes; a mismatched result fails and reopens its threads
+   * before persistence rather than reporting an unstorable asset as ready.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<FaqResultResponse> {
+    const context = await this.documentStore.assertRedraftScope(req, this.artifactSpec, sessionId, projectUid);
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
     // What the agent has done so far, in plain sentences, for the run page's live feed — on every status.
@@ -162,6 +168,12 @@ export class FaqService {
         return { status: 'refused', reply: outcome.reply, activity };
       }
       return { status: 'pending', activity };
+    }
+
+    if (context && !validateMktgRedraftResult(context, envelope).valid) {
+      const failure = { status: 'failed' as const, failureText: 'The agent result did not match the frozen redraft input.', activity };
+      await this.comments.settle(req, context, failure);
+      return failure;
     }
 
     logger.info(req, 'faq_result', 'FAQ ready', {

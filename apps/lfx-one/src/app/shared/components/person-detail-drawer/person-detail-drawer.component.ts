@@ -6,19 +6,24 @@ import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signa
 import { PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeCommitteeMembership,
+  OrgPersonCodeCount,
   PersonDrawerContext,
   PersonDrawerCopiedAddress,
   PersonDrawerEmail,
+  PersonDrawerKeyContactRow,
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
-import { isMailtoSafeEmail } from '@lfx-one/shared/utils';
+import { isMailtoSafeEmail, orgKeyContactRolePillClass, orgPersonCodeCount } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
+
+const compareLabels = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: 'base' });
 
 /** Shared Org Lens person-detail drawer — opened via PersonDetailDrawerService (LFXV2-2195). */
 @Component({
   selector: 'lfx-person-detail-drawer',
-  imports: [DatePipe, DecimalPipe, DrawerModule],
+  imports: [DatePipe, DecimalPipe, DrawerModule, TooltipModule],
   templateUrl: './person-detail-drawer.component.html',
 })
 export class PersonDetailDrawerComponent implements OnDestroy {
@@ -30,10 +35,14 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'training', label: 'Training' },
     { id: 'code', label: 'Code Contributions' },
     { id: 'governance', label: 'Governance' },
+    { id: 'key-contacts', label: 'Key Contacts' },
   ];
 
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
+  // Named after the view the detail was counted in (the opener's row, lfx-self-serve#4404), else commits of the trailing 12 months.
+  protected readonly codeCount: Signal<OrgPersonCodeCount> = computed(() => orgPersonCodeCount(this.drawer.detail()?.codeView));
+  protected readonly keyContactRoles: Signal<PersonDrawerKeyContactRow[]> = computed(() => this.initKeyContactRoles());
   protected readonly companyEmails: Signal<PersonDrawerEmail[]> = computed(() => this.initCompanyEmails());
   private readonly copied = signal<PersonDrawerCopiedAddress | null>(null);
   /**
@@ -128,15 +137,33 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     return [...detail.boardSeats, ...detail.committeeSeats];
   }
 
+  /**
+   * One row per role the person holds, foundation-labelled and sorted by foundation then role so a person
+   * holding several roles across several foundations reads in a stable order rather than upstream's.
+   */
+  private initKeyContactRoles(): PersonDrawerKeyContactRow[] {
+    return (
+      this.drawer
+        .keyContacts()
+        .map((assignment) => ({
+          contactUid: assignment.contactUid,
+          role: assignment.role,
+          pillClass: orgKeyContactRolePillClass(assignment.role),
+          foundationLabel: assignment.foundationName ?? assignment.foundationSlug,
+        }))
+        // Base sensitivity so a foundation upstream left unnamed — shown by its lowercase slug — still sorts
+        // among the display names rather than being pushed to one end by case.
+        .sort((a, b) => compareLabels(a.foundationLabel, b.foundationLabel) || compareLabels(a.role, b.role))
+    );
+  }
+
+  /** The total comes from the server: the per-project counts overlap on mirrored commits, so summing them would double count. */
   private initCodeTotals(): { commits: number; projects: number } {
     const detail = this.drawer.detail();
     if (!detail) {
       return { commits: 0, projects: 0 };
     }
-    return {
-      commits: detail.code.reduce((sum, row) => sum + row.totalCommits, 0),
-      projects: detail.code.length,
-    };
+    return { commits: detail.totalCommits, projects: detail.code.length };
   }
 
   // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.

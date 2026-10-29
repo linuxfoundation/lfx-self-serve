@@ -65,7 +65,7 @@ export class MktgDocumentRedraftService {
         )
           throw this.uncertain();
         this.contexts.assertScope(context, project, type.agentKey);
-        await runs.start(req, project, type.agentKey, session, context.priorVersion, input.clientRequestId, context.basedOnId);
+        await runs.start(req, project, type.agentKey, session, context.priorVersion, input.clientRequestId, { basedOnId: context.basedOnId });
         await this.comments.bindRun(req, project, type, documentId, input.clientRequestId, context.runId, true);
         return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId: context.runId, priorVersion: context.priorVersion };
       } catch (error) {
@@ -85,7 +85,7 @@ export class MktgDocumentRedraftService {
       await this.documents.rememberGenerationFramework(req, type.agentKey, project, session, prepared.framework);
       await this.contexts.create(req, session, prepared.context);
       // Publish progress only after the contract descriptor: polls cannot fall back to Generate in a context gap.
-      await runs.start(req, project, type.agentKey, session, prepared.context.priorVersion, input.clientRequestId, prepared.context.basedOnId);
+      await runs.start(req, project, type.agentKey, session, prepared.context.priorVersion, input.clientRequestId, { basedOnId: prepared.context.basedOnId });
       await this.comments.bindRun(req, project, type, documentId, input.clientRequestId, runId, true);
       logger.debug(req, 'mktg_document_redraft', 'Recorded comment redraft start', { agent: agent.id });
       return { sessionId: session, ownerToken: createSessionOwnerToken(creator, session), runId, priorVersion: prepared.context.priorVersion };

@@ -6,10 +6,15 @@
   <div class="flex min-w-0 flex-col gap-[2px]">
     <div class="flex items-center gap-[6px]">
       <h2 class="m-0 text-[16px] font-semibold text-gray-900">{{ heading() }}</h2>
-      <lfx-overview-info-tip [text]="info()" />
+      <lfx-overview-info-tip size="title" [text]="info()" />
     </div>
-    @if (subtitle() && status() === 'ready' && !isEmpty()) {
-      <span class="text-[12px] text-gray-400" [attr.data-testid]="testId() + '-subtitle'">{{ subtitle() }}</span>
+    @if (meta().length && status() === 'ready' && !isEmpty()) {
+      <span class="text-[12px] text-gray-400" [attr.data-testid]="testId() + '-meta'">
+        @for (part of meta(); track part.label; let last = $last) {
+          {{ part.label }} <span class="text-gray-600">{{ part.value }}</span
+          >{{ last ? '' : ' · ' }}
+        }
+      </span>
     }
   </div>
   <ng-content select="[overviewCardAction]" />
@@ -24,22 +29,34 @@
   }
   @default {
     @if (isEmpty()) {
-      <ng-container [ngTemplateOutlet]="empty" [ngTemplateOutletContext]="{ $implicit: emptyCopy(), kind: 'empty' }" />
+      <ng-container [ngTemplateOutlet]="empty" [ngTemplateOutletContext]="{ $implicit: resolvedEmptyCopy(), kind: 'empty' }" />
     } @else {
       <ng-content />
     }
   }
 }
 
+<!-- The design's empty block: an icon tile, a title, then one sentence or a short list of reasons, and any action. -->
 <ng-template #empty let-copy let-kind="kind">
   <div
-    class="flex min-h-[180px] flex-1 flex-col items-center justify-center gap-[8px] px-[16px] pb-[8px] pt-[12px] text-center"
+    class="flex min-h-[200px] flex-1 flex-col items-center justify-center gap-[6px] px-[16px] py-[8px] text-center"
     [attr.data-testid]="testId() + '-' + kind">
-    <span class="inline-flex h-[44px] w-[44px] items-center justify-center rounded-full" [class]="copy.circleClass">
-      <i class="text-[18px]" [class]="copy.icon + ' ' + copy.iconClass" aria-hidden="true"></i>
+    <span class="mb-[4px] inline-flex h-[44px] w-[44px] items-center justify-center rounded-[12px] border border-gray-200 bg-white shadow-sm">
+      <i class="text-[18px] text-gray-600" [class]="copy.icon" aria-hidden="true"></i>
     </span>
-    <span class="text-[14px] font-medium text-gray-900">{{ copy.title }}</span>
-    <span class="max-w-[420px] text-[13px] leading-[1.5] text-gray-500">{{ copy.text }}</span>
+    <span class="text-[14px] font-semibold text-gray-900" [attr.data-testid]="testId() + '-' + kind + '-title'">{{ copy.title }}</span>
+    @if (copy.text) {
+      <span class="max-w-full text-pretty text-[13px] leading-[1.5] text-gray-500">{{ copy.text }}</span>
+    }
+    @if (copy.reasons.length) {
+      <ul class="m-0 mt-[4px] flex list-none flex-col gap-[4px] p-0 text-left" [attr.data-testid]="testId() + '-' + kind + '-reasons'">
+        @for (reason of copy.reasons; track $index) {
+          <li class="flex items-start gap-[8px] text-[13px] leading-[1.5] text-gray-500">
+            <span class="mt-[8px] h-[4px] w-[4px] flex-none rounded-full bg-gray-400" aria-hidden="true"></span><span class="text-pretty">{{ reason }}</span>
+          </li>
+        }
+      </ul>
+    }
     @if (kind === 'empty') {
       <ng-content select="[overviewEmptyAction]" />
     }

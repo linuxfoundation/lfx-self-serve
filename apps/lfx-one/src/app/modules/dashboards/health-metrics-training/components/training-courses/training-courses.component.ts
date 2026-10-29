@@ -54,8 +54,8 @@ export class TrainingCoursesComponent {
 
   /** Every course ever enrolled in, for the sub-nav badge; `null` while a read is pending or failed. */
   public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -90,6 +90,8 @@ export class TrainingCoursesComponent {
   protected readonly rowViews: Signal<HealthMetricsTrainingCourseRowView[]> = computed(() => this.response().rows.map(buildHealthMetricsTrainingCourseRowView));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
+  /** No course had a learner in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.query()));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
   protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
@@ -162,7 +164,7 @@ export class TrainingCoursesComponent {
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response, query));
             })
           )
         )
@@ -223,4 +225,14 @@ export class TrainingCoursesComponent {
   private toType(id: string | null): HealthMetricsTrainingCoursesType {
     return HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.find((option) => option.id === id)?.id ?? 'all';
   }
+}
+
+/**
+ * Nothing ever enrolled, or the unfiltered first page holds no course with figures for the period. The scope and
+ * match counts span every year, but rows rank the period's figures first, so the top of the page decides.
+ */
+function isEmptyPeriod(response: HealthMetricsTrainingCourses, query: HealthMetricsTrainingCoursesQuery): boolean {
+  if (!response.scopeTotal) return true;
+  const unfiltered = query.type === 'all' && !query.search && query.offset === 0;
+  return unfiltered && !response.rows.some((row) => row.enrollments || row.revenueUsd);
 }

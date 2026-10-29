@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Console } from 'node:console';
+
 import otelApi from '@opentelemetry/api';
 import otelExporterProto from '@opentelemetry/exporter-trace-otlp-proto';
 import otelExpress from '@opentelemetry/instrumentation-express';
@@ -87,7 +89,7 @@ function otelReplacer(_key, value) {
   }
   return value;
 }
-const _otelConsole = new console.Console({ stdout: process.stdout, ignoreErrors: true });
+const _otelConsole = new Console({ stdout: process.stdout, ignoreErrors: true });
 function otelWrite(level, msg, extra) {
   let line;
   try {

@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!placeholder()) {
+  @if (photoSrc(); as url) {
+    <img
+      #photo
+      class="h-full w-full rounded-[inherit] object-cover"
+      [src]="url"
+      alt=""
+      aria-hidden="true"
+      (error)="onPhotoError(url)"
+      data-testid="ui-avatar-image" />
+  } @else if (icon()) {
+    <i [class]="icon()" aria-hidden="true" data-testid="ui-avatar-icon"></i>
+  } @else {
+    <span aria-hidden="true" data-testid="ui-avatar-initials">{{ text() }}</span>
+  }
+  @if (badgeIcon()) {
+    <!-- Exact px, not rem: the app root font is 14px. -->
+    <span
+      class="absolute -bottom-[3px] -right-[3px] grid h-[45%] min-h-[14px] w-[45%] min-w-[14px] place-items-center rounded-full bg-ui-neutral-900 text-ui-background-100 ring-2 ring-ui-background-100"
+      [style.font-size.px]="size() * 0.26"
+      aria-hidden="true"
+      data-testid="ui-avatar-badge">
+      <i [class]="badgeIcon()"></i>
+    </span>
+  }
+}

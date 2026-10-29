@@ -31,9 +31,11 @@ export class MktgDocumentStoreService {
   private readonly http = inject(HttpClient);
 
   /** Every document of the project, grouped by type in the Documents area's order. */
-  public listDocuments(projectUid: string, poll = false): Observable<MktgDocumentsResponse> {
+  public listDocuments(projectUid: string, poll = false, ownRuns = false): Observable<MktgDocumentsResponse> {
+    let params = this.projectParams(projectUid, poll);
+    if (ownRuns) params = params.set('ownRuns', '1');
     return this.http
-      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params: this.projectParams(projectUid, poll) })
+      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load Marketing OS documents', error)));
   }
 
@@ -44,10 +46,12 @@ export class MktgDocumentStoreService {
     documentId: string,
     poll = false,
     refreshRunId?: string,
-    expectedPending = false
+    expectedPending = false,
+    selectedRunId?: string
   ): Observable<MktgDocumentDetailResponse> {
     let params = this.projectParams(projectUid, poll);
     if (refreshRunId) params = params.set('refreshRun', refreshRunId);
+    if (selectedRunId) params = params.set('run', selectedRunId);
     return this.http.get<MktgDocumentDetailResponse>(this.documentPath(agentKey, documentId), { params }).pipe(
       catchError((error: unknown) => {
         if (expectedPending && error instanceof HttpErrorResponse && error.status === 404) {
@@ -120,7 +124,8 @@ export class MktgDocumentStoreService {
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {
-    console.error(message, error);
+    const response = error instanceof HttpErrorResponse ? error : null;
+    console.error(message, { status: response?.status, code: typeof response?.error?.code === 'string' ? response.error.code : undefined });
     return throwError(() => error);
   }
 

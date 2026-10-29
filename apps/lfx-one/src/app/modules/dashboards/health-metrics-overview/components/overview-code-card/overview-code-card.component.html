@@ -9,8 +9,12 @@
   [isEmpty]="view()?.isEmpty ?? true"
   [emptyCopy]="emptyCopy"
   testId="overview-code">
-  <div overviewEmptyAction class="mt-[4px]">
-    <lfx-overview-explore-link [href]="insightsUrl()" label="Open in LFX Insights" testId="overview-code-empty-insights" />
+  <div overviewEmptyAction class="mt-[8px]">
+    <lfx-overview-explore-link
+      [href]="insightsUrl()"
+      label="LFX Insights"
+      leadingIcon="fa-light fa-arrow-up-right-from-square"
+      testId="overview-code-empty-insights" />
   </div>
 
   @if (view(); as view) {

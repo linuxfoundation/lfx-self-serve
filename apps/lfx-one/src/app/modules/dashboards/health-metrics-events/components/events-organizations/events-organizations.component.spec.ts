@@ -45,6 +45,7 @@ describe('EventsOrganizationsComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` every read after it.
   async function render(
@@ -73,7 +74,10 @@ describe('EventsOrganizationsComponent', () => {
     fixture = TestBed.createComponent(EventsOrganizationsComponent);
     fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -92,6 +96,7 @@ describe('EventsOrganizationsComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     counts = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, renders the page, and settles', async () => {
@@ -101,6 +106,7 @@ describe('EventsOrganizationsComponent', () => {
     expect(query(`events-orgs-row-${ACCOUNT_ID}-name`)?.textContent?.trim()).toBe('Acme Motors');
     expect(query('events-orgs-count')?.textContent?.trim()).toBe('1 organization');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('emits the in-scope total for the sub-nav badge, not the filtered count', async () => {
@@ -262,10 +268,11 @@ describe('EventsOrganizationsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 2 } }));
   });
 
-  it('shows the no-activity state when the period has no active organization', async () => {
+  it('settles empty, with no body, when the period has no active organization', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
-    expect(query('events-orgs-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('events-orgs-controls')).toBeNull();
     expect(query('events-orgs-table')).toBeNull();
     expect(query('events-orgs-search')).toBeNull();
   });
@@ -275,7 +282,8 @@ describe('EventsOrganizationsComponent', () => {
 
     expect(query('events-orgs-no-match')).not.toBeNull();
     expect(query('events-orgs-controls')).not.toBeNull();
-    expect(query('events-orgs-empty')).toBeNull();
+    // A filter miss is not an empty period, so the shell must not take the section over.
+    expect(verdicts).toEqual([false]);
   });
 
   // A failed read must not render copy that asserts the foundation had no organizations.
@@ -289,9 +297,9 @@ describe('EventsOrganizationsComponent', () => {
     await settle();
 
     expect(query('events-orgs-error')).not.toBeNull();
-    expect(query('events-orgs-empty')).toBeNull();
     expect(counts).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -302,6 +310,5 @@ describe('EventsOrganizationsComponent', () => {
     expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(query('events-orgs-count')?.textContent?.trim()).toBe('—');
-    expect(query('events-orgs-empty')).toBeNull();
   });
 });

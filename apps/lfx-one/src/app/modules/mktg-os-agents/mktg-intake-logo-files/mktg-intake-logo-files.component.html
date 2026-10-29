@@ -59,7 +59,9 @@
         type="url"
         placeholder="https://…/logo.svg"
         dataTest="mktg-intake-logo-files-link-input"
+        describedBy="mktg-intake-logo-files-link-hint"
         (keydown.enter)="$event.preventDefault(); onAddLink()" />
+      <span id="mktg-intake-logo-files-link-hint" class="text-xs text-gray-500">{{ driveSharingHint }}</span>
     </div>
     <lfx-button
       label="Add link"

@@ -45,13 +45,38 @@ describe('Member360ResultComponent', () => {
     };
     return { fixture, component: fixture.componentInstance, query, names, sort };
   }
-  it('builds New run through the shared route helper without carrying asset state or stale project', async () => {
+  it('renders the agent summary first as markdown, preserving its partial-report disclosure', () => {
+    const envelope = member360Fixture();
+    envelope.summary_markdown = 'Partial report.\n\n## Run findings\n\n**Synthetic evidence** remains incomplete for this project.';
+    const view = render(envelope);
+    expect(view.query('member-360-result').firstElementChild).toBe(view.query('member-360-run-summary'));
+    expect(view.query('member-360-run-summary').textContent).toContain('Partial report.');
+    expect(view.query('member-360-run-summary').querySelector('strong')?.textContent).toBe('Synthetic evidence');
+  });
+  it.each(['absent', '', ' \n '])('omits an %j summary without rendering an empty section', (value) => {
+    const envelope = member360Fixture();
+    if (value === 'absent') Reflect.deleteProperty(envelope, 'summary_markdown');
+    else envelope.summary_markdown = value;
+    expect(render(envelope).query('member-360-run-summary')).toBeNull();
+  });
+  it('presents the used sources in neutral grey rather than success green', () => {
+    const view = render();
+    const sources = view.query('member-360-sources-used');
+    expect(sources.textContent).toBeTruthy();
+    expect(sources.classList.contains('text-gray-700')).toBe(true);
+    expect(sources.className).not.toContain('emerald');
+  });
+  it('exposes the shared form route for title-row actions without carrying asset state or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
     await router.navigateByUrl('/project/mktg-os-agents/documents/member-360/run-0123456789abcdef01234567?project=old&revision=old&tab=old');
     const view = render();
     await view.fixture.whenStable();
-    expect(view.query('member-360-new-run').getAttribute('href')).toBe('/project/mktg-os-agents/member-360?project=sample-foundation');
+    expect(view.component.runRoute()).toEqual(['/project/mktg-os-agents', 'member-360']);
+    expect(view.component.projectParams()).toEqual({ project: 'sample-foundation' });
+    expect(view.query('member-360-new-run')).toBeNull();
+    expect(view.query('member-360-download')).toBeNull();
+    expect(view.component.workbookFilename()).toBe(`Member360_${view.component.envelope().project}_${view.component.envelope().period.label}.xlsx`);
   });
   it('loads ranking filters and sort from a shared URL, pushes changes and restores preceding query state', async () => {
     const router = TestBed.inject(Router);

@@ -4,20 +4,32 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getVotes, getVotesSummary, getVoteStatusCounts, getMyVotes, getVoteReminderRecipients, getVoteVoters, sendVoteReminders, assertVoteWrite, success } =
-  vi.hoisted(() => ({
-    getVotes: vi.fn(),
-    getVotesSummary: vi.fn(),
-    getVoteStatusCounts: vi.fn(),
-    getMyVotes: vi.fn(),
-    getVoteReminderRecipients: vi.fn(),
-    getVoteVoters: vi.fn(),
-    sendVoteReminders: vi.fn(),
-    assertVoteWrite: vi.fn(),
-    success: vi.fn(),
-  }));
+const {
+  getVoteById,
+  getVotes,
+  getVotesSummary,
+  getVoteStatusCounts,
+  getMyVotes,
+  getVoteReminderRecipients,
+  getVoteVoters,
+  sendVoteReminders,
+  assertVoteWrite,
+  success,
+} = vi.hoisted(() => ({
+  getVoteById: vi.fn(),
+  getVotes: vi.fn(),
+  getVotesSummary: vi.fn(),
+  getVoteStatusCounts: vi.fn(),
+  getMyVotes: vi.fn(),
+  getVoteReminderRecipients: vi.fn(),
+  getVoteVoters: vi.fn(),
+  sendVoteReminders: vi.fn(),
+  assertVoteWrite: vi.fn(),
+  success: vi.fn(),
+}));
 vi.mock('../services/vote.service', () => ({
   VoteService: class {
+    public getVoteById = getVoteById;
     public getVotes = getVotes;
     public getVotesSummary = getVotesSummary;
     public getVoteStatusCounts = getVoteStatusCounts;
@@ -322,5 +334,29 @@ describe('VoteController voters (#3911)', () => {
     await controller.getVoteVoters(request({ uid: 'vote-1' }), res, next);
     expect(next).toHaveBeenCalledWith(refusal);
     expect(json).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoteController getVoteById writer decoration (#4140)', () => {
+  const controller = new VoteController();
+  const json = vi.fn();
+  const res = { json } as unknown as Response;
+  const next = vi.fn();
+  const request = (query: Record<string, unknown>) => ({ params: { uid: 'vote-1' }, query }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getVoteById.mockResolvedValue({ uid: 'vote-1', name: 'Budget', project_uid: 'p1' });
+  });
+
+  it('asks for vote#writer only when include_writer=true', async () => {
+    await controller.getVoteById(request({ include_writer: 'true' }), res, next);
+    expect(getVoteById).toHaveBeenCalledWith(expect.anything(), 'vote-1', { includeProject: true, includeWriter: true });
+  });
+
+  it('skips the writer lookup by default so polling and existing callers pay nothing extra', async () => {
+    await controller.getVoteById(request({}), res, next);
+    expect(getVoteById).toHaveBeenCalledWith(expect.anything(), 'vote-1', { includeProject: true, includeWriter: false });
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ uid: 'vote-1' }));
   });
 });

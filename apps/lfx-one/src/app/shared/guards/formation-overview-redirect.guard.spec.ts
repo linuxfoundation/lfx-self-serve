@@ -11,20 +11,20 @@ import { ProjectContextService } from '@shared/services/project-context.service'
 import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { formationOverviewRedirectGuard } from './formation-overview-redirect.guard';
 
 describe('formationOverviewRedirectGuard', () => {
-  let getFlagOverride: ReturnType<typeof vi.fn>;
+  let getFlagOverride: Mock;
   let providerReady: ReturnType<typeof signal<boolean>>;
-  let waitForReady: ReturnType<typeof vi.fn>;
-  let getBooleanFlag: ReturnType<typeof vi.fn>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let resolveProject: ReturnType<typeof vi.fn>;
-  let createUrlTree: ReturnType<typeof vi.fn>;
+  let waitForReady: Mock;
+  let getBooleanFlag: Mock;
+  let getProject: Mock;
+  let resolveProject: Mock;
+  let createUrlTree: Mock;
   let selectedProject: ReturnType<typeof signal<ProjectContext | null>>;
-  let setFormationOverviewAllowedSlug: ReturnType<typeof vi.fn>;
+  let setFormationOverviewAllowedSlug: Mock;
 
   const contextProject: ProjectContext = { uid: 'uid-ctx', name: 'Context Project', slug: 'ctx-project', parent_uid: '', logoUrl: '' };
 

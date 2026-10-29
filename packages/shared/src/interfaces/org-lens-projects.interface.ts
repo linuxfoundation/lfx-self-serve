@@ -167,6 +167,12 @@ export interface OrgLensProjectsResponse {
   dataUpdatedAt: string;
   /** All projects the organization is associated with. */
   projects: OrgLensProject[];
+  /**
+   * Present (and `true`) only when the maintainer roles table could not be read: every project's `maintainers`
+   * is then empty because the data is unavailable, not because the org has no maintainers. Such a response is
+   * never cached, so the compact cache encoding never needs to carry it.
+   */
+  maintainerRolesUnavailable?: true;
 }
 
 export interface OrgLensProjectSearchResult {

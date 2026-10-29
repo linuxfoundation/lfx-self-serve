@@ -10,13 +10,8 @@
       title="Members directory unavailable"
       subtitle="We could not load this foundation's members. Refresh the page to try again."
       data-testid="members-directory-error" />
-  } @else if (!loading() && !scopeTotal()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-users"
-      title="No members yet"
-      subtitle="This foundation has no members on record."
-      data-testid="members-directory-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center" data-testid="members-directory-controls">
       <div class="w-full sm:w-64">

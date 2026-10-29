@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { MKTG_REBUILD_DOWNSTREAM_KEYS } from '@lfx-one/shared/constants';
 
@@ -35,7 +35,7 @@ const response = () => ({ json: vi.fn() }) as unknown as Response;
 
 describe('MktgRebuildController', () => {
   let controller: MktgRebuildController;
-  let next: NextFunction & ReturnType<typeof vi.fn>;
+  let next: NextFunction & Mock;
   beforeEach(() => {
     vi.resetAllMocks();
     controller = new MktgRebuildController();

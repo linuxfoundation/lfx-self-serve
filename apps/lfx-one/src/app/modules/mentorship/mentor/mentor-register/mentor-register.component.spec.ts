@@ -31,7 +31,7 @@ import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
@@ -67,8 +67,8 @@ describe('MentorRegisterComponent', () => {
 
   let fixture: ComponentFixture<MentorRegisterComponent>;
   let component: MentorRegisterComponent;
-  let toast: ReturnType<typeof vi.fn>;
-  let confirm: ReturnType<typeof vi.fn>;
+  let toast: Mock;
+  let confirm: Mock;
   let registerMentorProfile: ReturnType<typeof vi.fn<(request: MentorshipMentorRegisterRequest) => Observable<void>>>;
   let getOpenPrograms: ReturnType<typeof vi.fn<(query: MentorshipMentorOpenProgramsQuery) => Observable<MentorshipMentorOpenProgramsResponse>>>;
   let requestMany: ReturnType<typeof vi.fn<(programs: MentorshipMentorOpenProgram[]) => Observable<MentorshipMentorOpenProgram[]>>>;

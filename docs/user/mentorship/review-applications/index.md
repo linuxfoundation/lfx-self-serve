@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The **Current Mentees** tab is where a Program Admin decides on applications for the program's open terms. **Past Mentees** shows the same for closed terms.
 
+![A program’s Current Mentees tab, with status, other applications and actions per mentee](/images/docs/mentorship/review-applications.png)
+
 ## Before you begin
 
 - You must be a Program Admin on the program.

@@ -32,6 +32,8 @@ module.exports = defineConfig([
       'playwright.config.ts',
       'e2e/**/*',
       'src/server/pdf-templates/**/*',
+      // Storybook config sits outside tsconfig.app.json, so typed linting cannot parse it.
+      '.storybook/**/*',
     ],
   },
   {
@@ -149,6 +151,13 @@ module.exports = defineConfig([
       '@typescript-eslint/no-empty-function': 'warn',
       '@angular-eslint/no-empty-lifecycle-method': 'off',
       '@angular-eslint/no-output-native': 'off',
+    },
+  },
+  {
+    // The uikit is a PrimeNG-free library with its own namespace, distinct from the app's `lfx-*` wrappers.
+    files: ['src/app/shared/uikit/**/*.ts'],
+    rules: {
+      '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'lfx-ui', style: 'kebab-case' }],
     },
   },
   {

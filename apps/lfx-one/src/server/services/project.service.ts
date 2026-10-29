@@ -4002,6 +4002,47 @@ export class ProjectService {
   }
 
   /**
+   * Resolves a project uid to its slug over NATS (`lfx.projects-api.get_slug`), or `null` when no project
+   * has that uid. The lookup is project metadata the service answers without a user permission check, so
+   * a caller authorized on a project by a marketing grant can name it by uid without also holding
+   * `viewer` on it (#4507). Unlike {@link getProjectIdBySlug}, a failure never reads as a miss: the
+   * caller is about to authorize on the answer, so a lost answer is a 503 and an unusable one a 502.
+   */
+  public async getProjectSlugByUid(req: Request, uid: string): Promise<string | null> {
+    const errorOptions = { operation: 'get_project_slug_by_uid', service: 'project_service', path: '/nats/project-get-slug' };
+    const codec = this.natsService.getCodec();
+
+    let reply: string;
+    try {
+      const response = await this.natsService.request(NatsSubjects.PROJECT_GET_SLUG, codec.encode(uid), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      reply = codec.decode(response.data).trim();
+    } catch (error) {
+      // 503 + transport marker, not a miss: a lost answer (timeout, no responder, closed connection)
+      // says nothing about whether the project exists.
+      throw new MicroserviceError('The project lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        ...errorOptions,
+        originalError: error instanceof Error ? error : undefined,
+        transportFailure: true,
+      });
+    }
+
+    // A miss is answered with the service's JSON error envelope, {"error":"not_found",...}.
+    const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+    if (replyError === 'not_found') {
+      logger.debug(req, 'get_project_slug_by_uid', 'Project uid not found via NATS', { uid });
+      return null;
+    }
+    if (replyError !== null || !reply) {
+      // 502, not a miss: the service answered, but with nothing usable as a slug.
+      throw new MicroserviceError('The project service returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
+        ...errorOptions,
+        originalError: new Error(`Project uid lookup failed: ${replyError ?? 'empty reply'}`),
+      });
+    }
+    return reply;
+  }
+
+  /**
    * Resolves a project slug to its uid over NATS. By default a timeout or 503 is reported as a missing
    * project (`exists: false`); pass `unavailableAsMissing: false` to have it throw instead, for a
    * caller that must tell "couldn't check" apart from "no such project".

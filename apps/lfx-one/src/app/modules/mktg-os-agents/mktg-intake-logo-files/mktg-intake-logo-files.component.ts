@@ -7,6 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MKTG_DRIVE_SHARING_HINT } from '@lfx-one/shared/constants';
 import { MktgIntakeLogoFile, MktgIntakeLogoFileEntry, MktgIntakeLogoFilesConfig } from '@lfx-one/shared/interfaces';
 import { brandKitLogoFileKind, formatFileSize } from '@lfx-one/shared/utils';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
@@ -32,6 +33,8 @@ export class MktgIntakeLogoFilesComponent {
 
   // === Inputs ===
   public readonly config = input.required<MktgIntakeLogoFilesConfig>();
+
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
 
   // === Forms ===
   protected readonly linkForm = new FormGroup({

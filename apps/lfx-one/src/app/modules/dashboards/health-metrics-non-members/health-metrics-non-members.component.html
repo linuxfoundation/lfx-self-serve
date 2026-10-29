@@ -8,15 +8,19 @@
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
   [subNavItems]="subNavItems()"
+  [blank]="blank"
   navLabel="Non-Members sections"
   testIdPrefix="non-members">
   <ng-template lfxHealthMetricsL2Section="orgs">
-    <lfx-non-members-orgs (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+    <lfx-non-members-orgs (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="people">
-    <lfx-non-members-people (countChange)="peopleCount.set($event)" (reading)="shell.sectionReading('people')" (settled)="shell.sectionSettled('people')" />
+    <lfx-non-members-people
+      (countChange)="peopleCount.set($event)"
+      (reading)="shell.sectionReading('people')"
+      (settled)="shell.sectionSettled('people', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="conversion">
-    <lfx-non-members-conversion (reading)="shell.sectionReading('conversion')" (settled)="shell.sectionSettled('conversion')" />
+    <lfx-non-members-conversion (reading)="shell.sectionReading('conversion')" (settled)="shell.sectionSettled('conversion', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

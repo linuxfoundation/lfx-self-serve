@@ -1220,6 +1220,8 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
 
     expect(voteActions).toHaveLength(1);
     expect(voteActions[0]).toMatchObject({ buttonText: 'Cast Vote', voteUid: 'vote-active', text: 'Cast your vote on Active Ballot' });
+    // The secondary link opens this vote's detail page, not the My Votes list.
+    expect(voteActions[0].buttonLink).toBe('/votes/vote-active');
   });
 
   it('queries vote_response by identity filters_or with no filter_grants (the #2985 fix)', async () => {

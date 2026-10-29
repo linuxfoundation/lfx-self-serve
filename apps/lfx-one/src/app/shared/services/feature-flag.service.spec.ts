@@ -35,6 +35,7 @@ describe('FeatureFlagService', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('resolves true immediately without reporting when the provider is already ready', async () => {

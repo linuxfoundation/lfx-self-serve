@@ -1,0 +1,311 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="min-h-dvh bg-gray-900 text-white flex flex-col" data-testid="vote-presenter">
+  @switch (phase()) {
+    @case ('loading') {
+      <div class="flex-1 flex flex-col gap-6 p-8 lg:p-16" aria-busy="true" data-testid="vote-presenter-loading">
+        <div class="h-6 w-40 rounded bg-gray-700"></div>
+        <div class="h-12 w-2/3 rounded bg-gray-700"></div>
+        <div class="h-40 w-full rounded bg-gray-800"></div>
+      </div>
+    }
+    @case ('error') {
+      <div class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" role="alert" data-testid="vote-presenter-error">
+        <h1 class="text-3xl font-semibold">We couldn't load this vote</h1>
+        <p class="text-lg text-gray-300">Check your connection. We'll keep trying automatically.</p>
+        <div class="flex items-center gap-3">
+          <lfx-button label="Retry" severity="primary" size="large" (onClick)="retry()" data-testid="vote-presenter-retry" />
+          <lfx-button label="Exit" severity="secondary" size="large" (onClick)="exit()" data-testid="vote-presenter-exit" />
+        </div>
+      </div>
+    }
+    @case ('empty') {
+      <div class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" data-testid="vote-presenter-empty">
+        <h1 class="text-3xl font-semibold">
+          @if (vote()?.status === PollStatus.DISABLED) {
+            This vote has not been opened yet
+          } @else {
+            No eligible voters
+          }
+        </h1>
+        <p class="text-lg text-gray-300 max-w-2xl">
+          @if (vote()?.status === PollStatus.DISABLED) {
+            Open the vote in Manage before presenting.
+          } @else {
+            No eligible voters are assigned to this vote. Add voters in Manage before presenting.
+          }
+        </p>
+        <lfx-button label="Exit" severity="secondary" size="large" (onClick)="exit()" data-testid="vote-presenter-exit" />
+      </div>
+    }
+    @case ('ended') {
+      @if (vote(); as v) {
+        <div class="flex flex-1 flex-col gap-10 px-6 pt-8 pb-6 lg:px-[72px] lg:pt-14 lg:pb-12" data-testid="vote-presenter-result">
+          <ng-container *ngTemplateOutlet="presenterHeader; context: { $implicit: v }" />
+
+          <div class="flex flex-1 flex-col gap-10 lg:flex-row lg:gap-[72px]">
+            <div class="flex min-w-0 flex-1 flex-col gap-9">
+              <h1 class="m-0 text-4xl lg:text-[52px] font-extrabold leading-[1.1] break-words" [attr.title]="titleTruncated() ? v.name : null">
+                {{ title() }}
+              </h1>
+
+              <!-- Outcome banner: neutral on purpose. winning_threshold_percentage is not in the GET /votes/{uid} payload, so Approved / Not approved is never inferred. -->
+              <div class="flex items-center gap-6 rounded-[20px] border-2 border-gray-600 bg-gray-800 px-8 py-7" data-testid="vote-presenter-banner">
+                <div class="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full bg-gray-300 text-gray-900">
+                  <i class="fa-solid fa-flag-checkered text-3xl" aria-hidden="true"></i>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <p class="m-0 text-4xl lg:text-[56px] font-extrabold leading-none">
+                    @if (isRanked()) {
+                      Ranked result
+                    } @else {
+                      Vote ended
+                    }
+                  </p>
+                  @if (closedAt(); as closed) {
+                    <p class="m-0 text-[22px] text-gray-300" data-testid="vote-presenter-closed-at">Closed automatically at {{ closed | date: 'medium' }}</p>
+                  }
+                </div>
+              </div>
+
+              @if (resultsError()) {
+                <p class="m-0 text-lg text-red-200" role="alert" data-testid="vote-presenter-results-error">
+                  Couldn't load the final results. Exit and reopen this vote to retry.
+                </p>
+              } @else if (!resultsReady()) {
+                <!-- The final numbers arrive with /results; until then nothing derived from the zero defaults is shown. -->
+                <div class="flex flex-col gap-[18px]" aria-busy="true" data-testid="vote-presenter-results-loading">
+                  <div class="h-12 w-full rounded-lg bg-gray-800"></div>
+                  <div class="h-12 w-full rounded-lg bg-gray-800"></div>
+                </div>
+              } @else {
+                <div class="flex flex-col gap-[18px]" data-testid="vote-presenter-results">
+                  @if (isRanked()) {
+                    <div class="rounded-[20px] bg-white p-6 text-gray-900">
+                      @for (q of rankedQuestions(); track q.questionId) {
+                        <lfx-vote-ranked-question-results [question]="q" variant="creator" />
+                      }
+                    </div>
+                  } @else {
+                    @for (question of tally(); track question.questionId) {
+                      @if (tally().length > 1) {
+                        <h2 class="m-0 text-2xl font-semibold text-gray-300">{{ question.question }}</h2>
+                      }
+                      @for (row of question.rows; track row.id) {
+                        <div class="flex flex-col gap-2" [attr.data-testid]="'vote-presenter-option-' + row.id">
+                          <div class="flex justify-between gap-4 text-2xl font-bold">
+                            <span class="break-words">{{ row.text }}</span>
+                            <span class="shrink-0">{{ row.count }} · {{ row.percent }}%</span>
+                          </div>
+                          <div class="h-7 overflow-hidden rounded-lg bg-gray-800">
+                            <div class="h-full" [class]="row.barClass" [style.width.%]="row.percent"></div>
+                          </div>
+                        </div>
+                      }
+                    }
+                  }
+                  @if (showAbstain()) {
+                    <div class="flex flex-col gap-2 text-gray-300" data-testid="vote-presenter-abstain">
+                      <div class="flex justify-between gap-4 text-2xl font-bold">
+                        <span>Abstain</span>
+                        <span>{{ stats().abstainedVoters }} · {{ stats().abstainedRate }}%</span>
+                      </div>
+                      <div class="h-7 overflow-hidden rounded-lg bg-gray-800">
+                        <div class="h-full bg-gray-400" [style.width.%]="stats().abstainedRate"></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+            <!-- Right column: exactly two cards, turnout then the record link. -->
+            <div class="flex w-full shrink-0 flex-col gap-6 lg:w-[560px]">
+              @if (resultsReady()) {
+                <lfx-card
+                  styleClass="!border-0 !bg-gray-800 !text-white !shadow-none !rounded-3xl hover:!border-0 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+                  <div class="flex flex-col gap-7 px-10 py-9" data-testid="vote-presenter-turnout">
+                    <p class="m-0 text-lg font-semibold uppercase tracking-widest text-gray-400">Turnout</p>
+                    <p class="m-0 flex items-baseline gap-[14px]">
+                      <span class="text-[88px] font-extrabold leading-none">{{ stats().totalResponses }}</span>
+                      <span class="text-[28px] font-semibold text-gray-400">of {{ stats().eligibleVoters }} cast</span>
+                    </p>
+                    <dl class="m-0 grid grid-cols-2 gap-5">
+                      <div class="flex flex-col gap-1">
+                        <dt class="text-base text-gray-400">Did not vote</dt>
+                        <dd class="m-0 text-[28px] font-bold">{{ didNotVote() }}</dd>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <dt class="text-base text-gray-400">Closed</dt>
+                        <dd class="m-0 text-[28px] font-bold">{{ closedClock() }}</dd>
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <dt class="text-base text-gray-400">Ballot</dt>
+                        <dd class="m-0 text-[28px] font-bold">{{ ballotLabel() }}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </lfx-card>
+              } @else if (!resultsError()) {
+                <div class="h-[330px] rounded-3xl bg-gray-800" aria-busy="true" data-testid="vote-presenter-turnout-loading"></div>
+              }
+              <lfx-card styleClass="!border-0 !bg-gray-800 !text-white !shadow-none !rounded-3xl hover:!border-0 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+                <div class="flex flex-col gap-3 px-10 py-7">
+                  <p class="m-0 text-base text-gray-400">Recorded in LFX</p>
+                  <a class="break-all text-xl font-semibold text-blue-300 underline" [href]="voteLink()" data-testid="vote-presenter-results-link">{{
+                    voteLink()
+                  }}</a>
+                  <p class="m-0 text-base text-gray-400">Full tally and audit trail available to board members and LF staff.</p>
+                </div>
+              </lfx-card>
+            </div>
+          </div>
+
+          <footer class="flex items-center justify-between gap-6 border-t border-gray-800 pt-6">
+            <p class="m-0 text-base text-gray-400">Updated {{ updatedAgoSeconds() ?? 0 }} {{ updatedAgoSeconds() === 1 ? 'second' : 'seconds' }} ago</p>
+            <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit()" data-testid="vote-presenter-exit" />
+          </footer>
+        </div>
+      }
+    }
+    @default {
+      @if (vote(); as v) {
+        <div class="flex flex-1 flex-col gap-10 px-6 pt-8 pb-6 lg:px-[72px] lg:pt-14 lg:pb-12" data-testid="vote-presenter-open">
+          <ng-container *ngTemplateOutlet="presenterHeader; context: { $implicit: v }" />
+
+          <!-- Footer precedes the content in the DOM so keyboard focus runs Exit, Close first (#4146); order-last keeps it visually at the bottom. -->
+          <footer class="order-last flex flex-wrap items-center justify-between gap-6 border-t border-gray-800 pt-6" data-testid="vote-presenter-footer">
+            <p class="m-0 text-base text-gray-400" aria-live="off" data-testid="vote-presenter-updated">
+              @if (updatedAgoSeconds() !== null) {
+                Updated {{ updatedAgoSeconds() }} {{ updatedAgoSeconds() === 1 ? 'second' : 'seconds' }} ago
+              }
+            </p>
+            <div class="flex items-center gap-3">
+              <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit()" data-testid="vote-presenter-exit" />
+              <!-- Close is a placeholder until the voting service can end a vote early. TODO(#4370): enable and wire to POST /api/votes/:uid/end once that ships. -->
+              <span
+                class="inline-flex"
+                role="group"
+                tabindex="0"
+                [attr.aria-label]="'Close vote unavailable. ' + closeTooltip()"
+                [pTooltip]="closeTooltip()"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                data-testid="vote-presenter-close-wrapper">
+                <lfx-button label="Close vote" severity="danger" size="large" styleClass="min-h-[44px]" [disabled]="true" data-testid="vote-presenter-close" />
+              </span>
+            </div>
+          </footer>
+
+          <div class="flex flex-1 flex-col gap-10 lg:flex-row lg:gap-[72px]">
+            <!-- Left: what is being voted on and the live count. Never any choices, tallies or voter names. -->
+            <div class="flex min-w-0 flex-1 flex-col justify-between gap-10">
+              <div class="flex flex-col gap-5">
+                <h1
+                  class="m-0 text-4xl lg:text-[60px] font-extrabold leading-[1.1] break-words"
+                  [attr.title]="titleTruncated() ? v.name : null"
+                  data-testid="vote-presenter-title">
+                  {{ title() }}
+                </h1>
+                @if (v.description) {
+                  <!-- Question text: 28px, scrolls past ~3 lines. Angular sanitizes the HTML, same as the results drawer. -->
+                  <div
+                    class="vote-description max-w-[900px] max-h-[calc(3*1.4*28px)] overflow-y-auto text-[28px] leading-[1.4] text-gray-300 [&_p]:m-0 [&_p]:[font-size:inherit] [&_p]:[line-height:inherit]"
+                    tabindex="0"
+                    [innerHTML]="v.description"
+                    data-testid="vote-presenter-question"></div>
+                }
+              </div>
+
+              <div class="flex flex-col gap-5" data-testid="vote-presenter-count-block">
+                <p class="m-0 flex flex-wrap items-baseline gap-x-5" aria-live="polite" data-testid="vote-presenter-count">
+                  @if (countParts().value) {
+                    <span class="text-8xl lg:text-[120px] font-extrabold leading-none">{{ countParts().value }}</span>
+                    {{ ' ' }}
+                  }
+                  <span class="text-2xl lg:text-4xl font-semibold text-gray-400">{{ countParts().rest }}</span>
+                </p>
+                @if (participation(); as p) {
+                  @if (p.percent !== null) {
+                    <div
+                      class="h-4 w-full overflow-hidden rounded-full bg-gray-800"
+                      role="progressbar"
+                      aria-label="Voter participation"
+                      [attr.aria-valuenow]="p.percent"
+                      aria-valuemin="0"
+                      aria-valuemax="100">
+                      <div class="h-full rounded-full bg-blue-500 motion-safe:transition-all motion-safe:duration-500" [style.width.%]="p.percent"></div>
+                    </div>
+                  }
+                }
+                @if (phase() === 'reconnecting') {
+                  <p
+                    class="m-0 inline-flex w-fit items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900"
+                    data-testid="vote-presenter-reconnecting">
+                    <i class="fa-light fa-arrows-rotate" aria-hidden="true"></i> Reconnecting
+                  </p>
+                }
+                <p class="m-0 text-xl text-gray-400" data-testid="vote-presenter-secrecy">
+                  @if (v.pseudo_anonymity) {
+                    Ballots are secret. Results show after the vote closes.
+                  } @else {
+                    Results show after the vote closes.
+                  }
+                </p>
+              </div>
+            </div>
+
+            <!-- Right: link first (works on Zoom chat for virtual boards), QR second for the room. -->
+            <lfx-card
+              styleClass="!border-0 !bg-white !text-gray-900 !shadow-none !rounded-3xl hover:!border-0 w-full lg:w-[560px] shrink-0 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+              <div class="flex flex-col items-center gap-7 p-10" data-testid="vote-presenter-share">
+                <p class="m-0 text-[26px] font-bold text-blue-700 break-all text-center select-all" data-testid="vote-presenter-link">{{ voteLink() }}</p>
+                <lfx-button
+                  [label]="copied() ? 'Link copied' : 'Copy link'"
+                  [icon]="copied() ? 'fa-light fa-check' : 'fa-light fa-copy'"
+                  severity="primary"
+                  size="large"
+                  styleClass="min-h-[44px]"
+                  (onClick)="copyLink()"
+                  data-testid="vote-presenter-copy-link" />
+                <span class="sr-only" aria-live="polite" data-testid="vote-presenter-copy-status">
+                  @if (copied()) {
+                    Link copied to clipboard
+                  }
+                </span>
+                @if (copyFailed()) {
+                  <p class="m-0 text-center text-base text-gray-600" role="status">Couldn't copy. Select the link and press Ctrl/⌘+C.</p>
+                }
+                @if (v.status === PollStatus.ACTIVE) {
+                  <!-- votePresenterGuard already proved vote#writer for this route; the BFF re-checks it on send. -->
+                  <lfx-vote-send-ballots [voteUid]="v.uid" data-testid="vote-presenter-send-ballots" />
+                }
+                <p class="m-0 text-base text-gray-400">Didn't get the email? Scan to open your ballot</p>
+                <lfx-vote-qr [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
+                <p class="m-0 text-center text-base text-gray-400">Sign in with your LF account. Only eligible voters can cast.</p>
+              </div>
+            </lfx-card>
+          </div>
+        </div>
+      }
+    }
+  }
+  <!-- Shared header for the open and ended states: the LFX mark, the foundation / committee, and the status pill. -->
+  <ng-template #presenterHeader let-v>
+    <header class="flex flex-wrap items-center justify-between gap-6">
+      <div class="flex items-center gap-4">
+        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500">
+          <i class="fa-light fa-square-check text-xl text-white" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="m-0 text-xl font-bold tracking-wide" data-testid="vote-presenter-context">LFX</p>
+          @if (v.committee_name) {
+            <p class="m-0 text-base text-gray-400">{{ v.committee_name }}</p>
+          }
+        </div>
+      </div>
+      <p class="m-0 rounded-full bg-gray-800 px-[18px] py-2.5 text-base font-semibold text-gray-300" data-testid="vote-presenter-status">{{ statusPill() }}</p>
+    </header>
+  </ng-template>
+</main>

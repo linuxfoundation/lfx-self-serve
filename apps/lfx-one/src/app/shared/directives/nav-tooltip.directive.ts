@@ -3,7 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Directive, ElementRef, HostListener, inject, input, output, Renderer2 } from '@angular/core';
-import { NAV_TOOLTIP_HIDE_DELAY_MS, NAV_TOOLTIP_OFFSET_PX, NAV_TOOLTIP_SHOW_DELAY_MS } from '@lfx-one/shared/constants';
+import { NAV_TOOLTIP_HIDE_DELAY_MS, NAV_TOOLTIP_OFFSET_PX, NAV_TOOLTIP_RAIL_OFFSET_PX, NAV_TOOLTIP_SHOW_DELAY_MS } from '@lfx-one/shared/constants';
 import { NavTooltipItem, NavTooltipPlacement } from '@lfx-one/shared/interfaces';
 import { PrimeNG } from 'primeng/config';
 import { ZIndexUtils } from 'primeng/utils';
@@ -297,11 +297,20 @@ export class NavTooltipDirective {
    * Centre the card on the trigger on its preferred side, flipping to the other side when it would
    * cross the viewport edge (e.g. a long chip list above an icon near the top), clamped horizontally.
    * When neither side has room, it takes the roomier side and scrolls within that height.
+   * A `right` card (the collapsed rail's) sits beside the trigger, vertically centred and clamped to the viewport.
    */
   private position(tooltip: HTMLElement): void {
     const trigger = this.host.nativeElement.getBoundingClientRect();
     const { clientWidth: viewportWidth, clientHeight: viewportHeight } = this.document.documentElement;
-    const room: Record<NavTooltipPlacement, number> = {
+    if (this.placement() === 'right') {
+      const { height } = tooltip.getBoundingClientRect();
+      const centred = trigger.top + trigger.height / 2 - height / 2;
+      const top = Math.min(Math.max(centred, NAV_TOOLTIP_OFFSET_PX), viewportHeight - height - NAV_TOOLTIP_OFFSET_PX);
+      this.renderer.setStyle(tooltip, 'left', `${Math.round(trigger.right + NAV_TOOLTIP_RAIL_OFFSET_PX)}px`);
+      this.renderer.setStyle(tooltip, 'top', `${Math.round(top)}px`);
+      return;
+    }
+    const room: Record<'top' | 'bottom', number> = {
       top: trigger.top - 2 * NAV_TOOLTIP_OFFSET_PX,
       bottom: viewportHeight - trigger.bottom - 2 * NAV_TOOLTIP_OFFSET_PX,
     };
@@ -327,9 +336,9 @@ export class NavTooltipDirective {
   }
 
   /** The preferred side if the card fits there, else the opposite side if it fits, else the roomier side. */
-  private resolvePlacement(room: Record<NavTooltipPlacement, number>, height: number): NavTooltipPlacement {
-    const preferred = this.placement();
-    const opposite: NavTooltipPlacement = preferred === 'top' ? 'bottom' : 'top';
+  private resolvePlacement(room: Record<'top' | 'bottom', number>, height: number): 'top' | 'bottom' {
+    const preferred = this.placement() === 'top' ? 'top' : 'bottom';
+    const opposite = preferred === 'top' ? 'bottom' : 'top';
     if (height <= room[preferred]) return preferred;
     if (height <= room[opposite]) return opposite;
     return room[opposite] > room[preferred] ? opposite : preferred;

@@ -4,7 +4,7 @@
 import { Component, computed, inject, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { IsActiveMatchOptions, NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { MKTG_KIT_TABS, MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
+import { MKTG_KIT_TABS, MKTG_KIT_SHOW_COMING_SOON, MKTG_OS_AGENTS_ROUTE_SEGMENT } from '@lfx-one/shared/constants';
 import { ProjectContextService } from '@services/project-context.service';
 import { filter, map, startWith } from 'rxjs';
 
@@ -16,7 +16,7 @@ import { filter, map, startWith } from 'rxjs';
 export class MktgKitTabsComponent {
   private readonly router = inject(Router);
   private readonly context = inject(ProjectContextService);
-  protected readonly tabs = MKTG_KIT_TABS;
+  protected readonly tabs = MKTG_KIT_TABS.filter((tab) => MKTG_KIT_SHOW_COMING_SOON || !tab.soon);
   protected readonly exactMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
   protected readonly subsetMatch: IsActiveMatchOptions = { ...this.exactMatch, paths: 'subset' };
   protected readonly basePath: Signal<string> = this.initBasePath();

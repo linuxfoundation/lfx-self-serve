@@ -61,6 +61,7 @@ import {
   parseToInt,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
+  votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -1868,9 +1869,8 @@ export class UserService {
   }
 
   /**
-   * Build a "Cast Vote" pending action per active vote. Links to the My Votes page (me-lens of
-   * /votes) — there's no standalone vote-detail route, so the user lands on the list and picks
-   * the vote to cast.
+   * Build a "Cast Vote" pending action per active vote. The secondary link opens that vote's
+   * permalink page (/votes/:id), falling back to the My Votes list only when no uid is available.
    */
   private transformVotesToActions(votes: Vote[]): PendingActionItem[] {
     return votes.map((vote) => {
@@ -1891,7 +1891,7 @@ export class UserService {
         severity: PENDING_ACTION_SEVERITY.Vote,
         buttonText: 'Cast Vote',
         // Inline launch is the active path (template branches on isVoteInline when voteUid is set); buttonLink kept for the older Survey code path and any future caller that hasn't migrated.
-        buttonLink: '/votes',
+        buttonLink: voteUid ? votePermalinkPath(voteUid) : '/votes',
         voteUid,
         date: `Closes ${formattedEnd}`,
       };

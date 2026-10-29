@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
-import type { OrgTraineesResponse } from '@lfx-one/shared/interfaces';
+import type { OrgLensTimeRange, OrgTraineesResponse } from '@lfx-one/shared/interfaces';
 
-/** HTTP client for the Org Lens → People → Trainees tab GET. Single bundled fetch — filter, sort, pagination, and expansion are all client-side. */
+/** HTTP client for the Org Lens → People → Trainees tab GET. One fetch per range; filter, sort, pagination, and expansion are client-side. */
 @Injectable({ providedIn: 'root' })
 export class TraineesService {
   private readonly http = inject(HttpClient);
 
-  public getTrainees(orgUid: string): Observable<OrgTraineesResponse> {
-    return this.http.get<OrgTraineesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/trainees`);
+  public getTrainees(orgUid: string, range: OrgLensTimeRange): Observable<OrgTraineesResponse> {
+    const params = new HttpParams({ fromObject: { range } });
+    return this.http.get<OrgTraineesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/trainees`, { params });
   }
 }

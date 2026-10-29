@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 The **Overview** tab of **My Mentorship** is where every application you have made is listed, along with its status and your progress through its tasks.
 
+![The mentee overview, with an application under review and its prerequisite tasks](/images/docs/mentorship/mentee-overview.png)
+
 ## Before you begin
 
 Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentee → Overview**.

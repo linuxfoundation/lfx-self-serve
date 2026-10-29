@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgCommitFilters } from './org-commit-filters.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgContributorFoundationOption } from './org-people-contributors.interface';
+
 // Org Lens → Code Contributions page (LFXV2-1894). Source of truth is LFX Insights
 // (CrowdSource pipeline ingesting GitHub / GitLab / Gerrit). All shapes here are
 // derived/read-only — the page never mutates contribution data.
 
 /** Upstream system a repository's commits flow from — inferred from the repo's upstream URL. */
 export type ContributionSource = 'git' | 'github' | 'gitlab' | 'gerrit';
-
-/** Date-range window the KPI strip + table aggregate over. Default `12mo` (Past 12 Months). */
-export type ContributionsDateRange = '30d' | '90d' | '12mo' | 'all';
 
 /** Sortable columns on the Repositories table. */
 export type ContributionsSortColumn = 'commits' | 'firstCommit' | 'lastCommit';
@@ -47,15 +48,15 @@ export interface OrgContributionRepoRow {
   lastCommitTs: string | null;
 }
 
-/** Project filter option — hierarchical (a parent foundation carries `parentSlug = null`; children point back). */
+/** Project filter option. A pick matches that project only, never its sub-projects (lfx-self-serve#4559). */
 export interface OrgContributionProjectOption {
   slug: string;
   projectId: string;
   name: string;
-  /** Per-project commit count shown as rich subtext in the select. Scaffold returns lifetime demo counts; the data pass scopes this to the active filters. */
+  /** Per-project count in the window and project type, shown as rich subtext in the select. */
   commits: number;
-  /** Parent foundation slug, or null for a top-level foundation. */
-  parentSlug: string | null;
+  /** Foundation the project rolls up to (same id as People → Contributors), or null when it has none. */
+  foundationId: string | null;
 }
 
 /** Employee filter option. Per spec the real list is scoped to employees with >= 1 commit in the current Project + Date-Range scope; the demo scaffold returns the full employee catalog (scoping lands in the data pass). */
@@ -93,12 +94,16 @@ export interface OrgContributionCommitRow {
 export interface OrgContributionsResponse {
   accountId: string;
   /** Echo of the window the BFF aggregated over — lets the client drop late responses. */
-  dateRange: ContributionsDateRange;
+  dateRange: OrgLensTimeRange;
   kpis: OrgContributionsKpis;
   repositories: OrgContributionRepoRow[];
   /** Org-wide recent-commits activity feed (most recent first). */
   commits: OrgContributionCommitRow[];
+  /** Foundations with any code contribution by the org in the window and project type, whatever the code-count option; never narrowed by the picks. */
+  foundationOptions: OrgContributorFoundationOption[];
+  /** Projects in the window and project type, never narrowed by the picks; the page lists the picked foundation's projects. */
   projectOptions: OrgContributionProjectOption[];
+  /** Employees in the window and project type, narrowed to the picked foundation. */
   employeeOptions: OrgContributionEmployeeOption[];
   /** Repositories rows matching the active filters — drives the Repositories pager + tab count. */
   totalRecords: number;
@@ -106,14 +111,16 @@ export interface OrgContributionsResponse {
   commitsTotalRecords: number;
 }
 
-/** Composed filter/pagination state — serialized to URL query params and to the BFF request. */
-export interface OrgContributionsQuery {
+/** Composed filter/pagination state — serialized to URL query params and to the BFF request. `metric` switches the KPI, Repositories and option counts; the Commits feed always lists commits. */
+export interface OrgContributionsQuery extends OrgCommitFilters {
   /** Active tab — KPI search follows this tab's semantics; `page`/`size` paginate the active table. */
   view: ContributionsView;
-  dateRange: ContributionsDateRange;
+  dateRange: OrgLensTimeRange;
   /** Free-text search. On the Repositories tab it scopes the Repository path; on the Commits feed it scopes message/project/committer/username. */
   search: string;
-  /** Selected project slugs. */
+  /** Selected foundation id (exact `foundation_id`, as on People → Contributors); empty for any foundation. */
+  foundation: string;
+  /** Selected project slugs (or project ids); each matches that project exactly. */
   projects: string[];
   /** Selected employee ids (Crowd.dev member_id values). */
   employees: string[];
@@ -124,12 +131,6 @@ export interface OrgContributionsQuery {
   /** 1-based page index for the active `view` table. */
   page: number;
   size: number;
-}
-
-/** Date-range dropdown option — label rendered as-is in `<lfx-select>`. */
-export interface ContributionsDateRangeOption {
-  label: string;
-  value: ContributionsDateRange;
 }
 
 // Client-only view types (NOT on the wire) ----------------------------------
@@ -165,6 +166,14 @@ export interface ContributionsFilterOption {
   label: string;
   value: string;
   sublabel: string;
+}
+
+/** Repositories-table headers for one {@link OrgCommitFilters.metric}. */
+export interface ContributionsMetricLabels {
+  /** Count column header, e.g. `Commits`. */
+  count: string;
+  firstDate: string;
+  lastDate: string;
 }
 
 /** Active content tab — drives tab-aware KPI search semantics and which table `page`/`size` paginate. */

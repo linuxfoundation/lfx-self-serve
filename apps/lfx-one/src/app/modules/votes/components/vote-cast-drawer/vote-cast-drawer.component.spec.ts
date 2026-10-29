@@ -342,3 +342,140 @@ describe('VoteCastDrawerComponent — ranked listVote survives a failed first-op
     expect(el('vote-cast-choice-c1')).toBeNull();
   });
 });
+
+/**
+ * #4148: mobile voting. jsdom has no layout engine, so these pin the class contract the responsive
+ * layout relies on (full-height sheet below sm, pinned footer, 44px targets) plus the behaviour that
+ * must be identical between the touch (arrow buttons) and pointer (drag) reorder paths.
+ */
+describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
+  const RANKED: Vote = {
+    ...VOTE,
+    poll_type: PollType.INSTANT_RUNOFF_VOTE,
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Rank the candidates',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Alpha' },
+          { choice_id: 'c2', choice_text: 'Bravo' },
+          { choice_id: 'c3', choice_text: 'Charlie' },
+        ],
+      },
+    ],
+  } as Vote;
+
+  it('renders Submit in the pinned footer, outside the scrolling ballot content', async () => {
+    await setup(vi.fn().mockReturnValue(of(VOTE)));
+
+    await openWithoutListVote();
+
+    const footer = el('vote-cast-footer');
+    expect(footer).toBeTruthy();
+    expect(footer?.contains(el('vote-cast-submit-button'))).toBe(true);
+    expect(el('vote-cast-drawer-content')?.contains(el('vote-cast-submit-button'))).toBe(false);
+    expect(footer?.className).toContain('pb-[env(safe-area-inset-bottom)]');
+    // Focus order follows the DOM, so Submit must come first there; sm+ reverses the row to keep Cancel on the left.
+    expect(footer?.className).toContain('flex-col');
+    expect(footer?.className).not.toContain('flex-col-reverse');
+    expect(footer?.className).toContain('sm:flex-row-reverse');
+    expect(el('vote-cast-submit-button')!.compareDocumentPosition(el('vote-cast-cancel-button')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // [fluid] makes PrimeNG add p-button-fluid so the button, not just the host, fills the phone footer.
+    for (const id of ['vote-cast-submit-button', 'vote-cast-cancel-button']) {
+      expect(el(id)?.querySelector('button')?.className).toContain('p-button-fluid');
+    }
+  });
+
+  it('uses a full-height sheet class below sm while keeping the existing width chain', async () => {
+    await setup(vi.fn().mockReturnValue(of(VOTE)));
+
+    await openWithoutListVote();
+
+    const root = document.querySelector('.vote-cast-drawer') as HTMLElement;
+    expect(root.className).toContain('max-sm:h-dvh');
+    expect(root.className).toContain('w-full');
+    expect(root.className).toContain('xl:w-[45%]');
+    expect(root.className).toContain('sm:w-[90%]');
+  });
+
+  it('hides the footer while the ballot is loading', async () => {
+    await setup(vi.fn().mockReturnValue(new Subject<Vote>().asObservable()));
+
+    await openWithoutListVote();
+
+    expect(fixture.componentInstance['drawerPt']()).toEqual({ footer: { class: 'hidden' } });
+  });
+
+  it('gives choice rows and the close button 44px touch targets', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, allow_abstain: true })));
+
+    await openWithoutListVote();
+
+    expect(el('vote-cast-drawer-close')?.className).toContain('min-h-[44px]');
+    expect(el('vote-cast-drawer-close')?.className).toContain('min-w-[44px]');
+    expect(el('vote-cast-choice-c1')?.querySelector('[class*="min-h-[44px]"]')).toBeTruthy();
+    expect(el('vote-cast-abstain-toggle')?.className).toContain('min-h-[44px]');
+  });
+
+  it('gives ranked up/down buttons 44px touch targets and keeps choice text wrapping', async () => {
+    await setup(vi.fn().mockReturnValue(of(RANKED)));
+
+    await openWithoutListVote();
+
+    for (const id of ['vote-cast-rank-up-c2', 'vote-cast-rank-down-c2']) {
+      expect(el(id)?.className).toContain('min-h-[44px]');
+      expect(el(id)?.className).toContain('min-w-[44px]');
+    }
+    expect(el('vote-cast-rank-c1')?.querySelector('span.break-words')).toBeTruthy();
+  });
+
+  it('submits the same ranked_choices payload whether reordered by arrow buttons or by drag', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await setup(vi.fn().mockReturnValue(of(RANKED)), { submitMyResponse });
+    await openWithoutListVote();
+    const cmp = fixture.componentInstance;
+
+    // Touch path: move Charlie up twice via the per-row arrow button.
+    (el('vote-cast-rank-up-c3') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (el('vote-cast-rank-up-c3') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    cmp['onSubmit']();
+    await fixture.whenStable();
+    const [, arrowPayload] = submitMyResponse.mock.calls[0] as [string, { userVoteContent: unknown[] }];
+
+    // Pointer path: the equivalent drop (index 2 -> 0) on a fresh drawer.
+    submitMyResponse.mockClear();
+    await setup(vi.fn().mockReturnValue(of(RANKED)), { submitMyResponse });
+    await openWithoutListVote();
+    fixture.componentInstance['onRankedDrop']('q1', { previousIndex: 2, currentIndex: 0 } as never);
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    const [, dragPayload] = submitMyResponse.mock.calls[0] as [string, { userVoteContent: unknown[] }];
+
+    expect(arrowPayload.userVoteContent).toEqual([
+      {
+        question_id: 'q1',
+        ranked_choices: [
+          { choice_id: 'c3', choice_rank: 1 },
+          { choice_id: 'c1', choice_rank: 2 },
+          { choice_id: 'c2', choice_rank: 3 },
+        ],
+      },
+    ]);
+    expect(dragPayload.userVoteContent).toEqual(arrowPayload.userVoteContent);
+  });
+
+  it('caps a long description on phones so the ballot starts in view, in a focusable scroll region', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, description: '<p>Long background text.</p>' })));
+
+    await openWithoutListVote();
+
+    const description = el('vote-cast-drawer-description') as HTMLElement;
+    expect(description.className).toContain('max-sm:max-h-[40dvh]');
+    expect(description.className).toContain('max-sm:overflow-y-auto');
+    expect(description.getAttribute('tabindex')).toBe('0');
+    expect(description.getAttribute('role')).toBe('region');
+  });
+});

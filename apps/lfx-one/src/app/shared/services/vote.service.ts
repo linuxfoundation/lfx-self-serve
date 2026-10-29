@@ -24,12 +24,16 @@ import {
   MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
+  SendVoteBallotsResponse,
   SendVoteReminderRequest,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  PublicProjectSummary,
+  VoteLinkBallot,
+  VoteLinkResponseRequest,
   VoteReminderRecipient,
   VoteResultsResponse,
   VoteListResponse,
@@ -171,12 +175,12 @@ export class VoteService {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(map((response) => response.data));
   }
 
-  public getVote(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+  public getVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
     return this.getVoteDetail(voteUid, options).pipe(tap((vote) => this.vote.set(vote)));
   }
 
   /** Tap-free vote fetch for writerGuard's entity probe and vote-manage's context fallback (getVote's signal write would leak state). */
-  public fetchVote(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+  public fetchVote(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
     return this.getVoteDetail(voteUid, options);
   }
 
@@ -184,7 +188,17 @@ export class VoteService {
    * Short-TTL cached vote detail shared by the writerGuard probe and manage-page init — one request per edit navigation
    * instead of two (the detail endpoint's project enrichment included). Evicts on error and on write; `skipCache` forces a fresh read.
    */
-  public getVoteDetail(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+  public getVoteDetail(voteUid: string, options?: { skipCache?: boolean; includeWriter?: boolean; uncached?: boolean }): Observable<Vote> {
+    // `vote#writer` is an extra FGA lookup per read, so it is opt-in and never cached: the presenter guard and entry points
+    // read it once, while the presenter's 5s polls omit it.
+    if (options?.includeWriter) {
+      return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`, { params: { include_writer: 'true' } });
+    }
+    // `uncached` is for pollers: a plain cold request that cancels when its subscriber leaves. The cached path's shareReplay is
+    // not ref-counted, so hiding the tab would leave its request running and the next show would overlap it.
+    if (options?.uncached) {
+      return this.http.get<Vote>(`/api/votes/${encodeURIComponent(voteUid)}`);
+    }
     const cached = this.voteDetailCache.get(voteUid);
     if (!options?.skipCache && cached && Date.now() - cached.cachedAt < VOTE_DETAIL_CACHE_TTL_MS) {
       return cached.observable;
@@ -328,6 +342,39 @@ export class VoteService {
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
+  }
+
+  /** Emails a personalized ballot link to every non-responder — vote managers only (#4363). */
+  public sendBallots(voteUid: string): Observable<SendVoteBallotsResponse> {
+    return this.http.post<SendVoteBallotsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/send-ballots`, {}).pipe(take(1));
+  }
+
+  /**
+   * Login-free vote link calls (#4363). The token travels only in the request body and is passed in by the caller;
+   * this service never stores it, so nothing about the voter's link outlives the page component that holds it.
+   */
+  public getLinkBallot(voteToken: string): Observable<VoteLinkBallot> {
+    return this.http.post<VoteLinkBallot>('/public/api/votes/link-ballot', { vote_token: voteToken }).pipe(take(1));
+  }
+
+  /** Anonymous branding lookup for the vote link page (#4692); a 404 (hidden or unknown project) is a branding miss, not an error. */
+  public getPublicProjectSummary(identifier: string): Observable<PublicProjectSummary | null> {
+    return this.http.get<PublicProjectSummary>(`/public/api/projects/${encodeURIComponent(identifier)}/summary`).pipe(
+      take(1),
+      catchError((error: unknown) => {
+        // A 404 is the expected miss for a hidden or unknown project; anything else is worth a trace. Status only.
+        if (!(error instanceof HttpErrorResponse && error.status === 404)) {
+          console.warn('Project branding lookup failed; rendering unbranded', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        }
+        return of(null);
+      })
+    );
+  }
+
+  /** First submission (`update: false`, POST) or change (`update: true`, PUT) of a ballot by vote link token. */
+  public submitLinkResponse(body: VoteLinkResponseRequest, update: boolean): Observable<void> {
+    const url = '/public/api/votes/link-responses';
+    return (update ? this.http.put<void>(url, body) : this.http.post<void>(url, body)).pipe(take(1));
   }
 
   /** Eligible voters who have not voted yet — vote managers only (#3769). */

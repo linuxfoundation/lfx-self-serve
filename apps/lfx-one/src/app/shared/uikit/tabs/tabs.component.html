@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design. -->
+<div role="tablist" [attr.aria-label]="ariaLabel() || null" class="flex items-end gap-[24px] border-b border-gray-200">
+  @for (tab of tabs(); track tab.value; let i = $index) {
+    <button
+      #tabButton
+      type="button"
+      role="tab"
+      [attr.aria-selected]="value() === tab.value"
+      [attr.tabindex]="focusIndex() === i ? 0 : -1"
+      [attr.id]="idPrefix() ? idPrefix() + '-tab-' + tab.value : null"
+      [attr.aria-controls]="idPrefix() ? idPrefix() + '-panel-' + tab.value : null"
+      [disabled]="tab.disabled"
+      (click)="select(tab)"
+      (keydown)="onKeydown($event, i)"
+      class="-mb-px inline-flex items-center gap-[7px] whitespace-nowrap border-b-2 pb-[11px] pt-[8px] text-[13px] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+      [class]="value() === tab.value ? 'border-blue-500 font-medium text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'"
+      [attr.data-testid]="'ui-tab-' + tab.value">
+      {{ tab.label }}
+      @if (tab.count !== undefined) {
+        <span class="text-[12px] text-gray-500" [attr.data-testid]="'ui-tab-count-' + tab.value">{{ tab.count }}</span>
+      }
+    </button>
+  }
+</div>

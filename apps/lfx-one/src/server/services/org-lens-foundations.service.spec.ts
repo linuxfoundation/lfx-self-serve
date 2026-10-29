@@ -1,0 +1,97 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { execute, withOrgCache } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  // Pass-through that keeps the `storable` predicate the service hands over, so a test can ask it.
+  withOrgCache: vi.fn<
+    (accountId: string, key: string, ttl: number, fetcher: () => Promise<unknown>, accept?: unknown, storable?: (value: unknown) => boolean) => Promise<unknown>
+  >(async (...args) => args[3]()),
+}));
+
+// The utils barrel pulls Angular into this plain-Node run; the real range helpers are what run here.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+}));
+vi.mock('./valkey.service', () => ({ withOrgCache }));
+vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
+
+const { OrgLensFoundationsService } = await import('./org-lens-foundations.service');
+
+const MISSING_ROLES = "SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.";
+
+function projectRow(projectId: string, isLf: boolean): Record<string, unknown> {
+  return {
+    ACCOUNT_ID: 'acc-1',
+    ACCOUNT_NAME: 'Acme',
+    FOUNDATION_ID: 'cncf',
+    FOUNDATION_SLUG: 'cncf',
+    FOUNDATION_NAME: 'CNCF',
+    ROW_KIND: 'member',
+    PROJECT_ID: projectId,
+    PROJECT_SLUG: projectId,
+    PROJECT_NAME: projectId,
+    PROJECT_IS_LF_PROJECT: isLf,
+    PROJECT_INFLUENCE_MAX_BUCKET: 'Leading',
+  };
+}
+
+describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () => {
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+  });
+
+  it('reads LF roles over the past 365 days on their own, binding the account then 365 days', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      sql.includes('ORG_MAINTAINER_ROLES')
+        ? {
+            rows: [
+              { PROJECT_ID: 'lf-project', MAINTAINER_ROLES: 4 },
+              { PROJECT_ID: 'non-lf-project', MAINTAINER_ROLES: 9 },
+            ],
+          }
+        : { rows: [projectRow('lf-project', true), projectRow('non-lf-project', false)] }
+    );
+
+    const response = await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
+
+    expect(response.rows[0]?.projects.map((project) => [project.projectId, project.maintainers])).toEqual([
+      ['lf-project', 4],
+      ['non-lf-project', 0],
+    ]);
+    const [rolesSql, rolesBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(rolesSql).toContain('IS_LF_PROJECT = TRUE');
+    expect(rolesBinds).toEqual(['acc-1', 365]);
+    const [mainSql, mainBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_LENS_FOUNDATIONS_AND_PROJECTS'))!;
+    expect(mainSql).not.toContain('ORG_MAINTAINER_ROLES');
+    expect(mainBinds).toEqual(['acc-1']);
+  });
+
+  it('serves the section with unavailable (null) roles, not zero, and never stores it, when the roles table is missing', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) throw new Error(MISSING_ROLES);
+      return { rows: [projectRow('lf-project', true), projectRow('non-lf-project', false)] };
+    });
+
+    const response = await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
+
+    expect(response.rows[0]?.projects.map((project) => [project.projectId, project.maintainers])).toEqual([
+      ['lf-project', null],
+      ['non-lf-project', 0],
+    ]);
+    const storable = withOrgCache.mock.calls[0]?.[5];
+    expect(storable?.(response)).toBe(false);
+  });
+
+  it('still fails on any other error from the roles read', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) throw new Error('Warehouse timeout');
+      return { rows: [projectRow('lf-project', true)] };
+    });
+
+    await expect(new OrgLensFoundationsService().getFoundationsAndProjects('acc-1')).rejects.toThrow('Warehouse timeout');
+  });
+});

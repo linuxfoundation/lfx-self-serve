@@ -1,8 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  output,
+  PLATFORM_ID,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -11,17 +26,15 @@ import {
   FOUNDATION_MESSAGE_MODE_LABELS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
+  FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
-  FoundationMessageAudienceRow,
   FoundationMessageAvoidRow,
   FoundationMessageGoalView,
-  FoundationMessageIcpView,
   FoundationMessageNumberRow,
-  FoundationMessagePillarView,
   FoundationMessagePrintView,
   FoundationMessageViewTab,
   MktgFrameworkAsset,
@@ -34,12 +47,9 @@ import {
 import {
   buildFoundationMessagePrintView,
   mktgAssetHeaderFallback,
-  foundationMessageAudienceRows,
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
-  foundationMessageIcpViews,
   foundationMessageNumberRows,
-  foundationMessagePillarViews,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
@@ -52,9 +62,10 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
 
 // The Messaging Framework asset view (design: Agent run, Asset view): the
 // framework's own page inside the mktg-os-agents module, with one tab per
-// part of the bundle — the framework (vision, mission, positioning, tagline,
-// the goal columns, say and avoid), the ICPs, the message house, the key
-// numbers, and the sources and gaps of the run's report. While a run is live
+// part of the bundle — the framework (the four statements and the goal
+// columns as one table, then say and avoid), the key numbers, and the sources
+// and gaps of the run's report; the stored ICPs and message house are not
+// shown (FOUNDATION_MESSAGE_VIEW_TABS). While a run is live
 // the same shell shows the generating state and projects the feed or the
 // questions where the framework will be, so the run lands here and stays
 // here. Once the framework exists the header carries what you can do with
@@ -71,6 +82,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
   imports: [
     TooltipModule,
     NgClass,
+    NgTemplateOutlet,
     MktgAssetMetaComponent,
     MessageComponent,
     ButtonComponent,
@@ -101,6 +113,7 @@ export class MktgFrameworkViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
   public readonly kit = input<BrandKitRevision | null>(null);
@@ -108,6 +121,7 @@ export class MktgFrameworkViewComponent {
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
   public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly exportLookupAnswered = output<string>();
   public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);
@@ -147,14 +161,10 @@ export class MktgFrameworkViewComponent {
     const content = this.content();
     return content ? foundationMessageGoalViews(content) : [];
   });
-  protected readonly icps: Signal<FoundationMessageIcpView[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessageIcpViews(content) : [];
-  });
-  protected readonly pillars: Signal<FoundationMessagePillarView[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessagePillarViews(content) : [];
-  });
+  /** The goal table's least width in rem: the row header plus one reading width per goal, so more goals scroll sideways instead of squeezing. */
+  protected readonly goalsTableMinWidthRem: Signal<number> = computed(
+    () => FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM.rowHeader + FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM.goal * this.goals().length
+  );
   protected readonly avoidRows: Signal<FoundationMessageAvoidRow[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageAvoidRows(content) : [];
@@ -162,10 +172,6 @@ export class MktgFrameworkViewComponent {
   protected readonly numbers: Signal<FoundationMessageNumberRow[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageNumberRows(content) : [];
-  });
-  protected readonly audiences: Signal<FoundationMessageAudienceRow[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessageAudienceRows(content) : [];
   });
   /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
@@ -192,6 +198,13 @@ export class MktgFrameworkViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
     this.destroyRef.onDestroy(() => this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    toObservable(this.printView)
+      .pipe(takeUntilDestroyed())
+      .subscribe((view) => {
+        if (!view) return;
+        if (view.brand.fontUrl) this.printService.ensureFontStylesheet(view.brand.fontUrl);
+        void this.printService.prepare(view.brand.fontFamily);
+      });
   }
 
   // === Protected methods ===
@@ -210,16 +223,6 @@ export class MktgFrameworkViewComponent {
         { injector: this.injector }
       );
     }
-  }
-
-  /**
-   * A shortcut from inside a panel (the reviewer note's "Sources read, failed
-   * and gaps") opens that tab and focuses its panel start: the button that was
-   * clicked leaves the page with the old panel, so keyboard focus would
-   * otherwise fall back to the document.
-   */
-  protected onGoToTab(id: FoundationMessageViewTab): void {
-    void this.onSelectTab(id);
   }
 
   /**
@@ -255,15 +258,15 @@ export class MktgFrameworkViewComponent {
   }
 
   /**
-   * Prints the framework as one document — the cover, the framework, the
-   * ICPs, the message house and the key numbers — through the browser's
-   * print dialog ("Save as PDF"), once the brand's typeface has loaded.
+   * Prints the framework as one document — the cover, the framework and
+   * the key numbers — through the browser's print dialog ("Save as PDF")
+   * inside the click; the typeface is prepared ahead.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, this.printView()?.brand.fontFamily ?? null);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   }
 
   // === Private initializers ===

@@ -21,6 +21,7 @@ import {
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -939,11 +940,15 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range,
+            // not page-specific params.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
           },
           {
             label: 'Events',
