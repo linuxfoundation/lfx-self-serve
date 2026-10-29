@@ -53,9 +53,18 @@ export class MktgFieldCommentsComponent {
       const button = this.commentButton();
       if (this.opened()) button?.setAttribute('aria-controls', `${this.inputId()}-composer`);
       else button?.removeAttribute('aria-controls');
+      // PrimeNG drops numeric tabindex=0 via `tabindex || buttonProps?.tabindex`.
+      // Apply it to these native controls after each composer render, not globally.
+      if (isPlatformBrowser(this.platformId)) {
+        for (const id of ['mktg-field-comment-open', 'mktg-field-comment-add', 'mktg-field-comment-cancel']) {
+          this.host.nativeElement.querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`)?.setAttribute('tabindex', '0');
+        }
+      }
     });
   }
   protected open(): void {
+    // WebKit does not focus a pointer-clicked button; keep the next Tab on this composer.
+    this.commentButton()?.focus({ preventScroll: true });
     this.error.set('');
     this.draft().opened.set(true);
     this.announcement.set('');
@@ -70,7 +79,7 @@ export class MktgFieldCommentsComponent {
     this.announcement.set('');
     const button = this.commentButton();
     button?.removeAttribute('aria-controls');
-    if (focus) button?.focus();
+    if (focus) button?.focus({ preventScroll: true });
   }
   protected save(): void {
     const scope = this.comments.selectedScope();

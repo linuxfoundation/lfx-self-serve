@@ -72,6 +72,34 @@ describe('MktgFieldCommentsComponent', () => {
     expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(button?.hasAttribute('aria-controls')).toBe(false);
   });
+  it('explicitly includes the pin, Add comment and Cancel buttons in sequential keyboard navigation', () => {
+    const pin = element().querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button');
+    expect(pin?.getAttribute('tabindex')).toBe('0');
+    click('mktg-field-comment-open');
+    for (const id of ['mktg-field-comment-add', 'mktg-field-comment-cancel']) {
+      const button = element().querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`);
+      expect(button?.getAttribute('tabindex')).toBe('0');
+      expect(button?.disabled).toBe(false);
+    }
+    expect(add).not.toHaveBeenCalled();
+  });
+  it.each(['Comment', 'Answer', 'Add comment'])('focuses the clicked %s pin explicitly without scrolling or submitting', (label) => {
+    fixture.componentRef.setInput('openLabel', label);
+    fixture.detectChanges();
+    const button = element().querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button');
+    if (!button) throw new Error('Missing synthetic comment pin');
+    const focus = vi.spyOn(button, 'focus');
+    button.blur();
+    click('mktg-field-comment-open');
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(button);
+    expect(element().querySelector('textarea')).not.toBeNull();
+    expect(add).not.toHaveBeenCalled();
+    click('mktg-field-comment-cancel');
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(button);
+  });
+
   it('can show an always-visible Answer entry while keeping Comment hover-only by default', () => {
     const button = () => element().querySelector('[data-testid="mktg-field-comment-open"]');
     expect(button()?.parentElement?.classList.contains('[@media(hover:hover)]:opacity-0')).toBe(true);
@@ -144,10 +172,12 @@ describe('MktgFieldCommentsComponent', () => {
     fixture.componentRef.setInput('field', 'mf.positioning');
     await fixture.whenStable();
     fixture.detectChanges();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     click('mktg-field-comment-open');
     fill('SSR must not write');
     click('mktg-field-comment-add');
     expect(add).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
   });
 
   it('clears a draft on revision navigation, but not an equal-scope refresh; hides affordances without measured access', async () => {

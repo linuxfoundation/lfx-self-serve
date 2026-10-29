@@ -23,13 +23,18 @@ test('FAQ: answer a gap by commenting and sending; the new Draft shows Notes and
   await expect(page.getByTestId('mktg-faq-view-unanswered-chip')).toHaveCount(0);
   await expect(page.getByTestId('mktg-faq-view-unanswered-open')).toHaveCount(0);
   await openQuestion.getByRole('button', { name: /^Answer / }).click();
+  await expect(openQuestion.getByRole('button', { name: /^Answer / })).toBeFocused();
   await expect(openQuestion.getByRole('textbox')).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(openQuestion.getByRole('textbox')).toBeFocused();
   await openQuestion.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(openQuestion.getByRole('button', { name: /^Answer / })).toBeFocused();
   await page.getByTestId('mktg-faq-view-tab-unanswered').click();
   const gaps = page.getByTestId('mktg-faq-view-unanswered-list');
   await expect(gaps).toContainText('How much does membership cost?');
   const field = gaps.getByTestId(`mktg-field-comments-${fixture.key}`);
   await field.getByRole('button', { name: /^Answer / }).click();
+  await expect(field.getByRole('button', { name: /^Answer / })).toBeFocused();
   await field.getByRole('textbox').fill('Membership is free for this synthetic project.');
   await field.getByRole('button', { name: 'Add comment', exact: true }).click();
   await expect(field.getByTestId('mktg-comment-thread')).toContainText('Membership is free for this synthetic project.');
