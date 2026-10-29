@@ -1,28 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { PollStatus, PollType } from '@lfx-one/shared/enums';
-import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
+import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
-import {
-  formatVoteDeadline,
-  getUserTimezone,
-  getVoteEndedEarlyDetailTooltip,
-  getVoteVisibilityRules,
-  isVoteEndedEarly,
-  normalizePollStatus,
-} from '@lfx-one/shared/utils';
+import { formatVoteDeadline, getUserTimezone, getVoteVisibilityRules, normalizePollStatus } from '@lfx-one/shared/utils';
+import { Popover, PopoverModule } from 'primeng/popover';
 
 /**
- * Side cards of the vote detail page (#3913): "Vote details" (group, dates, method, electorate, ballot privacy,
- * comments) and "Visibility at a glance" — who sees what today, from the shared voter visibility rules. Presentational.
+ * Side cards of the vote detail page (#3913): "Vote details" (created date and comments — every other fact lives in the
+ * page header, #4449) and "Visibility at a glance" — one headline line, with every voter visibility rule in a popover.
+ * Presentational.
  */
 @Component({
   selector: 'lfx-vote-detail-facts',
-  imports: [CardComponent],
+  imports: [ButtonComponent, CardComponent, PopoverModule],
   templateUrl: './vote-detail-facts.component.html',
 })
 export class VoteDetailFactsComponent {
@@ -39,6 +34,8 @@ export class VoteDetailFactsComponent {
 
   // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+  /** Capture the actual clicked element, independent of the button wrapper's DOM structure. */
+  private visibilityTrigger: HTMLElement | null = null;
 
   // === Computed Signals ===
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ENDED);
@@ -47,36 +44,27 @@ export class VoteDetailFactsComponent {
     const created = this.vote().creation_time;
     return created ? formatVoteDeadline(created, this.viewerTimezone) : '—';
   });
-  protected readonly closeText: Signal<string> = computed(() => {
-    const end = this.vote().end_time;
-    return end ? formatVoteDeadline(end, this.viewerTimezone) : '—';
-  });
-  /** `end_time` stays the scheduled deadline when ITX ends a vote early — the same note as the page header and votes table. */
-  protected readonly endedEarlyNote: Signal<string | null> = computed(() => {
-    const vote = this.vote();
-    if (!this.isEnded() || !isVoteEndedEarly(vote)) return null;
-    return getVoteEndedEarlyDetailTooltip(formatDate(vote.early_end_time!, 'MMM d, y', 'en-US'));
-  });
-  protected readonly methodLabel: Signal<string> = computed(() => {
-    const pollType = this.vote().poll_type ?? PollType.GENERIC;
-    return VOTE_METHOD_LABELS[pollType] || pollType;
-  });
-  protected readonly electorateText: Signal<string> = computed(() => {
-    const invited = this.vote().total_voting_request_invitations;
-    if (invited === undefined || invited === null) return '—';
-    return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
-  });
-  protected readonly privacyText: Signal<string> = computed(() => {
-    const privacy = this.vote().pseudo_anonymity;
-    if (privacy === undefined || privacy === null) return 'Unavailable';
-    return privacy ? 'Pseudo-anonymous' : 'Named';
-  });
   protected readonly commentsText: Signal<string> = computed(() => {
     const prompts = this.commentPromptCount() ?? this.vote().poll_comment_prompts?.length ?? 0;
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
   });
   protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
+  /** The audience-specific first rule; the popover lists every rule including this one. */
+  protected readonly visibilityHeadline: Signal<string> = computed(() => this.visibilityRules()[0] ?? '');
+
+  // === Protected Methods ===
+  protected toggleVisibilityRules(event: MouseEvent, popover: Popover): void {
+    this.visibilityTrigger = event.currentTarget as HTMLElement | null;
+    popover.toggle(event);
+  }
+
+  protected closeVisibilityRules(popover: Popover): void {
+    popover.hide();
+    if (isPlatformBrowser(this.platformId)) {
+      this.visibilityTrigger?.focus();
+    }
+  }
 
   // === Private Initializers ===
   private initVisibilityRules(): Signal<string[]> {

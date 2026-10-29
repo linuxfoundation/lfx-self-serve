@@ -60,12 +60,13 @@
     </div>
 
     @if (!limited()) {
-      <div class="flex flex-wrap items-center gap-2" data-testid="vote-detail-header-tags">
-        <lfx-tag [value]="vote().committee_name || 'Unknown group'" icon="fa-light fa-people-group" data-testid="vote-detail-header-group" />
-        <lfx-tag [value]="methodLabel()" data-testid="vote-detail-header-method" />
-      </div>
-
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600" data-testid="vote-detail-header-meta">
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-group">
+          <i class="fa-light fa-people-group" aria-hidden="true"></i>{{ vote().committee_name || 'Unknown group' }}
+        </span>
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-method">
+          <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>{{ methodLabel() }}
+        </span>
         @if (closeDateText()) {
           <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-close-date">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}

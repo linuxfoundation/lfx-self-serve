@@ -33,6 +33,7 @@ import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
+import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteDetailComponent } from './vote-detail.component';
@@ -406,12 +407,10 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(results);
       const fixture = await setup();
 
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2].value).toBe('—');
 
       results.next(makeResults());
       TestBed.tick();
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ value: 1, label: 'Not voted yet' });
     });
   });
@@ -559,9 +558,7 @@ describe('VoteDetailComponent', () => {
 
       const notVotedCard = read<StatCardItem[]>(fixture, 'summaryCards')[2];
       expect(notVotedCard).toMatchObject({ label: 'Not voted yet', subLine: 'Voting not open yet' });
-      const callout = testId(fixture, 'vote-detail-overview-callout')?.textContent ?? '';
-      expect(callout).toContain('This vote is a draft');
-      expect(callout).not.toContain('This vote is closed');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Not open yet', severity: 'secondary' });
     });
 
@@ -579,7 +576,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[2]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('This vote is closed');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
       expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
     });
   });
@@ -1827,15 +1824,47 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(of(heldResults()));
     });
 
-    it('shows the held panel on Overview, with no manager callout while the vote is open', async () => {
+    it('shows the held panel on Overview while the vote is open', async () => {
       const fixture = await setup();
 
       expect(read(fixture, 'resultsHeld')).toBe(true);
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals appear when voting closes');
-      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('until voting closes on');
+      expect(testId(fixture, 'vote-detail-results-held')?.textContent).toContain('Totals, abstentions and comments stay hidden until voting closes.');
       expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
-      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
+    });
+
+    it.each(['2026-10-30T16:00:00Z', ''])('shows each header fact once on held-results Overview (deadline: %s)', async (endTime) => {
+      voteService.fetchVote.mockReturnValue(
+        of(
+          makeVote({
+            pseudo_anonymity: true,
+            end_time: endTime,
+            committee_name: 'Synthetic Steering Committee',
+            poll_type: PollType.GENERIC,
+            total_voting_request_invitations: 12,
+          })
+        )
+      );
+      const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
+      const page = testId(fixture, 'vote-detail-page')!.cloneNode(true) as HTMLElement;
+      page.querySelector('[data-testid="vote-detail-summary"]')?.remove();
+      const text = page.textContent?.toLowerCase() ?? '';
+      const facts = ['Synthetic Steering Committee', 'Plurality vote', '12 invited voters', 'pseudo-anonymous'];
+      const deadline = testId(fixture, 'vote-detail-header-close-date')
+        ?.textContent?.trim()
+        .replace(/^Closes\s+/, '');
+      if (endTime) {
+        expect(deadline).toBeTruthy();
+        facts.push(deadline!);
+      } else {
+        expect(deadline).toBeUndefined();
+      }
+      for (const fact of facts) {
+        expect.soft(text.split(fact.toLowerCase()), `${fact} appears once outside the summary cards`).toHaveLength(2);
+      }
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
     });
 
     it('keeps participation numbers but shows "—" for comments and drops the abstention count from the summary', async () => {
@@ -1878,8 +1907,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-results-held')?.textContent).not.toContain('Totals appear when voting closes');
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
       expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Totals pending');
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('Totals and comments will appear once they are finalized.');
-      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).not.toContain('Final results are available');
+      expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
     it.each(['creator', 'voter'] as const)('passes held and released results to the facts card for %s', async (audience) => {

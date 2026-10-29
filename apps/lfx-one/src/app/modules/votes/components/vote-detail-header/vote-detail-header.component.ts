@@ -14,7 +14,7 @@ import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 
 /**
- * Header card of the vote detail page (#3913): back link, title, status / group / method / privacy tags, close date,
+ * Header card of the vote detail page (#3913): back link, title, status and privacy tags, group, method, close date,
  * invited voters, the page actions and the pill tab strip. Presentational — the page owns access, state and navigation.
  */
 @Component({
@@ -104,7 +104,7 @@ export class VoteDetailHeaderComponent {
     });
   }
 
-  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the facts card and votes table. */
+  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the votes table. */
   private initEndedEarlyNote(): Signal<string | null> {
     return computed(() => {
       const vote = this.vote();
