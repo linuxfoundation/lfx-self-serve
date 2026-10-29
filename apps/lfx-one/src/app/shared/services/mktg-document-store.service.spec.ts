@@ -41,6 +41,13 @@ describe('MktgDocumentStoreService', () => {
     request.flush({ project: 'proj-1', groups: [] });
   });
 
+  it('opts into a viewer-owned roster without transporting a creator identity', () => {
+    service.listDocuments('proj-1', true, true).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
+    expect(request.request.params.keys().sort()).toEqual(['ownRuns', 'poll', 'project']);
+    expect(request.request.params.get('ownRuns')).toBe('1');
+    request.flush({ project: 'proj-1', groups: [], runs: [] });
+  });
   it('requests creator-scoped run discovery with the existing safe DTO, without a caller subject', () => {
     service.listDocuments('proj-1', true, true).subscribe();
     const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');

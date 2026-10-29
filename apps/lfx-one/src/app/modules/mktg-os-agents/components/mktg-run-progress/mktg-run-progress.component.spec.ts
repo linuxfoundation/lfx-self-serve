@@ -139,6 +139,17 @@ describe('MktgRunProgressComponent', () => {
     expect(revisionRead).toHaveBeenCalledExactlyOnceWith(run.project, run.agentKey, run.documentId, produced.id, true);
   });
 
+  it('keeps a dedicated questions receiver out of the public-card answer controls', async () => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('answersSupported', false);
+    read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
+    await fixture.whenStable();
+    expect(text()).toContain('The agent is waiting for input.');
+    expect(text()).toContain('this version of the page cannot answer yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-intake-link"]')).toBeNull();
+  });
+
   it.each(MKTG_DOCUMENT_TYPES.filter((entry) => entry.kind === 'run'))(
     'renders $agentKey once from measured progress, with its creator feed in place of generic steps',
     async (oneOff) => {

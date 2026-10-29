@@ -5,7 +5,7 @@ import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
-import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 
 /** Safe conflict facts; never a Guild session id or owner capability. */
 export interface MktgActiveRunConflict {
@@ -20,6 +20,19 @@ export interface MktgActiveRunConflict {
   state: MktgDocumentRunState;
   agentKey: MktgDocumentAgentKey;
   documentId: string;
+}
+
+/** Deliberately narrow server acknowledgement; no subject, session or answer text. */
+export interface MktgRunAnsweredConflict {
+  code: typeof MKTG_RUN_ANSWERED;
+  answeredBy: string;
+  answeredAt: string;
+}
+
+/** BFF-only Member claim; release is fenced to the exact winning object version. */
+export interface MktgMember360QuestionsClaim {
+  (): Promise<void>;
+  release(): Promise<boolean>;
 }
 
 /** Same-visit guard callbacks; no new transport fields or persisted request bytes. */
@@ -214,9 +227,13 @@ export interface MktgStartedRunRecord {
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
-  /** Private effective subject and time of the successful conditional answer claim. */
+  /** Server-only Member claim attribution; never spread into public progress. */
+  answeredBySubject?: string;
+  /** Private effective subject of the generic successful conditional answer claim. */
   answeredBy?: string;
   answeredAt?: string;
+  /** Changes the object body on Member metadata CAS writes so S3 ETags cannot stay equal. */
+  storageWriteId?: string;
   /** Private stored turn; public projection separately requires a living-document writer grant. */
   pendingQuestions?: MktgRunPendingQuestions;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
@@ -240,9 +257,9 @@ export interface MktgGenerationAttribution {
 export interface MktgStoredStartedRun {
   key: string;
   body: string;
-  /** Version and metadata captured by the same GET, never a separate HEAD. */
-  etag?: string;
+  /** Private metadata and version observed in the same object-store GET, never a separate HEAD. */
   metadata: Record<string, string>;
+  etag?: string;
   record: MktgStartedRunRecord;
 }
 

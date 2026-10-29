@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { readMktgActiveRunConflict, mktgActiveRunConflictHeading } from './mktg-run-active.utils';
+import { readMktgActiveRunConflict, readMktgRunAnsweredConflict, mktgActiveRunConflictHeading } from './mktg-run-active.utils';
 
 const body = {
   code: 'MKTG_RUN_ACTIVE',
@@ -15,6 +15,19 @@ const body = {
   agentKey: 'brand-kit',
   documentId: 'living',
 };
+
+describe('answered-run acknowledgement', () => {
+  const answered = { code: 'MKTG_RUN_ANSWERED', answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00Z' };
+  it('projects only the display name and time contract', () => {
+    expect(readMktgRunAnsweredConflict({ ...answered, creatorSubject: 'private-subject', sessionId: 'private-session' })).toEqual(answered);
+  });
+  it.each([null, 'bad', { ...answered, code: 'OTHER' }, { ...answered, answeredBy: '' }, { ...answered, answeredAt: 'bad' }])(
+    'rejects malformed acknowledgement %j',
+    (value) => {
+      expect(readMktgRunAnsweredConflict(value)).toBeNull();
+    }
+  );
+});
 
 describe('active-run conflict choices', () => {
   it('accepts the actual top-level error response and ignores unrelated error metadata', () => {

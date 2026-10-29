@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-post.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -42,10 +43,10 @@ test('returns an accepted catalog recheck to editable Sources when polling is de
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) => route.fulfill({ status: 403, json: { code: 'FORBIDDEN' } }));
   await sources.open();
   await page.getByTestId('mktg-run-start').getByRole('button').click();
-  await expect(page.getByRole('alertdialog')).toContainText('Started 19 Oct 2026, 12:00.');
+  await expect(activeRunConfirmDialog(page)).toContainText('Started 19 Oct 2026, 12:00.');
   accept = true;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(activeRunConfirmDialog(page)).toHaveCount(0);
   await expect(
     page.getByText('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.', {
       exact: true,
@@ -109,7 +110,8 @@ for (const surface of ['catalog', 'linkedin', 'member'] as const) {
       if (surface === 'linkedin') await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       if (surface === 'member') await selectMember360Option(page, 'member-360-compare', 'No comparison');
       await page.getByTestId(submit).getByRole('button').click();
-      const dialog = page.getByRole('alertdialog');
+      const hostTestId = { catalog: undefined, linkedin: 'mktg-linkedin-active-run-confirm', member: 'member-360-active-run-confirm' }[surface];
+      const dialog = activeRunConfirmDialog(page, hostTestId);
       await expect(dialog).toContainText('Checking the active run…');
       await expect(dialog.getByRole('button', { name: 'Discard and start over' })).toBeDisabled();
       const originalNode = await dialog.elementHandle();

@@ -749,6 +749,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    oneOffDocument: true,
     tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
@@ -756,7 +757,11 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
     batchPreamble: [],
     fields: [],
     sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
-    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    endpoints: {
+      generate: '/api/mktg-agents/member-360/generate',
+      result: '/api/mktg-agents/member-360/result',
+      answers: '/api/mktg-agents/member-360/answers',
+    },
     persistsDocument: true,
     regenerateViaGenerate: true,
   },
@@ -930,6 +935,9 @@ export const MKTG_RUN_POLL = {
  * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Bound raw Guild history reads to 2,000 events per result request. */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
 
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';

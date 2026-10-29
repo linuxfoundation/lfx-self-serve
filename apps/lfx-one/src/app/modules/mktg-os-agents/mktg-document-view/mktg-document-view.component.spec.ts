@@ -1348,6 +1348,24 @@ describe('MktgDocumentViewComponent', () => {
     };
   }
 
+  it('shows only a continuation notice for a creator questions capability, never generic recovery or a document stepper', async () => {
+    const proof = preparedPending();
+    proof.request = {
+      projectUid: PROJECT.uid,
+      agentId: 'member-360',
+      intake: MKTG_AGENT_INTAKES['member-360'],
+      documentId: 'run-0123456789abcdef01234567',
+      answers: {},
+    };
+    proof.attempt = { runId: 'b'.repeat(64), priorVersion: 0, session: { agentId: 'member-360', sessionId: 'session-1', ownerToken: 'synthetic-proof' } };
+    vi.mocked(TestBed.inject(MktgRunAttemptService).load).mockReturnValue(proof);
+    store.getDocument.mockReturnValue(of(memberProgress('questions')));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-needs-input')?.textContent).toContain('continue from the Member 360 page in the tab where you started it.');
+    expect(query('mktg-run-questions')).toBeNull();
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
   it('opens a plain Member URL without a browser capability and keeps server-recorded progress visible', async () => {
     sessionStorage.clear();
     store.getDocument.mockReturnValue(of(memberProgress('writing')));
@@ -1422,6 +1440,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(details?.hasAttribute('open')).toBe(false);
     expect(query('member-360-failure-message')?.textContent?.trim()).toBe('Synthetic terminal explanation.');
     expect(query('member-360-run-again')?.getAttribute('href')).toBe(`${host}/member-360?project=testorbit`);
+    expect(query('mktg-document-view-run-again')).toBeNull();
+    expect(query('mktg-document-view-intake-link')).toBeNull();
     expect(query('mktg-run-activity-title')).toBeNull();
     expect(store.getRevision).not.toHaveBeenCalled();
   });

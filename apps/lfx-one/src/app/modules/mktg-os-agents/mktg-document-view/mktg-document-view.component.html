@@ -157,6 +157,11 @@
       <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
     }
     @if (!isAeoDocument()) {
+      @if (memberQuestionsCreator() && selectedRun()?.state === 'questions') {
+        <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+          Member 360 needs your answers — continue from the Member 360 page in the tab where you started it.
+        </p>
+      }
       <lfx-mktg-run-progress
         [project]="projectUid()"
         [projectName]="projectName()"
@@ -179,9 +184,10 @@
         [retrying]="retrying()"
         [errorText]="errorText()"
         [waitingForQuestions]="waitingForQuestions()"
+        [answersSupported]="params().agentKey === 'member-360' ? false : null"
         [runAgentId]="runAgentId()"
         [externalActivity]="visibleRunActivity()"
-        [suppressCard]="runFailed() || !!closedRun()"
+        [suppressCard]="runFailed() || !!closedRun() || (memberQuestionsCreator() && selectedRun()?.state === 'questions')"
         [headless]="loading() || !!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
         (observed)="onPublicProgress($event)"
         (readError)="onPublicProgressError($event)"
@@ -561,6 +567,7 @@
               class="block min-w-0"
               [projectName]="projectName()"
               [asset]="faqAsset"
+              [revisions]="revisionRows()"
               [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"

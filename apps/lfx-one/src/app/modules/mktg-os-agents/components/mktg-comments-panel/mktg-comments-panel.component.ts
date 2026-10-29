@@ -38,6 +38,7 @@ export class MktgCommentsPanelComponent {
   public readonly ready = output<MktgRedraftLanding>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
 
+  protected readonly expandedThreads = signal(new Set<string>());
   protected readonly accepted = signal(false);
   protected readonly runPending = signal(false);
   protected readonly retrySend = signal(false);
@@ -67,6 +68,7 @@ export class MktgCommentsPanelComponent {
     toObservable(this.comments.draftScopeKey)
       .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        this.expandedThreads.set(new Set());
         this.work?.unsubscribe();
         this.message.set('');
         this.activity.set([]);
@@ -78,6 +80,14 @@ export class MktgCommentsPanelComponent {
     this.destroyRef.onDestroy(() => {
       this.work?.unsubscribe();
       this.comments.select(null);
+    });
+  }
+  protected setExpanded(id: string, expanded: boolean): void {
+    this.expandedThreads.update((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(id);
+      else next.delete(id);
+      return next;
     });
   }
   protected refresh(): void {
