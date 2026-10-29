@@ -89,6 +89,7 @@ test('an approval in a second browser context updates the open document in place
     await openKit(approver, `/documents/${type.agentKey}/living`);
     await approver.getByTestId('mktg-document-view-open-4').click();
     await approver.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    await approver.getByRole('button', { name: 'Approve anyway', exact: true }).click();
     await expect(approver.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
     await expect(page.getByTestId('mktg-document-view-new-approval')).toContainText('v4 was approved by Synthetic reviewer', { timeout: 20_000 });
     await expect(page.getByTestId('mktg-document-view-new-approval').getByRole('link', { name: 'Open it' })).toHaveAttribute(

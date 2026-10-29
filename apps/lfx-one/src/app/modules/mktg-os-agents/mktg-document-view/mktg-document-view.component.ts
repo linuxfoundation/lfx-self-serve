@@ -269,6 +269,8 @@ export class MktgDocumentViewComponent {
   protected readonly projectUid = computed(() => this.projectContext.activeContextUid());
   protected readonly publicProgressPolling = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.kind === 'living');
   protected readonly progressRefreshKey = signal('0');
+  protected readonly remoteRevisionId = signal('');
+  private pinnedRouteRevision = '';
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
@@ -581,6 +583,7 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            if (request.revisionId !== this.pinnedRouteRevision || request.generation) this.remoteRevisionId.set('');
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
             this.clearAeoPrint();
             this.errorText.set('');
@@ -594,6 +597,7 @@ export class MktgDocumentViewComponent {
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.remoteRevisionId.set('');
               this.downstreamSettledKey.set('');
               const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
               if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
@@ -917,6 +921,17 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
+    const viewed = this.view();
+    if (
+      this.remoteRevisionId() &&
+      viewed &&
+      viewed.revision.id === this.remoteRevisionId() &&
+      cycle.detail.project === viewed.project &&
+      cycle.detail.type.agentKey === viewed.type.agentKey &&
+      cycle.detail.documentId === viewed.documentId
+    ) {
+      cycle = { ...cycle, view: this.mergeDocumentMetadata(viewed, cycle.detail) };
+    }
     this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
@@ -1299,8 +1314,11 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       const approved = view?.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
-      if (!view || !approved || approved.number <= view.revision.number) return null;
-      return { ...approved, authorLabel: describeMktgRevisionAuthor(approved.approval?.approvedBy) };
+      const produced = this.remoteRevisionId() ? view?.revisions.find((row) => row.number > view.revision.number) : null;
+      const newer = produced ?? approved;
+      if (!view || !newer || newer.number <= view.revision.number) return null;
+      const author = newer.approval ? newer.approval.approvedBy : newer.author;
+      return { ...newer, authorLabel: describeMktgRevisionAuthor(author) };
     });
   }
 
@@ -1356,20 +1374,31 @@ export class MktgDocumentViewComponent {
         const detail = event.value;
         const view = this.view();
         if (!view || detail.project !== view.project || detail.type.agentKey !== view.type.agentKey || detail.documentId !== view.documentId) return;
-        const row = detail.revisions.find((entry) => entry.id === view.revision.id);
         const metadata = { revisions: detail.revisions, current: detail.current, approvedCurrent: detail.approvedCurrent };
         const previous = { revisions: view.revisions, current: view.current, approvedCurrent: view.approvedCurrent };
         if (JSON.stringify(metadata) !== JSON.stringify(previous)) {
-          this.view.set({
-            ...view,
-            ...metadata,
-            approval: row ? row.approval : view.approval,
-            revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
-          });
+          this.view.set(this.mergeDocumentMetadata(view, detail));
+        }
+        if (detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing')) {
+          // A remote run is discovery, not permission to change what this reader opened.
+          this.pinnedRouteRevision = this.revisionParam();
+          this.remoteRevisionId.set(view.revision.id);
+          this.progressRefreshKey.update((key) => String(Number(key) + 1));
         }
         if (JSON.stringify(this.runDetail()) !== JSON.stringify(detail)) this.runDetail.set(detail);
-        if (detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing')) this.progressRefreshKey.update((key) => `${key}+`);
       });
+  }
+
+  private mergeDocumentMetadata(view: MktgRevisionResponse, detail: MktgDocumentDetailResponse): MktgRevisionResponse {
+    const row = detail.revisions.find((entry) => entry.id === view.revision.id);
+    return {
+      ...view,
+      revisions: detail.revisions,
+      current: detail.current,
+      approvedCurrent: detail.approvedCurrent,
+      approval: row ? row.approval : view.approval,
+      revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
+    };
   }
 
   private initApprovedView(): Signal<MktgApprovedRevisionState> {

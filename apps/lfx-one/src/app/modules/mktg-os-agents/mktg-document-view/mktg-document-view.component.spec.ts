@@ -3558,6 +3558,76 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Router).url).toContain(`revision=${approved.id}`);
   });
 
+  it.each([false, true])('pins the reader through an idle-discovered remote run and stored revision (approved=%s)', async (approved) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing open synthetic framework');
+    expect(component['railReady']()).toBe(true);
+    const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions'];
+    const nodes = ids.map(query);
+    let response: MktgDocumentDetailResponse = { ...loaded, runs: [{ ...started('writing'), agentKey: 'foundation-message' }] };
+    const remoteMarkdown = loaded.markdown.replace('A vision.', 'A remote vision.');
+    store.getDocument.mockImplementation(() => of(response));
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) => {
+      const row = response.revisions.find((entry) => entry.id === id);
+      if (!row) throw new Error('Missing requested synthetic revision');
+      return of({ ...loaded, ...response, revision: row, approval: row.approval, markdown: id === loaded.revision.id ? loaded.markdown : remoteMarkdown });
+    });
+    const reads = store.getRevision.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(component['remoteRevisionId']()).toBe(loaded.revision.id);
+    expect(progressReader().revisionId()).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    const approval = approved ? { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } } : null;
+    const newer = revision(3, { latest: true, approval, author: { name: 'Synthetic writer' } });
+    response = {
+      ...response,
+      runs: [],
+      revisions: [newer, { ...loaded.revision, latest: false }],
+      current: { revisionId: newer.id, changedAt: '2026-10-29T12:00:00Z', changedBy: { name: 'Synthetic writer' } },
+      approvedCurrent: approved ? { revisionId: newer.id, number: 3 } : null,
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    expect(component['railReady']()).toBe(true);
+    ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+    expect(query('mktg-document-view-current-3')).not.toBeNull();
+    expect(query('mktg-document-view-new-approval')?.textContent).toContain(
+      approved ? 'v3 was approved by Synthetic reviewer' : 'v3 was produced by Synthetic writer'
+    );
+    expect(query('mktg-document-view-new-approval')?.querySelector('a')?.getAttribute('href')).toContain(`revision=${newer.id}`);
+    for (let count = 0; count < 2; count++) {
+      const before = component['progressRefreshKey']();
+      component['onRefreshProgress']();
+      await settle();
+      expect(component['progressRefreshKey']()).not.toBe(before);
+      expect(Number.isFinite(Number(component['progressRefreshKey']()))).toBe(true);
+      expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+      expect(component['view']()?.markdown).toBe(loaded.markdown);
+    }
+    expect(store.getRevision.mock.calls.slice(reads).every((call) => call[3] === loaded.revision.id)).toBe(true);
+    // Choosing Open is the explicit permission to change the viewed body.
+    await harness.navigateByUrl(`/documents/foundation-message/living?revision=${newer.id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(component['remoteRevisionId']()).toBe('');
+    expect(component['view']()?.revision.id).toBe(newer.id);
+    expect(component['view']()?.markdown).toBe(remoteMarkdown);
+  });
+
   it('leaves the DOM completely untouched when an idle metadata poll has no changes', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     useFrameworkRevision(true);

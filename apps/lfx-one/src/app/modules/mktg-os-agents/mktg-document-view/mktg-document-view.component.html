@@ -171,7 +171,7 @@
         [polling]="publicProgressPolling()"
         [refreshKey]="progressRefreshKey()"
         [loadRevision]="publicProgressPolling()"
-        [revisionId]="revisionParam()"
+        [revisionId]="revisionParam() || remoteRevisionId()"
         [expectedPending]="!!generationParam()"
         [viewSnapshot]="view()"
         [snapshot]="runDetail()"
@@ -625,7 +625,7 @@
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
             @if (newlyApprovedRevision(); as approved) {
               <p class="text-xs text-gray-500" data-testid="mktg-document-view-new-approval" role="status">
-                v{{ approved.number }} was approved by {{ approved.authorLabel }} ·
+                v{{ approved.number }} was {{ approved.approval ? 'approved' : 'produced' }} by {{ approved.authorLabel }} ·
                 <a [routerLink]="[]" [queryParams]="{ revision: approved.id }" queryParamsHandling="merge" class="text-blue-600 hover:text-blue-800">Open it</a>
               </p>
             }
