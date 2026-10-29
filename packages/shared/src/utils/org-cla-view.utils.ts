@@ -185,7 +185,8 @@ export function orgClaCatalogueGroup(option: ClaGroupOption): OrgClaGroup {
   return {
     id: '',
     claGroupId: option.claGroupId,
-    claGroupName: option.claGroupName?.trim() || projectName,
+    // The UUID fallback keeps the heading identifiable if a producer drops both names.
+    claGroupName: option.claGroupName?.trim() || projectName || option.claGroupId,
     projects: projectSfid ? [{ projectName, projectSfid }] : [],
     signed: false,
     status: 'not-started',
