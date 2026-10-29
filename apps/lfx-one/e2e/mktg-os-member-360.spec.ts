@@ -187,7 +187,9 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
   await expect(page.getByTestId('member-360-tracker')).toContainText('CSV');
   await expect(page.getByRole('button', { name: 'Upload tracker', exact: true })).toBeFocused();
+  const deletion = page.waitForRequest((request) => request.method() === 'DELETE' && request.url().includes('/member-360/tracker/'));
   await page.getByRole('button', { name: 'Remove speaking.csv' }).click();
+  expect(new URL((await deletion).url()).pathname).toContain(`/tracker/${'a'.repeat(64)}`);
   await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
   const create = page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true });
   await expect(create).toBeEnabled();

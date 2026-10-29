@@ -39,6 +39,12 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
       byteCount: 100,
     });
   });
+  await page.route('**/api/mktg-agents/member-360/tracker/*?*', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({ status: 204 });
+  });
   await page.route('**/api/mktg-agents/member-360/documents/*/workbook?*', async (route) => {
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
     await route.fulfill({
