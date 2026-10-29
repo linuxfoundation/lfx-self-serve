@@ -11,6 +11,15 @@ describe('Member 360 exact contact redaction', () => {
     expect(createMember360Redactor([contact], MKTG_HISTORY_SUBJECT_PATTERN)(`Ask ${contact}.`)).toBe('Ask [contact redacted].');
     expect(createMember360Redactor(['oidc'], MKTG_HISTORY_SUBJECT_PATTERN)('oidc|contact-1')).toBe('[contact redacted]');
   });
+  it('preserves compact Markdown tables and ordinary pipe expressions', () => {
+    const text = '|Category|Score|\n|true|false|\ntrue|false';
+    expect(createMember360Redactor([], MKTG_HISTORY_SUBJECT_PATTERN)(text)).toBe(text);
+  });
+  it('masks only recognized provider-qualified subject shapes without consuming table delimiters', () => {
+    expect(createMember360Redactor([], MKTG_HISTORY_SUBJECT_PATTERN)('|auth0|id-1| oidc|id_2 google-oauth2|12345')).toBe(
+      '|[contact redacted]| [contact redacted] [contact redacted]'
+    );
+  });
   it('collects only contact strings structurally, even from incomplete candidates', () => {
     const candidate = {
       tabs: { member_ranking: [null, 'not a row', { key_contact: 42 }, { key_contact: 'opaque-contact-1' }, { key_contact: 'owner@example.test' }] },
