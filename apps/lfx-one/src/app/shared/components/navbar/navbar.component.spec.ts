@@ -758,6 +758,24 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('keeps a hover peek open through a navigation while the pointer is on one of its tooltips outside the panel', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        tooltip.remove();
+      });
+
       it('closes a hover peek on a navigation once the pointer is off it', async () => {
         const events = new Subject<unknown>();
         const { collapse } = await createPeekFixture(events);
