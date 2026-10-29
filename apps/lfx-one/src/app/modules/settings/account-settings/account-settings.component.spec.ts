@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES } from '@lfx-one/shared/constants';
+import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_CODE_NOT_RECEIVED_HINT, EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES } from '@lfx-one/shared/constants';
 import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -13,7 +13,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountSettingsComponent } from './account-settings.component';
 
@@ -574,6 +574,97 @@ describe('AccountSettingsComponent — email verification support', () => {
     const supportButton = otpStep.querySelector<HTMLButtonElement>('[data-testid="otp-support-hint"] [data-testid="otp-support-button"]');
     expect(supportButton?.disabled).toBe(false);
     expect(root.querySelector('[data-testid="add-email-form"]')).toBeNull();
+  });
+});
+
+describe('AccountSettingsComponent — resend escalation (#4695)', () => {
+  const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  async function setup() {
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    component.addEmailForm.setValue({ email: 'new-address@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    return { component, userServiceMock, fixture, root: fixture.nativeElement as HTMLElement };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('words the code step conditionally and keeps the support hint visible from the start', async () => {
+    const { root } = await setup();
+
+    const otpStep = root.querySelector('[data-testid="otp-step"]');
+    expect(normalizedText(otpStep)).toContain("If this address can be added to your account, we'll send a 6-digit code to new-address@example.test");
+    expect(normalizedText(otpStep)).not.toContain('a 6-digit code was sent');
+    expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+    expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
+  });
+
+  it('replaces Resend with Contact support after the first successful resend', async () => {
+    vi.useFakeTimers();
+    const { component, fixture, root } = await setup();
+    expect(component.showResendSupport()).toBe(false);
+
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    expect(component.resendCount()).toBe(1);
+    expect(component.showResendSupport()).toBe(true);
+    const callout = root.querySelector('[data-testid="resend-support-callout"]');
+    expect(callout).not.toBeNull();
+    expect(callout?.querySelector('[data-testid="resend-support-button"]')?.hasAttribute('lfxOpenIntercom')).toBe(true);
+    expect(root.querySelector('button[data-testid="resend-code-link"]')).toBeNull();
+  });
+
+  it('does not count a failed resend', async () => {
+    const { component, userServiceMock } = await setup();
+    userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: false, message: 'nope' }));
+
+    component.sendVerificationCode();
+
+    expect(component.resendCount()).toBe(0);
+  });
+
+  it('resets the count on cancel so a different address starts fresh', async () => {
+    const { component, fixture, root } = await setup();
+    component.sendVerificationCode();
+    expect(component.resendCount()).toBe(1);
+
+    component.cancelOtpStep();
+    fixture.detectChanges();
+    expect(component.resendCount()).toBe(0);
+    expect(root.querySelector('[data-testid="otp-step"]')).toBeNull();
+
+    component.addEmailForm.setValue({ email: 'another@example.test' });
+    component.sendVerificationCode();
+    expect(component.resendCount()).toBe(0);
   });
 });
 

@@ -9,6 +9,9 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_THRESHOLD,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
@@ -61,6 +64,11 @@ export class AddAccountDialogComponent {
 
   private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
   public readonly resendCooldown = this.resendCooldownUtil.cooldown;
+  // Resends sent for the pending address; once it reaches the threshold, Resend gives way to Contact support.
+  public resendCount = signal(0);
+  public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
+  public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   public onSelectProvider(provider: IdentityProviderOption): void {
     if (provider.id === 'email') {
@@ -87,6 +95,7 @@ export class AddAccountDialogComponent {
         if (response.success) {
           this.codeSent.set(true);
           this.form.controls.email.disable();
+          this.resendCount.set(0);
           this.resendCooldownUtil.start();
         } else {
           this.verificationError.set(response.message || response.error || 'Failed to send verification code');
@@ -154,6 +163,8 @@ export class AddAccountDialogComponent {
       next: (response) => {
         if (!response.success) {
           this.verificationError.set(response.message || response.error || 'Failed to resend code');
+        } else {
+          this.resendCount.update((count) => count + 1);
         }
         this.isConnecting.set(false);
         this.resendCooldownUtil.start();
@@ -166,6 +177,7 @@ export class AddAccountDialogComponent {
   }
 
   public onCancel(): void {
+    this.resendCount.set(0);
     this.resendCooldownUtil.clear();
     this.ref.close(null);
   }

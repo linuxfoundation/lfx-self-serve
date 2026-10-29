@@ -213,7 +213,7 @@
                     <div>
                       <p class="text-sm font-medium text-slate-700">Enter verification code</p>
                       <p class="text-xs text-slate-500 mt-0.5">
-                        If this address can be added, a 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
+                        If this address can be added to your account, we'll send a 6-digit code to <strong>{{ pendingEmail() }}</strong
                         >. Enter it below to verify and add the address.
                       </p>
                     </div>
@@ -250,7 +250,12 @@
                         data-testid="cancel-otp-button">
                       </lfx-button>
                     </form>
-                    @if (resendCooldown() > 0) {
+                    @if (showResendSupport()) {
+                      <p class="text-xs text-slate-700 self-start" data-testid="resend-support-callout">
+                        {{ resendSupportMessage }}
+                        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="resend-support-button">Contact support</button>.
+                      </p>
+                    } @else if (resendCooldown() > 0) {
                       <span class="text-xs text-gray-400 self-start" data-testid="resend-code-link">Resend in {{ resendCooldown() }}s</span>
                     } @else {
                       <button
@@ -263,10 +268,13 @@
                         {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
                       </button>
                     }
-                    <p class="text-xs text-slate-500" data-testid="otp-support-hint">
-                      Didn't get a code? The address may already be linked to another LFX account —
-                      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="otp-support-button">contact support</button>.
-                    </p>
+                    <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="otp-support-hint">
+                      <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
+                      <p class="text-xs text-blue-900">
+                        {{ codeNotReceivedHint }}
+                        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="otp-support-button">contact support</button>.
+                      </p>
+                    </div>
                   </div>
                 }
               </div>

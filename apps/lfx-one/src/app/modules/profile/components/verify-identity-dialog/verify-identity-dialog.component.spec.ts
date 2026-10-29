@@ -5,7 +5,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
-import { EMAIL_ALREADY_CONNECTED_MESSAGE, EMAIL_ALREADY_CONNECTED_SUMMARY, EMAIL_ALREADY_LINKED_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+} from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -278,5 +283,63 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     expect(root.querySelector('[data-testid="verify-email-error"]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('resend escalation', () => {
+    const resendButton = (root: HTMLElement): Element | null => root.querySelector('[data-testid="verify-resend"]');
+    const supportAction = (root: HTMLElement): Element | null => root.querySelector('[data-testid="verify-resend-support"]');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces Resend with Contact support after the first successful resend', () => {
+      vi.useFakeTimers();
+      const { component, root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(component.showResendSupport()).toBe(false);
+      expect(resendButton(root)).not.toBeNull();
+      expect(supportAction(root)).toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+
+      expect(component.resendCount()).toBe(1);
+      expect(component.showResendSupport()).toBe(true);
+      expect(resendButton(root)).toBeNull();
+      expect(normalizedText(supportAction(root))).toBe('Contact support');
+      expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
+    });
+
+    it('does not count a failed resend toward the threshold', () => {
+      vi.useFakeTimers();
+      const { component, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: false, message: 'nope' }));
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('resets the count on cancel', () => {
+      vi.useFakeTimers();
+      const { component } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(component.resendCount()).toBe(1);
+
+      component.onCancel();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('words the code hint without promising a code or naming the address status', () => {
+      const { root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+
+      const hint = normalizedText(root.querySelector('[data-testid="verify-otp-hint"]'));
+      expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+      expect(hint).not.toContain('already linked');
+    });
   });
 });

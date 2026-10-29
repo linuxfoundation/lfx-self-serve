@@ -236,6 +236,18 @@ export const EMAIL_CALLBACK_RETRY_MESSAGE =
 /** Enumeration-safe response shared by accepted and already-linked send-code requests. */
 export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
 
+/** Resends allowed on the code step before Resend is replaced by a Contact support action. */
+export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
+
+/**
+ * Code-step hint, neutral about whether the address is already linked (the server answers both the same
+ * way). Rendered before an inline "contact support" link, so it ends mid-sentence.
+ */
+export const EMAIL_CODE_NOT_RECEIVED_HINT = "Didn't get a code? Check the address and your spam folder. If it still doesn't arrive,";
+
+/** Shown in place of Resend once the resend threshold is reached; rendered before an inline "contact support" link. */
+export const EMAIL_RESEND_SUPPORT_MESSAGE = 'A code can take a few minutes to arrive. Still nothing?';
+
 /** Generic error code for every non-service-unavailable OTP verification failure. */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
 

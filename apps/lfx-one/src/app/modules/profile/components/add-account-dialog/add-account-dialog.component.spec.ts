@@ -9,6 +9,7 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
@@ -276,5 +277,63 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(root.querySelector('[data-testid="add-account-otp-error"]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('resend escalation', () => {
+    const resendButton = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend"]');
+    const supportAction = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend-support"]');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces Resend with Contact support after the first successful resend', () => {
+      vi.useFakeTimers();
+      const { component, root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(component.showResendSupport()).toBe(false);
+      expect(resendButton(root)).not.toBeNull();
+      expect(supportAction(root)).toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+
+      expect(component.resendCount()).toBe(1);
+      expect(component.showResendSupport()).toBe(true);
+      expect(resendButton(root)).toBeNull();
+      expect(normalizedText(supportAction(root))).toBe('Contact support');
+      expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
+    });
+
+    it('does not count a failed resend toward the threshold', () => {
+      vi.useFakeTimers();
+      const { component, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: false, message: 'nope' }));
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('resets the count on cancel', () => {
+      vi.useFakeTimers();
+      const { component } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(component.resendCount()).toBe(1);
+
+      component.onCancel();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('words the code hint without promising a code or naming the address status', () => {
+      const { root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+
+      const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
+      expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+      expect(hint).not.toContain('already linked');
+    });
   });
 });

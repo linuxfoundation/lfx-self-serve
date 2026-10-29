@@ -59,22 +59,32 @@
       <div class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <label class="text-sm font-semibold text-slate-900">Verification code</label>
-          <button
-            class="text-sm font-medium"
-            [class.cursor-pointer]="resendCooldown() === 0"
-            [class.text-blue-600]="resendCooldown() === 0"
-            [class.hover:text-blue-700]="resendCooldown() === 0"
-            [class.text-slate-400]="resendCooldown() > 0"
-            [class.cursor-not-allowed]="resendCooldown() > 0"
-            [disabled]="resendCooldown() > 0"
-            (click)="onResendCode()"
-            data-testid="verify-resend">
-            @if (resendCooldown() > 0) {
-              Resend in {{ resendCooldown() }}s
-            } @else {
-              <i class="fa-light fa-arrows-rotate mr-1"></i>Resend Code
-            }
-          </button>
+          @if (showResendSupport()) {
+            <button
+              type="button"
+              lfxOpenIntercom
+              class="text-sm font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
+              data-testid="verify-resend-support">
+              <i class="fa-light fa-headset mr-1"></i>Contact support
+            </button>
+          } @else {
+            <button
+              class="text-sm font-medium"
+              [class.cursor-pointer]="resendCooldown() === 0"
+              [class.text-blue-600]="resendCooldown() === 0"
+              [class.hover:text-blue-700]="resendCooldown() === 0"
+              [class.text-slate-400]="resendCooldown() > 0"
+              [class.cursor-not-allowed]="resendCooldown() > 0"
+              [disabled]="resendCooldown() > 0"
+              (click)="onResendCode()"
+              data-testid="verify-resend">
+              @if (resendCooldown() > 0) {
+                Resend in {{ resendCooldown() }}s
+              } @else {
+                <i class="fa-light fa-arrows-rotate mr-1"></i>Resend Code
+              }
+            </button>
+          }
         </div>
         <p-inputotp
           [ngModel]="verificationCode()"
@@ -93,10 +103,16 @@
             }
           </p>
         }
-        <p class="text-xs text-slate-500" data-testid="verify-otp-hint">
-          Didn't get a code? The address may already be linked to another LFX account —
-          <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="verify-otp-support-button">contact support</button>.
-        </p>
+        @if (showResendSupport()) {
+          <p class="text-xs text-slate-700" data-testid="verify-resend-support-callout">{{ resendSupportMessage }}</p>
+        }
+        <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="verify-otp-hint">
+          <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
+          <p class="text-xs text-blue-900">
+            {{ codeNotReceivedHint }}
+            <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="verify-otp-support-button">contact support</button>.
+          </p>
+        </div>
       </div>
 
       <lfx-button

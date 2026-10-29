@@ -16,6 +16,9 @@ import {
   ACCOUNT_SETTINGS_SECTIONS,
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_THRESHOLD,
   INSIGHTS_PUBLIC_API_FLAG,
   PROFILE_EMAILS_PATH,
 } from '@lfx-one/shared/constants';
@@ -91,6 +94,11 @@ export class AccountSettingsComponent {
   // ── Resend cooldown ──
   private resendCooldownUtil = useResendCooldown(this.destroyRef);
   public resendCooldown = this.resendCooldownUtil.cooldown;
+  // Resends sent for the pending address; once it reaches the threshold, Resend gives way to Contact support.
+  public resendCount = signal(0);
+  public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
+  public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   // ── TOC active section ──
   private static readonly sectionIds = [
@@ -320,6 +328,7 @@ export class AccountSettingsComponent {
     }
 
     const email = this.addEmailForm.value.email!;
+    const isResend = this.otpStep();
     this.sendingCode.set(true);
 
     this.userService
@@ -330,6 +339,7 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.pendingEmail.set(email);
             this.otpStep.set(true);
+            this.resendCount.set(isResend ? this.resendCount() + 1 : 0);
             this.resendCooldownUtil.start();
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: response.message || 'Failed to send verification code' });
@@ -387,6 +397,7 @@ export class AccountSettingsComponent {
     this.pendingEmail.set('');
     this.addEmailForm.reset();
     this.otpForm.reset();
+    this.resendCount.set(0);
     this.resendCooldownUtil.clear();
   }
 
