@@ -92,10 +92,10 @@ export class Member360TrackerStoreService {
       /* Never quote malformed private bytes. */
     }
     if (!owned) throw new ResourceNotFoundError('Member 360 tracker');
-    await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
+    await this.erase(req, key, 'removed', true);
   }
 
-  /** Metadata-only oldest-first pass; at most N deletion attempts, no row reads. */
+  /** Metadata-only oldest-first pass; at most N objects / 2N attempts, no row reads. */
   public async sweepExpired(req: Request, project: string): Promise<void> {
     this.creator(req);
     const prefix = this.prefix(project);
@@ -127,13 +127,21 @@ export class Member360TrackerStoreService {
     for (const id of new Set(ids)) await this.erase(req, this.key(project, id), 'consumed');
   }
 
-  private async erase(req: Request, key: string, reason: 'consumed' | 'expired' | 'sweep'): Promise<void> {
-    try {
-      await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
-    } catch {
-      // A Guild start must not be retried because cleanup failed. Never log rows,
-      // identity, private keys or provider error messages at this boundary.
-      logger.warning(req, 'member_360_tracker_delete', 'Private tracker cleanup failed; lifecycle cleanup is required', { reason });
+  private async erase(req: Request, key: string, reason: 'consumed' | 'expired' | 'sweep' | 'removed', required = false): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
+        return;
+      } catch (error) {
+        if (attempt === 0) continue;
+        // Never retry the Guild start or log private/provider bytes. Explicit
+        // Remove must fail visibly; background cleanup remains best-effort.
+        logger.warning(req, 'member_360_tracker_delete', 'Private tracker cleanup failed after retry; lifecycle cleanup is required', {
+          reason,
+          trackerId: key.slice(key.lastIndexOf('/') + 1, -5),
+        });
+        if (required) throw error;
+      }
     }
   }
 

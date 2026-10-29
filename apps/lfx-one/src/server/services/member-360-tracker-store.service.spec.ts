@@ -169,12 +169,30 @@ describe('private parsed Member 360 tracker store', () => {
     expect(mocks.remove).toHaveBeenCalledOnce();
     await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject({ statusCode: 400 });
   });
-  it('keeps cleanup failures best-effort and logs no private data', async () => {
+  it('retries a transient erase failure once without a warning', async () => {
     const service = new Member360TrackerStoreService();
     const receipt = await service.save(req, 'project-one', tracker);
     mocks.remove.mockRejectedValueOnce(new Error('private-row@example.test'));
+    await service.deleteConsumed(req, 'project-one', [receipt.trackerId]);
+    expect(mocks.remove).toHaveBeenCalledTimes(2);
+    expect(objects.size).toBe(0);
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+  it('rejects explicit Remove after two failed erases rather than pretending it succeeded', async () => {
+    const service = new Member360TrackerStoreService();
+    const receipt = await service.save(req, 'project-one', tracker);
+    mocks.remove.mockRejectedValue(new Error('Synthetic deletion unavailable'));
+    await expect(service.remove(req, 'project-one', receipt.trackerId)).rejects.toThrow('Synthetic deletion unavailable');
+    expect(mocks.remove).toHaveBeenCalledTimes(2);
+    expect(objects.size).toBe(1);
+  });
+  it('keeps persistent cleanup failures best-effort after one retry and logs no row data', async () => {
+    const service = new Member360TrackerStoreService();
+    const receipt = await service.save(req, 'project-one', tracker);
+    mocks.remove.mockRejectedValue(new Error('private-row@example.test'));
     await expect(service.deleteConsumed(req, 'project-one', [receipt.trackerId])).resolves.toBeUndefined();
-    expect(logger.warning).toHaveBeenCalledWith(req, 'member_360_tracker_delete', expect.any(String), { reason: 'consumed' });
+    expect(mocks.remove).toHaveBeenCalledTimes(2);
+    expect(logger.warning).toHaveBeenCalledWith(req, 'member_360_tracker_delete', expect.any(String), { reason: 'consumed', trackerId: receipt.trackerId });
     expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private-row');
   });
   it('fails closed on a write outage or collision', async () => {
