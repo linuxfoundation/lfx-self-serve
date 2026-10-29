@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, I18nPluralPipe, isPlatformBrowser, NgClass } from '@angular/common';
+import { DatePipe, DOCUMENT, I18nPluralPipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -27,14 +27,15 @@ import {
   resolveMktgKit,
   resolveMktgFamilyNextStep,
   mktgKitAssetLabel,
+  readMktgRetiredRunHint,
   mktgKitRootPath,
   mktgRunRouteFor,
 } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
-import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import {
   catchError,
   distinctUntilChanged,
@@ -71,6 +72,8 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
     DatePipe,
     I18nPluralPipe,
     NgClass,
+    NgTemplateOutlet,
+    MktgSkeletonComponent,
     RouterLink,
     MessageComponent,
     MktgBreadcrumbComponent,
@@ -88,7 +91,7 @@ export class MktgDocumentsComponent {
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly attempts = inject(MktgRunAttemptService);
+  private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
@@ -161,17 +164,32 @@ export class MktgDocumentsComponent {
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
+  protected readonly questionRunIds = computed<Record<string, string | undefined>>(() =>
+    Object.fromEntries(
+      this.runs()
+        .filter((run) => run.state === 'questions' && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.catalogAgentId))
+        .map((run) => [run.agentKey, run.runId])
+    )
+  );
   protected readonly runTargets = computed(() =>
     Object.fromEntries(
       this.runs().map((run) => {
         const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === run.agentKey);
-        if (type?.catalogAgentId && this.waitingForAnswers(type, run))
+        if (type?.catalogAgentId && this.waitingForAnswers(type, run.state))
           return [
             run.runId,
             {
               label: 'Answer the questions',
-              commands: [this.kitRoot(), type.catalogAgentId],
-              params: { project: this.projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null },
+              commands: mktgRunRouteFor(run.agentKey, this.kitRoot()) ?? [],
+              params: {
+                project: this.projectSlug(),
+                type: null,
+                mode: null,
+                questions: null,
+                generation: null,
+                revision: null,
+                run: type.kind === 'living' ? run.runId : null,
+              },
             },
           ];
         const commands =
@@ -291,10 +309,12 @@ export class MktgDocumentsComponent {
 
   private initRuns(): Signal<MktgDocumentRunRow[]> {
     return computed(() =>
-      (this.documents()?.runs ?? []).map((run) => ({
-        ...run,
-        label: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.itemLabel ?? 'Document',
-      }))
+      (this.documents()?.runs ?? [])
+        .filter((run) => !readMktgRetiredRunHint(run))
+        .map((run) => ({
+          ...run,
+          label: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.itemLabel ?? 'Document',
+        }))
     );
   }
 
@@ -308,8 +328,10 @@ export class MktgDocumentsComponent {
     ).pipe(
       tap((request) => {
         const scope = JSON.stringify([request.project, request.userSub]);
-        this.pendingSelectionScroll = scope === this.listedScope && request.type !== this.listedType;
+        const typeChanged = request.type !== this.listedType;
+        this.pendingSelectionScroll = scope === this.listedScope && typeChanged;
         this.listedType = request.type;
+        if (typeChanged && !this.documents()) this.loading.set(true);
         this.listPending.set(true);
         if (scope !== this.listedScope) {
           this.detailCache.clear();
@@ -328,15 +350,12 @@ export class MktgDocumentsComponent {
         const currentScope = () => JSON.stringify([this.projectContext.activeContextUid(), this.userService.user()?.sub]);
         let known = this.documents();
         let unavailableSince: number | null = null;
-        let activeSince: number | null = null;
         let failures = 0;
         const unavailable = () => {
           unavailableSince ??= Date.now();
           failures++;
         };
-        const expired = () =>
-          (unavailableSince !== null && Date.now() - unavailableSince >= MKTG_RUN_POLL.timeoutMs) ||
-          (activeSince !== null && Date.now() - activeSince >= MKTG_RUN_POLL.timeoutMs);
+        const expired = () => unavailableSince !== null && Date.now() - unavailableSince >= MKTG_RUN_POLL.timeoutMs;
         const pause = () => this.refreshWarning.set('Automatic progress checks paused. Refresh progress to try again; the last loaded documents are kept.');
         const read = (poll = false) =>
           (poll ? this.documentStore.listDocuments(request.project, true) : this.documentStore.listDocuments(request.project)).pipe(
@@ -353,8 +372,6 @@ export class MktgDocumentsComponent {
               if (this.listFailed()) this.errorText.set('');
               this.listFailed.set(false);
               known = data;
-              if (data.runs?.some((run) => run.state === 'writing' || run.state === 'storing')) activeSince ??= Date.now();
-              else if (!data.progressUnavailable) activeSince = null;
               if (data.progressUnavailable) unavailable();
               else {
                 unavailableSince = null;
@@ -370,40 +387,44 @@ export class MktgDocumentsComponent {
               return of(known);
             })
           );
-        return read().pipe(
-          expand((data) => {
-            if (expired()) {
-              pause();
-              return EMPTY;
-            }
-            const active = data.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-            if (!active && unavailableSince === null) return EMPTY;
-            let delay: number = MKTG_RUN_POLL.intervalMs;
-            if (failures) delay = Math.min(MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs, delay * 2 ** (failures - 1));
-            if (unavailableSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - unavailableSince)));
-            if (activeSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - activeSince)));
-            return timer(delay).pipe(
-              switchMap(() => {
-                if (expired()) {
-                  pause();
-                  return EMPTY;
-                }
-                return read(true);
-              })
-            );
-          }),
-          takeUntil(this.listRefresh),
-          catchError((error: HttpErrorResponse) => {
-            this.refreshWarning.set('');
-            this.listFailed.set(true);
-            this.errorText.set(
-              error.status === 403 || error.status === 401
-                ? 'You need write access to this project to see its Marketing OS documents.'
-                : 'The documents could not be loaded. Try again in a moment.'
-            );
-            return of(null);
-          })
-        );
+        const observe = () =>
+          read().pipe(
+            expand(() => {
+              if (expired()) {
+                pause();
+                return EMPTY;
+              }
+              let delay: number = MKTG_RUN_POLL.intervalMs;
+              if (failures) delay = Math.min(MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs, delay * 2 ** (failures - 1));
+              if (unavailableSince !== null) delay = Math.min(delay, Math.max(0, MKTG_RUN_POLL.timeoutMs - (Date.now() - unavailableSince)));
+              return timer(delay).pipe(
+                switchMap(() => {
+                  if (expired()) {
+                    pause();
+                    return EMPTY;
+                  }
+                  return read(true);
+                })
+              );
+            }),
+            takeUntil(this.listRefresh),
+            catchError((error: HttpErrorResponse) => {
+              this.refreshWarning.set('');
+              this.listFailed.set(true);
+              this.errorText.set(
+                error.status === 403 || error.status === 401
+                  ? 'You need write access to this project to see its Marketing OS documents.'
+                  : 'The documents could not be loaded. Try again in a moment.'
+              );
+              return of(null);
+            })
+          );
+        return createVisibilityPoll(this.document, observe, {
+          intervalMs: MKTG_RUN_POLL.intervalMs,
+          backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+          backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+          shouldContinue: () => false,
+        }).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))));
       })
     );
   }
@@ -489,20 +510,21 @@ export class MktgDocumentsComponent {
     return 'The document could not be updated or loaded. Reload to check its state, then try again.';
   }
 
-  /** The row action and type badge use one policy; private questions can precede the next server projection. */
-  private waitingForAnswers(type: MktgDocumentType, run?: MktgDocumentRunRow): boolean {
-    if (!type.catalogAgentId || !run || run.state === 'failed') return false;
-    if (type.agentKey === 'member-360') return run.state === 'questions';
-    if (type.kind !== 'living') return false;
-    return (
-      run.state === 'questions' ||
-      this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions?.attempt.runId === run.runId
-    );
+  /**
+   * Documents/kit waiting action: a run is waiting only when the server state is questions,
+   * and the link carries run=<runId> (land on the active run from any device, rule 1).
+   * Replaces #4588 b0e6ed9f4 local-attempt matching (attempts.load(...).pendingQuestions)
+   * and its component test, dropped in the main merge f8d007d7d deliberately.
+   * Creator-scoped one-off entries instead use server-owned discovery on their plain route (#4591).
+   */
+  private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
+    return !!type.catalogAgentId && state === 'questions';
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
+    if (!this.documents()) return { badge: '', badgeClass: '' };
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
-    if (this.waitingForAnswers(type, active)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
+    if (this.waitingForAnswers(type, active?.state)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
     if (active) {
       if (active.state === 'questions') return { badge: 'Paused', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };

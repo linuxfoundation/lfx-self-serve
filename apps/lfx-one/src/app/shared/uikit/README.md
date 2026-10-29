@@ -7,7 +7,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Selector prefix:** `lfx-ui-` (enforced by an ESLint override for this folder), e.g. `lfx-ui-button`.
 - **Class names:** `Ui*Component` (`UiButtonComponent`), so they never collide with the wrapper classes.
 - **Angular:** standalone, signal `input()` / `output()`, `model()` for two-way values, `ChangeDetectionStrategy.OnPush`. The app is zoneless.
-- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). The four existing components still use `lfxColors` until they are realigned.
+- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Button, tabs and search-input still use `lfxColors` until they are realigned.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** (menus, popovers, dialogs) will build on `@angular/cdk`.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
@@ -20,8 +20,11 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-button`       | `UiButtonComponent`      | Eight variants, three sizes, icon-only, leading and trailing icon, disabled, full width; renders a button or a router link |
 | `lfx-ui-tabs`         | `UiTabsComponent`        | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                                  |
 | `lfx-ui-search-input` | `UiSearchInputComponent` | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                             |
-| `lfx-ui-badge`        | `UiBadgeComponent`       | Count badge, neutral or accent tone                                                                                        |
+| `lfx-ui-badge`        | `UiBadgeComponent`       | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                          |
 | `lfx-ui-status-dot`   | `UiStatusDotComponent`   | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                        |
+| `lfx-ui-skeleton`     | `UiSkeletonComponent`    | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                       |
+| `lfx-ui-spinner`      | `UiSpinnerComponent`     | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                               |
+| `lfx-ui-note`         | `UiNoteComponent`        | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"` or `alert`               |
 
 ## Design tokens
 

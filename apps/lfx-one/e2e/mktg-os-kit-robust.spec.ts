@@ -14,19 +14,19 @@ test.describe('Marketing kit responsive structure', () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await setupKit(page, { loaded: true });
     await openKit(page);
-    await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
+    await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(4);
     for (const filter of MKTG_KIT_FILTERS) {
       const pill = page.getByTestId(`filter-pill-${filter.id}`);
       await pill.click();
       await expect(pill).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
+      await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(4);
       const path = testInfo.outputPath(`kit-filter-${filter.id}-1440.png`);
       await page.screenshot({ path, fullPage: true });
       await testInfo.attach(`Kit ${filter.label} at 1440px`, { path, contentType: 'image/png' });
     }
   });
   for (const width of [1440, 1280, 390]) {
-    test(`kit structure at ${width}px retains nine cards and usable tabs`, async ({ page }) => {
+    test(`kit structure at ${width}px retains four live cards and usable tabs`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await setupKit(page, { loaded: true });
       await openKit(page);
@@ -39,7 +39,7 @@ test.describe('Marketing kit responsive structure', () => {
         if (width >= 1280) expect(tiles.x).toBeGreaterThanOrEqual(title.x + title.width);
         else expect(tiles.y).toBeGreaterThanOrEqual(title.y + title.height);
       }
-      await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(9);
+      await expect(page.getByTestId('mktg-kit-families').locator('article')).toHaveCount(4);
       await expect(page.getByTestId('mktg-kit-tab-kit')).toHaveAttribute('aria-current', 'page');
       await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(2);
       if (width === 390) {

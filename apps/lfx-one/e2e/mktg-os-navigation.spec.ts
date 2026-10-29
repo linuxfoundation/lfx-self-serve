@@ -124,8 +124,9 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       await page.screenshot({ path: info.outputPath('direct-boilerplates-questions.png'), fullPage: true });
       await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
       await expect(page).toHaveURL(new RegExp('/' + fixture.intake.agentId + '\\?'));
-      await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
-      await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing your Boilerplates');
+      // Rule 1/#4594: after answers, recorded writing uses the shared observer, not the former private activity card.
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing… You can leave this page');
       await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('direct-boilerplates-run-progress.png'), fullPage: true });
       fixture.finish();
@@ -143,19 +144,13 @@ test.describe('Marketing OS fixed-parent navigation', () => {
   test('an automatic questions round-trip leaves Back pointing before the questions', async ({ page }, info) => {
     test.setTimeout(60_000);
     const fixture = await setupNoQuestionsHandoff(page);
-    let ask = false;
-    await page.route('**' + BRAND_KIT_INTAKE.endpoints.result, (route) =>
-      ask
-        ? fulfillDocumentJson(route, {
-            status: 'questions',
-            questionsId: 'navigation-q',
-            questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
-          })
-        : route.fallback()
-    );
+    const pendingQuestions = {
+      questionsId: 'f'.repeat(64),
+      askedAt: '2026-10-23T14:34:01Z',
+      questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
+    };
     if (!BRAND_KIT_INTAKE.endpoints.answers) throw new Error('Missing answers fixture endpoint');
     await page.route('**' + BRAND_KIT_INTAKE.endpoints.answers, (route) => {
-      ask = false;
       fixture.finish();
       return fulfillDocumentJson(route, { success: true });
     });
@@ -167,10 +162,13 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     fixture.startChecking();
     await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
     await expect(page).not.toHaveURL(/\/documents\//);
-    ask = true;
-    await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
+    fixture.askQuestions(pendingQuestions);
+    await expect(page.getByTestId('mktg-run-questions')).toContainText('Which voice?');
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
+    // 144-A replaces the earlier142 current-document expectation for a matching creator capability:
+    // public metadata must not preempt the private result's exact document_location receipt.
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
+    await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
     expect(fixture.posts).toEqual([BRAND_KIT_INTAKE.endpoints.generate, BRAND_KIT_INTAKE.endpoints.answers]);
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
     await page.screenshot({ path: info.outputPath('questions-landed-asset.png'), fullPage: true });

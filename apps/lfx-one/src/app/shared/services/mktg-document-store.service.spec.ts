@@ -48,6 +48,15 @@ describe('MktgDocumentStoreService', () => {
     expect(request.request.params.get('ownRuns')).toBe('1');
     request.flush({ project: 'proj-1', groups: [], runs: [] });
   });
+  it('requests creator-scoped run discovery with the existing safe DTO, without a caller subject', () => {
+    service.listDocuments('proj-1', true, true).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
+    expect(request.request.params.get('ownRuns')).toBe('1');
+    expect(request.request.params.get('poll')).toBe('1');
+    expect(request.request.params.keys().sort()).toEqual(['ownRuns', 'poll', 'project']);
+    request.flush({ project: 'proj-1', groups: [], runs: [] });
+  });
+
   it('reads one document and one revision under the document’s path', () => {
     service.getDocument('proj-1', 'brand-kit', 'living').subscribe();
     service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID).subscribe();
@@ -270,6 +279,16 @@ describe('MktgDocumentStoreService', () => {
     const refresh = http.expectOne((request) => request.params.get('refreshRun') === id);
     expect(refresh.request.params.has('poll')).toBe(false);
     refresh.flush({});
+  });
+
+  it.each([false, true])('forwards the selected opaque run for closed-state reads without forcing a retry (poll=%s)', (poll) => {
+    const id = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', poll, undefined, true, id).subscribe();
+    const selected = http.expectOne((request) => request.params.get('run') === id);
+    expect(selected.request.params.get('project')).toBe('proj-1');
+    expect(selected.request.params.has('refreshRun')).toBe(false);
+    expect(selected.request.params.has('poll')).toBe(poll);
+    selected.flush({});
   });
 
   it('retries the exact recorded run without a Generate or Restore request', () => {

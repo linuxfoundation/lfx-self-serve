@@ -406,19 +406,25 @@ describe('MktgDocumentsComponent', () => {
   it.each(['writing', 'questions', 'storing', 'failed'] as const)('shows a %s recorded run without inventing a stored draft', async (state) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
-    await render();
+    await render('/?type=brand-kit&mode=new&questions=synthetic-old');
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
     const startedLink = query('mktg-documents-open-started-' + 'b'.repeat(64));
     if (state === 'questions') {
       expect(startedLink?.textContent?.trim()).toBe('Answer the questions');
-      expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
       expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
       expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
       const entry = query('mktg-documents-nav-brand-kit');
       expect(entry?.textContent).toContain('Needs answers');
-      expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}`);
+      expect(entry?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
+      const startedHref = query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href');
+      expect(startedHref).toContain(`/${BRAND_KIT.catalogAgentId}?`);
+      const params = new URL(startedHref ?? '', 'http://localhost').searchParams;
+      expect(params.has('type')).toBe(false);
+      expect(params.has('mode')).toBe(false);
+      expect(params.has('questions')).toBe(false);
       expect(query('mktg-documents-pending-document')?.textContent).toContain(
         'use its Started runs link to follow progress, answer its questions or retry it.'
       );
@@ -431,7 +437,9 @@ describe('MktgDocumentsComponent', () => {
     }
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
-      expect(store.listDocuments).toHaveBeenCalledTimes(1);
+      // Failed/idle rows remain server-observed so other writers' changes arrive in place.
+      expect(store.listDocuments).toHaveBeenCalledTimes(3);
+      expect(query('mktg-documents-revision-1')).toBeNull();
     }
   });
 
@@ -440,7 +448,7 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValue(read);
     await render();
     expect(query('mktg-documents-started-loading')).not.toBeNull();
-    expect(query('mktg-documents-started-loading')?.querySelector('[data-variant="card"]')).not.toBeNull();
+    expect(query('mktg-documents-started-loading')?.querySelector('[data-variant="rows"]')).not.toBeNull();
     expect(query('mktg-documents-started-runs')).toBeNull();
     read.next({ ...documentsResponse(), runs: [startedRun('questions')] });
     await fixture.whenStable();
@@ -448,11 +456,13 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-loading')).toBeNull();
     const card = query('mktg-documents-started-runs');
     expect(card).not.toBeNull();
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
     read.next({ ...documentsResponse(), runs: [] });
     await fixture.whenStable();
     fixture.detectChanges();
     expect(query('mktg-documents-started-runs')).toBe(card);
     expect(card?.textContent).toContain('No runs in progress');
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
   });
 
   it('collapses an initially empty run slot once and keeps documents visible during type refetch', async () => {
@@ -618,7 +628,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-refresh-warning')).toBeNull();
   });
 
-  it.each(['writing', 'storing'] as const)('bounds healthy but stuck %s polling while keeping the last rows', async (state) => {
+  it.each(['writing', 'storing'] as const)('keeps healthy %s polling live while the server remains authoritative', async (state) => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ project: PROJECT.uid, groups: [], runs: [startedRun(state)] }));
     await render('/');
@@ -627,17 +637,19 @@ describe('MktgDocumentsComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(query('mktg-documents-refresh-warning')?.textContent).toContain('paused');
-    expect(query('mktg-documents-started-runs')).not.toBeNull();
-    const stopped = store.listDocuments.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped);
-    store.listDocuments.mockReturnValue(of(documentsResponse()));
-    query('mktg-documents-refresh-progress')?.querySelector('button')?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(store.listDocuments).toHaveBeenCalledTimes(stopped + 1);
     expect(query('mktg-documents-refresh-warning')).toBeNull();
+    expect(query('mktg-documents-started-runs')).not.toBeNull();
+    const observed = store.listDocuments.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(observed + 1);
+    const card = query('mktg-documents-started-runs');
+    store.listDocuments.mockReturnValue(of(documentsResponse()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(query('mktg-documents-started-runs')).toBe(card);
+    expect(card?.textContent).toContain('No runs in progress');
+    expect(fixture.componentInstance['runs']()).toHaveLength(0);
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
   });
 
   it.each([401, 403, 500])('shows recovered list content after initial %s and successful same-scope refresh', async (status) => {
@@ -694,21 +706,51 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
   });
 
-  it('leaves questions-only rows visible without automatic polling', async () => {
+  it('keeps questions-only rows live and discovers another writer answering them', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('questions')] }));
     await render();
-    vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
-    expect(store.listDocuments).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.listDocuments).toHaveBeenCalledTimes(4);
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
     expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused — the run needs input');
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Writing');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).not.toContain('Needs answers');
+  });
+
+  it('shows only neutral loading before the first read, pauses hidden, and discovers a new run on focus', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const first = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(first);
+    await render();
+    expect(query('mktg-documents-loading')?.getAttribute('aria-busy')).toBe('true');
+    expect(query('mktg-documents-nav-brand-kit')).toBeNull();
+    first.next({ project: PROJECT.uid, groups: [], runs: [] });
+    await fixture.whenStable();
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(store.listDocuments).toHaveBeenCalledOnce();
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('questions')] }));
+    visibility.mockReturnValue('visible');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(store.listDocuments).toHaveBeenCalledTimes(2);
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Needs answers');
+    const row = query('mktg-documents-started-run-' + startedRun().runId);
+    expect(row?.classList.contains('min-h-16')).toBe(true);
+    visibility.mockRestore();
   });
 
   it.each([
-    { state: 'writing', sameRun: true, waiting: true },
-    { state: 'writing', sameRun: false, waiting: false },
-    { state: 'failed', sameRun: true, waiting: false },
-  ] as const)('matches private questions to a non-failed run ($state, same run: $sameRun)', async ({ state, sameRun, waiting }) => {
+    { state: 'writing', sameRun: true },
+    { state: 'writing', sameRun: false },
+    { state: 'failed', sameRun: true },
+  ] as const)('uses only server state despite private questions ($state, same run: $sameRun)', async ({ state, sameRun }) => {
     const intake = MKTG_AGENT_INTAKES[BRAND_KIT.catalogAgentId ?? ''];
     if (!intake) throw new Error('Missing synthetic intake');
     const run = startedRun(state);
@@ -732,41 +774,38 @@ describe('MktgDocumentsComponent', () => {
     await render('/?type=brand-kit&mode=new&questions=old&generation=old&revision=old&run=old');
     const row = query('mktg-documents-open-started-' + run.runId);
     const nav = query('mktg-documents-nav-brand-kit');
-    if (waiting) {
-      expect(row?.textContent?.trim()).toBe('Answer the questions');
-      expect(nav?.textContent).toContain('Needs answers');
-      const expected = `/mktg-os-agents/${intake.agentId}?project=${PROJECT.slug}`;
-      expect(row?.getAttribute('href')).toBe(expected);
-      expect(nav?.getAttribute('href')).toBe(expected);
-    } else {
-      expect(row?.textContent?.trim()).toBe('Open');
-      expect(row?.getAttribute('href')).toContain(`run=${run.runId}`);
-      expect(nav?.textContent).not.toContain('Needs answers');
-      expect(nav?.getAttribute('href')).toContain('type=brand-kit');
-    }
+    expect(row?.textContent?.trim()).toBe('Open');
+    expect(row?.getAttribute('href')).toContain(`run=${run.runId}`);
+    expect(nav?.textContent).not.toContain('Needs answers');
+    expect(nav?.getAttribute('href')).toContain('type=brand-kit');
+    if (state === 'writing') expect(nav?.textContent).toContain('Writing');
   });
 
-  it('keeps a LinkedIn questions row on its document filter and Open action', async () => {
+  it('links LinkedIn questions row and navigation to its plain server-owned run entry (#137)', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'linkedin-post', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=linkedin-post');
     const nav = query('mktg-documents-nav-linkedin-post');
-    expect(nav?.getAttribute('href')).toContain('type=linkedin-post');
-    expect(nav?.textContent).not.toContain('Needs answers');
+    expect(nav?.textContent).toContain('Needs answers');
     const action = query('mktg-documents-open-started-' + run.runId);
-    expect(action?.textContent?.trim()).toBe('Open');
-    expect(action?.getAttribute('href')).toContain('run=' + run.runId);
+    expect(action?.textContent?.trim()).toBe('Answer the questions');
+    // Rule 1/#137/#4591: creator-scoped entry discovers its own active record; never a caller-selected private run.
+    expect(action?.getAttribute('href')).toBe(`/mktg-os-agents/linkedin-post?project=${PROJECT.slug}`);
+    expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
   });
 
-  it('links Member 360 questions to its run page with waiting labels', async () => {
+  it('links a Member 360 questions row and navigation to its server-first run entry without a selector', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=member-360');
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
-    expect(query('mktg-documents-nav-member-360')?.textContent).toContain('Needs answers');
-    expect(query('mktg-documents-open-started-' + run.runId)?.textContent?.trim()).toBe('Answer the questions');
-    expect(query('mktg-documents-open-started-' + run.runId)?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
-    expect(query('mktg-documents-nav-member-360')?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
+    expect(query('mktg-documents-started-runs')?.textContent).not.toContain('Paused');
+    const nav = query('mktg-documents-nav-member-360');
+    const action = query('mktg-documents-open-started-' + run.runId);
+    expect(nav?.textContent).toContain('Needs answers');
+    expect(action?.textContent?.trim()).toBe('Answer the questions');
+    expect(action?.getAttribute('href')).toBe(`/mktg-os-agents/member-360?project=${PROJECT.slug}`);
+    expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
   });
 
   it.each([false, true])('does not assert absence while progress is unavailable (known run: %s)', async (hasKnownRun) => {
