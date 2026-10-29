@@ -164,6 +164,7 @@ describe('OrgProjectsComponent — health label', () => {
     // A stray covered count of 2 on an unscored row must not mark it.
     makeProject('Echo', { ...UNSCORED, healthCoveredCategoryCount: 2 }),
   ];
+  let responseExtra: { maintainerRolesUnavailable?: true } = {};
 
   let fixture: ComponentFixture<OrgProjectsComponent>;
   let component: OrgProjectsComponent;
@@ -189,7 +190,7 @@ describe('OrgProjectsComponent — health label', () => {
                   { id: DEFAULT_ORG_PROJECTS_WORKSPACE_ID, name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, projectSlugs: PROJECTS.map((project) => project.slug) },
                 ],
               }),
-            getProjects: () => of({ orgSlug: 'acme-test', orgName: 'Acme', dataUpdatedAt: '2026-09-30T00:00:00Z', projects: PROJECTS }),
+            getProjects: () => of({ orgSlug: 'acme-test', orgName: 'Acme', dataUpdatedAt: '2026-09-30T00:00:00Z', projects: PROJECTS, ...responseExtra }),
           },
         },
         {
@@ -286,5 +287,24 @@ describe('OrgProjectsComponent — health label', () => {
 
     expect(exported).toEqual({ Alpha: 'Concerning*', Bravo: 'Healthy*', Charlie: 'Excellent', Delta: 'Unavailable', Echo: 'Unavailable' });
     expect(exported).toEqual(Object.fromEntries(PROJECTS.map((project) => [project.name, badge(project.slug).textContent?.trim()])));
+  });
+
+  it('notes that maintainer data is unavailable only when the response flags it', async () => {
+    const note = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-projects-maintainer-roles-unavailable"]');
+    expect(note()).toBeNull();
+
+    responseExtra = { maintainerRolesUnavailable: true };
+    try {
+      component['reload'].update((n: number) => n + 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(note()?.textContent).toContain('Maintainer data is currently unavailable');
+      // The Employees filter still works off contributors and participants.
+      expect(component['employeeOptions']()).toEqual([]);
+    } finally {
+      responseExtra = {};
+    }
   });
 });

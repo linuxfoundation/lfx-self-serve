@@ -339,7 +339,12 @@ describe('Family export slot', () => {
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
     expect(cover?.textContent).toContain('Synthetic project');
     expect(cover?.textContent).toContain('28 Oct 2026');
-    expect(cover?.querySelectorAll('dd')).toHaveLength(4);
+    expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
+      'Messaging framework',
+      'Brand kit',
+      'Boilerplates',
+      'FAQ',
+    ]);
     expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(cover?.classList.contains('h-screen')).toBe(false);
@@ -349,7 +354,10 @@ describe('Family export slot', () => {
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
-    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`, `${numbers[0]}.3`, `${numbers[0]}.4`]);
+    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
+    expect(document?.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
+    expect(document?.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
+    expect(document?.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
     expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
     expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');

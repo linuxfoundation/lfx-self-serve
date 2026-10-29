@@ -5713,6 +5713,25 @@ export interface CampaignTwitterImageAssetBlock {
   message: string;
 }
 
+/**
+ * The X section's typed fields, carried across a Plan → Implement round trip for the SAME event
+ * (a refine), when the rest of the draft is cleared. Nothing the generator produces feeds X, so a
+ * refine has nothing to regenerate there and clearing would only lose what the operator typed.
+ */
+export type CampaignTwitterDraft = Pick<
+  CampaignImplementationDraft,
+  | 'eventSlug'
+  | 'twitterBudget'
+  | 'twitterTweetText'
+  | 'twitterImageAssetId'
+  | 'twitterImageAssetName'
+  | 'twitterImageAssetBriefId'
+  | 'twitterImageUploadPendingName'
+  | 'twitterImageUploadPendingBriefId'
+  | 'twitterImageUploadFailedMessage'
+  | 'twitterImageUploadFailedBriefId'
+>;
+
 /** The X section's read of which ad account an X create uses (LFXV2-3319). */
 export interface CampaignTwitterAccountState {
   /**

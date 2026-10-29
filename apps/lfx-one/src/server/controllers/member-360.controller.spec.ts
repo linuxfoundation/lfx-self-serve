@@ -8,10 +8,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn(), active: vi.fn() }));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
+    public assertSingleActiveOneOffRun = mocks.active;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
   },
@@ -34,6 +35,20 @@ describe('Member 360 HTTP boundary', () => {
     vi.resetAllMocks();
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+  });
+  it('refuses before creating a Guild session and passes explicit discard separately from the agent intake', async () => {
+    const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
+    const req = { body: { project: 'sample-project', discard: 'a'.repeat(64) } } as Request;
+    const res = { json: vi.fn() } as unknown as Response;
+    const next = vi.fn();
+    mocks.active.mockRejectedValueOnce(conflict);
+    await new Member360Controller().generate(req, res, next);
+    expect(next).toHaveBeenCalledWith(conflict);
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.active).toHaveBeenCalledWith(req, 'sample-project', 'member-360', 'a'.repeat(64));
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    await new Member360Controller().generate(req, res, vi.fn());
+    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project' });
   });
   it.each(['project_name', 'project_uid', 'prior_run', 'request', 'handle'])('rejects client-controlled %s', async (key) => {
     const next = vi.fn();

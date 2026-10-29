@@ -121,7 +121,13 @@ installAsyncRouteErrorBridge();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-const angularApp = new AngularNodeAppEngine();
+// @angular/ssr 20.3.42+ serves the client-only shell (no auth state, so authGuard loops through
+// /login) for any request whose Host is not allowed or that carries an untrusted x-forwarded-*
+// header. Trust exactly the headers our ingress sends (#4649).
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').hostname],
+  trustProxyHeaders: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-forwarded-server'],
+});
 const app = express();
 
 // Cold-start phase marks (see #1378) — performance.now() is monotonic and

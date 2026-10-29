@@ -24,6 +24,21 @@
   -webkit-print-color-adjust: exact;
 }
 
+/* One semantic goals table: prefer a whole table, otherwise break only between
+   value/key-message and proof/sound-bite pairs, never orphan the sound bite. */
+[data-testid='mktg-framework-print-goals'] {
+  thead {
+    display: table-header-group;
+    break-after: avoid;
+  }
+  thead,
+  tbody,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
 /* styles.scss sets Inter on headings, paragraphs and controls in the base
    layer, which beats inheritance: inside the print they inherit the brand's
    typeface from the document instead, as in the brand kit book. */

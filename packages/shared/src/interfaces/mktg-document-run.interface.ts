@@ -1,9 +1,46 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
+import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+
+/** Safe conflict facts; never a Guild session id or owner capability. */
+export interface MktgActiveRunConflict {
+  code: typeof MKTG_RUN_ACTIVE;
+  message: string;
+  startedBy: string;
+  /** Whether the active run's creator is the effective viewer. */
+  startedByViewer: boolean;
+  /** When the active run started (ISO); the run page shows waiting since. */
+  startedAt: string;
+  activeRunId: string;
+  state: MktgDocumentRunState;
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+}
+
+/** Same-visit guard callbacks; no new transport fields or persisted request bytes. */
+export interface MktgActiveRunGuardOptions<T> {
+  conflict: MktgActiveRunConflict;
+  current: () => boolean;
+  recheck: () => Observable<T>;
+  classify: (error: unknown) => MktgActiveRunConflict | null;
+  onValue: (value: T) => void;
+  onDiscard: (conflict: MktgActiveRunConflict) => void;
+  onOpen: (conflict: MktgActiveRunConflict) => void;
+  onError: (error: unknown) => void;
+}
+
+/** Internal observer events for the shared guard recheck; never an API payload. */
+export type MktgActiveRunRecheckEvent<T> =
+  | { type: 'checking' }
+  | { type: 'conflict'; conflict: MktgActiveRunConflict }
+  | { type: 'accepted' }
+  | { type: 'value'; value: T }
+  | { type: 'error'; error: unknown };
 
 /** Extend this union and its dedicated allow-list guard when a new one-off adds classified failures. */
 export type MktgRunFailureReason = Member360FailureReason;
@@ -20,6 +57,16 @@ export interface MktgOneOffRunContext {
 export interface MktgDocumentRunStartOptions {
   oneOff?: MktgOneOffRunContext;
   basedOnId?: string;
+}
+
+/** Untrusted discard input is validated before any tracking mutation. */
+export interface MktgActiveRunStartOptions {
+  documentId?: string;
+  discard?: unknown;
+  /** Slot owner for one-offs when the caller acts on another creator's record; defaults to the caller. */
+  creatorSubject?: string | null;
+  /** Server-verified continuing session; exempt only its own record from the active-slot check. */
+  continuingRunId?: string;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
@@ -49,8 +96,8 @@ export interface MktgSessionOutcome {
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'questions' | 'storing' | 'failed';
 
-/** Server-only terminal markers for completion and superseded unfinished or failed runs. */
-export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded';
+/** Stored states include completion; closed runs are not reconciled or listed. */
+export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
  * Writer-entitled progress returned with Documents list/detail reads.
@@ -65,7 +112,14 @@ export interface MktgDocumentRunProgress {
   documentId: string;
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
-  state: MktgDocumentRunState;
+  /** Closed states appear only on a selected-run detail, never in listings. */
+  state: Exclude<MktgStoredDocumentRunState, 'completed'>;
+  /** Recorded closure time; absent on legacy closed records. */
+  closedAt?: string;
+  /** Forward-compatible display name only; this BFF does not populate it yet (linuxfoundation/lfx-self-serve#4592). */
+  closedBy?: string | null;
+  /** Forward-compatible opaque replacement run id; not populated here yet (linuxfoundation/lfx-self-serve#4592). */
+  replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
@@ -111,6 +165,10 @@ export interface MktgStartedRunRecord {
   /** Private bounded ACK ledger; overflow rejects a new turn rather than forgetting accepted ones. */
   acceptedAttemptIds?: string[];
   state: MktgStoredDocumentRunState;
+  /** Timestamp recorded when discarded or superseded; absent on legacy records. */
+  closedAt?: string;
+  /** Private opaque actor stored with discard metadata; never a public display-name field. */
+  closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
