@@ -10,7 +10,7 @@ describe('UiGaugeComponent', () => {
   let fixture: ComponentFixture<UiGaugeComponent>;
   let host: HTMLElement;
 
-  const arc = (): SVGElement => host.querySelector('[data-testid="ui-gauge-arc"]') as SVGElement;
+  const arc = (): SVGElement | null => host.querySelector('[data-testid="ui-gauge-arc"]');
   const value = (): HTMLElement | null => host.querySelector('[data-testid="ui-gauge-value"]');
   const set = async (name: string, val: unknown): Promise<void> => {
     fixture.componentRef.setInput(name, val);
@@ -42,8 +42,8 @@ describe('UiGaugeComponent', () => {
 
   it('draws the arc length as circumference times value', async () => {
     const circumference = 2 * Math.PI * 42;
-    expect(Number(arc().getAttribute('stroke-dasharray'))).toBeCloseTo(circumference, 5);
-    expect(Number(arc().getAttribute('stroke-dashoffset'))).toBeCloseTo(circumference * 0.08, 5);
+    expect(Number(arc()?.getAttribute('stroke-dasharray'))).toBeCloseTo(circumference, 5);
+    expect(Number(arc()?.getAttribute('stroke-dashoffset'))).toBeCloseTo(circumference * 0.08, 5);
   });
 
   it('draws no arc at 0, so the round caps leave no dot', async () => {
@@ -71,11 +71,11 @@ describe('UiGaugeComponent', () => {
     expect(value()?.textContent?.trim()).toBe('67');
     expect(host.getAttribute('aria-valuenow')).toBe('67');
     expect(host.getAttribute('aria-valuetext')).toBe('67 percent');
-    expect(arc().getAttribute('class')).toContain('stroke-ui-success-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-success-600');
 
     await set('value', 100 / 3);
     expect(value()?.textContent?.trim()).toBe('33');
-    expect(arc().getAttribute('class')).toContain('stroke-ui-danger-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-danger-600');
   });
 
   it('clamps the value to 0 to 100', async () => {
@@ -88,22 +88,22 @@ describe('UiGaugeComponent', () => {
   });
 
   it('colours the arc by level at the 67 and 34 thresholds', async () => {
-    expect(arc().getAttribute('class')).toContain('stroke-ui-success-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-success-600');
     await set('value', 67);
-    expect(arc().getAttribute('class')).toContain('stroke-ui-success-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-success-600');
     await set('value', 66);
-    expect(arc().getAttribute('class')).toContain('stroke-ui-warning-500');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-warning-500');
     await set('value', 34);
-    expect(arc().getAttribute('class')).toContain('stroke-ui-warning-500');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-warning-500');
     await set('value', 33);
-    expect(arc().getAttribute('class')).toContain('stroke-ui-danger-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-danger-600');
   });
 
   it('uses the accent for the accent tone', async () => {
     await set('tone', 'accent');
 
-    expect(arc().getAttribute('class')).toContain('stroke-ui-accent-500');
-    expect(arc().getAttribute('class')).not.toContain('stroke-ui-success-600');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-accent-500');
+    expect(arc()?.getAttribute('class')).not.toContain('stroke-ui-success-600');
   });
 
   it('is 64px by default and takes every size', async () => {
@@ -143,7 +143,7 @@ describe('UiGaugeComponent', () => {
     expect(host.hasAttribute('aria-valuetext')).toBe(false);
     expect(host.getAttribute('aria-label')).toBe('Health score');
     expect(host.querySelector('svg')?.getAttribute('class')).toContain('gauge-spin');
-    expect(arc().getAttribute('class')).toContain('stroke-ui-accent-500');
+    expect(arc()?.getAttribute('class')).toContain('stroke-ui-accent-500');
     expect(value()).toBeNull();
   });
 });
