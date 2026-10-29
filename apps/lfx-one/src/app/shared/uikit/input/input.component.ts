@@ -9,7 +9,7 @@ import { UiErrorComponent } from '../error/error.component';
 
 /**
  * Single-line text field with an optional label, hint, error and prefix or suffix (icon or text).
- * Works with `[(value)]` and with Angular forms (`formControlName`, `ngModel`). An error replaces the hint
+ * Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`). An error replaces the hint
  * and is linked to the field with `aria-describedby`. Validate on blur, not on every keystroke.
  */
 @Component({
@@ -21,6 +21,8 @@ import { UiErrorComponent } from '../error/error.component';
 })
 export class UiInputComponent implements ControlValueAccessor {
   private static nextId = 0;
+
+  private readonly ngControl = inject(NgControl, { self: true, optional: true });
 
   /** Visible label above the field. Without one, set `ariaLabel`. */
   public readonly label = input<string>('');
@@ -42,8 +44,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Marks the field as required for assistive technology. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Native `autocomplete` token, for example `email`. */
-  public readonly autocomplete = input<string>('off');
+  /** Native `autocomplete` token, for example `email`. Empty leaves the browser default, so autofill and password managers keep working. */
+  public readonly autocomplete = input<string>('');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-link`. */
   public readonly prefixIcon = input<string>('');
   /** Leading text such as `https://`. Shown after the icon when both are set. */
@@ -70,7 +72,6 @@ export class UiInputComponent implements ControlValueAccessor {
   protected readonly prefixClasses: Signal<string> = this.initAffixClasses('prefix');
   protected readonly suffixClasses: Signal<string> = this.initAffixClasses('suffix');
 
-  private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private onChange: ((value: string) => void) | null = null;
   private onTouched: (() => void) | null = null;
 
@@ -129,12 +130,13 @@ export class UiInputComponent implements ControlValueAccessor {
 
   private initInputClasses(): Signal<string> {
     return computed(() => {
-      // Exact px side padding per size, 16px when rounded; zero next to an unstyled affix, which carries the gap.
+      // Exact px side padding per size, 16px when rounded; zero on the side next to an unstyled affix, which carries the gap.
       const sides = { tiny: 'px-[8px]', small: 'px-[10px]', medium: 'px-[12px]' };
       const pad = this.rounded() ? 'px-[16px]' : sides[this.size()];
       const left = this.hasPrefix() && !this.affixStyled() ? 'pl-0' : '';
+      const right = this.hasSuffix() && !this.affixStyled() ? 'pr-0' : '';
       const text = this.size() === 'tiny' ? 'label-12' : 'label-14';
-      return `min-w-0 flex-1 bg-transparent outline-none text-ui-neutral-900 placeholder:text-ui-neutral-500 disabled:cursor-not-allowed disabled:text-ui-neutral-500 ${text} ${pad} ${left}`;
+      return `min-w-0 flex-1 bg-transparent outline-none text-ui-neutral-900 placeholder:text-ui-neutral-500 disabled:cursor-not-allowed disabled:text-ui-neutral-500 ${text} ${pad} ${left} ${right}`;
     });
   }
 

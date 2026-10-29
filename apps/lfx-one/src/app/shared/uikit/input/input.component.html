@@ -23,7 +23,7 @@
       [placeholder]="placeholder()"
       [disabled]="isDisabled()"
       [required]="required()"
-      [attr.autocomplete]="autocomplete()"
+      [attr.autocomplete]="autocomplete() || null"
       [attr.aria-label]="label() ? null : ariaLabel() || null"
       [attr.aria-invalid]="error() ? 'true' : null"
       [attr.aria-describedby]="describedBy()"

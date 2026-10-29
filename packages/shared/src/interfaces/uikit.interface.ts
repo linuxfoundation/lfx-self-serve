@@ -60,5 +60,5 @@ export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 /** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
 export type UiInputSize = 'tiny' | 'small' | 'medium';
 
-/** Native `type` of a uikit text input. */
-export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'number' | 'search';
+/** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with `inputmode="numeric"` instead. */
+export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'search';

@@ -95,6 +95,27 @@ describe('UiInputComponent', () => {
     expect(wrapper().className).toContain('rounded-ui-full');
   });
 
+  it('leaves autocomplete to the browser unless a token is set', async () => {
+    expect(field().hasAttribute('autocomplete')).toBe(false);
+
+    await set('autocomplete', 'email');
+
+    expect(field().getAttribute('autocomplete')).toBe('email');
+  });
+
+  it('zeroes the input padding next to an unstyled affix only', async () => {
+    await set('prefixText', '$');
+    await set('suffixText', 'USD');
+
+    expect(field().className).toContain('pl-0');
+    expect(field().className).toContain('pr-0');
+
+    await set('affixStyled', true);
+
+    expect(field().className).not.toContain('pl-0');
+    expect(field().className).not.toContain('pr-0');
+  });
+
   it('disables the field', async () => {
     await set('disabled', true);
 
