@@ -3,7 +3,7 @@
 
 // Tailwind has no background-position shimmer; the loop runs only when motion is allowed.
 @media (prefers-reduced-motion: no-preference) {
-  .skeleton-shimmer {
+  :host {
     animation: skeleton-shimmer 1.4s ease infinite;
   }
 }

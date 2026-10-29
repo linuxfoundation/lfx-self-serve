@@ -31,7 +31,7 @@ export class UiSkeletonComponent {
     return computed(() => {
       // Neutral 50 to neutral 100 shimmer; the stops match the library's 25% / 37% / 63% gradient.
       const base =
-        'skeleton-shimmer block bg-gradient-to-r from-ui-neutral-50 from-25% via-ui-neutral-100 via-[37%] to-ui-neutral-50 to-[63%] bg-[length:400%_100%] bg-[position:100%_50%]';
+        'block bg-gradient-to-r from-ui-neutral-50 from-25% via-ui-neutral-100 via-[37%] to-ui-neutral-50 to-[63%] bg-[length:400%_100%] bg-[position:100%_50%]';
       const shapes = { line: 'rounded-ui-xs', pill: 'rounded-ui-full', circle: 'rounded-ui-full' };
       return `${base} ${shapes[this.shape()]}`;
     });

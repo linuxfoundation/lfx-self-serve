@@ -26,7 +26,6 @@ describe('UiSkeletonComponent', () => {
     expect(host.className).toContain('rounded-ui-xs');
     expect(host.className).toContain('from-ui-neutral-50');
     expect(host.className).toContain('via-ui-neutral-100');
-    expect(host.className).toContain('skeleton-shimmer');
   });
 
   it('fills the container until given a width', async () => {
