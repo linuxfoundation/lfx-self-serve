@@ -19,8 +19,9 @@ vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => (
 
 const { OrgInvolvementService } = await import('./org-involvement.service');
 
-// The trend read is the one selecting ACTIVE_ROLES; the headline selects MAINTAINER_ROLES. Both read ORG_MAINTAINER_ROLES.
+// The trend read is the one selecting ACTIVE_ROLES (ORG_OVERVIEW_MAINTAINER_ROLES_TREND); the headline selects MAINTAINER_ROLES.
 const isRolesTrend = (sql: string): boolean => sql.includes('ACTIVE_ROLES');
+const missing = (object: string): Error => new Error(`SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.${object}' does not exist or not authorized.`);
 
 describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #4694)', () => {
   beforeEach(() => {
@@ -29,8 +30,8 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #469
       isRolesTrend(sql)
         ? {
             rows: [
-              { METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 12 },
-              { METRIC_MONTH: new Date(2030, 1, 15), ACTIVE_ROLES: null },
+              { MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 12 },
+              { MONTH_START_DATE: new Date(2030, 1, 15), ACTIVE_ROLES: null },
             ],
           }
         : { rows: [{ MAINTAINER_ROLES: 764 }] }
@@ -59,6 +60,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #469
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('maintainer-roles:v2');
   });
 
+  // The trend view lists only accounts holding a role in its window, so an account without any has no rows.
   it('answers zero roles and an empty trend for an account without any', async () => {
     execute.mockResolvedValue({ rows: [] });
 
@@ -70,27 +72,41 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #469
     });
   });
 
-  it('reads the trend live from the roles table, per calendar month over 12 months, in all projects, binding only the account', async () => {
+  it("selects the trend from lf-dbt's view, binding only the account", async () => {
     await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => isRolesTrend(String(query)))!;
-    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES r');
-    expect(sql).toContain('GENERATOR(ROWCOUNT => 12)');
-    expect(sql).not.toContain('IS_LF_PROJECT');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_OVERVIEW_MAINTAINER_ROLES_TREND');
+    expect(sql).not.toContain('COUNT(');
     expect(binds).toEqual(['acc-1']);
   });
 
-  it('answers an unavailable (null) headline, not zero, and an empty trend when the roles table is missing, and does not store the card', async () => {
-    execute.mockRejectedValue(new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized."));
+  it('keeps the headline and answers an empty trend when the trend view is missing, and does not store the card', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isRolesTrend(sql)) throw missing('ORG_OVERVIEW_MAINTAINER_ROLES_TREND');
+      return { rows: [{ MAINTAINER_ROLES: 764 }] };
+    });
 
     const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
-    expect(response).toEqual({ accountId: 'acc-1', maintainerRoles: null, monthlyData: [], monthlyLabels: [] });
+    expect(response).toEqual({ accountId: 'acc-1', maintainerRoles: 764, monthlyData: [], monthlyLabels: [] });
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  it('answers an unavailable (null) headline, not zero, when the roles table is missing, and does not store the card', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isRolesTrend(sql)) return { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] };
+      throw missing('ORG_MAINTAINER_ROLES');
+    });
+
+    const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
+
+    expect(response).toEqual({ accountId: 'acc-1', maintainerRoles: null, monthlyData: [12], monthlyLabels: ['Jan 2030'] });
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 });
 
-// The trend read is the one selecting UNIQUE_CONTRIBUTORS; the headline selects ACTIVE_CONTRIBUTORS. Both read ORG_PEOPLE_CONTRIBUTORS_DAILY.
+// The trend read is the one selecting UNIQUE_CONTRIBUTORS (ORG_OVERVIEW_CONTRIBUTORS_TREND); the headline selects ACTIVE_CONTRIBUTORS.
 const isContributorsTrend = (sql: string): boolean => sql.includes('UNIQUE_CONTRIBUTORS');
 
 describe('OrgInvolvementService.getContributorsMonthly — the People -> Contributors default count', () => {
@@ -109,11 +125,12 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     );
   });
 
-  it('answers the live count as the headline and the live monthly count as the trend', async () => {
+  it('answers the live count as the headline and the modeled monthly counts as the trend, and stores the card', async () => {
     const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [310, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v3');
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
   });
 
   it('counts distinct people with code in all projects over the last 2 years, the Contributors default rule, binding only the account', async () => {
@@ -128,18 +145,28 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     expect(binds).toEqual(['acc-1']);
   });
 
-  it('counts the trend from the headline table, distinct people per calendar month over 12 months, in all projects', async () => {
+  it("selects the trend from lf-dbt's view, binding only the account", async () => {
     await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
-    expect(sql).toContain('FROM months m');
-    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY d');
-    expect(sql).toContain('COUNT(DISTINCT d.person_key) AS UNIQUE_CONTRIBUTORS');
-    expect(sql).toContain('GENERATOR(ROWCOUNT => 12)');
-    expect(sql).not.toContain('is_lf_project');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_OVERVIEW_CONTRIBUTORS_TREND');
+    expect(sql).not.toContain('COUNT(');
     expect(binds).toEqual(['acc-1']);
   });
 
+  it('keeps the headline and answers an empty trend when the trend view is missing, and does not store the card', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isContributorsTrend(sql)) throw missing('ORG_OVERVIEW_CONTRIBUTORS_TREND');
+      return { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
+    });
+
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+
+    expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [], monthlyLabels: [] });
+    expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
+  });
+
+  // The trend view lists only accounts with code in its window, so an account without any has no rows.
   it('answers zero and an empty trend for an account without code', async () => {
     execute.mockResolvedValue({ rows: [] });
 

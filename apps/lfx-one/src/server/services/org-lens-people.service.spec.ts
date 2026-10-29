@@ -677,7 +677,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(detail.maintainerRolesUnavailable).toBe(true);
     expect(detail.code.length).toBeGreaterThan(0);
     expect(detail.code.every((row) => row.isMaintainer === false)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:365d`)!)).toBe(false);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:730d`)!)).toBe(false);
   });
 
   it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {

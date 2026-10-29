@@ -442,7 +442,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
       live$.next(
         response(
@@ -464,7 +464,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('folds the stored activity of someone with a live seat into their current row, tiles included, under "Current employees"', async () => {
       // The merged row's count is checked as commits.
-      await mount('browser', '/?metric=commits');
+      await mount('browser', '/?employment=current&metric=commits');
       await answerCurrent();
       live$.next(
         response(

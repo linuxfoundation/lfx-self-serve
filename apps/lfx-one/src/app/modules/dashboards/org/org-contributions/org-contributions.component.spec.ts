@@ -374,15 +374,19 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it.each(['12mo', '730d', '2y'])(
-    'reads a retired, default or unknown ?range=%s as the default Past 2 years and drops it from the URL on load',
-    async (range) => {
-      const { getContributions, navigate } = await render(null, { queryParams: { range } });
+  it.each(['730d', '2y'])('reads a default or unknown ?range=%s as the default Past 2 years and drops it from the URL on load', async (range) => {
+    const { getContributions, navigate } = await render(null, { queryParams: { range } });
 
-      expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '730d' }));
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }), replaceUrl: true }));
-    }
-  );
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '730d' }));
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }), replaceUrl: true }));
+  });
+
+  it('reads a legacy ?range=12mo as Past 365 days, as the BFF does, and rewrites it to ?range=365d', async () => {
+    const { getContributions, navigate } = await render(null, { queryParams: { range: '12mo' } });
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: '365d' }), replaceUrl: true }));
+  });
 
   it.each([
     ['commits', { one: '1 commit', other: '25 commits' }],

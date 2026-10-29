@@ -11,6 +11,7 @@ import type {
   OrgProjectScopeOption,
   OrgCountUnit,
 } from '../interfaces';
+import { ORG_LENS_DEFAULT_TIME_RANGE_LABEL } from './org-lens-time-range.constants';
 
 /**
  * Project-type dropdown options, default first (lfx-self-serve#4322, #4160, #4559). Also the BFF's allow-list for
@@ -50,6 +51,13 @@ export const ORG_CODE_METRIC_OPTIONS: readonly OrgCodeMetricOption[] = [
  * are written, and a link without them opens every project and code contributions.
  */
 export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'all', commitScope: 'all', metric: 'code' };
+
+/** Label of the default project scope, for copy that names it ("LF and non-LF projects"). */
+export const ORG_DEFAULT_PROJECT_SCOPE_LABEL: string =
+  ORG_PROJECT_SCOPE_OPTIONS.find((option) => option.value === DEFAULT_ORG_COMMIT_FILTERS.projectScope)?.label ?? '';
+
+/** The Org Lens default view in words, for copy that names it: "LF and non-LF projects, past 2 years". */
+export const ORG_LENS_DEFAULT_VIEW_PHRASE = `${ORG_DEFAULT_PROJECT_SCOPE_LABEL}, ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`;
 
 /**
  * Filters the unranged people roster (assignment pickers, Org Lens Access, Key Contacts) is computed with: every
@@ -95,11 +103,11 @@ export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
 
 /**
  * Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). The headline is the
- * People → Contributors default tile (all projects, last 2 years), so it says so in the same words as the Maintainer roles card.
+ * People → Contributors default tile (the Org Lens default view), so it says so in the same words as the Maintainer roles card.
  */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
-  'People with at least one code contribution (commit, pull request, review or comment) in all projects, LF and non-LF, over the last 2 years, ' +
-  'credited to the employer they had at the time, so people who have since left are included. Bots excluded.';
+  `People with at least one code contribution (commit, pull request, review or comment) in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} ` +
+  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. Bots excluded.`;
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =

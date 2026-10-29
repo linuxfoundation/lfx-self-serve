@@ -179,7 +179,7 @@
             <p class="text-sm text-gray-700">No contributors match the current filters.</p>
             <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
           } @else {
-            <p class="text-sm text-gray-700">No contributors found for this organization in the past 2 years.</p>
+            <p class="text-sm text-gray-700">No contributors found for this organization in the {{ timeRangeLabel() }}.</p>
             <p class="text-xs text-gray-500">Choose All time to include older contributions.</p>
           }
         </div>

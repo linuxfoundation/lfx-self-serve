@@ -12,8 +12,8 @@ export interface OrgMaintainerRoleOverlap {
   binds: number[];
 }
 
-/** The maintainer roles table; a read names it as the one it may find missing. */
-export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES';
+/** The maintainer roles table and the Overview trend view over it (lfx-self-serve#4694); a read names the one it may find missing. */
+export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES' | 'ORG_OVERVIEW_MAINTAINER_ROLES_TREND';
 
 /** A count of distinct maintainer roles. */
 export interface OrgMaintainerRolesCountRow {
@@ -47,8 +47,8 @@ export interface OrgProjectMaintainerRoleRow {
   MAINTAINER_AVATAR_URL: string | null;
 }
 
-/** One month of the account's maintainer roles: the roles overlapping that calendar month. */
+/** One month of the account's maintainer roles (ORG_OVERVIEW_MAINTAINER_ROLES_TREND): the roles overlapping that calendar month. */
 export interface OrgMaintainerRolesMonthlyRow {
-  METRIC_MONTH: Date;
+  MONTH_START_DATE: Date;
   ACTIVE_ROLES: number | null;
 }

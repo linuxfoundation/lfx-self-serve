@@ -26,3 +26,7 @@ export const ORG_LENS_TIME_RANGE_OPTIONS: readonly OrgLensTimeRangeOption[] = [
   { label: 'Past 2 years', value: '730d' },
   { label: 'All time', value: 'all' },
 ] as const;
+
+/** Label of the default range, for copy that names the default window ("Past 2 years"). */
+export const ORG_LENS_DEFAULT_TIME_RANGE_LABEL: string =
+  ORG_LENS_TIME_RANGE_OPTIONS.find((option) => option.value === ORG_LENS_DEFAULT_TIME_RANGE)?.label ?? '';

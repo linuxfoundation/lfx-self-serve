@@ -3,7 +3,12 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION, ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION } from '@lfx-one/shared/constants';
+import {
+  ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_LENS_DEFAULT_VIEW_PHRASE,
+  ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+} from '@lfx-one/shared/constants';
 import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -85,7 +90,7 @@ describe('OrgOverviewInvolvementComponent training enrollments', () => {
 });
 
 describe('OrgOverviewInvolvementComponent maintainer roles', () => {
-  it('shows the roles in all projects over the last 2 years as the headline and the roles held per month as the trend', async () => {
+  it('names the default view under the headline and shows the roles held per month as the trend', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
     const card = metrics.find((metric) => metric.title === 'Maintainer roles');
 
@@ -94,8 +99,7 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
       tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
       loading: false,
     });
-    expect(card?.subtitle).toMatch(/all projects/i);
-    expect(card?.subtitle).toMatch(/2 years/i);
+    expect(card?.subtitle).toBe(ORG_LENS_DEFAULT_VIEW_PHRASE);
     expect(card?.subtitle).not.toMatch(/employee/i);
     expect(card?.chartCaption).toContain('Jan 2030');
     expect(card?.chartCaption).toContain('Feb 2030');
@@ -132,14 +136,14 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
 });
 
 describe('OrgOverviewInvolvementComponent active contributors', () => {
-  it('says the headline counts all projects over the last 2 years and states the trend window under the chart', async () => {
+  it('names the default view and the company under the headline and states the trend window under the chart', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
     const card = metrics.find((metric) => metric.title === 'Active Contributors');
 
     expect(card).toMatchObject({ value: '100', tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION, loading: false });
-    expect(card?.subtitle).toMatch(/all projects/i);
-    expect(card?.subtitle).toMatch(/2 years/i);
+    expect(card?.subtitle).toContain(ORG_LENS_DEFAULT_VIEW_PHRASE);
+    expect(card?.subtitle).toContain('Acme Motors');
     expect(card?.chartCaption).toContain('Jan 2030');
-    expect(card?.chartCaption).toMatch(/all projects/i);
+    expect(card?.chartCaption).toContain(ORG_DEFAULT_PROJECT_SCOPE_LABEL);
   });
 });

@@ -31,10 +31,14 @@ describe('Org Lens time range', () => {
     expect(isOrgLensTimeRange(value)).toBe(true);
   });
 
-  // Old links (`12mo` from the previous Code page and All Employees, `12m`/`2y` from the old Trainees/Events pickers) fall
-  // back to the Past 2 years default.
-  it.each([null, undefined, '', '12mo', '12m', '2y', '3m', 'ALL'])('reads %s as the default', (value) => {
+  // Old `12m`/`2y` links from the old Trainees/Events pickers, and anything unknown, fall back to the Past 2 years default.
+  it.each([null, undefined, '', '12m', '2y', '3m', 'ALL', '12MO'])('reads %s as the default', (value) => {
     expect(parseOrgLensTimeRange(value)).toBe('730d');
+  });
+
+  // An old `12mo` link (the previous Code page and All Employees default) keeps its 12-month window, as the BFF reads it.
+  it('reads the legacy 12mo link as Past 365 days, like the BFF', () => {
+    expect(parseOrgLensTimeRange('12mo')).toBe('365d');
   });
 
   it('reads the legacy 12mo BFF value as 365d and leaves every other value for validation', () => {

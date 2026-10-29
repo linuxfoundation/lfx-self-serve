@@ -95,7 +95,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default `365d`). Never merged into the live directory. */
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default: the Org Lens default range). Never merged into the live directory. */
   public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_former';
@@ -128,7 +128,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all] — `range` is the window the Maintainer pills follow (default `365d`). */
+  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all] — `range` is the window the Maintainer pills follow (default: the Org Lens default range). */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const personKey = req.params['personKey'];
@@ -477,7 +477,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default `365d`). */
+  /** GET /api/orgs/:orgUid/lens/people/trainees[?range=30d|90d|365d|730d|all] — the range's trainees, details and filter options for the Trainees tab (LFXV2-1876, default: the Org Lens default range). */
   public async getTrainees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_trainees';

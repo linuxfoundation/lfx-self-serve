@@ -11,6 +11,7 @@ import {
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
+  ORG_LENS_DEFAULT_TIME_RANGE_LABEL,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
 } from '@lfx-one/shared/constants';
 import type { OrgCommitFilters, OrgContributorsResponse, OrgEmploymentFilter, OrgLensTimeRange } from '@lfx-one/shared/interfaces';
@@ -369,7 +370,9 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     getContributors = vi.fn(() => of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
     await mount();
 
-    expect(text('org-people-contributors-empty')).toContain('No contributors found for this organization');
+    expect(text('org-people-contributors-empty')).toContain(
+      `No contributors found for this organization in the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`
+    );
     expect(text('org-people-contributors-empty')).not.toContain('match the current filters');
   });
 
@@ -454,10 +457,16 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '90d', DEFAULT_ORG_COMMIT_FILTERS, 'all');
   });
 
-  it('reads a retired or unknown range as the default', async () => {
-    await mount('/?tab=contributors&range=12mo');
+  it('reads an unknown range as the default', async () => {
+    await mount('/?tab=contributors&range=2y');
 
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all');
+  });
+
+  it('reads a legacy ?range=12mo as Past 365 days, as the BFF does', async () => {
+    await mount('/?tab=contributors&range=12mo');
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS, 'all');
   });
 
   it('writes a picked range to the URL, keeping the tab, and drops it at the default', async () => {
