@@ -405,6 +405,24 @@ export class MktgDocumentViewComponent {
   });
   protected readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
   protected readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
+  /** 148: a known handoff/ACK chooses run geometry immediately, never a transient document loader. */
+  protected readonly runFirstPaint = computed(() => {
+    const project = this.projectContext.activeContextUid();
+    const { agentKey, documentId } = this.params();
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!project || !documentId || !type?.catalogAgentId) return false;
+    if (this.generating() || this.submittingGeneration() || this.handoffRunId()) return true;
+    const token = this.generationParam();
+    if (token && this.attempts.peek(token, project, type.catalogAgentId, documentId)) return true;
+    const owned = this.attempts.load(project, type.catalogAgentId, type.kind === 'run' ? documentId : undefined);
+    if (
+      this.runParam() &&
+      owned?.attempt?.runId === this.runParam() &&
+      (type.kind === 'living' || (owned.request.documentId ?? owned.attempt.documentId) === documentId)
+    )
+      return true;
+    return this.pendingDocuments.load(project, documentId)?.agentId === type.catalogAgentId;
+  });
 
   private readonly request$ = toObservable(
     computed(() => ({

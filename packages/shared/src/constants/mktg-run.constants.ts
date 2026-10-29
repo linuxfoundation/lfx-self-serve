@@ -938,3 +938,9 @@ export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
 export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
 /** Stable questions-block hash: catalog's short digest or LinkedIn's full SHA-256. */
 export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
+
+/** Plain validation message shared by every answers transport. */
+export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';
+
+/** Only LinkedIn's stable avoid question accepts a literal none answer. */
+export const MKTG_NONE_ALLOWED_QUESTION_IDS: readonly string[] = ['avoid'];

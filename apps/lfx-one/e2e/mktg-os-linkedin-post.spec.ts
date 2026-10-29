@@ -6,6 +6,7 @@ import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-po
 import { LINKEDIN_POST_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR } from '../../../packages/shared/src/constants/mktg-run.constants';
 import {
   createLinkedinRuns,
   json,
@@ -527,11 +528,27 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
     await page.screenshot({ path: info.outputPath('recorded2-questions.png'), fullPage: true });
+    const answerBox = page.getByTestId('mktg-run-questions').locator('textarea');
+    const suggestion = await answerBox.inputValue();
+    await answerBox.fill('skip');
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toHaveText(MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR);
+    expect(generates).toBe(1);
+    await answerBox.fill(suggestion);
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 2 of 3 · Admired style');
+    await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 3 of 3 · Avoid');
+    await answerBox.fill('None'); // Only the stable avoid question accepts literal none.
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session-1', questionsId: 'a'.repeat(64) });
+    expect((await send).postDataJSON()).toMatchObject({
+      sessionId: 'synthetic-session-1',
+      questionsId: 'a'.repeat(64),
+      answers: expect.arrayContaining([{ key: 'avoid', text: 'None', origin: expect.any(String) }]),
+    });
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
     expect(generates).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-questions')).toHaveCount(0);

@@ -74,6 +74,7 @@ import { catchError, distinctUntilChanged, EMPTY, map, of, Subscription, switchM
 
 import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
+import { MKTG_NONE_ALLOWED_QUESTION_IDS } from '@lfx-one/shared/constants/mktg-run.constants';
 import { MktgRunProgressComponent } from '../mktg-run-progress/mktg-run-progress.component';
 
 /** Profile/source intake only. Accepted runs and their results belong to the shared document receiver. */
@@ -128,6 +129,7 @@ export class LinkedinPostRunComponent {
     url: new FormControl('', { nonNullable: true }),
     share_link: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(LINKEDIN_SHARE_LINK_MAX_CHARS)] }),
   });
+  protected readonly noneAllowedQuestionIds = MKTG_NONE_ALLOWED_QUESTION_IDS;
   protected readonly intakeLabel = LINKEDIN_INTAKE_LABEL;
   protected readonly aboutFields = LINKEDIN_ABOUT_FIELDS;
   protected readonly voiceFields = LINKEDIN_VOICE_FIELDS;

@@ -364,7 +364,10 @@ describe('MktgDocumentViewComponent', () => {
         { provide: Member360Service, useValue: { download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
         { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER), activeRunConflict: MktgAgentRunService.prototype.activeRunConflict } },
-        { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
+        {
+          provide: MktgRunAttemptService,
+          useValue: { peek: vi.fn(() => null), consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() },
+        },
         { provide: HttpClient, useValue: {} },
         { provide: MktgPendingDocumentService, useValue: pending },
         { provide: MktgPrintService, useValue: print },
@@ -687,6 +690,39 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
+  it.each(['linkedin-post', 'aeo-geo'].flatMap((key) => ['generation', 'run'].map((entry) => ({ key, entry }))))(
+    'first paints run geometry for a known $key $entry handoff, never the document skeleton',
+    async ({ key, entry }) => {
+      const type = MKTG_DOCUMENT_TYPES.find((item) => item.agentKey === key);
+      if (!type?.catalogAgentId) throw new Error('Missing synthetic intake');
+      const intake = MKTG_AGENT_INTAKES[type.catalogAgentId];
+      const documentId = 'run-' + 'a'.repeat(24);
+      const runId = 'b'.repeat(64);
+      const pending: MktgPendingGeneration = {
+        request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
+        attempt: {
+          runId,
+          documentId,
+          priorVersion: 0,
+          session: { agentId: intake.agentId, sessionId: 'synthetic-first-paint', ownerToken: 'synthetic-proof' },
+        },
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+      };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      vi.mocked(attempts.peek).mockReturnValue({ subject: subject(), pending });
+      vi.mocked(attempts.consume).mockReturnValue(entry === 'generation' ? { subject: subject(), pending } : null);
+      vi.mocked(attempts.load).mockReturnValue(pending);
+      const value = entry === 'generation' ? 'synthetic-first-paint-token' : runId;
+      store.getDocument.mockReturnValue(NEVER);
+      vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(NEVER);
+      await render(`/documents/${type.agentKey}/${documentId}?${entry}=${value}`);
+      expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
+      expect(query('mktg-document-view-loading')).toBeNull();
+      expect(harness.routeNativeElement?.textContent).not.toContain('Loading the document…');
+    }
+  );
+
   it('gates a selected run before repainting a previously viewed document body', async () => {
     await render('/documents/brand-kit/living');
     const response = new Subject<MktgDocumentDetailResponse>();
@@ -878,6 +914,10 @@ describe('MktgDocumentViewComponent', () => {
       store.getRevision.mockReturnValue(of(report));
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(query('mktg-document-view-overall')?.textContent).toContain('6.0');
+      const regions = harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]');
+      expect(regions).toHaveLength(1);
+      expect(regions?.[0].textContent?.trim()).toBe('Ready.');
+      expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
       expect(query('mktg-document-view-overall')?.classList.contains('text-amber-700')).toBe(true);
       expect(query('mktg-document-view-verdict')?.textContent).toContain('A useful baseline');
       expect(query('mktg-document-view-scorecard')?.querySelectorAll('[data-testid^="mktg-document-view-score-"]')).toHaveLength(6);
@@ -1533,6 +1573,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(regions?.[0].getAttribute('role')).toBe('status');
     expect(regions?.[0].getAttribute('aria-live')).toBe('polite');
     expect(regions?.[0].textContent?.trim()).toBeTruthy();
+    expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
+    expect(progressReader().announceState()).toBe(false);
   });
 
   it.each(
@@ -2081,7 +2123,8 @@ describe('MktgDocumentViewComponent', () => {
     store.getDocument.mockReturnValue(metadata);
     await render('/documents/brand-kit/living?generation=synthetic-prepared');
     expect(progressReader().runState()).toBeNull();
-    expect(query('mktg-document-view-loading')).not.toBeNull();
+    expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
+    expect(query('mktg-document-view-loading')).toBeNull();
     expect(query('mktg-document-view-run')).toBeNull();
     expect(query('mktg-document-view-revision-chip')).toBeNull();
   });
@@ -2985,7 +3028,8 @@ describe('MktgDocumentViewComponent', () => {
       '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit&mode=new'
     );
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
-    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
+    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('Adoption');
+    expect(query('mktg-framework-view-goals')?.tagName).toBe('TABLE');
     expectContentColumn('mktg-framework-view');
     expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
     expect(query('mktg-comments-panel')).not.toBeNull();

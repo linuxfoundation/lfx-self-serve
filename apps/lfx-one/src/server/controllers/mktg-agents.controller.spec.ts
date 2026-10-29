@@ -204,6 +204,7 @@ import { validateIcpIntakeAnswers as validateRealIcpIntakeAnswers } from '../../
 
 import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
   return { path: '/api/mktg-agents/brand-kit/stored', query } as unknown as Request;
@@ -503,6 +504,21 @@ describe('MktgAgentsController', () => {
     ['boilerplatesAnswers', boilerplatesMocks],
     ['faqAnswers', faqMocks],
   ] as const) {
+    it(`${method}: returns a plain 400 for a non-answer without sending or resuming`, async () => {
+      const req = answersRequest();
+      req.body.answers = [{ key: 'voice', text: 'skip', origin: 'requester' }];
+      const res = buildRes();
+      await controller[method](req, res, next);
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 400,
+          validationErrors: [{ code: 'FIELD_VALIDATION_ERROR', field: 'answers', message: `${MKTG_ANSWERS_INCOMPLETE_MESSAGE}: voice` }],
+        })
+      );
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
     it(`${method}: refuses free-text answers on a redraft-bound SID after owner proof`, async () => {
       redraftContext.mockResolvedValue({ runId: 'c'.repeat(64) });
       const req = answersRequest();

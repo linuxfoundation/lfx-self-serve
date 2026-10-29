@@ -1756,6 +1756,19 @@ describe('MktgAgentRunComponent', () => {
       runs: [{ runId, project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', state, startedAt: '2026-10-28T10:00:00Z' }],
     });
 
+    it('renders the public identity skeleton on SSR without flashing the private intake', async () => {
+      await configure('server', type.catalogAgentId, { run: runId });
+      userSignal.set(null);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-run-public-identity-loading')?.getAttribute('aria-busy')).toBe('true');
+      expect(query('mktg-agent-run-page')?.style.display).toBe('none');
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(TestBed.inject(MktgDocumentStoreService).getDocument).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
     it('settles a malformed run selector to an error and document recovery instead of a skeleton', async () => {
       await configure('browser', type.catalogAgentId, { run: 'invalid-run' });
       activeContext.set(PROJECT_1);

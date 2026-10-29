@@ -254,6 +254,8 @@
             [icon]="runAgent()?.icon ?? ''"
             [iconClass]="activityIconClass()"
             data-testid="mktg-document-view-activity" />
+        } @else if (runFirstPaint()) {
+          <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
         } @else {
           <div
             class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500"
@@ -354,11 +356,15 @@
     }
 
     @if (loading() && !isAeoDocument()) {
-      <lfx-mktg-skeleton
-        variant="card"
-        label="Loading the document…"
-        class="rounded-xl border border-gray-200 bg-white px-6 py-5"
-        data-testid="mktg-document-view-loading" />
+      @if (runFirstPaint()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
+      } @else {
+        <lfx-mktg-skeleton
+          variant="card"
+          label="Loading the document…"
+          class="rounded-xl border border-gray-200 bg-white px-6 py-5"
+          data-testid="mktg-document-view-loading" />
+      }
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
