@@ -286,6 +286,7 @@ export class OrgContributionsComponent {
     if (!commit.personKey) {
       return;
     }
+    const query = this.query();
     this.drawer.open({
       personKey: commit.personKey,
       name: commit.committerName,
@@ -297,8 +298,9 @@ export class OrgContributionsComponent {
       profileUrl: commit.profileUrl,
       sourceIconClass: commit.sourceIconClass,
       defaultTab: 'code',
-      // The Code tab's Maintainer pills follow the page's range.
-      range: this.filterForm.controls.dateRange.value,
+      // The Code tab's Maintainer pills and counts follow the range, project type and code count the page shows.
+      range: query.dateRange,
+      codeFilters: { projectScope: query.projectScope, commitScope: query.commitScope, metric: query.metric },
     });
   }
 

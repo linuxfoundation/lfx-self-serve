@@ -10,8 +10,10 @@ import {
   ORG_CODE_MEASURE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
+import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
 import type { OrgCommitFilters } from '../interfaces';
 import {
+  describeOrgPersonCodeView,
   orgCodeFilterValues,
   orgCommitFiltersFor,
   orgCommitFiltersUrlMatches,
@@ -121,5 +123,25 @@ describe('Org Lens project scope', () => {
     expect(params).toEqual({ projectScope: 'all', commitScope: null, metric: null });
     expect(readOrgCommitFilters((name) => params[name])).toEqual(all);
     expect(orgCommitFiltersUrlParams({ ...all, projectScope: 'lf' }).projectScope).toBeNull();
+  });
+});
+
+// lfx-self-serve#4404 — the person drawer names the view its Code counts follow in the opener's dropdown labels.
+describe('Org Lens person drawer code view', () => {
+  const label = (options: readonly { label: string; value: string }[], value: string): string | undefined =>
+    options.find((option) => option.value === value)?.label;
+
+  it.each([
+    ['90d', 'lf', 'merged'],
+    ['all', 'all', 'code'],
+    ['730d', 'non_lf', 'commits'],
+  ] as const)('names range %s, project type %s and code count %s with the dropdown labels the opener shows', (range, projectScope, measure) => {
+    const parts = describeOrgPersonCodeView({ range, ...orgCommitFiltersFor({ projectScope, metric: measure }) }).split(' · ');
+
+    expect(parts).toEqual([
+      label(ORG_LENS_TIME_RANGE_OPTIONS, range),
+      label(ORG_PROJECT_SCOPE_OPTIONS, projectScope),
+      label(ORG_CODE_MEASURE_OPTIONS, measure),
+    ]);
   });
 });

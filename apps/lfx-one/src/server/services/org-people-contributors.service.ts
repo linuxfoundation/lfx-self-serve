@@ -27,7 +27,7 @@ import type {
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
+import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
@@ -91,13 +91,10 @@ export class OrgPeopleContributorsService {
 
   /**
    * Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots.
-   * A commit can be authored on an LF and a non-LF project (a mirror). `daily_commits` credits it once across all
-   * projects, so a scoped read sums `daily_scope_commits`, which credits it once within the row's own scope: the
-   * per-scope count then matches the Code page's distinct commits for that scope.
+   * The commit columns follow the project scope ({@link orgContributorsCommitColumns}).
    */
   private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
-    const [commitsColumn, mergedCommitsColumn] =
-      projectScope === 'all' ? ['daily_commits', 'daily_merged_commits'] : ['daily_scope_commits', 'daily_scope_merged_commits'];
+    const columns = orgContributorsCommitColumns(projectScope);
 
     const query = `
       SELECT
@@ -113,8 +110,8 @@ export class OrgPeopleContributorsService {
         MAX(foundation_id) AS foundation_id,
         MAX(foundation_name) AS foundation_name,
         MAX(foundation_slug) AS foundation_slug,
-        SUM(${commitsColumn}) AS commits,
-        SUM(${mergedCommitsColumn}) AS merged_commits,
+        SUM(${columns.commits}) AS commits,
+        SUM(${columns.mergedCommits}) AS merged_commits,
         SUM(daily_code_activities) AS code_activities,
         MAX(activity_date) AS last_active_date
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
@@ -162,7 +159,7 @@ function buildResponse(
   const maintainerPeople = new Set((roles ?? []).map((role) => role.PERSON_KEY));
   const maintainerPersonProjects = new Set((roles ?? []).map((role) => tupleKey([role.PERSON_KEY, role.PROJECT_ID])));
   const commitsColumn: ContributorCountColumn = filters.commitScope === 'merged' ? 'MERGED_COMMITS' : 'COMMITS';
-  const mostActiveColumn: ContributorCountColumn = filters.metric === 'code' ? 'CODE_ACTIVITIES' : commitsColumn;
+  const mostActiveColumn: ContributorCountColumn = orgContributorCountColumn(filters);
   const projects: OrgContributorProjectRow[] = [];
   const personMap = new Map<string, OrgContributorRow>();
   const personMostActive = new Map<string, ContributorPersonProjectRow>();

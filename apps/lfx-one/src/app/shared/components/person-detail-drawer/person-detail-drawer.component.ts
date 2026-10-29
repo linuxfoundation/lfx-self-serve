@@ -3,16 +3,23 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
-import { ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION, PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
+import {
+  ORG_CODE_MEASURE_DEFINITION,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_UNIT,
+  ORG_COMMITS_DEFINITION,
+  PERSON_DRAWER_COPIED_RESET_MS,
+} from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeCommitteeMembership,
+  PersonDrawerCodeCount,
   PersonDrawerContext,
   PersonDrawerCopiedAddress,
   PersonDrawerEmail,
   PersonDrawerKeyContactRow,
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
-import { isMailtoSafeEmail, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
+import { describeOrgPersonCodeView, isMailtoSafeEmail, orgCodeFilterValues, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
@@ -37,10 +44,9 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     { id: 'key-contacts', label: 'Key Contacts' },
   ];
 
-  protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
-  protected readonly commitUnit = ORG_CODE_METRIC_UNIT.commits;
   protected readonly governanceSeats: Signal<OrgAllEmployeeCommitteeMembership[]> = computed(() => this.initGovernanceSeats());
   protected readonly codeTotals: Signal<{ commits: number; projects: number }> = computed(() => this.initCodeTotals());
+  protected readonly codeCount: Signal<PersonDrawerCodeCount> = computed(() => this.initCodeCount());
   protected readonly keyContactRoles: Signal<PersonDrawerKeyContactRow[]> = computed(() => this.initKeyContactRoles());
   protected readonly companyEmails: Signal<PersonDrawerEmail[]> = computed(() => this.initCompanyEmails());
   private readonly copied = signal<PersonDrawerCopiedAddress | null>(null);
@@ -163,6 +169,20 @@ export class PersonDetailDrawerComponent implements OnDestroy {
       return { commits: 0, projects: 0 };
     }
     return { commits: detail.totalCommits, projects: detail.code.length };
+  }
+
+  /** Named after the view the detail was counted in (the opener's row, lfx-self-serve#4404), else commits of the trailing 12 months. */
+  private initCodeCount(): PersonDrawerCodeCount {
+    const view = this.drawer.detail()?.codeView;
+    if (!view) {
+      return { label: ORG_CODE_METRIC_LABEL.commits, definition: ORG_COMMITS_DEFINITION, unit: ORG_CODE_METRIC_UNIT.commits, viewLabel: null };
+    }
+    return {
+      label: ORG_CODE_METRIC_LABEL[view.metric],
+      definition: ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(view).metric],
+      unit: ORG_CODE_METRIC_UNIT[view.metric],
+      viewLabel: describeOrgPersonCodeView(view),
+    };
   }
 
   // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.

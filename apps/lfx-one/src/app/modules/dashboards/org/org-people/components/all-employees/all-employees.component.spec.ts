@@ -1146,6 +1146,17 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'commits' });
     });
 
+    it("opens the person drawer with the page's range, project type and code count, so its Code tab counts this row (lfx-self-serve#4404)", async () => {
+      await mount('browser', '/?range=90d&projectScope=all&metric=merged');
+      const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+      (fixture.componentInstance as unknown as { onPersonClick(row: object): void }).onPersonClick({ personKey: 'person-one', name: 'Ada', initials: 'A' });
+
+      expect(open).toHaveBeenCalledWith(
+        expect.objectContaining({ personKey: 'person-one', range: '90d', codeFilters: { projectScope: 'all', commitScope: 'merged', metric: 'commits' } })
+      );
+    });
+
     it('shows Clear filters only while a filter is non-default, the code-count option included', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
       await mount('browser', '/?tab=employees');

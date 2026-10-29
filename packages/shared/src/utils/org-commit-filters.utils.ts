@@ -10,7 +10,8 @@ import {
   ORG_COMMIT_SCOPE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '../constants/org-commit-filters.constants';
-import type { OrgCodeFilterValues, OrgCodeMeasure, OrgCodeMetric, OrgCommitFilters, OrgCommitScope, OrgProjectScope } from '../interfaces';
+import { ORG_LENS_TIME_RANGE_OPTIONS } from '../constants/org-lens-time-range.constants';
+import type { OrgCodeFilterValues, OrgCodeMeasure, OrgCodeMetric, OrgCommitFilters, OrgCommitScope, OrgPersonCodeView, OrgProjectScope } from '../interfaces';
 
 type OrgCommitFilterParamReader = (name: keyof OrgCommitFilters) => string | null | undefined;
 
@@ -91,4 +92,19 @@ export function orgCommitFiltersKey(filters: OrgCommitFilters): string {
 /** Equality on the three filters (for `distinctUntilChanged`). */
 export function sameOrgCommitFilters(a: OrgCommitFilters, b: OrgCommitFilters): boolean {
   return a.projectScope === b.projectScope && a.commitScope === b.commitScope && a.metric === b.metric;
+}
+
+/**
+ * The person drawer's line naming the view its Code counts follow (lfx-self-serve#4404) in the opener's dropdown labels:
+ * "Past 90 days · LF projects · Only main branch commits".
+ */
+export function describeOrgPersonCodeView(view: OrgPersonCodeView): string {
+  const measure = orgCodeFilterValues(view).metric;
+  return [
+    ORG_LENS_TIME_RANGE_OPTIONS.find((option) => option.value === view.range)?.label,
+    ORG_PROJECT_SCOPE_OPTIONS.find((option) => option.value === view.projectScope)?.label,
+    ORG_CODE_MEASURE_OPTIONS.find((option) => option.value === measure)?.label,
+  ]
+    .filter((label): label is string => !!label)
+    .join(' · ');
 }

@@ -162,3 +162,12 @@ export interface ContributorPersonProjectRow {
 
 /** The count columns of {@link ContributorPersonProjectRow} the commit filters pick between. */
 export type ContributorCountColumn = 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES';
+
+/**
+ * One project of one person's code in a window and project scope, read for the person drawer (lfx-self-serve#4404):
+ * the columns of that person's {@link ContributorPersonProjectRow}s, so the drawer counts what the row counts.
+ */
+export type OrgPersonCodeProjectRow = Pick<
+  ContributorPersonProjectRow,
+  'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME' | 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES' | 'LAST_ACTIVE_DATE'
+>;

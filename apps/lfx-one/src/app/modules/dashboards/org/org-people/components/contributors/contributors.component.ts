@@ -313,8 +313,9 @@ export class ContributorsComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'code',
-      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      // The Code tab's Maintainer pills and counts follow the range, project type and code count this tab lists the person with.
       range: this.timeRange(),
+      codeFilters: this.commitFilters(),
     });
   }
 
