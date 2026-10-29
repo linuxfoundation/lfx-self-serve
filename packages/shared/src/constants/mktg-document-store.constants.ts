@@ -43,6 +43,7 @@ export const MKTG_STARTED_RUN_STATE_ORDER: Record<MktgStoredDocumentRunState, nu
   failed: 3,
   superseded: 4,
   completed: 5,
+  discarded: 6,
 };
 
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */

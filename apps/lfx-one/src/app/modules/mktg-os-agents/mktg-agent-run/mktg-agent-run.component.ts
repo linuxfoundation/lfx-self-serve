@@ -34,6 +34,7 @@ import {
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
+  MktgActiveRunConflict,
   MktgLastIntake,
   MktgRunSourceField,
   MktgAttachmentChip,
@@ -72,6 +73,7 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
@@ -137,6 +139,7 @@ export class MktgAgentRunComponent {
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
@@ -233,6 +236,7 @@ export class MktgAgentRunComponent {
   private discardConfirmed = false;
   private discardedRunId: string | null = null;
   private discardEpoch = 0;
+  private conflictDiscardId: string | null = null;
   protected readonly startedOverWaiting = signal(false);
   protected readonly hasAcknowledgement = signal(false);
   private readonly hasVersion = signal(false);
@@ -969,6 +973,78 @@ export class MktgAgentRunComponent {
     if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
+  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
+    if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
+    if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
+    this.activeRequest = request;
+    this.phase.set('form');
+    this.runFailed.set(false);
+    this.errorText.set('');
+    this.waitingQuestions.set(false);
+    const activeRun = { runId: conflict.activeRunId, state: conflict.state, startedAt: conflict.startedAt };
+    this.waitingRun.set(activeRun);
+    this.existingRun.set(activeRun);
+    const discard = () => {
+      this.discardConfirmed = true;
+      this.discardedRunId = conflict.activeRunId;
+      this.conflictDiscardId = conflict.activeRunId;
+      this.waitingRun.set(null);
+      this.startedOverWaiting.set(true);
+      if (this.runService.canRetryActiveConflict(request)) this.startGeneration(request, conflict.activeRunId);
+      else {
+        this.restoreInputs(request, 'returned');
+        this.errorText.set('The original start cannot be replayed safely. Review your sources, re-attach any files, then Create explicitly.');
+      }
+    };
+    if (!rejectedDiscard && this.discardConfirmed && this.discardedRunId === conflict.activeRunId) {
+      discard();
+      return;
+    }
+    const epoch = this.discardEpoch;
+    const subject = this.userService.user()?.sub;
+    this.activeRunGuard.open(
+      this.confirmation,
+      {
+        conflict,
+        current: () =>
+          !this.destroyRef.destroyed &&
+          epoch === this.discardEpoch &&
+          subject === this.userService.user()?.sub &&
+          request.projectUid === this.projectContext.activeContextUid(),
+        recheck: () => this.runService.recheckActiveConflict(request),
+        classify: (error) => this.runService.activeRunConflict(error, request),
+        onValue: (progress) => {
+          this.phase.set('running');
+          this.onProgress(progress, request.projectUid);
+        },
+        onDiscard: (fresh) => {
+          conflict = fresh;
+          discard();
+        },
+        onOpen: (fresh) => {
+          void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+            queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: fresh.activeRunId },
+          });
+        },
+        onError: () => {
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.recheckingAttempt.set(false);
+          this.writingStretch.set(false);
+          this.clearQuestions();
+          this.waitingRun.set(null);
+          this.existingRun.set(null);
+          this.hasAcknowledgement.set(false);
+          this.runFailed.set(false);
+          this.phase.set('form');
+          this.restoreInputs(request, 'returned');
+          this.errorText.set('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.');
+        },
+      },
+      this.destroyRef
+    );
+  }
+
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
   private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
     return this.documentStore.listDocuments(project).pipe(
@@ -1483,6 +1559,7 @@ export class MktgAgentRunComponent {
     this.discardConfirmed = false;
     this.discardedRunId = null;
     this.discardEpoch++;
+    this.conflictDiscardId = null;
     this.confirmation.close();
     this.waitingSince.set('');
     this.startedOverWaiting.set(false);
@@ -1564,7 +1641,15 @@ export class MktgAgentRunComponent {
     // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
     const token = this.route.snapshot.queryParamMap?.get('questions');
     const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
-    if (returned?.pending.requiresReattachment && (returned.pending.state === 'failed' || !returned.pending.pendingQuestions)) {
+    if (returned?.pending.activeRunConflict) {
+      this.runAttempts.save({ ...returned.pending, activeRunConflict: undefined });
+      this.restoreInputs(returned.pending.request, 'returned');
+      this.showActiveConflict(
+        returned.pending.activeRunConflict,
+        returned.pending.request,
+        returned.pending.request.discard === returned.pending.activeRunConflict.activeRunId
+      );
+    } else if (returned?.pending.requiresReattachment && (returned.pending.state === 'failed' || !returned.pending.pendingQuestions)) {
       this.restoreInputs(returned.pending.request, 'returned');
       this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
     } else if (returned?.pending.state === 'failed' || (!returned && draft?.state === 'failed' && !draft.requiresReattachment)) {
@@ -1710,7 +1795,8 @@ export class MktgAgentRunComponent {
     return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
-  private startGeneration(retryRequest?: MktgGenerateRequest): void {
+  private startGeneration(retryRequest?: MktgGenerateRequest, discard?: string): void {
+    const owner = this.userService.user()?.sub;
     const projectUid = this.projectContext.activeContextUid();
     const agent = this.agent;
     const intake = this.intake;
@@ -1770,22 +1856,31 @@ export class MktgAgentRunComponent {
             projectUid,
             intake,
             ...((this.freshMode() || this.discardConfirmed) && { newRun: true }),
+            ...(this.conflictDiscardId && { discard: this.conflictDiscardId }),
             answers: attached,
             documents: this.submittedDocuments(),
             logoFiles: this.submittedLogoFiles(),
           };
           this.activeRequest = request;
+          if (discard) return this.runService.generate(request, discard);
           return this.runService.generate(request);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (progress) => this.onProgress(progress, projectUid),
-        error: () => {
+        error: (error: unknown) => {
+          if (owner !== this.userService.user()?.sub || projectUid !== this.projectContext.activeContextUid()) return;
           this.discardPendingNavigation();
           this.navigating.set(false);
           this.recheckingAttempt.set(false);
           this.writingStretch.set(false);
+          const request = this.activeRequest;
+          const conflict = request && error instanceof HttpErrorResponse && error.status === 409 ? this.runService.activeRunConflict(error, request) : null;
+          if (request && conflict) {
+            this.showActiveConflict(conflict, request, discard === conflict.activeRunId || request.discard === conflict.activeRunId);
+            return;
+          }
           this.runFailed.set(!!retryRequest);
           this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
           this.phase.set('form');
@@ -1812,6 +1907,7 @@ export class MktgAgentRunComponent {
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
     if (progress.type === 'submitted') {
+      this.conflictDiscardId = null;
       this.hasAcknowledgement.set(true);
       this.consumeFreshEntry(projectUid);
       if (this.route.snapshot.queryParamMap.get('questions')) {

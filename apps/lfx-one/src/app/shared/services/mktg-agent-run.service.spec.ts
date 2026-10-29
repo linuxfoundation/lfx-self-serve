@@ -9,6 +9,7 @@ import {
   ICP_INTAKE,
   LINKEDIN_POST_INTAKE,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_ACTIVE,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -327,6 +328,112 @@ describe('MktgAgentRunService', () => {
     page.unsubscribe();
     ack.next({ sessionId: 'synthetic-new-project', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) });
     expect(TestBed.inject(MktgRunAttemptService).load(projectUid(), 'brand-kit')).toMatchObject({ state: 'writing', attempt: { runId: 'c'.repeat(64) } });
+  });
+
+  it('replays a fully retained direct-start body after 409, adding only the explicit discard ID', () => {
+    const request: MktgGenerateRequest = {
+      ...generateRequest(),
+      documents: [{ kind: 'file', title: 'Synthetic source', text: 'Synthetic retained bytes.' }],
+      logoFiles: [{ name: 'synthetic.svg', text: '<svg />' }],
+    };
+    const conflict = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Another writer has a run in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    };
+    const failure = new HttpErrorResponse({ status: 409, error: conflict });
+    httpPost.mockReturnValueOnce(throwError(() => failure));
+    const error = vi.fn();
+    service.generate(request).subscribe({ error });
+    expect(error).toHaveBeenCalledWith(failure);
+    expect(service.activeRunConflict(failure, request)).toEqual(conflict);
+    const retained = TestBed.inject(MktgRunAttemptService).load(request.projectUid, request.agentId)?.request;
+    if (!retained) throw new Error('Missing synthetic retained start');
+    expect(service.canRetryActiveConflict(retained)).toBe(true);
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Synthetic retained bytes.');
+    const originalBody = httpPost.mock.calls[0][1];
+    httpPost.mockReturnValueOnce(throwError(() => failure));
+    service.recheckActiveConflict(retained).subscribe({ error });
+    expect(httpPost.mock.calls[1][1]).toEqual(originalBody);
+    expect(httpPost.mock.calls[1][1]).not.toHaveProperty('discard');
+    httpPost.mockReturnValueOnce(of({ sessionId: 'synthetic-new-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) }));
+    const retry = service.generate(retained, conflict.activeRunId).subscribe();
+    expect(httpPost.mock.calls[2][1]).toEqual({ ...originalBody, discard: conflict.activeRunId });
+    retry.unsubscribe();
+  });
+
+  it.each(['missing-body', 'reattach'] as const)('refuses silent replay when %s makes the original start unreconstructible', (kind) => {
+    const request = generateRequest();
+    if (kind === 'reattach')
+      TestBed.inject(MktgRunAttemptService).save({ request, state: 'failed', requiresReattachment: true, updatedAt: new Date().toISOString() });
+    expect(service.canRetryActiveConflict(request)).toBe(false);
+    const error = vi.fn();
+    service.generate(request, 'b'.repeat(64)).subscribe({ error });
+    expect(error).toHaveBeenCalledOnce();
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('retains the actual priorVersion and feedback rather than rebuilding a retry from changed version history', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const request = { ...generateRequest('Retained synthetic feedback'), intake: { ...CHAT_INTAKE, regenerateViaGenerate: true } };
+    httpPost.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409 })));
+    service.generate(request).subscribe({ error: vi.fn() });
+    const body = httpPost.mock.calls[0][1];
+    expect(body).toMatchObject({ priorVersion: 1, feedback: 'Retained synthetic feedback' });
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...storedV1Run(),
+        versions: [...storedV1Run().versions, { ...storedV1Run().versions[0], version: 2, document: 'Other synthetic version' }],
+      })
+    );
+    httpPost.mockReturnValueOnce(of({ sessionId: 'synthetic-retry', ownerToken: 'synthetic-proof' }));
+    const retry = service.generate(request, 'b'.repeat(64)).subscribe();
+    expect(httpPost.mock.calls[1][1]).toEqual({ ...body, discard: 'b'.repeat(64) });
+    retry.unsubscribe();
+  });
+
+  it('allows an explicit reviewed fresh request to carry discard without claiming an identical-body replay', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const request = { ...generateRequest(), newRun: true, discard: 'b'.repeat(64) };
+    const start = service.generate(request).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      CHAT_INTAKE.endpoints.generate,
+      expect.objectContaining({ answers: ANSWERS, project: 'proj-1', discard: request.discard })
+    );
+    expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
+    start.unsubscribe();
+  });
+
+  it.each([
+    { code: 'OTHER' },
+    { activeRunId: 'not-an-opaque-run' },
+    { state: 'failed' },
+    { agentKey: 'synthetic-other' },
+    { documentId: 'other' },
+    { startedBy: undefined },
+    { startedByViewer: undefined },
+    { startedByViewer: 'true' },
+  ])('rejects malformed or out-of-scope active conflict metadata: %j', (override) => {
+    const body = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Synthetic conflict',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+      ...override,
+    };
+    expect(service.activeRunConflict(new HttpErrorResponse({ status: 409, error: body }), generateRequest())).toBeNull();
   });
 
   it('starts a new session without changing previous history before any result arrives', () => {

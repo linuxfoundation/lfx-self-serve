@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '@lfx-one/shared/constants';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
 
 import {
   json,
@@ -22,6 +22,44 @@ test.describe.configure({ timeout: 60000 });
 test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
 });
+
+for (const choice of ['Open it', 'Discard and start over'])
+  test(`Member 360 active-run conflict: ${choice}`, async ({ page }, info) => {
+    await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+    await stubMember360Progress(page, () => member360Progress('writing'));
+    const bodies: Record<string, unknown>[] = [];
+    const activeRunId = 'b'.repeat(64);
+    await page.route('**/api/mktg-agents/member-360/generate', (route) => {
+      bodies.push(route.request().postDataJSON());
+      if (!bodies.at(-1)?.['discard'])
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ACTIVE',
+            message: 'Your Member 360 run is in progress.',
+            activeRunId,
+            state: 'writing',
+            agentKey: 'member-360',
+            documentId: MEMBER_360_DOCUMENT_ID,
+            startedBy: 'Synthetic writer',
+            startedByViewer: true,
+            startedAt: '2026-10-19T12:00:00.000Z',
+          },
+        });
+      return json(route, { sessionId: 'synthetic-new', ownerToken: 'synthetic-proof', runId: activeRunId, documentId: MEMBER_360_DOCUMENT_ID });
+    });
+    await openMember360(page);
+    await selectMember360Option(page, 'member-360-compare', 'No comparison');
+    await page.getByTestId('member-360-run').getByRole('button').click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toContainText('Your Member 360 run is in progress');
+    await dialog.getByRole('button', { name: choice, exact: true }).click();
+    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+    expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
+    if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
+    await page.screenshot({ path: info.outputPath('member-active-run-choice.png'), fullPage: true });
+  });
 
 test('Kit → Member family → run has fixed linked parents and browser Back', async ({ page }, info) => {
   // setupMember360 calls suppressCookieBanner and stubs project rights and all domain APIs.

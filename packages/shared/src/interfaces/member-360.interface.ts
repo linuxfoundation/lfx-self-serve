@@ -24,6 +24,7 @@ export interface Member360FinalizeReceipt {
 }
 export interface Member360GenerateRequest {
   project: string;
+  discard?: string;
   window?: '12' | '6' | 'year';
   compare?: boolean;
   trackers?: Member360Tracker[];
