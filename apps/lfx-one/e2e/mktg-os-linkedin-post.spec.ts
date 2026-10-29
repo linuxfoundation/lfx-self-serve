@@ -2,28 +2,71 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-post.constants';
 import { LINKEDIN_POST_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR } from '../../../packages/shared/src/constants/mktg-run.constants';
 import {
   createLinkedinRuns,
   json,
   linkedinEnvelope,
   LINKEDIN_RUN_TIMEOUT,
   LINKEDIN_TEST_PROFILE,
+  LINKEDIN_TEST_PROJECT,
   openLinkedin,
   setupLinkedin,
   stubLinkedinClipboard,
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  for (const state of ['writing', 'questions'] as const)
+    test(`a fresh browser lands on its server-owned ${state} run without a header or intake flash`, async ({ page }, info) => {
+      const runs = createLinkedinRuns();
+      const documentId = 'run-' + 'a'.repeat(24);
+      runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
+      await setupLinkedin(page, { runs, saved: true, questions: state === 'questions' }); // suppressCookieBanner is in the helper.
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        async (route) => {
+          expect(new URL(route.request().url()).searchParams.get('project')).toBe(LINKEDIN_TEST_PROJECT.uid);
+          await gate;
+          await route.fallback();
+        }
+      );
+      const starts: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`${LINKEDIN_API}/generate`)) starts.push(request.url());
+      });
+      await openLinkedin(page);
+      await expect(page.getByTestId('mktg-linkedin-header-loading')).toBeVisible();
+      await expect(page.getByTestId('mktg-linkedin-first-run')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath('server-owned-neutral.png'), fullPage: true });
+      release();
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+      await expect(page).toHaveURL(new RegExp(`/documents/linkedin-post/${documentId}\\?`));
+      expect(new URL(page.url()).searchParams.get('run')).toBe('1'.padStart(64, '0'));
+      expect(starts).toHaveLength(0);
+      await page.screenshot({ path: info.outputPath(`server-owned-${state}.png`), fullPage: true });
+    });
   for (const choice of ['Open it', 'Discard and start over'])
     test(`LinkedIn active-run conflict: ${choice}`, async ({ page }, info) => {
       const runs = createLinkedinRuns();
       const documentId = 'run-' + 'a'.repeat(24);
       runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
       await setupLinkedin(page, { runs, saved: true }); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+      // The competing run begins AFTER the initial own-run lookup, immediately before Generate.
+      await page.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        (route) => json(route, { project: LINKEDIN_TEST_PROJECT.uid, groups: [], runs: [] })
+      );
       const bodies: Record<string, unknown>[] = [];
       const activeRunId = 'b'.repeat(64);
       await page.route(`**${LINKEDIN_API}/generate`, (route) => {
@@ -49,7 +92,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       await openLinkedin(page);
       await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-      const dialog = page.getByRole('alertdialog');
+      const dialog = activeRunConfirmDialog(page, 'mktg-linkedin-active-run-confirm');
       await expect(dialog).toContainText('Your LinkedIn post run is in progress');
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
@@ -58,7 +101,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       await page.screenshot({ path: info.outputPath('linkedin-active-run-choice.png'), fullPage: true });
     });
-  test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
+  test('Back from a first generating draft follows its server-recorded run without reopening setup', async ({ page }, info) => {
     await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
     await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
     let generates = 0;
@@ -73,11 +116,11 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
     await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
     await page.goBack();
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
-    for (const [key, value] of Object.entries(LINKEDIN_TEST_PROFILE.about))
-      await expect(page.getByTestId(`mktg-linkedin-profile-${key}`).locator('input, textarea')).toHaveValue(value);
-    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is being written on its document page');
-    await expect(page.getByTestId('mktg-linkedin-open-pending').getByRole('button')).toHaveAccessibleName('Open the document');
+    // Rule 1 / land-on-active-run: the plain entry resolves the recorded run, not cached setup as a new form.
+    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+    await expect(page).toHaveURL(/\/documents\/linkedin-post\/run-/);
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     expect(generates).toBe(1);
     await page.screenshot({ path: info.outputPath('walk-L2b-prefilled-setup-pending-notice.png'), fullPage: true });
   });
@@ -94,7 +137,11 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
     const questionsUrl = page.url();
     await page.goBack();
-    await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+    // Automatic document→questions navigation replaces its entry. Back resolves the same server turn on the plain intake URL.
+    await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-linkedin-pending-notice')).toContainText('Your draft is waiting for your answers');
     await page.goForward();
     await expect(page).toHaveURL(questionsUrl);
     await expect(page.getByTestId('mktg-linkedin-questions')).toBeVisible();
@@ -141,6 +188,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
   test('a fresh browser lands a plain document URL after its creator leaves early', async ({ page, browser }, info) => {
     const runs = createLinkedinRuns();
     await setupLinkedin(page, { saved: true, runs });
+    // Leave before private completion; the fresh browser must finish through server document observation alone.
+    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
     await openLinkedin(page);
     await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic source, never browser recovery.');
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
@@ -152,13 +201,41 @@ test.describe('Marketing OS LinkedIn posts', () => {
     try {
       const returned = await fresh.newPage();
       await setupLinkedin(returned, { saved: true, runs }); // Same synthetic SERVER records; no client capability copied.
+      let releaseOwnRead = () => {};
+      const ownRead = new Promise<void>((resolve) => {
+        releaseOwnRead = resolve;
+      });
+      await returned.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        async (route) => {
+          await ownRead;
+          await route.fallback();
+        }
+      );
+      let freshGenerates = 0;
+      returned.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`${LINKEDIN_API}/generate`)) freshGenerates++;
+      });
       await openLinkedin(returned);
+      // #139/#4591: the fresh browser first paints a neutral skeleton, never the saved profile/intake.
+      await expect(returned.getByTestId('mktg-linkedin-header-loading')).toBeVisible();
+      await expect(returned.getByTestId('mktg-linkedin-loading')).toHaveAttribute('aria-label', 'Checking the run…');
+      await expect(returned.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(returned.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+      await returned.screenshot({ path: info.outputPath('fresh-browser-checking.png'), fullPage: true });
+      releaseOwnRead();
+      await expect(returned.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+      expect(new URL(returned.url()).pathname).toBe(new URL(documentUrl).pathname);
+      // The public document URL remains a reader destination too; no private generation capability is copied.
       await returned.evaluate((url) => {
         history.pushState({}, '', url);
         dispatchEvent(new PopStateEvent('popstate'));
       }, documentUrl);
       await expect(returned.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
       expect(runs.size).toBe(1);
+      expect(freshGenerates).toBe(0);
+      await expect(returned.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(returned.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
       await returned.screenshot({ path: info.outputPath('fresh-browser-document.png'), fullPage: true });
     } finally {
       await fresh.close();
@@ -207,7 +284,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await setupLinkedin(page, { saved: true });
     await openLinkedin(page);
     const crumb = page.getByTestId('mktg-linkedin-breadcrumb');
-    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('Draft a LinkedIn post');
     await expect(crumb.getByRole('link')).toHaveCount(2);
     await expect(crumb.getByTestId('mktg-breadcrumb-link-0')).toHaveAttribute('href', '/project/mktg-os-agents?project=linkedin-e2e');
     await expect(crumb.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', '/project/mktg-os-agents/families/social-community?project=linkedin-e2e');
@@ -215,7 +292,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
     await page.goBack();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('Draft a LinkedIn post');
     await page.screenshot({ path: info.outputPath('linkedin-fixed-parent-back.png'), fullPage: true });
   });
   test('profile edit keeps its URL until save, while Back and Cancel return to the draft inputs', async ({ page }, info) => {
@@ -452,11 +529,27 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
     await page.screenshot({ path: info.outputPath('recorded2-questions.png'), fullPage: true });
+    const answerBox = page.getByTestId('mktg-run-questions').locator('textarea');
+    const suggestion = await answerBox.inputValue();
+    await answerBox.fill('skip');
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toHaveText(MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR);
+    expect(generates).toBe(1);
+    await answerBox.fill(suggestion);
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 2 of 3 · Admired style');
+    await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 3 of 3 · Avoid');
+    await answerBox.fill('None'); // Only the stable avoid question accepts literal none.
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session-1', questionsId: 'a'.repeat(64) });
+    expect((await send).postDataJSON()).toMatchObject({
+      sessionId: 'synthetic-session-1',
+      questionsId: 'a'.repeat(64),
+      answers: expect.arrayContaining([{ key: 'avoid', text: 'None', origin: expect.any(String) }]),
+    });
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
     expect(generates).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-questions')).toHaveCount(0);

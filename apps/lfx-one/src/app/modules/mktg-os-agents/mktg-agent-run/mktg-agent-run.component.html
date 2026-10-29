@@ -17,25 +17,56 @@
 }
 @if (agent && intake && !intake.oneOffDocument) {
   @if (publicReceiver()) {
-    <div [ngClass]="pageClass" data-testid="mktg-run-public-progress">
-      <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
-      <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
+    <div [ngClass]="pageClass" [class.hidden]="phase() === 'questions' && !publicIdentityPending()" data-testid="mktg-run-public-progress">
+      @if (publicIdentityPending()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-public-identity-loading" />
+      } @else if (checkingRun()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
+      } @else {
+        <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
+        <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
+      }
       <lfx-mktg-run-progress
+        [style.display]="publicIdentityPending() ? 'none' : null"
         [project]="publicProject()"
+        [projectName]="projectName()"
         [agentKey]="publicAgentKey()"
         [documentId]="livingDocumentId"
         [runId]="publicRunId()"
+        [refreshKey]="publicRefreshKey()"
         [runPage]="true"
+        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
+        [watchQuestions]="phase() === 'questions'"
+        [errorText]="errorText()"
+        [retainedAnswersNotice]="answeredNotice()"
+        (alreadyAnswered)="onAlreadyAnswered($event)"
+        (observed)="onPublicObserved($event)"
+        (readError)="onPublicReadError($event)"
         (landed)="onPublicLanding()"
-        (failed)="onPublicLanding(true)"
-        (questions)="onPublicQuestions()" />
-      @if (errorText()) {
+        (failed)="onPublicLanding(true)" />
+      @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
-        <lfx-button label="Open asset" (onClick)="onPublicLanding(!!navigation()?.runId)" data-testid="mktg-agent-run-open-asset" />
+        @if (navigation()) {
+          <lfx-button label="Open asset" (onClick)="onRetryPublicLanding()" data-testid="mktg-agent-run-open-asset" />
+        }
+        <lfx-button
+          label="Open the document"
+          [routerLink]="publicDocumentLink()"
+          [queryParams]="{ project: projectSlug() ?? '' }"
+          data-testid="mktg-run-public-document-link" />
       }
     </div>
   }
-  <div [ngClass]="pageClass" [style.display]="publicReceiver() ? 'none' : null" data-testid="mktg-agent-run-page">
+  <div
+    [ngClass]="pageClass"
+    [style.display]="publicIdentityPending() || (publicReceiver() && phase() !== 'questions') ? 'none' : null"
+    data-testid="mktg-agent-run-page">
+    @if (!publicReceiver() && checkingRun()) {
+      <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-agent-run-checking" />
+    }
+    <ng-container [ngTemplateOutlet]="(!publicReceiver() || phase() === 'questions') && !checkingRun() && !publicIdentityPending() ? privateRunPage : null" />
+  </div>
+  <ng-template #privateRunPage>
     <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->
@@ -61,7 +92,11 @@
                 @if (waitingQuestions()) {
                   <lfx-button label="Continue" (onClick)="onContinueWaiting()" data-testid="mktg-run-waiting-continue" />
                 } @else {
-                  <lfx-button label="Open it" [routerLink]="waitingRunLink()" [queryParams]="waitingRunParams()" data-testid="mktg-run-waiting-open" />
+                  <lfx-button
+                    [label]="waitingRun()?.state === 'questions' ? 'Answer the questions' : 'Open it'"
+                    [routerLink]="waitingRunLink()"
+                    [queryParams]="waitingRunParams()"
+                    data-testid="mktg-run-waiting-open" />
                 }
                 <button
                   type="button"
@@ -205,7 +240,7 @@
                 @if (submitReason()) {
                   <span class="text-xs text-gray-500" data-testid="mktg-run-start-reason">{{ submitReason() }}</span>
                 }
-                <lfx-button [label]="submitLabel()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
+                <lfx-button [label]="submitLabel()" [loading]="checkingGuard()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
               </div>
             </div>
           </section>
@@ -223,6 +258,7 @@
         }
 
         <ng-container>
+          <!-- F1c/136-A: publicReceiver stays true for live observation; nulling this switch hid confirmed private questions behind a header-only page. -->
           @switch (phase()) {
             @case ('form') {
               <form
@@ -234,7 +270,7 @@
                 (ngSubmit)="onSubmit()"
                 data-testid="mktg-agent-run-form">
                 <div>
-                  <h1 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-form-title">{{ formTitle() }}</h1>
+                  <h2 class="font-display font-light text-xl text-gray-900" data-testid="mktg-agent-run-form-title">{{ formTitle() }}</h2>
                   <p class="mt-1 text-sm leading-relaxed text-gray-500">{{ intake.intro }}</p>
                 </div>
 
@@ -274,7 +310,7 @@
                         [rows]="field.rows ?? 2"
                         [placeholder]="field.placeholder ?? ''"
                         styleClass="w-full min-h-20 resize-y"
-                        [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                        [describedBy]="fieldDescribedBy(field)"
                         [invalid]="!!fieldFormatErrors()[field.key]"
                         [dataTest]="'mktg-intake-' + field.key" />
                     } @else if (field.kind === 'url-list') {
@@ -290,7 +326,7 @@
                                 [control]="rowId"
                                 type="url"
                                 [placeholder]="field.placeholder ?? ''"
-                                [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                                [describedBy]="fieldDescribedBy(field)"
                                 [invalid]="!!fieldFormatErrors()[field.key]"
                                 [dataTest]="'mktg-intake-' + rowId" />
                             </div>
@@ -322,7 +358,7 @@
                             [form]="intakeForm"
                             [control]="field.key"
                             [placeholder]="field.placeholder ?? ''"
-                            [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                            [describedBy]="fieldDescribedBy(field)"
                             [invalid]="!!fieldFormatErrors()[field.key]"
                             [required]="!field.optional"
                             [dataTest]="'mktg-intake-' + field.key" />
@@ -352,8 +388,13 @@
                         warning
                       }}</span>
                     }
-                    @if (field.hint) {
-                      <span class="text-xs text-gray-400">{{ field.hint }}</span>
+                    @if (field.hint || isLinkField(field)) {
+                      <span class="text-xs text-gray-400" [id]="'mktg-intake-' + field.key + '-hint'">
+                        {{ field.hint }}
+                        @if (isLinkField(field)) {
+                          {{ driveSharingHint }}
+                        }
+                      </span>
                     }
                     @if (field.missingPrefillHint && missingPrefillHintKeys()[field.key]) {
                       <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>
@@ -463,7 +504,12 @@
                     @if (submitReason()) {
                       <span class="text-xs text-gray-500">{{ submitReason() }}</span>
                     }
-                    <lfx-button type="submit" [label]="submitLabel()" icon="fa-light fa-sparkles" data-testid="mktg-agent-run-submit-button" />
+                    <lfx-button
+                      type="submit"
+                      [label]="submitLabel()"
+                      [loading]="checkingGuard()"
+                      icon="fa-light fa-sparkles"
+                      data-testid="mktg-agent-run-submit-button" />
                   </div>
                 }
               </form>
@@ -509,5 +555,5 @@
         </ng-container>
       </div>
     </div>
-  </div>
+  </ng-template>
 }

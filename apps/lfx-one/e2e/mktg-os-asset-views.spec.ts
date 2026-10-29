@@ -134,13 +134,13 @@ test.describe('Native FAQ document approval and header', () => {
         window.dispatchEvent(new PopStateEvent('popstate'));
       }, draft.id);
       await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
-      await expect(page.getByTestId('mktg-document-view-meta')).toContainText(`the kit still shows v1, approved by ${name ?? 'a project writer'}`);
+      const header = page.getByTestId('mktg-document-view-title-card');
+      await expect(header.getByTestId('mktg-document-view-meta')).toContainText(`the kit still shows v1, approved by ${name ?? 'a project writer'}`);
       await expect(page.getByTestId('mktg-document-view-version')).toHaveText('v2');
       const revisions = page.getByTestId('mktg-document-view-revisions');
       const approvedRow = revisions.getByTestId('mktg-document-view-revision-label-1');
-      await expect(approvedRow).toContainText(' · Approved');
+      await expect(approvedRow).toContainText('v1 · Approved');
       await expect(approvedRow.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
-      await expect(approvedRow).toContainText(` · approved by ${name ?? 'a project writer'}`);
       const draftRow = revisions.getByTestId('mktg-document-view-revision-label-2');
       await expect(draftRow).toContainText(' · Draft');
       await expect(draftRow).not.toContainText('approved by');
@@ -176,7 +176,10 @@ test.describe('Native FAQ document approval and header', () => {
   });
   test('keeps a loading state while the read is pending', async ({ page }, info) => {
     await openAssetDocument(page, 'faq', 0);
-    await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
+    await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByTestId('mktg-document-view-loading').getByRole('status')).toHaveText('Loading the document…');
     await expect(page.getByTestId('mktg-faq-view')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('loading.png'), fullPage: true });
   });
@@ -201,7 +204,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     });
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
-    const print = page.getByTestId(key === 'brand-kit' ? 'brand-kit-book' : 'mktg-framework-print');
+    const print = page.getByTestId(key === 'brand-kit' ? 'mktg-brand-kit-print' : 'mktg-framework-print');
     await expect(print).toBeHidden();
     await page
       .getByTestId(prefix + '-download-pdf')
@@ -211,15 +214,61 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await page.emulateMedia({ media: 'print' });
     // Media emulation does not paginate or apply @page margins. Measure against
     // a paper-sized initial containing block, not the app shell's offset wrapper.
-    const paperViewport = key === 'brand-kit' ? { width: 11 * 96, height: 8.5 * 96 } : { width: 8.5 * 96, height: 11 * 96 };
+    const paperViewport = { width: 8.5 * 96, height: 11 * 96 };
     await page.setViewportSize(paperViewport);
     await expect(print).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revisions')).toBeHidden();
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paperViewport.width });
-    if (key === 'brand-kit') await expect(print.locator('[data-testid^="brand-kit-page-"]')).toHaveCount(16);
-    else await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+    if (key === 'brand-kit') {
+      await expect(print.locator('.kit-chapter')).toHaveCount(5);
+      await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
+      await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
+      await expect(print).toHaveCSS('page', 'mktg-framework');
+      await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
+    } else {
+      await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+      await expect(print).toHaveCSS('position', 'static');
+      await expect(print).toHaveCSS('display', 'block');
+      await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('tbody th');
+      await expect(rowLabels).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+      for (const label of await rowLabels.all()) {
+        await expect(label).toHaveCSS('word-break', 'normal');
+        await expect(label).toHaveCSS('overflow-wrap', 'normal');
+        await expect(label).toHaveCSS('hyphens', 'none');
+        await expect(label).toHaveCSS('text-transform', 'uppercase');
+        const tracking = await label.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return parseFloat(style.letterSpacing) / parseFloat(style.fontSize);
+        });
+        expect(tracking).toBeCloseTo(0.16);
+      }
+      // Visibility-only hiding leaves screen canvas height behind. The entire
+      // ancestor chain must be white/content-sized, and siblings out of flow.
+      const flow = await print.evaluate((root) => {
+        const ancestors = [];
+        let parent = root.parentElement;
+        while (parent) {
+          const css = getComputedStyle(parent);
+          ancestors.push({ background: css.backgroundColor, minHeight: css.minHeight, overflow: css.overflow });
+          parent = parent.parentElement;
+        }
+        return {
+          ancestors,
+          end: root.getBoundingClientRect().bottom,
+          bodyEnd: document.body.getBoundingClientRect().bottom,
+        };
+      });
+      for (const ancestor of flow.ancestors) {
+        expect(ancestor.background).toBe('rgb(255, 255, 255)');
+        expect(ancestor.minHeight).toBe('0px');
+        expect(ancestor.overflow).toBe('visible');
+      }
+      expect(Math.abs(flow.bodyEnd - flow.end)).toBeLessThan(2);
+      await expect(page.getByTestId('mktg-document-view-revisions')).toHaveCSS('display', 'none');
+    }
     if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
     await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
   });
@@ -245,24 +294,36 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
   });
 }
 
-for (const receipt of [true, false]) {
-  test(`standalone Draft opens the ${receipt ? 'receipt-named revision' : 'document default'}, never approving or exporting by digest`, async ({
+for (const immediateReceipt of [true, false]) {
+  test(`a Draft lands on its exact stored revision with an ${immediateReceipt ? 'immediate' : 'eventual'} receipt, never approving or exporting by digest`, async ({
     page,
   }, info) => {
-    const revision = await openDraftAssetRun(page, receipt);
-    await expect(page.getByTestId('mktg-framework-view-approval-state')).toHaveText('Draft');
-    await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('approved by');
-    await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('the kit still shows');
+    const fixture = await openDraftAssetRun(page, immediateReceipt);
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    fixture.finish();
+    if (!immediateReceipt) {
+      await expect.poll(() => fixture.state.readyWithoutReceiptPolls, { timeout: 20_000 }).toBeGreaterThan(0);
+      await expect(page).not.toHaveURL(/\/documents\//);
+      await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing');
+      await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
+      fixture.persist();
+    }
+    await expect(page).toHaveURL(new RegExp(`/documents/foundation-message/living.*revision=${fixture.revisionId}`), { timeout: 20_000 });
+    await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
+    await expect(page.getByTestId('mktg-document-view-title-card')).not.toContainText('approved by');
+    await expect(page.getByTestId('mktg-document-view-title-card')).not.toContainText('the kit still shows');
     await expect(page.getByTestId('mktg-framework-view-approval-required')).toHaveText('Export is available once this version is approved');
     await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
     await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Open in Documents', exact: true }).click();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/documents\/foundation-message\/living/);
-    const selected = new URL(page.url()).searchParams.get('revision');
-    expect(selected).toBe(receipt ? revision : null);
     await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
-    await page.screenshot({ path: info.outputPath(`open-document-${receipt}.png`), fullPage: true });
+    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('revision')).toBe(fixture.revisionId);
+    expect(fixture.state.posts.filter((path) => path === fixture.generatePath)).toEqual([fixture.generatePath]);
+    expect(fixture.state.posts.every((path) => path === fixture.generatePath || path === fixture.resultPath)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`stored-document-${immediateReceipt}.png`), fullPage: true });
   });
 }

@@ -1,9 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  linkedSignal,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -11,6 +24,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
@@ -75,9 +89,11 @@ import {
   normalizeLinkedinShareLink,
   readBrandKitRevision,
   readLinkedinDocumentContent,
+  readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
@@ -134,7 +150,9 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -164,6 +182,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
     MessageComponent,
+    MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
@@ -175,6 +194,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     InputTextComponent,
     Member360ResultComponent,
     MktgRunActivityComponent,
+    MktgSkeletonComponent,
     MktgRunProgressComponent,
     MktgClosedRunMessageComponent,
   ],
@@ -189,8 +209,10 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
@@ -239,6 +261,8 @@ export class MktgDocumentViewComponent {
   protected readonly unconfirmed = signal(false);
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
+  protected readonly downstreamSettledKey = signal('');
+  protected readonly exportLookupAnsweredKey = signal('');
   protected readonly retrying = signal(false);
   protected readonly submittingGeneration = signal(false);
   private readonly reloads = signal(0);
@@ -252,6 +276,9 @@ export class MktgDocumentViewComponent {
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
+  private progressReadUnavailable = false;
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
+  protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -274,6 +301,7 @@ export class MktgDocumentViewComponent {
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
+  protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
@@ -295,6 +323,16 @@ export class MktgDocumentViewComponent {
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
+  /** Only scope navigation resets the first-paint barrier; refreshes update the visible cards in place. */
+  protected readonly railReady = linkedSignal({
+    source: this.initRailReady(),
+    computation: (ready, previous) => ready || Boolean(previous?.value),
+  });
+  /** Once painted, keep this document's content in place during later refreshes. */
+  protected readonly contentReady = linkedSignal({
+    source: () => ({ key: JSON.stringify(this.exportLookupTarget()), ready: this.railReady() }),
+    computation: (current, previous) => current.ready || Boolean(previous?.source.key === current.key && previous.value),
+  });
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -399,6 +437,24 @@ export class MktgDocumentViewComponent {
   });
   protected readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
   protected readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
+  /** 148: a known handoff/ACK chooses run geometry immediately, never a transient document loader. */
+  protected readonly runFirstPaint = computed(() => {
+    const project = this.projectContext.activeContextUid();
+    const { agentKey, documentId } = this.params();
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!project || !documentId || !type?.catalogAgentId) return false;
+    if (this.generating() || this.submittingGeneration() || this.handoffRunId()) return true;
+    const token = this.generationParam();
+    if (token && this.attempts.peek(token, project, type.catalogAgentId, documentId)) return true;
+    const owned = this.attempts.load(project, type.catalogAgentId, type.kind === 'run' ? documentId : undefined);
+    if (
+      this.runParam() &&
+      owned?.attempt?.runId === this.runParam() &&
+      (type.kind === 'living' || (owned.request.documentId ?? owned.attempt.documentId) === documentId)
+    )
+      return true;
+    return this.pendingDocuments.load(project, documentId)?.agentId === type.catalogAgentId;
+  });
 
   private readonly request$ = toObservable(
     computed(() => ({
@@ -430,11 +486,29 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly progressView = viewChild(MktgRunProgressComponent);
   protected readonly runState = computed(() => this.closedRun()?.state ?? this.progressView()?.runState() ?? null);
+  protected readonly liveState = computed(() => {
+    if (this.loading() || this.closedRun()) return '';
+    if (this.runState()) {
+      if (this.publicProgressPolling() && this.runState() !== 'failed') return '';
+      return this.progressView()?.liveState() ?? '';
+    }
+    return this.view() ? this.readiness() : '';
+  });
   protected readonly waitingForQuestions = computed(
     () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
   );
 
+  protected readonly memberQuestionsCreator = computed(() => {
+    const run = this.selectedRun();
+    const project = this.projectContext.activeContextUid();
+    return (
+      run?.agentKey === 'member-360' &&
+      !!this.userService.user()?.sub &&
+      this.attempts.load(project, 'member-360', this.params().documentId)?.attempt?.runId === run.runId
+    );
+  });
   protected readonly runAgentId = computed(() => {
+    if (this.params().agentKey === 'member-360') return '';
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
     const id = type?.catalogAgentId;
     const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
@@ -494,7 +568,14 @@ export class MktgDocumentViewComponent {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
+      toObservable(computed(() => this.view()?.aeoGeoReport))
+        .pipe(takeUntilDestroyed())
+        .subscribe((report) => {
+          if (report) void this.printService.prepare('Inter');
+        });
       let observedSubject = this.userService.user()?.sub ?? '';
+      let readerSelectionKey = '';
+      let selectionChanged = true;
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
@@ -528,22 +609,40 @@ export class MktgDocumentViewComponent {
               current.runId === this.handoffRunId() &&
               !!current.runId &&
               JSON.stringify({ ...previous, generation: current.generation, runId: current.runId }) === JSON.stringify(current);
+            if (firstResolution || handoffOnly) readerSelectionKey = JSON.stringify({ ...current, reload: 0 });
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            const key = JSON.stringify({ ...request, reload: 0 });
+            selectionChanged = key !== readerSelectionKey;
+            readerSelectionKey = key;
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
-            this.clearAeoPrint();
-            this.errorText.set('');
-            this.notice.set('');
-            this.runHistory.set([]);
-            this.historyError.set('');
-            this.runFailed.set(false);
-            this.failureDetails.set('');
-            this.activityContext.set(['', undefined]);
-            this.refreshWarning.set('');
+            // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
+            if (selectionChanged) {
+              this.progressReadUnavailable = false;
+              if (request.runId) {
+                this.loading.set(true);
+                this.view.set(null);
+                this.runDetail.set(null);
+              }
+              this.clearAeoPrint();
+              this.errorText.set('');
+              this.notice.set('');
+              this.runHistory.set([]);
+              this.historyError.set('');
+              this.runFailed.set(false);
+              this.failureDetails.set('');
+              this.activityContext.set(['', undefined]);
+              this.refreshWarning.set('');
+            }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.redirectedRun = '';
+              this.downstreamSettledKey.set('');
+              const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
+              if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
+
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -562,6 +661,7 @@ export class MktgDocumentViewComponent {
               this.refreshedFailures.clear();
               this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
+              this.railReady.set(false);
               this.notice.set('');
               this.restoringId.set(null);
               this.restoreEpoch++;
@@ -588,23 +688,23 @@ export class MktgDocumentViewComponent {
                   : this.attempts.consume(request.generation, request.project, type.catalogAgentId);
             }
             this.submittingGeneration.set(!!prepared && !prepared.pending.attempt);
-            if (!prepared) {
+            if (!prepared && selectionChanged) {
               this.localProgress.set(null);
               this.handoffRunId.set('');
               this.failureText.set('');
               this.restoreNotice.set('');
             }
             if (prepared) {
-              this.localProgress.set('writing');
+              this.localProgress.set(null);
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
               if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               if (type?.kind === 'run' && prepared.pending.attempt?.runId) this.onProgress({ type: 'submitted' }, prepared.pending);
-              this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
             // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
             const intake = findMktgRunIntake(request.agentKey, true);
             const saved =
+              request.agentKey !== 'member-360' &&
               request.subject &&
               !request.generation &&
               !request.revisionId &&
@@ -661,7 +761,15 @@ export class MktgDocumentViewComponent {
             let known: MktgDocumentReadCycle | null = existingView ? { detail: existingView, view: existingView } : null;
             if (!known && prepared && type) {
               known = {
-                detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] },
+                detail: {
+                  project: request.project,
+                  type,
+                  documentId: request.documentId,
+                  revisions: [],
+                  approvedCurrent: null,
+                  runs: [],
+                  progressUnavailable: true,
+                },
                 view: null,
               };
             }
@@ -786,23 +894,30 @@ export class MktgDocumentViewComponent {
                       if (selected?.state === 'failed' || (observedRun && !selected && cycle.detail.revisions.length)) this.localProgress.set(null);
                     })
                   )
-                : read(false).pipe(
-                    expand((cycle) => {
-                      const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
-                      if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
-                        this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
-                        return EMPTY;
-                      }
-                      const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                      if (this.closedRun() || (this.selectedRun()?.state === 'questions' && unavailableSince === null)) return EMPTY;
-                      const local = this.localProgress();
-                      if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
-                      let delay: number = MKTG_RUN_POLL.intervalMs;
-                      if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
-                      if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
-                      return timer(delay).pipe(switchMap(() => read(true)));
-                    })
-                  )
+                : createVisibilityPoll(
+                    this.document,
+                    () =>
+                      read(false).pipe(
+                        expand(() => {
+                          if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
+                          const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
+                          if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
+                            this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
+                            return EMPTY;
+                          }
+                          let delay: number = this.selectedRun()?.state === 'questions' ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;
+                          if (unavailableCount) delay = Math.min(delay * 2 ** Math.min(unavailableCount - 1, 3), MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs);
+                          if (unavailableSince !== null) delay = Math.min(delay, MKTG_RUN_POLL.timeoutMs - elapsed);
+                          return timer(delay).pipe(switchMap(() => read(true)));
+                        })
+                      ),
+                    {
+                      intervalMs: MKTG_RUN_POLL.intervalMs,
+                      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                      backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+                      shouldContinue: () => false,
+                    }
+                  ).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))))
             ).pipe(
               map((cycle) => cycle.view),
               catchError((error: HttpErrorResponse) => {
@@ -854,7 +969,8 @@ export class MktgDocumentViewComponent {
         )
         .subscribe((view) => {
           this.view.set(view);
-          this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
+          if (!this.editingLink() && !this.savingLink())
+            this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
         });
     }
@@ -862,24 +978,49 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
-    this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
-    const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
+    if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
+    // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
+    const selectedRunId = this.runParam() || this.handoffRunId();
+    const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
+    if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
+      this.runDetail.set(cycle.detail);
+      this.refreshWarning.set('Run progress could not be checked. Showing available content; checking again.');
+      if (selectedRunId || !cycle.view) {
+        this.progressReadUnavailable = true;
+        this.errorText.set('This run could not be verified. Refresh to check its saved state.');
+      }
+      // A plain URL may show its verified revision; a selected unverified run must not expose an older body.
+      this.publicReads.next({ ...cycle, view: selectedRunId ? null : cycle.view });
+      this.loading.set(false);
+      return;
+    }
+    if (this.progressReadUnavailable) {
+      this.progressReadUnavailable = false;
+      this.errorText.set('');
+    }
     if (
       !this.publicProgressPolling() ||
       cycle.detail.progressUnavailable ||
       !run ||
-      run.state === 'failed' ||
-      run.state === 'discarded' ||
-      run.state === 'superseded' ||
-      !commands ||
-      this.redirectedRun === run.runId
-    )
+      (run.state !== 'writing' && run.state !== 'storing' && run.state !== 'questions') ||
+      !commands
+    ) {
+      this.publicReads.next(cycle);
       return;
+    }
+    if (this.redirectedRun === run.runId) return;
+    // Resolve the run destination before publishing any stored document body: no old-document flash.
     this.redirectedRun = run.runId;
+    // Let the accepted observer consume server proof without publishing an older stored body.
+    this.publicReads.next({ ...cycle, view: null });
+    this.loading.set(true);
+    this.view.set(null);
     const failedNavigation = () => {
-      if (this.redirectedRun !== run.runId) return;
+      if (this.redirectedRun !== run.runId || cycle.detail.project !== this.projectContext.activeContextUid()) return;
       this.redirectedRun = '';
+      this.publicReads.next({ ...cycle, view: null });
+      this.loading.set(false);
       this.errorText.set('The run page could not be opened. Open this run from Documents.');
     };
     void this.router
@@ -1014,9 +1155,19 @@ export class MktgDocumentViewComponent {
     const intake = MKTG_AGENT_INTAKES[agentId];
     const selected = this.selectedRun();
     if (!oneOff && selected?.state === 'failed' && pending?.attempt?.runId !== selected.runId) pending = null;
-    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && pending.state !== 'failed') {
+    if (pending && selected?.state === 'failed' && pending.attempt?.runId === selected.runId && (pending.state !== 'failed' || pending.pendingQuestions)) {
       pending = { ...pending, state: 'failed', pendingQuestions: undefined };
       this.attempts.save(pending); // The server is authoritative even before the private poll has settled.
+    }
+    if (pending?.pendingQuestions && selected?.state !== 'failed') {
+      const sameQuestions =
+        selected?.state === 'questions' &&
+        pending.attempt?.runId === selected.runId &&
+        (oneOff || pending.pendingQuestions.questionsId === selected.pendingQuestions?.questionsId);
+      if (!sameQuestions) {
+        this.attempts.save({ ...pending, pendingQuestions: undefined, state: 'writing' });
+        pending = null;
+      }
     }
     if (!pending && project && oneOff && intake && this.selectedRun()?.state === 'failed') {
       pending = {
@@ -1028,7 +1179,13 @@ export class MktgDocumentViewComponent {
     }
     const token = pending ? this.attempts.prepare(pending.request, true) : null;
     void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
-      queryParams: { ...this.runAgainParams(), ...MKTG_RUN_RESUME_QUERY_CLEAR, questions: token, mode: null },
+      queryParams: {
+        ...this.runAgainParams(),
+        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+        questions: token,
+        mode: null,
+        run: !oneOff && selected?.state === 'questions' ? selected.runId : null,
+      },
     });
   }
 
@@ -1045,7 +1202,7 @@ export class MktgDocumentViewComponent {
   protected onDownload(): void {
     if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   }
 
   protected onToggleAllRevisions(): void {
@@ -1277,6 +1434,26 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private initRailReady(): Signal<boolean> {
+    return computed(() => {
+      const view = this.view();
+      const scope = this.commentScope();
+      const selected = this.documentComments.selectedScope();
+      const commentsReady =
+        !scope ||
+        (selected?.projectUid === scope.projectUid &&
+          selected.agentKey === scope.agentKey &&
+          selected.documentId === scope.documentId &&
+          selected.revisionId === scope.revisionId &&
+          !!(this.documentComments.loaded() || this.documentComments.loadError()));
+      const downstreamReady =
+        view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
+      const exportLookup = this.exportLookupTarget();
+      const exportReady = !exportLookup || this.exportLookupAnsweredKey() === JSON.stringify(exportLookup);
+      return !!view && commentsReady && downstreamReady && exportReady;
+    });
+  }
+
   private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
     return computed(() => {
       const view = this.view();
@@ -1340,7 +1517,11 @@ export class MktgDocumentViewComponent {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
+      // Current/open rows use slots within the cap, never extra rows beyond it.
+      const pinned = new Set(rows.filter((revision) => revision.latest || revision.id === openId).map((revision) => revision.id));
+      const newest = rows.filter((revision) => !pinned.has(revision.id)).slice(0, MKTG_DOCUMENT_REVISION_PREVIEW_COUNT - pinned.size);
+      const visible = new Set([...pinned, ...newest.map((revision) => revision.id)]);
+      return rows.filter((revision) => visible.has(revision.id));
     });
   }
 
@@ -1369,13 +1550,15 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       if (!view) {
-        const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
+        const type = this.runDetail()?.type;
+        // A confirmed run with no revision can name its asset; never guess from route params.
+        if (!type || type.agentKey === 'member-360') return '';
+        const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
+        return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
-        return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
+        return `${this.projectContext.activeContext()?.name ?? ''} ${mktgKitAssetLabel(view.type.agentKey) ?? view.type.itemLabel}`.trim();
       }
       const source = this.linkedinContent()?.source;
       return source ? `${view.type.itemLabel} · ${source.label}` : view.type.itemLabel;
@@ -1418,6 +1601,10 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'restored') {
       this.localProgress.set(null);
       this.restoreNotice.set(progress.message);
+      // A restored intake has no accepted run or stored view to wait for.
+      // Land on the form with its saved inputs; navigation grants no Generate authority.
+      const commands = this.runAgainLink();
+      if (commands) void this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true });
       return;
     }
     if (progress.type === 'submitted') {
@@ -1466,6 +1653,7 @@ export class MktgDocumentViewComponent {
         });
       } else {
         this.localProgress.set('storing');
+        if (this.publicProgressPolling()) this.progressView()?.recheck();
       }
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
@@ -1474,6 +1662,7 @@ export class MktgDocumentViewComponent {
       this.failureText.set(
         progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
       );
+      if (this.publicProgressPolling()) this.progressView()?.recheck();
     }
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);

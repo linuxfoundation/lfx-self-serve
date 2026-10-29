@@ -17,8 +17,8 @@ const snowflakeMocks = vi.hoisted(() => ({
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => {
-  // Use the real travel fund aggregates so the SQL assertions can't drift from the source of truth.
-  const { TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_OPEN_ENDED_AGG, TRAVEL_FUND_LATEST_DEADLINE_AGG } = await vi.importActual<
+  // Use the real travel fund aggregates and request tables so the SQL assertions can't drift from the source of truth.
+  const { EVENT_REQUEST_SOURCE_TABLES, TRAVEL_FUND_OFFERED_AGG, TRAVEL_FUND_OPEN_ENDED_AGG, TRAVEL_FUND_LATEST_DEADLINE_AGG } = await vi.importActual<
     typeof import('../../../../../packages/shared/src/constants/events.constants')
   >('../../../../../packages/shared/src/constants/events.constants');
 
@@ -26,6 +26,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     COMING_SOON_SENTINEL: 'coming-soon',
     DEFAULT_EVENT_SORT_FIELD: 'EVENT_START_DATE',
     DEFAULT_VISA_REQUEST_SORT_FIELD: 'APPLICATION_DATE',
+    EVENT_REQUEST_SOURCE_TABLES,
     EVENT_SOURCE_BACKFILL: 'backfill',
     MY_EVENT_STATUS: { ATTENDED: 'Attended', REGISTERED: 'Registered', NOT_REGISTERED: 'Not Registered' },
     TRAVEL_FUND_OFFERED_AGG,
@@ -539,11 +540,12 @@ describe('EventsService past and request lists match email case-insensitively', 
   });
 
   it.each([
-    ['getVisaRequests', 'VL_APPLICATION_DATE'],
-    ['getTravelFundRequests', 'TF_APPLICATION_DATE'],
-  ] as const)('%s keeps the latest request per event', async (method, dateColumn) => {
+    ['getVisaRequests', 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS', 'VL_APPLICATION_DATE'],
+    ['getTravelFundRequests', 'ANALYTICS.PLATINUM_LFX_ONE.TRAVEL_FUND_REQUESTS', 'TF_APPLICATION_DATE'],
+  ] as const)('%s reads %s and keeps the latest request per event', async (method, table, dateColumn) => {
     await service[method]({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
 
+    expect(lastSql()).toContain(`FROM ${table}`);
     expect(lastSql()).toContain('AND LOWER(USER_EMAIL) = ?');
     expect(lastSql()).toContain(`QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${dateColumn} DESC NULLS LAST) = 1`);
   });

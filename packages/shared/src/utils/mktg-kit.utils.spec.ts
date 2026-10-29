@@ -86,7 +86,7 @@ describe('Marketing kit plan of record', () => {
     expect(isMktgKitFamilyLive({ ...MKTG_KIT_FAMILIES[0], assets: [] })).toBe(false);
     const families = resolveMktgKit(listing());
     expect(families.filter((family) => family.live)).toHaveLength(4);
-    expect(families[0].rows.map((row) => row.state)).toEqual(['missing', 'missing', 'missing', 'missing', 'coming-soon']);
+    expect(families[0].rows.map((row) => row.state)).toEqual(['missing', 'missing', 'missing', 'missing']);
     expect(families[0].rows[1].asset.agentKey).toBe('boilerplates');
     expect(families[0].rows[2].asset.agentKey).toBe('faq');
   });
@@ -94,8 +94,41 @@ describe('Marketing kit plan of record', () => {
     const family = resolveMktgKit(listing()).find((entry) => entry.family.id === 'member-sponsor');
     expect(family?.family.agentIds).toEqual(['member-360', 'pitch-deck']);
     expect(family?.agents[0]).toEqual(MKTG_AGENTS.find((agent) => agent.id === 'member-360'));
-    expect(family?.agents.map((agent) => agent.id)).toEqual(['member-360', 'pitch-deck']);
+    expect(family?.agents.map((agent) => agent.id)).toEqual(['member-360']);
     expect(family?.rows.map((row) => row.asset.agentKey)).toContain('member-360');
+  });
+  it('hides unbuilt families, unavailable rows and inactive agents by default without reordering the catalog', () => {
+    const data = listing();
+    const now = new Date('2026-10-23T12:00:00Z');
+    const all = resolveMktgKit(data, now, true);
+    expect(all.map((view) => view.family.id)).toEqual(MKTG_KIT_FAMILIES.map((family) => family.id));
+    expect(all).toHaveLength(9);
+    expect(all[0].rows.at(-1)?.state).toBe('coming-soon');
+    expect(all[3].agents.map((agent) => agent.id)).toContain('pitch-deck');
+    const visible = resolveMktgKit(data, now, false);
+    expect(resolveMktgKit(data, now)).toEqual(visible);
+    expect(visible).toHaveLength(4);
+    expect(visible.map((view) => view.family.id)).toEqual(all.filter((view) => view.live).map((view) => view.family.id));
+    for (const view of visible) {
+      const unfiltered = all.find((candidate) => candidate.family.id === view.family.id);
+      expect(view.rows).toEqual(unfiltered?.rows.filter((row) => row.state !== 'coming-soon'));
+      expect(view.agents).toEqual(unfiltered?.agents.filter((agent) => agent.status === 'active'));
+    }
+    expect(summarizeMktgKit(visible)).toEqual(summarizeMktgKit(all));
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'aeo-geo');
+    if (!agent) throw new Error('Missing synthetic catalog agent');
+    const status = agent.status;
+    agent.status = 'coming-soon';
+    try {
+      const hidden = resolveMktgKit(data, now).find((view) => view.family.id === 'website-web');
+      expect(hidden?.rows).toEqual([]);
+      expect(hidden?.agents).toEqual([]);
+      const restored = resolveMktgKit(data, now, true).find((view) => view.family.id === 'website-web');
+      expect(restored?.rows[0].state).toBe('coming-soon');
+      expect(restored?.agents).toContain(agent);
+    } finally {
+      agent.status = status;
+    }
   });
   it('derives Current from the latest sequence, never from revisionCount', () => {
     expect(mktgKitCurrentVersion(document('foundation-message'))).toBe(3);

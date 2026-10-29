@@ -173,8 +173,10 @@ The Family page eagerly checks last export independently of its document-list re
 A failed check disables export rather than guessing Create. Download PDF composes
 the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
 with one family cover and contents. The family print body class selects a shared
-portrait layout; the kit's landscape artwork scales to fit portrait pages, rather
-than mixing named page sizes. Slides exports the same supported approved assets.
+portrait layout. Family and standalone kit PDFs use the same five-chapter native
+portrait component, not scaled landscape artwork; the existing kit JSON/book view
+model supplies its text and embedded logo assets without new API fields.
+Slides exports the same supported approved assets.
 Neither export changes the on-screen asset rendering or grants Google Drive access.
 
 ### Asset approval UI
@@ -296,6 +298,20 @@ not absence. A failed post-start snapshot write warns without rejecting the
 already accepted Generate, avoiding a retry that could create a second session.
 There is no historical backfill, new source-file store or attachment-reuse claim.
 
+## Answers validation
+
+The shared `mktgAnswerProblem` guard rejects blank text and the existing non-answer tokens for
+kit and LinkedIn answer transports. Only LinkedIn's stable `avoid` question accepts literal
+`none`; its client applies the exemption to that question, not the whole route. Validators
+retain their origin/id/uniqueness and length limits; invalid answers return a plain 400 before
+sending or resuming a session. AEO/GEO retains its explicitly approved non-empty compatibility
+policy until the agent supplies a stable exclusion-question id; empty/whitespace HTTP submissions fail.
+The HTTP guard `isAeoGeoSubmittedAnswers` is separate from the agent-protocol shape guard
+`isAeoGeoAnswers`: empty frames/text remain valid for byte-exact rendering and internal retry handling.
+Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.
+The current main run record does not store asked questions, so complete-turn coverage for kit,
+LinkedIn and AEO/GEO is a follow-on once that server-side evidence is available, not inferred here.
+
 ## Durable started runs
 
 Starts use the same private purpose, at
@@ -305,11 +321,18 @@ Owner tokens are never written; legacy missing subjects mean unattributed writes
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
 `failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
-`revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
-concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
-This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
-conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
-The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+`revision-id` and state. Result transitions now use the ETag captured with the record GET and a
+conditional replacement of both body and metadata. The transition predicate is rechecked against current metadata before the ETag write, so a closure observed during a result read cannot be overwritten by its stale snapshot. State/budget changes also change the JSON bytes,
+so a metadata-only S3 update cannot leave a stale claim token valid. A losing result poll re-reads the
+winner instead of replacing its completion or reopening answered questions. Existing-session ACK renewals also conditionally replace the observed body/ETag, advancing attempt/budget bytes so a held older result cannot overwrite the renewed attempt or ledger after its last metadata check. Initial session admission retains its separate reservation limitation; this does not make the one-active-run guard atomic.
+The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
+current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
+`suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
+the existing schema and acquire the field on their next observed question turn. Question-body writes
+retain the existing transition predicate and use the same conditional record replacement as result transitions.
+Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
+with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
 Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
@@ -319,6 +342,25 @@ Activity is read from the domain result's existing sanitized feed, not retained 
 and is projected only when the effective reader is the stored original creator. Other project writers
 see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
 redactor to activity labels/details before returning them, including to the creator.
+
+`POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
+A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
+private session from the project-scoped record and validates the answers through the registered intake.
+Before sending to Guild it checks the canonical active slot, then conditionally claims the exact `questions` state and matching questions id. On that same claim snapshot, answers must cover every stored question key exactly once with no extras; a bad set returns a field validation error without writing or consuming the turn. The claim is committed by
+writing `state: 'writing'`, `answeredQuestionsId`, private effective-subject `answeredBy` and ISO `answeredAt`.
+Only one observed ETag wins. A lost/stale claim is 409 `MKTG_RUN_ANSWERED`, with response-only
+`{ runId, questionsId, answeredBy, answeredAt }`: `answeredBy` is a resolved display name or null, never
+the stored subject, and `answeredAt` is ISO or null for unknown legacy attribution. The message is
+“Already answered by <name>”, or “Already answered” when no name is available. Public progress immediately
+reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
+back the claim because delivery may be uncertain; it must not invite a second answers message.
+The four kit creator-token answer endpoints require project and questions id and use this same claim
+before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
+No client owner token or session id is trusted or returned by the public route; the ACK is
+only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
+creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
+question turn only after a current canonical writer grant, never for a viewer or a one-off; creator
+identity alone is not a grant. Unknown access omits the payload rather than disclosing it.
 
 The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
 object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes
@@ -357,7 +399,9 @@ Retry of a failed run uses the same slot pre-check before returning to writing (
 
 A validated Generate 409 opens a scoped confirmation: living intakes name the starter; dedicated LinkedIn and Member 360 intakes say "Your … run is in progress". "Open it" navigates to the returned document/run; "Discard and start over" resends the exact submitted body with only `discard: activeRunId` added. Catalog bodies and conflict handoffs are same-visit memory only, never persisted as future discard permission or uploaded bytes. If that body cannot be replayed safely after reload, the intake asks for review/reattachment and another explicit Create. Context or identity changes invalidate the old dialog's actions. The shared guard re-sends the retained start without `discard` on open, visible timer checks and focus: a fresh 409 updates the same dialog's ownership/time and choices; an accepted start closes it, announces “The earlier run has finished — yours started.” and follows the normal start flow. Choices stay disabled while checking; focus never overlaps or cancels an in-flight start POST, and an uncertain non-409 ACK stops automatic retries rather than risking a second start.
 
-Document and run-page detail reads forward the optional validated `run` selector to read that record's closed marker without a Guild or author lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded (legacy timestamps/names are not invented); completed runs still use their stored revision. Both surfaces use one closure-message component. A discarded run claims a newer run only when optional `replacedBy` is present; optional `closedBy` is display-name text only. These two forward-compatible public fields are not populated by this BFF yet; [the public-progress follow-up](https://github.com/linuxfoundation/lfx-self-serve/pull/4592) owns their projection. The document link opens that exact replacement when supplied; otherwise it says “View started runs” and opens the project's Documents/Started runs list. Closed views have no polling, feed, stepper or retry; the run page does not infer completion from a discarded row. Listings continue to omit closed records. A selected closed marker also cancels the document receiver's matching prepared/recovery stream and prevents late questions or result events from navigating away from that closed view. Both the shared living reader and the direct one-off receiver process closure metadata before attempting a revision-body read, so a body 503 cannot restore the previous active snapshot.
+Document and run-page detail reads forward the optional validated `run` selector to read that record's closed marker without a Guild lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded. A selected `completed` run with a valid matching stored receipt instead projects `producedRevisionId`, taken from the tracker's `revision-id` metadata, so a public follower can identify the exact produced revision rather than infer it from the document's current selection. Completion markers contain no identity enrichment, activity, questions or failure prose; ordinary listings still omit them. No destination is projected before completion or without a matching stored receipt. Both surfaces use one closure-message component. `closedBy` is a cheaply resolved display name or null, never the private subject/email; legacy unknown actors remain null. The raw scoped closure-marker helper remains attribution-free; only selected HTTP progress enriches its display-name field. `replacedBy` is supplied only when the already-read progress contains a newer run of the same type and document, without extra listing/Guild work or a guessed replacement. The document link opens that exact replacement when supplied; otherwise it says “View started runs” and opens the project's Documents/Started runs list. Closed views have no polling, feed, stepper or retry; the run page does not infer completion from a discarded row. Listings continue to omit closed records. A selected closed marker also cancels the document receiver's matching prepared/recovery stream and prevents late questions or result events from navigating away from that closed view. Both the shared living reader and the direct one-off receiver process closure metadata before attempting a revision-body read, so a body 503 cannot restore the previous active snapshot.
+
+The revision write and the later tracker-completed transition are separate, non-atomic writes (an observed hand-test interval was approximately 0.56 seconds). `producedRevisionId` is available only after the tracker records completion; it does not close that interval or add a cross-object reservation. Receipt-aware admission/atomicity hardening remains a follow-up.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed`, `superseded` and
 `discarded`. Answerable questions pause the writing deadline until accepted answers renew
@@ -432,9 +476,7 @@ Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,
 CAS publication, current selection and attribution stay on the shared writer.
-`getRawEventPayloads` replaces user/trigger content with
-`mktg_session_turn_started`; a full unfiltered page appends
-`mktg_session_events_truncated`. These content-free markers prevent an old
+`getRawEventPayloads` reads up to four offset pages of 500 raw events, stopping on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a four-page read that still has more events appends `mktg_session_events_truncated`; a full final page does not. These content-free markers prevent an old
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 

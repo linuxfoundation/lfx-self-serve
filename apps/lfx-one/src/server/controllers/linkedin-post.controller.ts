@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
@@ -159,11 +161,14 @@ export class LinkedinPostController {
       const questionsId = body['questionsId'];
       const answers = body['answers'];
       if (typeof questionsId !== 'string' || !/^[a-f0-9]{64}$/.test(questionsId) || !validLinkedinAnswers(answers))
-        throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
+        throw ServiceValidationError.forField('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
       const project = await this.writableProject(req, body['project']);
       await this.runs.assertRunOpen(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
-      await this.posts.sendAnswers(req, sessionId, questionsId, answers, this.routingHandle());
-      await this.runs.resumeAfterQuestions(req, project.uid, sessionId, questionsId);
+      const prepared = await this.posts.prepareAnswers(req, sessionId, questionsId, answers);
+      if (prepared !== null) {
+        await this.runs.claimSessionAnswers(req, project.uid, sessionId, questionsId, LINKEDIN_POST_INTAKE.agentId, answers);
+        await this.posts.deliverAnswers(req, sessionId, prepared, this.routingHandle(), answers.length);
+      }
       logger.success(req, operation, start, { answers: answers.length });
       res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {

@@ -17,6 +17,8 @@ import {
   MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_CHAT_MESSAGE_MAX_CHARS,
+  MKTG_HISTORY_SUBJECT_PATTERN,
+  MEMBER_360_CONTRACT_ID,
 } from '@lfx-one/shared/constants';
 import {
   BoilerplatesAnswersRequest,
@@ -58,6 +60,8 @@ import {
   MktgLastIntakeStart,
   MktgReadText,
   MktgRunAnswer,
+  MktgRunAnswersRequest,
+  MktgPublicRunAnswersResponse,
   MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -75,10 +79,14 @@ import {
   validateFoundationMessageIntakeAnswers,
   validateIcpIntakeAnswers,
 } from '@lfx-one/shared/utils';
+import { createMember360Redactor, extractMktgEnvelopeCandidates, member360CandidateContacts } from '@lfx-one/shared/server';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, BOILERPLATES_INTAKE, FAQ_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import { MKTG_STARTED_RUN_ID_REGEX } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { NextFunction, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 
-import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError, PreconditionFailedError } from '../errors';
 import { BoilerplatesService } from '../services/boilerplates.service';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FaqService } from '../services/faq.service';
@@ -301,8 +309,20 @@ export class MktgAgentsController {
 
     try {
       const messages = await this.guildService.getHistory(req, validSessionId);
+      const payloads = await this.guildService.getRawEventPayloads(req, validSessionId);
+      const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
+      // Contact masks and the caller's raw subject are server-only inputs.
+      // Project only the chat DTO: no upstream identity/contact records or extras.
+      const redact = createMember360Redactor([...contacts, userId], MKTG_HISTORY_SUBJECT_PATTERN);
+      const response: MktgHistoryResponse = {
+        messages: messages.map(({ id, sender, text, timestamp }) => ({
+          id,
+          sender,
+          text: redact(text),
+          timestamp,
+        })),
+      };
       logger.success(req, 'mktg_agents_history', startTime, { message_count: messages.length });
-      const response: MktgHistoryResponse = { messages };
       res.json(response);
     } catch (error) {
       next(error);
@@ -462,12 +482,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req, agent.id, validSessionId);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'brand_kit_answers', startTime, { answers: validAnswers.length });
       const response: BrandKitAnswersResponse = { success: true };
       res.json(response);
@@ -779,12 +795,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req, agent.id, validSessionId);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
       const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
@@ -1064,12 +1076,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req, agent.id, validSessionId);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'boilerplates_answers', startTime, { answers: validAnswers.length });
       const response: BoilerplatesAnswersResponse = { success: true };
       res.json(response);
@@ -1581,12 +1589,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req, agent.id, validSessionId);
-      if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      await this.claimOwnerAnswers(req, validSessionId, agent.id);
       await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
-      if (project) {
-        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
-      }
       logger.success(req, 'faq_answers', startTime, { answers: validAnswers.length });
       const response: FaqAnswersResponse = { success: true };
       res.json(response);
@@ -1665,6 +1669,51 @@ export class MktgAgentsController {
     }
   }
 
+  /** Project-writer continuation for a kit run, deliberately separate from creator-token session writes. */
+  public async runAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_run_answers';
+    const runId = req.params['runId'];
+    const body = (req.body ?? {}) as Partial<MktgRunAnswersRequest>;
+    if (
+      typeof runId !== 'string' ||
+      !MKTG_STARTED_RUN_ID_REGEX.test(runId) ||
+      typeof body.questionsId !== 'string' ||
+      !MKTG_RUN_QUESTIONS_ID_REGEX.test(body.questionsId)
+    ) {
+      next(
+        ServiceValidationError.forField('run', 'A valid run id and questions id are required.', {
+          operation,
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    const started = logger.startOperation(req, operation, { run: runId });
+    try {
+      if (!getEffectiveSub(req)) throw new AuthenticationError('Could not identify the requesting user.');
+      const run = await this.documentRuns.questionsForAnswers(req, body.project, runId, body.questionsId);
+      const intake = findMktgRunIntake(run.agentKey);
+      const agent = MKTG_AGENTS.find((entry) => entry.id === intake?.agentId && entry.status === 'active');
+      const handle = agent?.status === 'active' ? agent.guildAgentHandle : undefined;
+      const adapter = this.livingAnswers(intake?.endpoints.answers);
+      if (!intake || !handle || !adapter) throw new PreconditionFailedError('This run has no registered answers path.');
+      const checked = adapter.validate(body.answers);
+      if (!checked.valid || !Array.isArray(body.answers))
+        throw ServiceValidationError.forField('answers', checked.errors.join('; ') || 'Valid answers are required.');
+      if (await this.redrafts.forSession(req, run.sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+      const answers = body.answers.map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+      await this.documentRuns.assertRunOpen(req, run.project, intake.agentId, run.sessionId);
+      await this.documentRuns.claimAnswers(req, run.project, run.runId, body.questionsId, answers);
+      await adapter.send(req, run.sessionId, answers, handle);
+      logger.success(req, operation, started, { agent: run.agentKey, count: answers.length });
+      const response: MktgPublicRunAnswersResponse = { runId: run.runId, state: 'writing' };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
   private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
     const oneLine = title
@@ -1702,18 +1751,37 @@ export class MktgAgentsController {
     });
   }
 
+  /** Reuse the same domain validators and renderers as the private per-agent answers endpoints. */
+  private livingAnswers(endpoint: string | undefined) {
+    if (!endpoint) return null;
+    switch (endpoint) {
+      case BRAND_KIT_INTAKE.endpoints.answers:
+        return { validate: validateBrandKitAnswers, send: this.brandKitService.sendAnswers.bind(this.brandKitService) };
+      case FOUNDATION_MESSAGE_INTAKE.endpoints.answers:
+        return { validate: validateFoundationMessageAnswers, send: this.foundationMessageService.sendAnswers.bind(this.foundationMessageService) };
+      case BOILERPLATES_INTAKE.endpoints.answers:
+        return { validate: validateBoilerplatesAnswers, send: this.boilerplatesService.sendAnswers.bind(this.boilerplatesService) };
+      case FAQ_INTAKE.endpoints.answers:
+        return { validate: validateFaqAnswers, send: this.faqService.sendAnswers.bind(this.faqService) };
+      default:
+        return null;
+    }
+  }
+
   /** Record the ACK through the catalog-aware domain service. */
   private async trackStart(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }
 
-  private async answersProject(req: Request, agentId: string, sessionId: string): Promise<string> {
-    if (req.body.questionsId !== undefined && (typeof req.body.questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(req.body.questionsId))) {
-      throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
-    }
+  /** The four creator-token transports keep main's closure guard and share the exact-turn CAS before Guild. */
+  private async claimOwnerAnswers(req: Request, sessionId: string, agentId: string): Promise<void> {
+    const questionsId: unknown = req.body.questionsId;
+    if (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))
+      throw ServiceValidationError.forField('questionsId', 'A valid questions block is required.');
     const project = await this.documentRuns.resolveProject(req, req.body.project);
     await this.documentRuns.assertRunOpen(req, project, agentId, sessionId);
-    return project;
+    if (await this.redrafts.forSession(req, sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
+    await this.documentRuns.claimSessionAnswers(req, project, sessionId, questionsId, agentId, req.body.answers as MktgRunAnswer[]);
   }
 
   private async trackResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {

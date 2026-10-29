@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENT_ID_REGEX, MKTG_LIVING_DOCUMENT_ID, MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
-import type { MktgActiveRunConflict } from '../interfaces/mktg-document-run.interface';
+import type { MktgActiveRunConflict, MktgRunAnsweredConflict } from '../interfaces/mktg-document-run.interface';
 
 /** Validate the server's top-level conflict facts before presenting navigation or discard. */
 export function readMktgActiveRunConflict(value: unknown, agentId: string, documentId?: string): MktgActiveRunConflict | null {
@@ -39,6 +39,21 @@ export function readMktgActiveRunConflict(value: unknown, agentId: string, docum
     agentKey: type.agentKey,
     documentId: body['documentId'],
   };
+}
+
+/** Accept only the display-name/time acknowledgement, never opaque server ownership fields. */
+export function readMktgRunAnsweredConflict(value: unknown): MktgRunAnsweredConflict | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (
+    body['code'] !== MKTG_RUN_ANSWERED ||
+    typeof body['answeredBy'] !== 'string' ||
+    !body['answeredBy'].trim() ||
+    typeof body['answeredAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(body['answeredAt']))
+  )
+    return null;
+  return { code: MKTG_RUN_ANSWERED, answeredBy: body['answeredBy'].trim(), answeredAt: body['answeredAt'] };
 }
 
 /** One heading policy for catalog and dedicated one-off intakes; never double the word "run". */

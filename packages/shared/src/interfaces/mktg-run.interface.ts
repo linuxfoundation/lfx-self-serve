@@ -665,6 +665,11 @@ export interface MktgRunQuestion {
   basis: string[];
 }
 
+/** Caller-resolved policy for a particular asked question, never a route-wide opt-out. */
+export interface MktgAnswerProblemOptions {
+  allowNone?: boolean;
+}
+
 /** One answer to a {@link MktgRunQuestion}. */
 export interface MktgRunAnswer {
   /** The question's key. */
@@ -922,6 +927,14 @@ export type MktgRunAsset = MktgFrameworkAsset | MktgBoilerplatesAsset | MktgFaqA
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
 export type MktgRunActivityKind = (typeof MKTG_RUN_ACTIVITY_KINDS)[number];
+
+/** Agent-owned tools map to fixed feed sentences, never their arguments or results. */
+export interface MktgRunActivityToolDefinition {
+  kind: MktgRunActivityKind;
+  label: string;
+  /** Context for a finalize-only trace whose model turn is the writing evidence. */
+  writingLabel?: string;
+}
 
 /** Where one step of the feed stands. */
 export type MktgRunActivityStatus = 'running' | 'done' | 'failed';

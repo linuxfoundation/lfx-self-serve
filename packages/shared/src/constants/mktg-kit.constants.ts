@@ -5,6 +5,9 @@ import type { FilterPillOption } from '../interfaces/dashboard-metric.interface'
 import type { MktgDocumentAgentKey } from '../interfaces/mktg-document-store.interface';
 import type { MktgKitFamily, MktgKitFilter } from '../interfaces/mktg-kit.interface';
 
+/** Flip to true to show unbuilt families, assets, agents and tabs again. */
+export const MKTG_KIT_SHOW_COMING_SOON = false;
+
 export const MKTG_KIT_POSITIONING_FAMILY_ID = 'positioning-brand';
 export const MKTG_KIT_FRAMEWORK_AGENT_ID = 'foundation-setup';
 export const MKTG_KIT_FRAMEWORK_KEY = 'foundation-message';
@@ -33,7 +36,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
         label: 'Messaging framework',
         runName: 'messaging framework',
         agentKey: 'foundation-message',
-        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with ICPs, message house and key numbers',
+        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers',
       },
       { id: 'boilerplates', label: 'Boilerplates', runName: 'boilerplates', agentKey: 'boilerplates', description: 'One-liner, 25, 50 and 100 words' },
       { id: 'faq', label: 'FAQ', runName: 'FAQ', agentKey: 'faq', description: 'Questions answered from the sources; unanswered questions flagged' },

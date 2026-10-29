@@ -15,88 +15,54 @@
   <p class="text-sm text-gray-600">
     {{
       switching
-        ? 'Search for the user you want to switch to, or enter their email or username.'
-        : 'Search for the user you want to view the app as, or enter their email or username.'
+        ? 'Search for the user you want to switch to by name, email, or username, then select them.'
+        : 'Search for the user you want to view the app as by name, email, or username, then select them.'
     }}
   </p>
-  <div class="flex flex-col gap-1">
-    <label for="nameSearch" class="text-sm font-medium text-gray-700">Search by name</label>
-    <lfx-user-search
-      [form]="nameSearchForm"
-      searchType="committee_member"
-      [requireLfAccount]="true"
-      [showManualEntry]="false"
-      [waitForSearchableQuery]="true"
-      [asImpersonator]="switching"
-      [displayValue]="nameSearchLabel()"
-      [showClear]="true"
-      placeholder="e.g. John Doe"
-      styleClass="w-full"
-      inputId="nameSearch"
-      dataTestId="impersonation-name-search"
-      (onUserSelect)="onNameSearchSelected($event)"
-      (onRejectedSelection)="onNameSearchRejected()"
-      (onClear)="onNameSearchCleared()" />
-  </div>
-  <div class="flex flex-col gap-1" (keydown.enter)="submit()">
-    <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
-    @if (recentImpersonations().length > 0) {
-      <lfx-autocomplete
-        [form]="targetUserForm"
-        control="targetUser"
-        [suggestions]="suggestions()"
-        placeholder="e.g. jdoe or jdoe@example.com"
-        optionLabel="email"
-        [minLength]="0"
-        [showEmptyMessage]="false"
-        [dropdown]="true"
-        dropdownMode="blank"
-        size="small"
-        appendTo="body"
-        styleClass="w-full"
-        inputId="targetUser"
-        dataTestId="impersonation-target-input"
-        (completeMethod)="onSearchComplete($event)"
-        (onSelect)="onSuggestionSelected($event)">
-        <ng-template #item let-entry>
-          <div class="flex w-full items-center gap-2">
-            @if (entry.picture) {
-              <img [src]="entry.picture" [alt]="entry.name || entry.email" class="h-7 w-7 rounded-full object-cover" />
-            } @else {
-              <div class="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                <i class="fa-light fa-user text-xs"></i>
-              </div>
-            }
-            <div class="flex min-w-0 flex-col">
-              <span class="truncate text-sm">{{ entry.name || entry.username || entry.email }}</span>
-              <span class="truncate text-xs text-gray-500">{{ entry.email }}</span>
-            </div>
-          </div>
-        </ng-template>
-      </lfx-autocomplete>
-    } @else {
-      <lfx-input-text
-        size="small"
-        [form]="targetUserForm"
-        control="targetUser"
-        placeholder="e.g. jdoe or jdoe@example.com"
-        id="targetUser"
-        dataTest="impersonation-target-input" />
-    }
-  </div>
-  <div class="flex flex-col gap-1">
-    <label for="personaContext" class="text-sm font-medium text-gray-700">Context (optional)</label>
-    <lfx-select
-      size="small"
+  <div class="flex flex-col gap-1" (keydown.enter)="onEnter()">
+    <label for="targetUser" class="text-sm font-medium text-gray-700">User</label>
+    <lfx-autocomplete
       [form]="targetUserForm"
-      control="personaContext"
-      [options]="personaOptions"
-      optionLabel="label"
-      optionValue="value"
-      placeholder="Use their context"
-      id="personaContext"
+      control="targetUser"
+      [suggestions]="suggestions()"
+      placeholder="e.g. John Doe, jdoe, or jdoe@example.com"
+      optionLabel="targetUser"
+      [minLength]="0"
+      [dropdown]="true"
+      dropdownMode="blank"
+      size="small"
+      appendTo="body"
       styleClass="w-full"
-      dataTest="impersonation-persona-select" />
+      inputId="targetUser"
+      dataTestId="impersonation-target-input"
+      (completeMethod)="onSearchComplete($event)"
+      (onSelect)="onSuggestionSelected($event)"
+      (onClear)="onSearchCleared()">
+      <ng-template #item let-entry>
+        <div class="flex w-full items-center gap-2">
+          @if (entry.picture) {
+            <img [src]="entry.picture" [alt]="entry.name || entry.email" class="h-7 w-7 rounded-full object-cover" />
+          } @else {
+            <div class="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+              <i class="fa-light fa-user text-xs"></i>
+            </div>
+          }
+          <div class="flex min-w-0 flex-col">
+            <span class="truncate text-sm">{{ entry.name || entry.username || entry.email }}</span>
+            <span class="truncate text-xs text-gray-500">{{ entry.email }}</span>
+          </div>
+        </div>
+      </ng-template>
+      <ng-template #empty>
+        <p class="p-3 text-center text-sm text-gray-600" data-testid="impersonation-target-empty">No matching users. Try a name, email, or username.</p>
+      </ng-template>
+    </lfx-autocomplete>
+    @if (picked(); as person) {
+      <p class="text-xs text-gray-500" data-testid="impersonation-picked-details">
+        Username <span class="font-medium text-gray-700" data-testid="impersonation-picked-username">{{ person.username }}</span> · Email
+        <span class="font-medium text-gray-700" data-testid="impersonation-picked-email">{{ person.email }}</span>
+      </p>
+    }
   </div>
   @if (error()) {
     <p class="text-sm text-red-600" role="alert" data-testid="impersonation-error">{{ error() }}</p>
@@ -114,7 +80,7 @@
       size="small"
       [label]="switching ? 'Switch User' : 'Start Impersonation'"
       [loading]="loading()"
-      [disabled]="targetUserForm.controls.targetUser.invalid || loading()"
+      [disabled]="!picked() || loading()"
       (onClick)="submit()"
       data-testid="impersonation-submit-button" />
   </div>

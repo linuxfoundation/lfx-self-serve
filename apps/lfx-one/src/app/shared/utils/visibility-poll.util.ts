@@ -14,24 +14,32 @@ export function pollBackoffDelayMs(failures: number, baseMs: number, maxMs: numb
  * @description Polls immediately, then every `intervalMs` while `document.visibilityState === 'visible'`. A hidden tab
  * cancels the pending timer and any in-flight request; the next `visible` event fetches immediately and restarts the
  * loop (including after `shouldContinue` stopped it — that is how a reopened vote is noticed). Window focus also
- * rechecks immediately when visible. Failures never end the
+ * re-reads immediately while visible. Failures never end the
  * stream: they emit an `error` event and retry on capped exponential backoff, so recovery needs no reload.
+ * The fetch callback receives `false` on open/visible/focus and `true` on scheduled polls/retries;
+ * callers that do not distinguish discovery from bounded polling can keep a no-argument callback.
  *
  * Browser-only: callers must not subscribe during SSR (`document` is passed in, never read from a global, so a server
  * render that never subscribes never touches it). Unsubscribe (e.g. `takeUntilDestroyed`) to stop all timers.
  */
-export function createVisibilityPoll<T>(doc: Document, fetch: () => Observable<T>, options: VisibilityPollOptions<T>): Observable<VisibilityPollEvent<T>> {
+export function createVisibilityPoll<T>(
+  doc: Document,
+  fetch: (poll: boolean) => Observable<T>,
+  options: VisibilityPollOptions<T>
+): Observable<VisibilityPollEvent<T>> {
   const { intervalMs, backoffBaseMs, backoffMaxMs, shouldContinue = () => true } = options;
 
-  const visible$ = merge(fromEvent(doc, 'visibilitychange'), doc.defaultView ? fromEvent(doc.defaultView, 'focus') : EMPTY).pipe(
+  const visibility = fromEvent(doc, 'visibilitychange');
+  const wake = doc.defaultView ? merge(visibility, fromEvent(doc.defaultView, 'focus')) : visibility;
+  const visible$ = wake.pipe(
     startWith(null),
     map(() => doc.visibilityState === 'visible')
   );
 
   const loop = (): Observable<VisibilityPollEvent<T>> => {
     let failures = 0;
-    const attempt = (): Observable<VisibilityPollEvent<T>> =>
-      defer(fetch).pipe(
+    const attempt = (poll = false): Observable<VisibilityPollEvent<T>> =>
+      defer(() => fetch(poll)).pipe(
         map((value): VisibilityPollEvent<T> => {
           failures = 0;
           return { kind: 'ok', value };
@@ -43,7 +51,7 @@ export function createVisibilityPoll<T>(doc: Document, fetch: () => Observable<T
       expand((event) => {
         if (event.kind === 'ok' && !shouldContinue(event.value)) return EMPTY;
         const delay = event.kind === 'ok' ? intervalMs : pollBackoffDelayMs(event.failures, backoffBaseMs, backoffMaxMs);
-        return timer(delay).pipe(switchMap(attempt));
+        return timer(delay).pipe(switchMap(() => attempt(true)));
       })
     );
   };

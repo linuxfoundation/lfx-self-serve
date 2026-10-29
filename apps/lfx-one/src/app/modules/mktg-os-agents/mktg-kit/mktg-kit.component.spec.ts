@@ -2,27 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { computed, signal } from '@angular/core';
+import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { of } from 'rxjs';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitComponent } from './mktg-kit.component';
 
 describe('Marketing kit home', () => {
   const families = signal<MktgKitFamilyView[]>([]);
   const loading = signal(false);
   const error = signal('');
+  const accessDenied = signal(false);
+  const refreshDenied = signal(false);
   const documents = signal<MktgDocumentsResponse | null>(null);
+  const refresh = vi.fn(() => of(documents()));
   const context = signal({ uid: 'synthetic', slug: 'synthetic' });
   beforeEach(() => {
     context.set({ uid: 'synthetic', slug: 'synthetic' });
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
     error.set('');
+    accessDenied.set(false);
+    refreshDenied.set(false);
+    refresh.mockReset().mockImplementation(() => of(documents()));
     documents.set({ project: 'synthetic', groups: [] });
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
@@ -37,6 +45,10 @@ describe('Marketing kit home', () => {
               families,
               loading,
               error,
+              accessDenied,
+              refreshDenied,
+              projectUid: computed(() => context().uid),
+              refresh,
               documents,
               projectName: signal('Synthetic Project'),
               projectQueryParams: computed(() => ({ project: context().slug })),
@@ -48,6 +60,84 @@ describe('Marketing kit home', () => {
       },
     });
   });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('describes the framework asset and catalog entry by their visible content', () => {
+    const asset = MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((row) => row.agentKey === 'foundation-message');
+    expect(asset?.description).toBe('Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers');
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'foundation-setup');
+    expect(agent?.description).toBe(
+      'Vision, mission, positioning, tagline, goal columns, the messaging framework and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.'
+    );
+  });
+
+  it('re-reads immediately and on visible/focus, updates in place, and stops on destroy', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    refresh.mockImplementation(() => {
+      families.set([...families()]);
+      return of(documents());
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    const card = fixture.nativeElement.querySelector('article');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(true);
+    expect(fixture.nativeElement.querySelector('article')).toBe(card);
+    expect(loading()).toBe(false);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenLastCalledWith(false);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(4);
+    expect(refresh).toHaveBeenLastCalledWith(false);
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not poll after a 403 listing', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    accessDenied.set(true);
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    accessDenied.set(false);
+    refreshDenied.set(true);
+    await fixture.whenStable();
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    refreshDenied.set(false);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledOnce();
+    fixture.destroy();
+  });
+
+  it('does not create browser polling during SSR', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    expect(refresh).not.toHaveBeenCalled();
+    fixture.destroy();
+  });
+
   it('keeps ctrl/meta clicks native on the Next step link', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
@@ -136,23 +226,28 @@ describe('Marketing kit home', () => {
     );
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('1 assets');
   });
-  it('shows all nine cards, real empty states, lead and placeholder request count', async () => {
+  it('shows only four live cards and hides unbuilt assets, tabs and the request tile', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelectorAll('article')).toHaveLength(9);
+    expect(root.querySelectorAll('article')).toHaveLength(4);
     expect(root.textContent).toContain('Not run yet');
-    expect(root.textContent).toContain('Coming soon');
-    expect(root.textContent).toContain('Lead: HUB lifecycle');
+    expect(root.textContent).not.toContain('Coming soon');
+    expect(root.textContent).not.toContain('Open requests');
+    expect(root.querySelectorAll('[data-testid="mktg-kit-summary"] > div')).toHaveLength(3);
+    expect(root.querySelector('[data-testid="mktg-kit-asset-pitch-deck"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-asset-one-pager"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-tab-requests"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-tab-access"]')).toBeNull();
     expect(root.textContent).toContain('Messaging Framework, Boilerplates, FAQ, Brand Kit');
     expect(root.querySelector('[data-testid="mktg-kit-asset-quarterly-plan"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-asset-icp"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('0 assets');
-    expect(root.querySelector('[data-testid="mktg-kit-core-floor"]')?.textContent).toContain('0 of 9');
+    expect(root.querySelector('[data-testid="mktg-kit-core-floor"]')?.textContent).toContain('0 of 4');
     expect(root.querySelector('[data-testid="mktg-kit-level"]')?.textContent).toBe('—');
     expect(root.querySelector('[data-testid="mktg-kit-level-empty"]')?.textContent).toContain('No approved assets yet');
   });
-  it('keeps every card neutral at rest, Coming soon cards plain, and the selected filter quiet', async () => {
+  it('keeps every visible card neutral at rest and the selected filter quiet', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -221,9 +316,9 @@ describe('Marketing kit home', () => {
       expect(action?.getAttribute('href')).toContain('mode=new');
       expect(step?.textContent).toContain('Nothing in the kit yet');
     } else if (kind === 'export') {
-      expect(action?.textContent).toContain('Export the kit');
-      expect(step?.textContent).toContain('The kit is complete; export it.');
-      expect(step?.textContent).toContain('Opens Positioning & brand, where the kit can be exported.');
+      expect(action?.textContent).toContain('Export the family');
+      expect(step?.textContent).toContain('Positioning & brand is complete; export it.');
+      expect(step?.textContent).toContain('Opens Positioning & brand for export.');
       expect(action?.getAttribute('href')).toContain('families/positioning-brand');
     } else if (kind === 'rebuild') {
       expect(step?.textContent).toContain('1 asset is stale');
@@ -251,7 +346,7 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');
     root.querySelector<HTMLButtonElement>('[data-testid="filter-pill-approved"]')?.click();
     await fixture.whenStable();
-    expect(root.querySelectorAll('article')).toHaveLength(9);
+    expect(root.querySelectorAll('article')).toHaveLength(4);
     expect(root.querySelector('[data-testid="mktg-kit-asset-brand-kit"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-family-availability-positioning-brand"]')?.textContent).toContain('Core');
     expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');

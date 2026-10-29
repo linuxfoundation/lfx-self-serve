@@ -3,7 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runMocks = vi.hoisted(() => ({ readProgress: vi.fn(), selectedProgress: vi.fn(), retry: vi.fn(), refreshFailure: vi.fn(), resolveProject: vi.fn() }));
+const runMocks = vi.hoisted(() => ({
+  readProgress: vi.fn(),
+  ownProgress: vi.fn(),
+  selectedProgress: vi.fn(),
+  retry: vi.fn(),
+  refreshFailure: vi.fn(),
+  resolveProject: vi.fn(),
+}));
 const redraftMocks = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock('../services/mktg-document-redraft.service', () => ({
   MktgDocumentRedraftService: class {
@@ -52,6 +59,7 @@ vi.mock('../services/mktg-document-run.service', async () => {
   return {
     MktgDocumentRunService: class {
       public readProgress = runMocks.readProgress;
+      public ownProgress = runMocks.ownProgress;
       public resolveProject = runMocks.resolveProject;
       public retry = runMocks.retry;
       public refreshFailure = runMocks.refreshFailure;
@@ -262,6 +270,19 @@ describe('MktgDocumentsController', () => {
     expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
+  it('attests the applied opted-in creator filter without returning identity fields', async () => {
+    const row = runProgress({ agentKey: 'member-360', documentId: 'run-0123456789abcdef01234567' });
+    const snapshot = { runs: [row] };
+    storeMocks.listDocuments.mockResolvedValue({ project: PROJECT, groups: [] });
+    runMocks.readProgress.mockResolvedValue(snapshot);
+    runMocks.ownProgress.mockResolvedValue({ runs: [] });
+    const req = buildReq({}, { project: PROJECT, ownRuns: '1' });
+    const res = buildRes();
+    await controller.listDocuments(req, res, next);
+    expect(runMocks.ownProgress).toHaveBeenCalledWith(req, PROJECT, snapshot);
+    expect(res.json).toHaveBeenCalledWith({ project: PROJECT, groups: [], runs: [], creatorScoped: true });
+    expect(next).not.toHaveBeenCalled();
+  });
   it('lists the documents of the SERVER-resolved project for a writer', async () => {
     projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-uid', writer: true });
     storeMocks.listDocuments.mockResolvedValue({ project: 'resolved-uid', groups: [] });

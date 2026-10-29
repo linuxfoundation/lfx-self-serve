@@ -21,6 +21,8 @@ export async function openFamilyExports(
     lookupStatus?: number;
     result?: 'pending' | 'failed';
     holdList?: boolean;
+    holdPrint?: boolean;
+    approvedFamily?: boolean;
     allAssets?: boolean;
   } = {}
 ) {
@@ -50,10 +52,10 @@ export async function openFamilyExports(
     groups: MKTG_DOCUMENT_TYPES.map((entry) => ({
       type: entry,
       documents:
-        entry.agentKey === type.agentKey && !options.empty
+        !options.empty && (entry.agentKey === type.agentKey || (options.approvedFamily && Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)))
           ? [
               {
-                agentKey: type.agentKey,
+                agentKey: entry.agentKey,
                 documentId: 'living',
                 revisionCount: 1,
                 latestRevisionId: revision.id,
@@ -70,7 +72,14 @@ export async function openFamilyExports(
     if (options.holdList) return;
     return route.fulfill({ status: options.writer === false ? 403 : 200, json: options.writer === false ? { code: 'FORBIDDEN' } : listing });
   });
-  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', (route) => route.fulfill({ json: response }));
+  let releasePrint: () => void = () => undefined;
+  const printGate = new Promise<void>((resolve) => {
+    releasePrint = resolve;
+  });
+  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', async (route) => {
+    if (options.holdPrint) await printGate;
+    return route.fulfill({ json: response });
+  });
   const members = options.allAssets
     ? MKTG_DOCUMENT_TYPES.filter((entry) => Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)).map((entry) =>
         familyExportMember({ agentKey: entry.agentKey as keyof typeof MKTG_FAMILY_EXPORT_KINDS })
@@ -80,8 +89,9 @@ export async function openFamilyExports(
     for (const current of members) {
       const asset = columnAssetRevisionResponse(current.agentKey);
       const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
-      await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, (route) =>
-        route.fulfill({
+      await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, async (route) => {
+        if (options.holdPrint) await printGate;
+        return route.fulfill({
           json: {
             ...asset,
             project: DOCUMENT_PROJECT.uid,
@@ -89,8 +99,8 @@ export async function openFamilyExports(
             revisions: [revision],
             approvedCurrent: { revisionId: revision.id, number: revision.number },
           },
-        })
-      );
+        });
+      });
     }
   }
   let record = options.existing ? familyExportRecord({ project: DOCUMENT_PROJECT.uid }) : null;
@@ -144,5 +154,6 @@ export async function openFamilyExports(
       ready = true;
     },
     lookupReads: () => lookupReads,
+    releasePrint,
   };
 }

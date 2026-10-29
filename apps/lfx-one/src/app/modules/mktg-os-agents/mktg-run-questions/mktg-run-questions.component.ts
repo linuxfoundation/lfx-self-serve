@@ -9,7 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR, MKTG_ANSWER_TOO_LONG_ERROR } from '@lfx-one/shared/constants';
 import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip, MktgRunQuestionDraft } from '@lfx-one/shared/interfaces';
-import { foundationMessageAnswerOrigin, isFoundationMessageAnswerSubstantive, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
+import { foundationMessageAnswerOrigin, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
+import { mktgAnswerProblem } from '@lfx-one/shared/utils/mktg-run-answers.utils';
 import { map } from 'rxjs';
 
 /** One basis entry: a link when it is one, plain text otherwise. */
@@ -48,8 +49,10 @@ export class MktgRunQuestionsComponent {
   public readonly busy = input(false);
   /** Saved answers and index restored after reload, taking precedence over previousAnswers. */
   public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
-  /** Opt in when an intake accepts answers such as "None"; empty and oversized answers still fail. */
+  /** Temporary AEO/GEO compatibility until its exclusion question has a stable id. */
   public readonly allowNonAnswers = input(false);
+  /** Only these stable question ids may use literal none on otherwise substantive-only surfaces. */
+  public readonly allowNoneFor = input<readonly string[]>([]);
 
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
@@ -82,7 +85,7 @@ export class MktgRunQuestionsComponent {
     if (!current) {
       return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
     }
-    return this.answerError(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '');
+    return this.answerError(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '', current.key);
   });
   protected readonly currentValid = computed(() => this.currentError() === '');
   protected readonly chips: Signal<MktgRunQuestionChip[]> = this.initChips();
@@ -129,7 +132,7 @@ export class MktgRunQuestionsComponent {
       return;
     }
     // Every answer has to stand before they go: an earlier one may have been emptied after a jump back.
-    const firstFailing = this.questions().findIndex((question) => this.answerError(this.answersForm.controls[question.key]?.value ?? '') !== '');
+    const firstFailing = this.questions().findIndex((question) => this.answerError(this.answersForm.controls[question.key]?.value ?? '', question.key) !== '');
     if (firstFailing >= 0) {
       this.goTo(firstFailing);
       this.showError.set(true);
@@ -188,12 +191,9 @@ export class MktgRunQuestionsComponent {
   }
 
   // === Private helpers ===
-  /**
-   * Default to the Foundation Message BFF's substantive-answer rule. Intakes
-   * opting out still require non-empty, length-bounded text before submission.
-   */
-  private answerError(text: string): string {
-    if (!text.trim() || (!this.allowNonAnswers() && !isFoundationMessageAnswerSubstantive(text))) {
+  /** Shared per-question policy, except the explicit legacy AEO/GEO route opt-in. */
+  private answerError(text: string, questionId: string): string {
+    if (!text.trim() || (!this.allowNonAnswers() && mktgAnswerProblem(text, { allowNone: this.allowNoneFor().includes(questionId) }))) {
       return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
     }
     if (text.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {

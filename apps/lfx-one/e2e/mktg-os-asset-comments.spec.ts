@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { ASSET_PROJECT } from './helpers/mktg-os-assets.helper';
+import { ASSET_PROJECT, ASSET_REVISION } from './helpers/mktg-os-assets.helper';
 import { setupComments } from './helpers/mktg-os-comments.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
@@ -10,6 +10,54 @@ test.describe('asset field comments', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
+  test('eight threads stay compact with separate preview lines until their own keyboard disclosure is opened', async ({ page }) => {
+    const fixture = await setupComments(page);
+    fixture.state.rows = Array.from({ length: 8 }, (_, index) => ({
+      id: `synthetic-compact-${index}`,
+      revisionId: ASSET_REVISION,
+      anchor: { kind: 'field', key: 'mf.positioning' },
+      author: { name: 'Project writer' },
+      text: `Synthetic preview ${index} with a deliberately long first line to exercise truncation.\nFull explanation ${index}.`,
+      createdAt: '2026-10-21T10:00:00Z',
+      status: 'resolved',
+      sentInRun: null,
+      resultRevisionId: null,
+      resolution: `Synthetic agent explanation ${index}.`,
+    }));
+    await fixture.open();
+    const panel = page.getByTestId('mktg-comments-panel');
+    const rows = panel.getByTestId('mktg-comment-thread');
+    await expect(rows).toHaveCount(8);
+    await expect(panel.getByTestId('mktg-comment-body')).toHaveCount(0);
+    await expect(panel.getByTestId('mktg-comment-resolution')).toHaveCount(0);
+    for (const row of await rows.all()) {
+      await expect(row.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-expanded', 'false');
+      await expect(row.getByTestId('mktg-comment-preview')).toHaveCSS('white-space', 'nowrap');
+      await expect(row.getByTestId('mktg-comment-preview')).toHaveCSS('text-overflow', 'ellipsis');
+      await expect(row.getByText('Resolved by the agent', { exact: true })).toBeVisible();
+    }
+    await page.screenshot({ path: test.info().outputPath('eight-compact-comment-rows.png'), fullPage: true });
+    const first = rows.nth(0).getByRole('button', { name: 'Details', exact: true });
+    await first.focus();
+    await page.keyboard.press('Enter');
+    await expect(first).toHaveAttribute('aria-expanded', 'true');
+    await expect(first).toBeFocused();
+    await expect(rows.nth(0).getByTestId('mktg-comment-body')).toContainText('Full explanation 0.');
+    await expect(rows.nth(0).getByTestId('mktg-comment-resolution')).toHaveText('Synthetic agent explanation 0.');
+    await expect(panel.getByTestId('mktg-comment-body')).toHaveCount(1);
+    await page.keyboard.press('Space');
+    await expect(first).toHaveAttribute('aria-expanded', 'false');
+    await expect(first).toBeFocused();
+    for (let index = 1; index < 8; index++) {
+      await page.keyboard.press('Tab');
+      await expect(rows.nth(index).getByRole('button', { name: 'Details', exact: true })).toBeFocused();
+    }
+    await page.keyboard.press('Enter');
+    await expect(rows.nth(7).getByTestId('mktg-comment-body')).toContainText('Full explanation 7.');
+    await expect(panel.getByTestId('mktg-comment-body')).toHaveCount(1);
+    await page.screenshot({ path: test.info().outputPath('one-comment-expanded-in-place.png'), fullPage: true });
+  });
+
   test('adds a pinned comment to the selected field and lists its author/date in the panel', async ({ page }) => {
     const fixture = await setupComments(page);
     await fixture.open();
@@ -18,9 +66,12 @@ test.describe('asset field comments', () => {
     const field = page.getByTestId('mktg-field-comments-mf.positioning');
     await field.hover();
     await field.getByRole('button', { name: 'Comment on Positioning', exact: true }).click();
+    await expect(field.getByRole('button', { name: 'Comment on Positioning', exact: true })).toBeFocused();
     await field.getByRole('textbox', { name: 'Comment on Positioning', exact: true }).fill('Make it one clause about the neutral foundation.');
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(field.getByTestId('mktg-comment-thread')).toContainText('Make it one clause');
+    await expect(field.getByRole('button', { name: 'Comment on Positioning', exact: true })).toBeFocused();
+    await field.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(field.getByTestId('mktg-comment-body')).toContainText('Make it one clause');
     const status = field.getByTestId('mktg-comment-thread').getByText('Open', { exact: true });
     await expect(status).toHaveClass('inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700');
     await expect(panel).toContainText('Make it one clause');
@@ -44,7 +95,9 @@ test.describe('asset field comments', () => {
     await expect(field.getByRole('textbox', { name: 'Comment on Tagline', exact: true })).toHaveValue('Use a shorter synthetic tagline.');
     fixture.state.failSave = false;
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(page.getByTestId('mktg-comments-panel')).toContainText('Use a shorter synthetic tagline.');
+    const panel = page.getByTestId('mktg-comments-panel');
+    await panel.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(panel.getByTestId('mktg-comment-body')).toHaveText('Use a shorter synthetic tagline.');
     expect(fixture.state.posts).toHaveLength(2);
     expect(fixture.state.posts[0]['clientRequestId']).toBe(fixture.state.posts[1]['clientRequestId']);
     await page.screenshot({ path: test.info().outputPath('field-comment-recovered.png'), fullPage: true });

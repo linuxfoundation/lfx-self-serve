@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE, VALID_PERSONAS } from '@lfx-one/shared/constants';
-import { PersonaType } from '@lfx-one/shared/interfaces';
+import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -31,18 +30,6 @@ export class ImpersonationController {
         return;
       }
 
-      const personaContextRaw = req.body?.personaContext;
-      if (personaContextRaw !== undefined && personaContextRaw !== null && !VALID_PERSONAS.has(personaContextRaw)) {
-        next(
-          ServiceValidationError.forField('personaContext', 'personaContext must be a valid persona type', {
-            operation: 'start_impersonation',
-            service: 'impersonation',
-          })
-        );
-        return;
-      }
-      const personaContext = (personaContextRaw ?? undefined) as PersonaType | undefined;
-
       // Switching users mid-impersonation: req.bearerToken is the current target's token here, so the exchange
       // must be seeded with the impersonator's own token, never chaining one target's token into another.
       const subjectToken = await resolveImpersonatorToken(req, 'start_impersonation');
@@ -66,7 +53,7 @@ export class ImpersonationController {
       }
 
       const profile = await this.impersonationService.fetchTargetUserProfile(req, targetClaims['sub']);
-      this.impersonationService.startImpersonation(req, res, tokenResponse, targetClaims, profile, personaContext);
+      this.impersonationService.startImpersonation(req, res, tokenResponse, targetClaims, profile);
 
       logger.success(req, 'start_impersonation', startTime, {
         target_sub: targetClaims['sub'],

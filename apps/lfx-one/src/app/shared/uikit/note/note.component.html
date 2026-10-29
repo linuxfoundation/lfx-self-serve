@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span [class]="iconWrapperClasses()" aria-hidden="true" data-testid="ui-note-icon"><i [class]="iconClasses()"></i></span>
+<span class="min-w-0 flex-1" data-testid="ui-note-content">
+  @if (label()) {
+    <span class="mr-[4px] font-medium" data-testid="ui-note-label">{{ label() }}</span>
+  }
+  <ng-content />
+</span>
+<!-- Exact px, not rem; 14px root: 4px between the topic and the message. One small secondary button at most, projected as `<button note-action>`. -->
+<ng-content select="[note-action]" />

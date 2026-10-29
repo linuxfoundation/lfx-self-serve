@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { FOUNDATION_MESSAGE_READ_REASONS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_READ_REASONS, MKTG_DRIVE_SHARING_HINT } from '@lfx-one/shared/constants';
 import {
   MktgDocumentExtractResponse,
   MktgIntakeDocumentEntry,
@@ -43,6 +43,8 @@ export class MktgIntakeDocumentsComponent {
   // === Inputs ===
   public readonly config = input.required<MktgIntakeDocumentsConfig>();
   public readonly earlierUrls = input<string[]>([]);
+
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
 
   // === Forms ===
   protected readonly linkForm = new FormGroup({

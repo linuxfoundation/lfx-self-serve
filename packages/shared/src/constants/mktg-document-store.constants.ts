@@ -178,8 +178,8 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   },
 ];
 
-/** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
-export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
+/** Maximum collapsed document-view rows, including the open and current revisions. */
+export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 4;
 
 /** Side-panel action help, shared by its tooltip and accessible description. */
 export const MKTG_DOCUMENT_MAKE_CURRENT_HINT = 'Agents read the current version. Nothing is added or deleted.';

@@ -15,7 +15,6 @@ import { expect, Page, Route } from '@playwright/test';
 
 import { member360Fixture, member360Revision, MEMBER_360_PROJECT, MEMBER_360_STORED_DOCUMENT } from '../fixtures/mock-data/member-360.mock';
 export { MEMBER_360_DOCUMENT_ID } from '../fixtures/mock-data/member-360.mock';
-import { SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { buildMember360Workbook } from '../../src/server/utils/member-360-workbook.util';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -34,9 +33,17 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
     expect(route.request().headers()['content-type']).toBe('application/octet-stream');
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
     return json(route, {
-      filename: decodeURIComponent(route.request().headers()['x-file-name']),
-      rows: [{ company: SYNTHETIC_ORG_NAME, speaker: 'Sample speaker', session: 'Sample session' }],
+      trackerId: 'a'.repeat(64),
+      rowCount: 1,
+      columnCount: 3,
+      byteCount: 100,
     });
+  });
+  await page.route('**/api/mktg-agents/member-360/tracker/*?*', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({ status: 204 });
   });
   await page.route('**/api/mktg-agents/member-360/documents/*/workbook?*', async (route) => {
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
