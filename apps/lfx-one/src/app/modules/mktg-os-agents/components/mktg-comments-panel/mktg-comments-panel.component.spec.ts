@@ -13,6 +13,141 @@ import { describe, expect, it, vi } from 'vitest';
 import { MktgCommentsPanelComponent } from './mktg-comments-panel.component';
 
 describe('MktgCommentsPanelComponent', () => {
+  it('renders eight compact two-line rows with separate previews, status chips and no full bodies or resolutions', async () => {
+    const threads = signal(
+      Array.from({ length: 8 }, (_, index) =>
+        mktgCommentFixture({
+          id: `comment-${index}`,
+          text: `\nPreview ${index}\nLong explanation ${index}`,
+          status: 'resolved',
+          resolution: 'Agent explanation',
+        })
+      )
+    );
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads })] });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = el.querySelectorAll('[data-testid="mktg-comment-thread"]');
+    expect(rows).toHaveLength(8);
+    for (const [index, row] of Array.from(rows).entries()) {
+      const summary = row.querySelector('[data-testid="mktg-comment-summary"]');
+      const preview = row.querySelector('[data-testid="mktg-comment-preview"]');
+      expect(preview?.previousElementSibling).toBe(summary);
+      expect(preview?.classList.contains('w-full')).toBe(true);
+      expect(preview?.classList.contains('truncate')).toBe(true);
+      expect(preview?.textContent?.trim()).toBe(`Preview ${index}`);
+      expect(summary?.textContent).not.toContain(`Preview ${index}`);
+      expect(summary?.textContent).toContain('Project writer');
+      expect(summary?.textContent).toContain('21 Oct');
+      expect(summary?.textContent).toContain('Resolved by the agent');
+      expect(row.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    }
+    expect(el.querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comment-resolution"]')).toBeNull();
+    expect(el.textContent).not.toContain('Long explanation');
+  });
+
+  it('expands only the chosen thread in place and collapses it without replacing the focused button', async () => {
+    TestBed.configureTestingModule({
+      providers: [provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture(), mktgCommentFixture({ id: 'second' })]) })],
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(el.querySelectorAll('[data-testid="mktg-comment-thread"]'));
+    const button = rows[0].querySelector('button');
+    button?.focus();
+    button?.click();
+    await fixture.whenStable();
+    expect(rows[0].querySelector('[data-testid="mktg-comment-body"]')).not.toBeNull();
+    expect(rows[1].querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    expect(rows[0].querySelector('button')).toBe(button);
+    expect(fixture.nativeElement.ownerDocument.activeElement).toBe(button);
+    button?.click();
+    await fixture.whenStable();
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(rows[0].querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+    expect(fixture.nativeElement.ownerDocument.activeElement).toBe(button);
+  });
+
+  it('keeps expansion and row identity across same-scope refreshes, new snapshots and label-content changes', async () => {
+    const scope = mktgCommentScopeFixture();
+    const selectedScope = signal<typeof scope | null>(null);
+    const threads = signal([mktgCommentFixture({ text: 'Preview\nOriginal details' })]);
+    const loading = signal(false);
+    const loadError = signal('');
+    const refresh = vi.fn(() => {
+      loading.set(true);
+      loadError.set('');
+    });
+    TestBed.configureTestingModule({
+      providers: [
+        provideMktgCommentsStub({ loaded: signal(true), loading, loadError, threads, selectedScope, select: (next) => selectedScope.set(next), refresh }),
+      ],
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', scope);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const row = el.querySelector('[data-testid="mktg-comment-thread"]');
+    const button = row?.querySelector('button');
+    button?.click();
+    await fixture.whenStable();
+    loadError.set('Synthetic refresh failure');
+    await fixture.whenStable();
+    el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-retry"] button')?.click();
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('[data-testid="mktg-comments-loading"]')).toBeNull();
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    threads.set([mktgCommentFixture({ text: 'Preview\nUpdated details', status: 'resolved', resolution: 'Agent explanation' })]);
+    loading.set(false);
+    fixture.componentRef.setInput('scope', { ...scope });
+    fixture.componentRef.setInput('content', { synthetic: 'new labels' });
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="mktg-comment-thread"]')).toBe(row);
+    expect(row?.querySelector('button')).toBe(button);
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    expect(row?.querySelector('[data-testid="mktg-comment-body"]')?.textContent).toContain('Updated details');
+    expect(row?.querySelector('[data-testid="mktg-comment-resolution"]')?.textContent).toBe('Agent explanation');
+    // The panel, not the child instance, owns disclosure when a re-read replaces the list.
+    const snapshot = threads();
+    threads.set([]);
+    await fixture.whenStable();
+    threads.set(snapshot);
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="mktg-comment-toggle"] button')?.getAttribute('aria-expanded')).toBe('true');
+    expect(el.querySelector('[data-testid="mktg-comment-body"]')?.textContent).toContain('Updated details');
+  });
+
+  it.each(['documentId', 'revisionId'] as const)('clears expansion on %s navigation even when the new list reuses a thread id', async (key) => {
+    const scope = mktgCommentScopeFixture();
+    const selectedScope = signal<typeof scope | null>(null);
+    TestBed.configureTestingModule({
+      providers: [
+        provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture()]), selectedScope, select: (next) => selectedScope.set(next) }),
+      ],
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', scope);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('[data-testid="mktg-comment-toggle"] button')?.click();
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="mktg-comment-body"]')).not.toBeNull();
+    fixture.componentRef.setInput('scope', { ...scope, [key]: key === 'documentId' ? 'another-document' : `000002-${'b'.repeat(64)}` });
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="mktg-comment-toggle"] button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(el.querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+    fixture.componentRef.setInput('scope', scope);
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+  });
+
   it('sends only measured open comments, shows feed, retries the same intent and reports release409 without resubmission', async () => {
     const loaded = signal(false);
     const threads = signal([mktgCommentFixture()]);

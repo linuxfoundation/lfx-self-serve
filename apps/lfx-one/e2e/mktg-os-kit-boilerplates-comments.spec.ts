@@ -22,7 +22,8 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     await field.getByRole('button', { name: /^Comment on/ }).click();
     await field.getByRole('textbox').fill('Shorten this synthetic passage.');
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(field.getByTestId('mktg-comment-thread')).toContainText('Shorten this synthetic passage.');
+    await field.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(field.getByTestId('mktg-comment-body')).toContainText('Shorten this synthetic passage.');
     await expect(panel).toContainText('Project writer');
     expect(fixture.state.adds[0]).toMatchObject({
       revisionId: ASSET_REVISION,
@@ -53,7 +54,8 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
     await expect(page.getByTestId('mktg-document-view-current-since-1')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
-    await expect(panel).toContainText('Shortened the selected passage.');
+    await panel.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(panel.getByTestId('mktg-comment-resolution')).toHaveText('Shortened the selected passage.');
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-redraft.png`), fullPage: true });
   });
   test(`${agentKey}: loading is not empty and failed reads recover only on explicit Retry`, async ({ page }) => {
