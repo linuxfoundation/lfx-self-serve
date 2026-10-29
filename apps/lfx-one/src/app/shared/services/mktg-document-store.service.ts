@@ -76,6 +76,35 @@ export class MktgDocumentStoreService {
     return this.readApprovedRevision(detail, viewed, true);
   }
 
+  /** Approve an existing revision; the response includes the approved current selection. */
+  public approveRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
+    return this.http
+      .post<MktgRevisionResponse>(
+        `${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
+        {},
+        { params: this.projectParams(projectUid) }
+      )
+      .pipe(take(1));
+  }
+
+  /** Make a revision current without adding history; `/restore` is the compatibility URL. */
+  public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
+    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
+    return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
+  }
+
+  public saveLinkedinShareLink(project: string, documentId: string, shareLink: string): Observable<LinkedinShareLinkResponse> {
+    return this.http
+      .patch<LinkedinShareLinkResponse>(`${LINKEDIN_API}/documents/${encodeURIComponent(documentId)}/share-link`, { project, share_link: shareLink })
+      .pipe(take(1));
+  }
+
+  /** Check the recorded session again; never submit another Generate POST. */
+  public retryRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<MktgDocumentDetailResponse> {
+    const body: MktgRetryDocumentRunRequest = { project: projectUid };
+    return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
+  }
+
   private readApprovedRevision(
     detail: MktgDocumentDetailResponse,
     viewed: MktgRevisionResponse | undefined,
@@ -108,35 +137,6 @@ export class MktgDocumentStoreService {
         );
       })
     );
-  }
-
-  /** Approve an existing revision; the response includes the approved current selection. */
-  public approveRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
-    return this.http
-      .post<MktgRevisionResponse>(
-        `${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
-        {},
-        { params: this.projectParams(projectUid) }
-      )
-      .pipe(take(1));
-  }
-
-  /** Make a revision current without adding history; `/restore` is the compatibility URL. */
-  public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
-    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
-    return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
-  }
-
-  public saveLinkedinShareLink(project: string, documentId: string, shareLink: string): Observable<LinkedinShareLinkResponse> {
-    return this.http
-      .patch<LinkedinShareLinkResponse>(`${LINKEDIN_API}/documents/${encodeURIComponent(documentId)}/share-link`, { project, share_link: shareLink })
-      .pipe(take(1));
-  }
-
-  /** Check the recorded session again; never submit another Generate POST. */
-  public retryRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<MktgDocumentDetailResponse> {
-    const body: MktgRetryDocumentRunRequest = { project: projectUid };
-    return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {
