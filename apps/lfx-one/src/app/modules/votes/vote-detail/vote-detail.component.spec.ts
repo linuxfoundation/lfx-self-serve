@@ -28,6 +28,7 @@ import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { voteSlideToast } from '@shared/utils/vote-slide.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -297,6 +298,38 @@ describe('VoteDetailComponent', () => {
 
       const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-line"]');
       expect(description?.textContent).toBe('First paragraph\n\nSecond paragraph');
+    });
+
+    it.each([
+      { audience: 'manager', writer: true, response: null },
+      { audience: 'voter', writer: false, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
+    ])('styles description links and opens them without leaving the $audience view (#4655)', async ({ writer, response }) => {
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ description: '<p>Read the <a href="https://example.com/charter"><strong>charter</strong></a>.</p>' }))
+      );
+      projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
+      voteService.getMyVoteResponse.mockReturnValue(of(response));
+      const fixture = await setup('browser', [ExternalLinksDirective]);
+      const description = testId(fixture, 'vote-detail-description')!;
+      const content = description.querySelector('[lfxExternalLinks]')!;
+      const link = content.querySelector('a')!;
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      try {
+        expect(content.classList.contains('[&_a]:text-blue-600')).toBe(true);
+        expect(content.classList.contains('[&_a]:underline')).toBe(true);
+
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.querySelector('strong')!.dispatchEvent(event);
+
+        expect(opened).toHaveBeenCalledExactlyOnceWith('https://example.com/charter', '_blank', 'noopener,noreferrer');
+        expect(event.defaultPrevented).toBe(true);
+        expect(read(fixture, 'activeTab')).toBe('overview');
+        expect(testId(fixture, 'vote-detail-description')).toBe(description);
+        expect(router.navigate).not.toHaveBeenCalled();
+      } finally {
+        opened.mockRestore();
+      }
     });
   });
 

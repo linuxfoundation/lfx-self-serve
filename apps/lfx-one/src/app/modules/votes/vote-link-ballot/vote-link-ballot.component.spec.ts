@@ -113,6 +113,15 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(fixture.nativeElement.querySelector('lfx-header, lfx-navbar, [data-testid="user-menu"]')).toBeNull();
   });
 
+  it('styles description links so emailed ballot voters can recognize them (#4655)', async () => {
+    await open(of({ ...BALLOT, description: '<p>Read the <a href="https://example.com/charter">charter</a>.</p>' }));
+
+    const description = testId('vote-link-description')!;
+    expect(description.querySelector('a')?.textContent).toBe('charter');
+    expect(description.classList.contains('[&_a]:text-blue-600')).toBe(true);
+    expect(description.classList.contains('[&_a]:underline')).toBe(true);
+  });
+
   it('renders the loading state before the ballot arrives', async () => {
     window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
     getLinkBallot.mockReturnValue(new Observable<VoteLinkBallot>());

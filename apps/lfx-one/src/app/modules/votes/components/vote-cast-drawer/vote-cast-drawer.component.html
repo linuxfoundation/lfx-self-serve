@@ -100,7 +100,8 @@
             <!-- whitespace-pre-line is intentional: preserves line breaks in legacy plain-text descriptions (GH-2326). -->
             <!-- Phones: cap the description so the ballot starts in view; it scrolls inside its own focusable region (Submit is pinned either way). -->
             <div
-              class="text-sm text-slate-700 whitespace-pre-line break-words max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
+              class="text-sm text-slate-700 whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
+              lfxExternalLinks
               [innerHTML]="voteData.description"
               [attr.tabindex]="0"
               role="region"

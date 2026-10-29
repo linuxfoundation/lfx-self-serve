@@ -44,10 +44,13 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
+
 @Component({
   selector: 'lfx-vote-cast-drawer',
   imports: [
     DrawerModule,
+    ExternalLinksDirective,
     SkeletonModule,
     CheckboxModule,
     DragDropModule,

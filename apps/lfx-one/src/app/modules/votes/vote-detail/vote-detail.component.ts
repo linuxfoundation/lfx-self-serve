@@ -60,6 +60,7 @@ import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { exportVoteSlide, voteSlideFileName, voteSlideToast } from '@shared/utils/vote-slide.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
@@ -113,6 +114,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     NgTemplateOutlet,
     ButtonComponent,
     CardComponent,
+    ExternalLinksDirective,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,

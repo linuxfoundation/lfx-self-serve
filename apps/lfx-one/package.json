@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "yarn docs:build && ng serve",
+    "start": "yarn docs:build && NODE_OPTIONS=\"--max-old-space-size=8192 ${NODE_OPTIONS:-}\" ng serve",
     "build": "yarn docs:build && ng build && cp -r src/server/pdf-templates dist/lfx-one/server/ && cp src/styles/gw-embed-theme.css dist/lfx-one/server/",
     "build:development": "yarn docs:build && ng build --configuration development",
     "build:dev-cluster": "yarn docs:build && ng build --configuration dev-cluster",
