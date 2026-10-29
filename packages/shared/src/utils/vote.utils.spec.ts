@@ -33,6 +33,9 @@ import {
   matchesMyVotesQuickFilter,
   mergeCommentResults,
   votePermalinkPath,
+  truncateVoteTitle,
+  votePresenterPath,
+  buildVoteAnswerSummary,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -956,5 +959,89 @@ describe('isRankedPollType', () => {
     ['an unrecognized string', 'something_new', false],
   ] as const)('%s -> %s', (_label, input, expected) => {
     expect(isRankedPollType(input)).toBe(expected);
+  });
+});
+
+describe('truncateVoteTitle', () => {
+  it('returns titles within the cap untouched', () => {
+    expect(truncateVoteTitle('Approve the 2027 budget')).toBe('Approve the 2027 budget');
+  });
+
+  it('cuts at a word boundary and adds an ellipsis', () => {
+    const title = `${'alpha '.repeat(20)}omega`;
+    const out = truncateVoteTitle(title);
+    expect(out.length).toBeLessThanOrEqual(80);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.slice(0, -1).trimEnd().endsWith('alpha')).toBe(true);
+  });
+
+  it('hard-cuts a single word longer than the cap', () => {
+    const out = truncateVoteTitle('x'.repeat(200));
+    expect(out).toBe(`${'x'.repeat(79)}…`);
+  });
+});
+
+describe('votePresenterPath', () => {
+  it('appends /present to the encoded permalink path', () => {
+    expect(votePresenterPath('abc/123')).toBe('/votes/abc%2F123/present');
+  });
+});
+
+describe('buildVoteAnswerSummary', () => {
+  const questions = [
+    {
+      question_id: 'q1',
+      prompt: 'Who?',
+      type: 'single_choice',
+      choices: [
+        { choice_id: 'a', choice_text: 'Alice' },
+        { choice_id: 'b', choice_text: 'Bob' },
+      ],
+    },
+    {
+      question_id: 'q2',
+      prompt: 'Which topics?',
+      type: 'multiple_choice',
+      choices: [
+        { choice_id: 'x', choice_text: 'Budget' },
+        { choice_id: 'y', choice_text: 'Roadmap' },
+      ],
+    },
+  ];
+
+  it('returns one line per question with the chosen text', () => {
+    const lines = buildVoteAnswerSummary(questions, {
+      abstain: false,
+      userVoteContent: [
+        { question_id: 'q1', choice_ids: ['b'] },
+        { question_id: 'q2', choice_ids: ['x', 'y'] },
+      ],
+    });
+
+    expect(lines).toEqual([
+      { question_id: 'q1', prompt: 'Who?', answer: 'Bob' },
+      { question_id: 'q2', prompt: 'Which topics?', answer: 'Budget, Roadmap' },
+    ]);
+  });
+
+  it('lists ranked choices in rank order', () => {
+    const lines = buildVoteAnswerSummary([questions[0]], {
+      abstain: false,
+      userVoteContent: [
+        {
+          question_id: 'q1',
+          ranked_choices: [
+            { choice_id: 'b', choice_rank: 2 },
+            { choice_id: 'a', choice_rank: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(lines[0].answer).toBe('1. Alice, 2. Bob');
+  });
+
+  it('returns no lines for an abstention', () => {
+    expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
   });
 });

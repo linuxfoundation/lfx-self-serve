@@ -12,15 +12,16 @@ export const IMPERSONATION_TARGET_USER_NOT_FOUND_CODE = 'TARGET_USER_NOT_FOUND';
 export const IMPERSONATION_USER_NOT_FOUND_MESSAGE =
   'We were unable to locate the user to impersonate. Please double-check the username or email address and try again.';
 
-export const IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE =
-  'That person has no LF account on record, so they cannot be impersonated. Try their username or email address instead.';
-
 export const IMPERSONATION_START_FAILED_MESSAGE = 'We could not start impersonation. Please try again.';
 
 /** Error code for a switch request that names the user already being impersonated. */
 export const IMPERSONATION_ALREADY_TARGET_CODE = 'ALREADY_IMPERSONATING_TARGET';
 
 export const IMPERSONATION_ALREADY_TARGET_MESSAGE = 'You are already impersonating this user. Choose a different user to switch to.';
+
+export const IMPERSONATION_EMPTY_TARGET_MESSAGE = 'Enter a name, email, or username to impersonate.';
+
+export const IMPERSONATION_SELF_MESSAGE = 'You cannot impersonate yourself. Enter a different username or email address.';
 
 /** Copy shown by the page-level overlay while an impersonation change is in flight, keyed by transition. */
 export const IMPERSONATION_TRANSITION_MESSAGES: Record<ImpersonationTransition, string> = {

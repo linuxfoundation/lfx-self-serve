@@ -11,6 +11,7 @@ const {
   getPastEvents,
   getRegistrationForecast,
   getRegistrationForecastCurve,
+  getRegistrationHistory,
   getRegistrationsGrowth,
   getRevenue,
   getSpeakers,
@@ -22,6 +23,7 @@ const {
   getPastEvents: vi.fn(),
   getRegistrationForecast: vi.fn(),
   getRegistrationForecastCurve: vi.fn(),
+  getRegistrationHistory: vi.fn(),
   getRegistrationsGrowth: vi.fn(),
   getRevenue: vi.fn(),
   getSpeakers: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
   HealthMetricsEventsService: class {
     public getRegistrationForecast = getRegistrationForecast;
     public getRegistrationForecastCurve = getRegistrationForecastCurve;
+    public getRegistrationHistory = getRegistrationHistory;
     public getPastEvents = getPastEvents;
     public getAtAGlance = getAtAGlance;
     public getRegistrationsGrowth = getRegistrationsGrowth;
@@ -80,6 +83,7 @@ import { AnalyticsController } from './analytics.controller';
 type Handler =
   | 'getEventsRegistrationForecast'
   | 'getEventsRegistrationForecastCurve'
+  | 'getEventsRegistrationHistory'
   | 'getEventsPast'
   | 'getEventsAtAGlance'
   | 'getEventsRegistrationsGrowth'
@@ -170,6 +174,50 @@ describe('AnalyticsController.getEventsRegistrationForecastCurve', () => {
 
     expect(rejectedField(next)).toBe('eventId');
     expect(getRegistrationForecastCurve).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnalyticsController.getEventsRegistrationHistory', () => {
+  beforeEach(() => {
+    getRegistrationHistory.mockReset();
+    getRegistrationHistory.mockResolvedValue(HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED);
+  });
+
+  it('passes the foundation and event to the service', async () => {
+    const { res, next, promise } = call('getEventsRegistrationHistory', { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRegistrationHistory).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', eventId: 'evt_1-A' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED);
+  });
+
+  it('requires the foundation even when the event is given', async () => {
+    const { next, promise } = call('getEventsRegistrationHistory', { eventId: 'evt-1' });
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it.each<Record<string, string>>([{ foundationSlug: 'acme' }, { foundationSlug: 'acme', eventId: "evt'1" }])(
+    'rejects a missing or malformed event id (%o)',
+    async (query) => {
+      const { next, promise } = call('getEventsRegistrationHistory', query);
+      await promise;
+
+      expect(rejectedField(next)).toBe('eventId');
+      expect(getRegistrationHistory).not.toHaveBeenCalled();
+    }
+  );
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getRegistrationHistory.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsRegistrationHistory', { foundationSlug: 'acme', eventId: 'evt-1' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });
 

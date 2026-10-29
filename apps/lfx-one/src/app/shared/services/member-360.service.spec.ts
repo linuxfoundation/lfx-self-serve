@@ -3,163 +3,129 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
-import { MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { signal } from '@angular/core';
+import { UserService } from './user.service';
+import { MktgRunAttemptService } from './mktg-run-attempt.service';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Member360Service } from './member-360.service';
-import { UserService } from './user.service';
+import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { MktgPendingGeneration } from '@lfx-one/shared/interfaces';
 
-describe('Member360Service workbook transport', () => {
+describe('Member360Service dedicated transports', () => {
   let api: Member360Service;
   let http: HttpTestingController;
+  const user = signal({ sub: 'synthetic-creator' });
   beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting(), { provide: UserService, useValue: { user: signal({ sub: 'synthetic-subject' }) } }],
-    });
+    user.set({ sub: 'synthetic-creator' });
+    localStorage.clear();
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: UserService, useValue: { user } }] });
     api = TestBed.inject(Member360Service);
     http = TestBed.inject(HttpTestingController);
-  });
-  afterEach(() => {
-    http.verify();
-    vi.useRealTimers();
     sessionStorage.clear();
   });
-  function startPending(onActivity?: Parameters<Member360Service['waitForStored']>[2]) {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
-    api.generate({ project: 'sample-project' }).subscribe();
-    http
-      .expectOne('/api/mktg-agents/member-360/generate')
-      .flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' });
-    return api.waitForStored('sample-project', 'run-0123456789abcdef01234567', onActivity);
-  }
-  it('does not cancel or overlap a slow result request', () => {
-    let stored = false;
-    startPending().subscribe(() => {
-      stored = true;
+  afterEach(() => http.verify());
+
+  it('retains the minimal creator capability without session storage or tracker prose', () => {
+    const session = { sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567', runId: 'a'.repeat(64) };
+    let received: unknown;
+    api.generate({ project: 'sample-project' }).subscribe((result) => {
+      received = result;
     });
-    http.expectNone('/api/mktg-agents/member-360/result');
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    const first = http.expectOne('/api/mktg-agents/member-360/result');
-    vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
-    expect(first.cancelled).toBe(false);
-    http.expectNone('/api/mktg-agents/member-360/result');
-    first.flush({ status: 'ready', stored: true });
-    expect(stored).toBe(true);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    const request = http.expectOne('/api/mktg-agents/member-360/generate');
+    expect(request.request.body).toEqual({ project: 'sample-project' });
+    request.flush(session);
+    expect(received).toEqual(session);
     expect(sessionStorage.length).toBe(0);
-  });
-  it.each([0, 503])('retries a transient %s without losing the pending run', (status) => {
-    let stored = false;
-    startPending().subscribe(() => {
-      stored = true;
-    });
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status, statusText: 'Temporary failure' });
-    expect(stored).toBe(false);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
-    expect(sessionStorage.length).toBe(1);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
-    expect(stored).toBe(true);
-  });
-  it('delivers activity without releasing the storage gate, retaining the feed across a failed poll', () => {
-    const onActivity = vi.fn();
-    const stored = vi.fn();
-    startPending(onActivity).subscribe(stored);
-    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeTypeOf('number');
-    expect(api.pendingStartedAt('other-project', 'run-0123456789abcdef01234567')).toBeNull();
-    const activity = [{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }];
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'pending', activity });
-    expect(onActivity).toHaveBeenCalledWith(activity);
-    expect(stored).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status: 503, statusText: 'Temporary failure' });
-    expect(onActivity).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: false });
-    expect(stored).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
-    expect(stored).toHaveBeenCalledTimes(1);
-    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeNull();
-  });
-  it('emits a failed run once, forgets its capability and never polls it again', () => {
-    const received = vi.fn();
-    const completed = vi.fn();
-    startPending().subscribe({ next: received, complete: completed });
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    const result = { status: 'failed', message: 'No entitled project was found for this session.' };
-    http.expectOne('/api/mktg-agents/member-360/result').flush(result);
-    expect(received).toHaveBeenCalledExactlyOnceWith(result);
-    expect(completed).toHaveBeenCalledTimes(1);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    http.expectNone('/api/mktg-agents/member-360/result');
-  });
-  it('stops polling on needs_input without forgetting the open run', () => {
-    const received = vi.fn();
-    startPending().subscribe(received);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
-    expect(received).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_input' }));
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    http.expectNone('/api/mktg-agents/member-360/result');
-  });
-  it.each([400, 401, 403, 404])('forgets the capability on a permanent %s result error', (status) => {
-    let denied = false;
-    startPending().subscribe({
-      error: () => {
-        denied = true;
-      },
-    });
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status, statusText: 'Denied' });
-    expect(denied).toBe(true);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
-    expect(sessionStorage.length).toBe(0);
-    vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const pending = attempts.load('sample-project', 'member-360', session.documentId);
+    expect(pending?.attempt?.session.ownerToken).toBe('synthetic-token');
+    expect(pending?.request.answers).toEqual({});
+    user.set({ sub: 'another-creator' });
+    expect(attempts.load('sample-project', 'member-360', session.documentId)).toBeNull();
     http.expectNone('/api/mktg-agents/member-360/result');
   });
 
-  it('retains the capability after a poll timeout so a reload can resume', () => {
-    const error = vi.fn();
-    startPending().subscribe({ error });
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    const request = http.expectOne('/api/mktg-agents/member-360/result');
-    request.flush({ status: 'pending' });
-    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
-    const cancelled = http.match('/api/mktg-agents/member-360/result');
-    expect(cancelled.every((request) => request.cancelled)).toBe(true);
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ name: 'TimeoutError' }));
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
-    expect(sessionStorage.length).toBe(1);
-    const resume = api.waitForStored('sample-project', 'run-0123456789abcdef01234567').subscribe();
-    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
-    expect(resume.closed).toBe(true);
-    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+  it('adapts question keys to ids and keeps failure answers retryable on the same session', () => {
+    const session = { sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567', runId: 'a'.repeat(64) };
+    api.generate({ project: 'sample-project' }).subscribe();
+    http.expectOne('/api/mktg-agents/member-360/generate').flush(session);
+    const pending = TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId);
+    if (!pending) throw new Error('Missing fixture capability');
+    const answers = [{ key: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }];
+    api.answer(pending, 'b'.repeat(64), answers).subscribe({ error: () => undefined });
+    const failed = http.expectOne('/api/mktg-agents/member-360/answers');
+    expect(failed.request.body).toEqual({
+      project: 'sample-project',
+      sessionId: 'session-1',
+      ownerToken: 'synthetic-token',
+      questionsId: 'b'.repeat(64),
+      answers: [{ id: 'tracker-window', text: answers[0].text, origin: 'accepted' }],
+    });
+    failed.flush({}, { status: 503, statusText: 'Unavailable' });
+    expect(TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId)?.answeredQuestionsId).toBeUndefined();
+    api.answer(pending, 'b'.repeat(64), answers).subscribe();
+    http.expectOne('/api/mktg-agents/member-360/answers').flush({ success: true });
+    expect(TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId)?.answeredQuestionsId).toBe('b'.repeat(64));
+  });
+
+  it('uses only public selectors for server-owned runs and never fabricates or persists a capability', () => {
+    const pending: MktgPendingGeneration = {
+      request: {
+        projectUid: 'sample-project',
+        agentId: 'member-360',
+        documentId: 'run-0123456789abcdef01234567',
+        intake: MKTG_AGENT_INTAKES['member-360'],
+        answers: {},
+      },
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+    };
+    const runId = 'a'.repeat(64);
+    api.questions(pending, runId).subscribe();
+    const read = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(read.request.body).toEqual({ project: 'sample-project', runId });
+    read.flush({ status: 'pending' });
+    api.answer(pending, 'b'.repeat(64), [{ key: 'window', text: 'Use the current window.', origin: 'accepted' }], runId).subscribe();
+    const write = http.expectOne('/api/mktg-agents/member-360/answers');
+    expect(write.request.body).toEqual({
+      project: 'sample-project',
+      runId,
+      questionsId: 'b'.repeat(64),
+      answers: [{ id: 'window', text: 'Use the current window.', origin: 'accepted' }],
+    });
+    write.flush({ success: true });
+    expect(localStorage.length).toBe(0);
   });
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
     const filename = 'Q3+sponsors — draft.csv';
-    api.parseTracker('sample-project', new File(['company\nAcme Motors'], filename)).subscribe();
+    api.parseTracker('sample-project', new File(['company\nSample Org'], filename)).subscribe();
     const request = http.expectOne('/api/mktg-agents/member-360/tracker?project=sample-project');
     expect(request.request.headers.get('X-File-Name')).toBe(encodeURIComponent(filename));
     expect(request.request.headers.get('Content-Type')).toBe('application/octet-stream');
     expect(request.request.body).toBeInstanceOf(File);
     expect(request.request.urlWithParams).not.toContain('filename');
-    request.flush({ filename, rows: [{ company: 'Acme Motors' }] });
+    request.flush({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 });
   });
-  it('reports a missing pending capability through the observable error channel', () => {
-    const error = vi.fn();
-    const result = api.waitForStored('sample-project', 'missing');
-    result.subscribe({ error });
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'No pending run for this user and project' }));
-    http.expectNone('/api/mktg-agents/member-360/result');
+
+  it('sends only opaque tracker ids with Generate, never parsed rows', () => {
+    api.generate({ project: 'sample-project', trackerIds: ['a'.repeat(64)] }).subscribe();
+    const request = http.expectOne('/api/mktg-agents/member-360/generate');
+    expect(request.request.body).toEqual({ project: 'sample-project', trackerIds: ['a'.repeat(64)] });
+    expect(request.request.body).not.toHaveProperty('trackers');
+    request.flush({});
   });
+
+  it('deletes only an opaque receipt with keepalive and accepts a bodyless204', () => {
+    api.deleteTracker('sample-project', 'a'.repeat(64)).subscribe();
+    const request = http.expectOne(`/api/mktg-agents/member-360/tracker/${'a'.repeat(64)}?project=sample-project`);
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.body).toBeNull();
+    expect(request.request.keepalive).toBe(true);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
   it('downloads a stored document through the BFF without sending client tabs', () => {
     const blob = new Blob(['synthetic workbook']);
     let received: Blob | undefined;

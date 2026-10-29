@@ -105,6 +105,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
             getRedditMonitor: vi.fn().mockReturnValue(of(null)),
             getMetaMonitor: vi.fn().mockReturnValue(of(null)),
@@ -335,6 +336,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -583,6 +585,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
@@ -664,12 +667,43 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, 'connection');
     });
 
-    it('offers Microsoft Ads and HubSpot, and keeps X hidden while the app disables it', async () => {
+    it('offers Microsoft Ads, X and HubSpot, X because it is monitorable although its create is disabled', async () => {
       await setup(allConnected);
 
       expect(el('platform-microsoft')).not.toBeNull();
       expect(el('platform-hubspot')).not.toBeNull();
-      expect(el('platform-twitter')).toBeNull();
+      expect(el('platform-twitter')).not.toBeNull();
+      expect(el('platform-twitter')?.textContent?.trim()).toBe('X Ads');
+    });
+
+    it("reads the X connection's account from the X button", async () => {
+      await setup(allConnected);
+      select('twitter');
+
+      expect(service['getTwitterMonitorData']).toHaveBeenCalledWith('cncf', '18ce54d4x5t', 30);
+      expect(el('twitter-monitor-panel')).not.toBeNull();
+      expect(el('twitter-error')).toBeNull();
+    });
+
+    it('shows "metrics not enabled" for X instead of an error while campaign-service does not read X metrics', async () => {
+      await setup(allConnected);
+      service['getTwitterMonitorData'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'not enabled', upstreamCode: 'metrics_not_enabled' } }))
+      );
+      select('twitter');
+
+      expect(el('twitter-connection-notice')?.getAttribute('data-state')).toBe('metrics_disabled');
+      expect(text('twitter-connection-notice-title')).toBe('X / Twitter Ads metrics are not enabled');
+      expect(el('twitter-error')).toBeNull();
+    });
+
+    it('says the project has no X connection, with no read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, twitter: none('no_connection') } });
+      select('twitter');
+
+      expect(el('twitter-connection-notice')?.getAttribute('data-state')).toBe('no_connection');
+      expect(service['getTwitterMonitorData']).not.toHaveBeenCalled();
+      expect(el('twitter-error')).toBeNull();
     });
 
     it('says the project has no connection for a platform, with no picker and no read', async () => {
@@ -821,6 +855,142 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
     });
   });
 
+  describe('Google Ads account discovery', () => {
+    it('reads nothing and lists nothing while the flag is off', async () => {
+      await setup({ viaCampaignService: false, platforms: {} });
+
+      expect(service['getGoogleAdsAccounts']).not.toHaveBeenCalled();
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it("lists the accounts the project's connection can reach on the Google Ads panel", async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        of([
+          { key: '1000000001', label: 'CNCF Search' },
+          { key: '1000000002', label: '1000000002' },
+        ])
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledWith('cncf');
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+      // An account with no label of its own is shown by id once, not as "id (id)".
+      expect(text('monitoring-google-account-1000000002')).toBe('1000000002');
+    });
+
+    it('says so when the connection reaches no account', async () => {
+      await setup(allConnected);
+
+      expect(text('monitoring-google-accounts-empty')).toBe('This connection reaches no Google Ads accounts.');
+      expect(el('monitoring-google-accounts-list')).toBeNull();
+    });
+
+    it('states a failed read, and retries it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'no Google Ads connection configured for this project' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('no Google Ads connection configured for this project');
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('re-checks the source on Retry, so a rollback since the tab opened clears the error instead of repeating it', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'not found' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      const reads = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      (el('monitoring-google-accounts-retry') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('asks again on a fresh foundation load, since a refusal can come from an outage the root check failed closed on', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadForActiveFoundation']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts'].mock.calls.length).toBeGreaterThan(calls);
+      expect(text('monitoring-google-account-1000000001')).toBe('CNCF Search (1000000001)');
+    });
+
+    it('clears a previous error when a load is skipped for a caller known to be restricted', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-error')).not.toBeNull();
+
+      fixture.componentInstance['googleRestricted'].set(true);
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts-error')).toBeNull();
+    });
+
+    it('does not ask again once the caller is known to be refused, since the refusal is about the caller', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      const calls = service['getGoogleAdsAccounts'].mock.calls.length;
+
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(calls);
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('drops the list when the cutover turns off', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(of([{ key: '1000000001', label: 'CNCF Search' }]));
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+      expect(el('monitoring-google-accounts-list')).not.toBeNull();
+
+      service['getMonitorConnections'].mockReturnValue(of({ viaCampaignService: false, platforms: {} }));
+      fixture.componentInstance['loadMonitorConnections']();
+      fixture.detectChanges();
+
+      expect(el('monitoring-google-accounts')).toBeNull();
+    });
+  });
+
   /**
    * Both directions of a mixed rollout (#3637 review). Discovery can succeed on a pod with the flag
    * OFF while the read lands on one with it ON, which refuses the legacy-picker read with its own
@@ -893,6 +1063,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       ['reddit', 'getRedditMonitorData'],
       ['meta', 'getMetaMonitorData'],
       ['microsoft', 'getMicrosoftMonitorData'],
+      ['twitter', 'getTwitterMonitorData'],
     ] as const)('shows %s 503 after a disabled 400 on the panel Refresh, with its Retry', async (platform, read) => {
       await setup(allConnected);
       service[read].mockReturnValue(throwError(disabled));
@@ -1095,9 +1266,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup(allConnected);
       const xRows = reportBacked().campaigns.map((c) => ({ ...c, campaignId: '1a2b3c' }));
       service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: xRows })));
-      // X's button is hidden while the app disables the platform, so the panel is selected directly.
-      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
-      fixture.detectChanges();
+      select('twitter');
 
       expect(service['getTwitterMonitorData']).toHaveBeenCalled();
       expect(el('monitor-act-twitter-ads-1a2b3c')).not.toBeNull();
@@ -1934,6 +2103,7 @@ describe.each([
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2081,6 +2251,7 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
             getMonitorConnections: vi.fn().mockReturnValue(of({ viaCampaignService: false, platforms: {} })),
           },
         },
@@ -2127,6 +2298,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
       getLinkedInAccounts: vi.fn().mockReturnValue(of([{ accountId: '512345678', label: 'LF LinkedIn (legacy)', orgId: '1' }])),
       getRedditAccounts: vi.fn().mockReturnValue(of([{ key: 't2_legacy', label: 'LF Reddit (legacy)' }])),
       getMetaAccounts: vi.fn().mockReturnValue(of([{ key: 'act_1', label: 'LF Meta (legacy)' }])),
+      getGoogleAdsAccounts: vi.fn().mockReturnValue(of([])),
       getLinkedInMonitorData: vi.fn().mockReturnValue(of(null)),
       getRedditMonitorData: vi.fn().mockReturnValue(of(null)),
       getMetaMonitorData: vi.fn().mockReturnValue(of(null)),
@@ -2180,6 +2352,32 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     expect(el('monitoring-restricted')).toBeNull();
   });
 
+  // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped
+  // connection no longer all read as the same generic "Failed to load campaign data".
+  it.each([
+    ['a 5xx, whose body is not read', failed, 'Failed to load campaign data (HTTP 500)'],
+    [
+      "a guard's 403, with the server's reason",
+      () => new HttpErrorResponse({ status: 403, error: { error: 'campaign_manager access required for this resource', code: 'MARKETING_ACCESS_REQUIRED' } }),
+      'campaign_manager access required for this resource (HTTP 403)',
+    ],
+    [
+      'an authored Google Ads advisory',
+      () =>
+        new HttpErrorResponse({
+          status: 502,
+          error: { error: 'Google Ads did not return the account data. Google Ads error: QUOTA_EXCEEDED.', code: 'SERVICE_ADVISORY' },
+        }),
+      'Google Ads did not return the account data. Google Ads error: QUOTA_EXCEEDED. (HTTP 502)',
+    ],
+  ] as const)('names the HTTP status under the Google error for %s', async (_case, error, detail) => {
+    await setup(flagOff);
+    service['getMonitorData'].mockReturnValue(throwError(error));
+    fixture.detectChanges();
+
+    expect(el('monitoring-error')?.textContent).toContain(detail);
+  });
+
   it.each([
     ['legacy (flag off)', flagOff],
     ['cutover (flag on)', flagOn],
@@ -2220,13 +2418,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     await setup(connections);
     service[read].mockReturnValue(throwError(restricted));
     fixture.detectChanges();
-    if (panel === 'twitter') {
-      // X's button is hidden while the app disables the platform, so the panel is selected directly.
-      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
-      fixture.detectChanges();
-    } else {
-      select(panel);
-    }
+    select(panel);
 
     expect(service[read]).toHaveBeenCalled();
     expect(el(`${panel}-connection-notice`)?.getAttribute('data-state')).toBe('restricted');

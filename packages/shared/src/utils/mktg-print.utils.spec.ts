@@ -11,7 +11,33 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
-import { buildFoundationMessagePrintView, foundationMessagePrintSections, mktgPrintBrand } from './mktg-print.utils';
+import {
+  buildBoilerplatesPrintView,
+  buildFaqPrintView,
+  buildFoundationMessagePrintView,
+  foundationMessagePrintSections,
+  mktgPrintBrand,
+} from './mktg-print.utils';
+import boilerplatesEnvelope from './__fixtures__/boilerplates.envelope.json';
+import faqEnvelope from './__fixtures__/faq-envelope.json';
+import { boilerplatesAssetOfRevision } from './boilerplates.utils';
+import { faqAssetOfRevision } from './faq.utils';
+
+it('builds printable lengths and FAQ groups from stored bytes, preserving unanswered questions without sources', () => {
+  const brand = mktgPrintBrand(null);
+  const boilerplates = boilerplatesAssetOfRevision(JSON.stringify(boilerplatesEnvelope.content), boilerplatesEnvelope);
+  const faq = faqAssetOfRevision(JSON.stringify(faqEnvelope.content), faqEnvelope);
+  if (!boilerplates || !faq) throw new Error('Invalid synthetic print fixtures');
+  const lengths = buildBoilerplatesPrintView(boilerplates, brand);
+  expect(lengths.brand).toBe(brand);
+  expect(lengths.lengths.map((row) => row.text)).toEqual(boilerplatesEnvelope.content.bp.map((row) => row.t));
+  expect(lengths.lengths).toHaveLength(4);
+  const questions = buildFaqPrintView(faq, brand);
+  expect(questions.brand).toBe(brand);
+  expect(questions.groups.map((group) => group.name)).toEqual(faqEnvelope.content.faq.map(([name]) => name));
+  expect(questions.groups[0].questions[0].source).toBe('Website');
+  expect(questions.groups[0].questions[2]).toMatchObject({ answered: false, answer: '', source: '' });
+});
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>';
 
@@ -173,12 +199,10 @@ describe('the print’s brand', () => {
 });
 
 describe('the framework’s print', () => {
-  it('holds the framework, the ICPs, the message house and the key numbers — never the run’s sources and gaps', () => {
+  it('holds the framework and the key numbers — never the hidden ICPs and message house, nor the run’s sources and gaps', () => {
     expect(foundationMessagePrintSections()).toEqual([
       { id: 'framework', number: '01', title: 'Framework' },
-      { id: 'icps', number: '02', title: 'ICPs' },
-      { id: 'message-house', number: '03', title: 'Message house' },
-      { id: 'numbers', number: '04', title: 'Key numbers' },
+      { id: 'numbers', number: '02', title: 'Key numbers' },
     ]);
   });
 

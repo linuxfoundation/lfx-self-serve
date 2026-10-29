@@ -61,6 +61,7 @@ describe('EventsPastEventsComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
   let picked: HealthMetricsEventsSectionKey[];
 
   async function render(payload: HealthMetricsEventsPast | Error = past()): Promise<void> {
@@ -81,7 +82,10 @@ describe('EventsPastEventsComponent', () => {
     fixture = TestBed.createComponent(EventsPastEventsComponent);
     fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
@@ -105,6 +109,7 @@ describe('EventsPastEventsComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     counts = [];
     lifecycle = [];
+    verdicts = [];
     picked = [];
   });
 
@@ -150,6 +155,7 @@ describe('EventsPastEventsComponent', () => {
 
     expect(counts).toEqual([null, 2]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('re-projects a period change off the loaded response without re-reading', async () => {
@@ -192,25 +198,27 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-goal-met-value')).toBe('0 of 1');
   });
 
-  it('shows the empty state for a period with no closed events', async () => {
+  it('settles empty, with no body, and a zero badge for a period with no closed events', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
     await settle();
 
-    expect(query('events-past-events-empty')).not.toBeNull();
-    expect(query('events-past-events-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-table')).toBeNull();
     expect(counts.at(-1)).toBe(0);
   });
 
-  it('shows the unavailable state, not a measured zero, for a period the view has not measured', async () => {
+  it('settles empty, with no body, and no badge rather than a measured zero for a period never measured', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
     await settle();
 
-    expect(query('events-past-events-unmeasured')).not.toBeNull();
-    expect(query('events-past-events-empty')).toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-table')).toBeNull();
     expect(counts.at(-1)).toBeNull();
   });
 
@@ -218,7 +226,7 @@ describe('EventsPastEventsComponent', () => {
     await render(new Error('warehouse down'));
 
     expect(query('events-past-events-error')).not.toBeNull();
-    expect(query('events-past-events-empty')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(counts).toEqual([null]);
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');

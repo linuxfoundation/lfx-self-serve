@@ -83,3 +83,49 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
+
+/** Presenter view (#4140): live-count poll cadence while the tab is visible. */
+export const VOTE_PRESENTER_POLL_INTERVAL_MS = 5_000;
+
+/** Presenter view: first reconnect delay after a failed poll; doubles per consecutive failure up to the cap. */
+export const VOTE_PRESENTER_BACKOFF_BASE_MS = 5_000;
+
+/** Presenter view: ceiling for the reconnect backoff so a recovered network is noticed within half a minute. */
+export const VOTE_PRESENTER_BACKOFF_MAX_MS = 30_000;
+
+/** Presenter view: the one-second tick that refreshes the "Updated N seconds ago" label. */
+export const VOTE_PRESENTER_CLOCK_TICK_MS = 1_000;
+
+/** Presenter view and copy-slide PNG share one title cap so the two surfaces truncate identically (#4142, #4145). */
+export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
+
+/** Copy-slide PNG (#4145): fixed 16:9 export size so it drops into Google Slides / PowerPoint uncropped. */
+export const VOTE_SLIDE_WIDTH_PX = 1920;
+export const VOTE_SLIDE_HEIGHT_PX = 1080;
+
+/** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
+export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
+
+/** QR code quiet zone in modules; the spec asks for 4, 2 still scans reliably on a projector and keeps the code large. */
+export const VOTE_QR_QUIET_ZONE_MODULES = 2;
+
+/** How long Copy slide waits for the slide's QR to render before reporting a failed export. */
+export const VOTE_SLIDE_QR_READY_TIMEOUT_MS = 5000;
+
+/** After "Send ballots now" succeeds, the action stays disabled this long to avoid re-mailing every non-responder. */
+export const VOTE_SEND_BALLOTS_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** Recipients per bulk_resend call when sending ballots; ITX rejects a whole call if any recipient is invalid, so batches bound the blast radius. */
+export const VOTE_SEND_BALLOTS_BATCH_SIZE = 100;
+
+/** Upper bound on a vote link token's length — matches the voting service's `vote_token` maxLength; anything larger is rejected before it is forwarded. */
+export const VOTE_LINK_TOKEN_MAX_LENGTH = 1024;
+
+/** Fragment parameter that carries the vote link token (`/votes/{uid}#vote_token=...`). */
+export const VOTE_LINK_TOKEN_FRAGMENT_PARAM = 'vote_token';
+
+/** Upstream 400 message (lowercased substring) when a first submission hits a ballot that already has a response: switch to update. */
+export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
+
+/** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
+export const VOTE_LINK_NOT_RESPONDED = 'not responded';

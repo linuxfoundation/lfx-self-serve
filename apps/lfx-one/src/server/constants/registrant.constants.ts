@@ -156,12 +156,24 @@ const UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP = {
   host: true,
   job_title: true,
   username: true,
+  user_id: true,
   committee_uid: true,
   linkedin_profile: true,
 } as const satisfies Record<
   Exclude<keyof CreateMeetingRegistrantRequest | keyof UpdateMeetingRegistrantRequest, (typeof APP_ONLY_REGISTRANT_KEYS)[number]>,
   true
 >;
+
+/**
+ * Passthrough keys that are forwarded on update only.
+ *
+ * `user_id` is the one: upstream treats it as immutable and compares an update's value against the
+ * stored one, so the update has to send it back. A create has no stored value to compare against, so a
+ * client-named `user_id` there would let a caller pick which LF account a guest is linked to. It stays
+ * in {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP} for the exhaustiveness check and is skipped by the
+ * mapper on create.
+ */
+export const UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS = ['user_id'] as const satisfies readonly (keyof UpdateMeetingRegistrantRequest)[];
 
 /**
  * The key list of {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP}, in declaration order.

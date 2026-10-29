@@ -139,8 +139,6 @@ import {
   HealthMetricsTrainingCoursesQuery,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentQuery,
-  HealthMetricsTrainingPresence,
-  HealthMetricsTrainingPresenceQuery,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewCode,
@@ -1148,6 +1146,19 @@ export class AnalyticsService {
     );
   }
 
+  /** One past event's registrations per format, with last year's; there is no forecast. */
+  public getEventsRegistrationHistory(query: HealthMetricsEventsForecastCurveQuery): Observable<HealthMetricsEventsForecastCurve> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the dialog says it failed instead of drawing an empty curve.
+    return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-history', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-history failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
   /** Every closed event in the four periods, with each period's header totals, for the Events tab. */
   public getEventsPast(query: HealthMetricsEventsPastQuery): Observable<HealthMetricsEventsPast> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
@@ -1165,7 +1176,7 @@ export class AnalyticsService {
   public getEventsAtAGlance(query: HealthMetricsEventsAtAGlanceQuery): Observable<HealthMetricsEventsAtAGlance> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
 
-    // Errors propagate: a swallowed failure would read as "No events yet" and blank the whole tab.
+    // Errors propagate: a swallowed failure would read as a foundation with no events measured.
     return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-at-a-glance failed', { query, error });
@@ -1464,19 +1475,6 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] non-members-conversion failed', { foundationSlug: query.foundationSlug, range: query.range, status });
-        return throwError(() => error);
-      })
-    );
-  }
-
-  public getTrainingPresence(query: HealthMetricsTrainingPresenceQuery): Observable<HealthMetricsTrainingPresence> {
-    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
-
-    // Errors propagate so the tab shows its error state rather than claiming the foundation has no programme.
-    return this.http.get<HealthMetricsTrainingPresence>('/api/analytics/training-presence', { params }).pipe(
-      catchError((error: unknown) => {
-        const status = error instanceof HttpErrorResponse ? error.status : undefined;
-        console.error('[analytics] training-presence failed', { foundationSlug: query.foundationSlug, status });
         return throwError(() => error);
       })
     );

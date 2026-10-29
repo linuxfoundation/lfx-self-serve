@@ -10,7 +10,7 @@ import {
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
@@ -48,6 +48,27 @@ describe('VoteService', () => {
     });
 
     service = TestBed.inject(VoteService);
+  });
+
+  it('serves an uncached vote read per subscription, never touching the detail cache', () => {
+    http.get.mockImplementation(() => of({ uid: 'v1' }));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    service.getVoteDetail('v1').subscribe();
+    service.getVoteDetail('v1').subscribe();
+    expect(http.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels an uncached vote read when its subscriber leaves', () => {
+    const teardown = vi.fn();
+    http.get.mockImplementation(() => defer(() => new Subject<Vote>().pipe(finalize(teardown))));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe().unsubscribe();
+
+    expect(teardown).toHaveBeenCalledTimes(1);
   });
 
   it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {
@@ -995,6 +1016,41 @@ describe('VoteService', () => {
       // …and the service-side subscription still ran the enable to completion and marked the vote.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+  });
+
+  describe('getPublicProjectSummary (#4692)', () => {
+    const summary = { name: 'Synthetic Project', slug: 'synthetic', logo_url: null, is_foundation: false };
+
+    it('requests the encoded identifier from the public summary route', () => {
+      http.get.mockReturnValue(of(summary));
+      let result: unknown;
+      service.getPublicProjectSummary('a/b').subscribe((value) => (result = value));
+
+      expect(http.get).toHaveBeenCalledWith('/public/api/projects/a%2Fb/summary');
+      expect(result).toEqual(summary);
+    });
+
+    it('maps a 404 (hidden or unknown project) to null without a warning', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('maps any other failure to null and logs only the status', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 503);
+      warn.mockRestore();
     });
   });
 });

@@ -13,7 +13,7 @@ import {
   VOTE_TITLE_MAX_LENGTH,
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
+import { VOTES_STATS_WINDOW_DAYS, VOTE_PRESENTER_TITLE_MAX_CHARS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
@@ -38,6 +38,8 @@ import type {
   RankedQuestionView,
   UpdateVoteRequest,
   Vote,
+  VoteAnswerSummaryLine,
+  VoteBallotSubmission,
   VoteFormValue,
   VoteParticipationStats,
   VoteResultsOption,
@@ -751,4 +753,50 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
  */
 export function votePermalinkPath(voteUid: string): string {
   return `/votes/${encodeURIComponent(voteUid)}`;
+}
+
+/**
+ * Builds the relative path to a vote's chrome-less presenter view (`VotePresenterComponent`, `/votes/:id/present`).
+ * @param voteUid - The vote uid
+ * @returns The relative presenter path, e.g. `/votes/abc123/present`
+ */
+export function votePresenterPath(voteUid: string): string {
+  return `${votePermalinkPath(voteUid)}/present`;
+}
+
+/**
+ * Truncates a vote title for the presenter view and the copy-slide PNG (#4142, #4145).
+ * @description Cuts at the last whole word within the cap and appends an ellipsis; a single word longer than the cap is hard-cut
+ * (never splitting a surrogate pair) so the result still fits. Titles within the cap are returned untouched.
+ * @param title - Full vote title
+ * @param max - Character cap, defaults to VOTE_PRESENTER_TITLE_MAX_CHARS
+ */
+export function truncateVoteTitle(title: string, max: number = VOTE_PRESENTER_TITLE_MAX_CHARS): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= max) {
+    return trimmed;
+  }
+
+  const head = truncateToUtf16Units(trimmed, max - 1);
+  const lastSpace = head.lastIndexOf(' ');
+  const wordSafe = lastSpace > 0 && trimmed.charAt(head.length) !== ' ' ? head.slice(0, lastSpace) : head;
+  return `${wordSafe.trimEnd()}…`;
+}
+
+/**
+ * One recap line per question for the vote link thank-you screen. Ranked ballots read in rank order
+ * ("1. Alice, 2. Bob"); an abstention has no per-question answers, so it returns no lines.
+ */
+export function buildVoteAnswerSummary(questions: PollQuestion[], submission: VoteBallotSubmission): VoteAnswerSummaryLine[] {
+  if (submission.abstain) return [];
+  return questions.map((question) => {
+    const textById = new Map(question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
+    const answer = submission.userVoteContent?.find((entry) => entry.question_id === question.question_id);
+    const ranked = [...(answer?.ranked_choices ?? [])].sort((a, b) => a.choice_rank - b.choice_rank);
+    const text =
+      ranked.length > 0
+        ? ranked.map((choice, index) => `${index + 1}. ${textById.get(choice.choice_id) ?? choice.choice_id}`).join(', ')
+        : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
+    return { question_id: question.question_id, prompt: question.prompt, answer: text };
+  });
 }

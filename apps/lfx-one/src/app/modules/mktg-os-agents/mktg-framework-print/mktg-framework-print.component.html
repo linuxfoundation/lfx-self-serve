@@ -12,22 +12,20 @@
   component's SCSS), never the app's palette.
 -->
 @let section = 'flex flex-col gap-[14pt] break-before-page';
-@let head = 'flex items-center justify-between gap-[12pt] border-b border-black/10 pb-[6pt] text-[7.5pt] uppercase tracking-[0.18em]';
-@let sectionTitle = 'flex items-baseline gap-[10pt] text-[22pt] font-medium leading-[1.1] tracking-[-0.01em]';
-@let sectionNumber = 'text-[11pt] font-semibold text-[color:var(--mfp-accent)]';
 @let subTitle = 'text-[11pt] font-semibold';
 @let eyebrow = 'text-[7pt] font-semibold uppercase tracking-[0.16em] opacity-60';
 @let card = 'flex flex-col gap-[6pt] rounded-[6pt] border border-black/10 p-[10pt] break-inside-avoid';
 @let tinted = 'flex flex-col gap-[4pt] rounded-[6pt] bg-[color:var(--mfp-tint)] p-[10pt] break-inside-avoid';
 @let proofList = 'flex flex-col gap-[3pt]';
-@let proofRow = 'flex items-start justify-between gap-[8pt] text-[8.5pt]';
-@let proofSource = 'shrink-0 text-[7pt] uppercase tracking-[0.08em] opacity-60';
+<!-- A proof point stacks its source under the fact: a goal column is narrow (the page shared by up to eight goals), so side by side the source would push the fact into a sliver or run into the next column. -->
+@let proofRow = 'flex flex-col gap-[1pt] text-[8.5pt]';
+@let proofSource = 'text-[7pt] uppercase tracking-[0.08em] opacity-60';
 @let chip = 'rounded-full border border-black/15 px-[6pt] py-[1pt] text-[7.5pt]';
 @let accentBar = 'h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]';
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its column instead of running off the page. -->
 <div
-  class="lfx-framework-print flex flex-col bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
+  class="lfx-framework-print bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
   [style.--mfp-dark]="v.brand.dark"
   [style.--mfp-accent]="v.brand.accent"
   [style.--mfp-tint]="v.brand.tint"
@@ -36,9 +34,10 @@
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
-  <!-- COVER: the whole first page area, on the brand's dark. In print a viewport height is the page area's height, so the cover fills the first page of either paper and its contents list stays on it. -->
+  <!-- A bounded cover grid, not a viewport-height flexbox: native pagination
+       keeps the title and contents on one sheet without a growing child. -->
   <section
-    class="flex h-screen flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
+    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
     aria-label="Cover"
     data-testid="mktg-framework-print-cover">
     <div class="flex items-baseline justify-between gap-[12pt] text-[7.5pt] uppercase tracking-[0.2em] opacity-80">
@@ -55,7 +54,7 @@
         [style.filter]="logo.filter || null"
         data-testid="mktg-framework-print-cover-logo" />
     }
-    <div class="flex flex-1 flex-col justify-center gap-[14pt]">
+    <div class="flex flex-col justify-center gap-[14pt]">
       <span [class]="accentBar"></span>
       <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="mktg-framework-print-title">{{ v.title }}</h1>
       <p class="max-w-[5.6in] text-[17pt] leading-[1.3] opacity-90" data-testid="mktg-framework-print-tagline">{{ v.mf.tagline }}</p>
@@ -72,64 +71,89 @@
   <!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
   <section [class]="section" aria-label="Framework" data-testid="mktg-framework-print-framework">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[0].number }}</span
-      >{{ v.sections[0].title }}
-    </h2>
-    <div class="grid grid-cols-2 gap-[10pt]">
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" [accent]="v.brand.accent" />
+    <!-- The framework as one table (Jim's definitions): the four statements across the top, then one column per goal -->
+    <div class="grid grid-cols-4 gap-[8pt]" data-testid="mktg-framework-print-statements">
       <div [class]="card">
         <span [class]="eyebrow">Vision</span>
-        <p class="text-[10pt]">{{ v.mf.vision }}</p>
+        <p class="text-[9pt]">{{ v.mf.vision }}</p>
       </div>
       <div [class]="card">
         <span [class]="eyebrow">Mission</span>
-        <p class="text-[10pt]">{{ v.mf.mission }}</p>
+        <p class="text-[9pt]">{{ v.mf.mission }}</p>
       </div>
-      <div class="col-span-2" [class]="card">
-        <span [class]="eyebrow">Positioning</span>
-        <p class="text-[10pt]">{{ v.mf.positioning }}</p>
+      <div [class]="card">
+        <span [class]="eyebrow">Positioning statement</span>
+        <p class="text-[9pt]">{{ v.mf.positioning }}</p>
       </div>
-      <div class="col-span-2 border-l-[3pt] border-[color:var(--mfp-accent)]" [class]="tinted">
+      <div [class]="tinted">
         <span [class]="eyebrow">Tagline</span>
-        <p class="text-[15pt] font-medium leading-[1.25]">{{ v.mf.tagline }}</p>
+        @if (v.mf.tagline) {
+          <!-- Anchor the accent to text, not a grid item's empty continuation fragment. -->
+          <p
+            class="border-l-[3pt] border-[color:var(--mfp-accent)] pl-[6pt] text-[12pt] font-medium leading-[1.25] break-inside-avoid"
+            data-testid="mktg-framework-print-tagline-accent">
+            {{ v.mf.tagline }}
+          </p>
+        }
       </div>
     </div>
 
     <div class="flex flex-col gap-[8pt]">
-      <h3 [class]="subTitle">Goal columns</h3>
-      <div class="grid grid-cols-2 gap-[10pt]" data-testid="mktg-framework-print-goals">
-        @for (goal of v.goals; track goal.id) {
-          <article [class]="card">
-            <div class="flex items-baseline justify-between gap-[8pt]">
-              <h4 class="text-[11pt] font-semibold">{{ goal.t }}</h4>
-              <span class="text-[7.5pt] opacity-60">Goal {{ goal.n }}</span>
-            </div>
-            <div class="flex flex-col gap-[1pt]">
-              <span [class]="eyebrow">Value proposition</span>
-              <p>{{ goal.vp }}</p>
-            </div>
-            <div class="flex flex-col gap-[1pt]">
-              <span [class]="eyebrow">Key message</span>
-              <p>{{ goal.key }}</p>
-            </div>
-            <div class="flex flex-col gap-[2pt]">
-              <span [class]="eyebrow">Proof</span>
-              <ul [class]="proofList">
-                @for (proof of goal.proofRows; track $index) {
-                  <li [class]="proofRow">
-                    <span>{{ proof.fact }}</span
-                    ><span [class]="proofSource">{{ proof.source }}</span>
-                  </li>
-                }
-              </ul>
-            </div>
-            <p class="border-l-[2pt] border-[color:var(--mfp-accent)] pl-[6pt] italic">“{{ goal.bite }}”</p>
-            @if (goal.segmentLabel) {
-              <p class="text-[8pt] opacity-75">For {{ goal.segmentLabel }}</p>
+      <table class="w-full table-fixed border-collapse text-[8.5pt] break-inside-avoid" data-testid="mktg-framework-print-goals">
+        <thead>
+          <tr class="bg-[color:var(--mfp-tint)] text-left align-bottom">
+            <th class="w-[1.1in] p-[6pt]"></th>
+            @for (goal of v.goals; track goal.id) {
+              <th class="p-[6pt]">
+                <span class="block text-[7pt] font-normal uppercase tracking-[0.12em] opacity-60">Goal {{ goal.n }}</span>
+                <span class="block text-[10.5pt] font-semibold">{{ goal.t }}</span>
+              </th>
             }
-          </article>
-        }
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-t border-black/10 align-top">
+            <th [class]="eyebrow" class="p-[6pt] text-left">Value proposition</th>
+            @for (goal of v.goals; track goal.id) {
+              <td class="p-[6pt]">{{ goal.vp }}</td>
+            }
+          </tr>
+          <tr class="border-t border-black/10 align-top">
+            <th [class]="eyebrow" class="p-[6pt] text-left">Key message</th>
+            @for (goal of v.goals; track goal.id) {
+              <td class="p-[6pt] font-semibold">{{ goal.key }}</td>
+            }
+          </tr>
+        </tbody>
+        <!-- If the table cannot fit whole, keep the statements together and proof
+             with its sound bite; the goal-column header repeats on continuation. -->
+        <tbody>
+          <tr class="border-t border-black/10 align-top">
+            <th [class]="eyebrow" class="p-[6pt] text-left">Proof</th>
+            @for (goal of v.goals; track goal.id) {
+              <td class="p-[6pt]">
+                <ul [class]="proofList">
+                  @for (proof of goal.proofRows; track $index) {
+                    <li [class]="proofRow">
+                      <span>{{ proof.fact }}</span>
+                      <span [class]="proofSource">{{ proof.source }}</span>
+                    </li>
+                  }
+                </ul>
+              </td>
+            }
+          </tr>
+          <tr class="border-t border-black/10 align-top">
+            <th [class]="eyebrow" class="p-[6pt] text-left">Sound bite</th>
+            @for (goal of v.goals; track goal.id) {
+              <td class="p-[6pt]">
+                <p class="border-l-[2pt] border-[color:var(--mfp-accent)] pl-[6pt] italic">“{{ goal.bite }}”</p>
+              </td>
+            }
+          </tr>
+        </tbody>
+      </table>
       @if (v.mf.crosscut) {
         <p class="text-[8.5pt] opacity-75">{{ v.mf.crosscut }}</p>
       }
@@ -179,122 +203,10 @@
     </div>
   </section>
 
-  <!-- 02 · ICPs: one card per segment -->
-  <section [class]="section" aria-label="ICPs" data-testid="mktg-framework-print-icps">
-    <ng-container *ngTemplateOutlet="runningHead" />
-    <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[1].number }}</span
-      >{{ v.sections[1].title }}
-    </h2>
-    @for (icp of v.icps; track icp.id) {
-      <article [class]="card" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
-        <div class="flex flex-wrap items-baseline gap-[8pt]">
-          <h3 class="text-[12pt] font-semibold">{{ icp.name }}</h3>
-          <span [class]="chip">{{ icp.kind }}</span>
-          <span class="text-[7.5pt] opacity-60">Basis: {{ icp.basis }}</span>
-        </div>
-        <p>{{ icp.who }}</p>
-        @if (icp.goalLabel) {
-          <p class="text-[8pt] opacity-75">Goals: {{ icp.goalLabel }}</p>
-        }
-        <dl class="grid grid-cols-[78pt_1fr] gap-x-[10pt] gap-y-[4pt] text-[9pt]">
-          <dt [class]="eyebrow">Need</dt>
-          <dd>{{ icp.need }}</dd>
-          <dt [class]="eyebrow">Value</dt>
-          <dd>{{ icp.value }}</dd>
-          <dt [class]="eyebrow">Lead</dt>
-          <dd class="font-semibold">{{ icp.lead }}</dd>
-          <dt [class]="eyebrow">Proof</dt>
-          <dd>
-            <ul [class]="proofList">
-              @for (proof of icp.proofRows; track $index) {
-                <li [class]="proofRow">
-                  <span>{{ proof.fact }}</span
-                  ><span [class]="proofSource">{{ proof.source }}</span>
-                </li>
-              }
-            </ul>
-          </dd>
-          <dt [class]="eyebrow">Call to action</dt>
-          <dd>{{ icp.cta }}</dd>
-          <dt [class]="eyebrow">Channels</dt>
-          <dd>{{ icp.channelsLabel }}</dd>
-          <dt [class]="eyebrow">Objection</dt>
-          <dd class="flex flex-col gap-[1pt]">
-            <span>{{ icp.objectionText }}</span>
-            @if (icp.objectionResponse) {
-              <span class="opacity-75">→ {{ icp.objectionResponse }}</span>
-            }
-          </dd>
-          <dt [class]="eyebrow">Personas</dt>
-          <dd>
-            <ul class="flex flex-col gap-[2pt]">
-              @for (persona of icp.personaRows; track persona.role) {
-                <li>
-                  <span class="font-semibold">{{ persona.role }}</span> — {{ persona.cares }}
-                </li>
-              }
-            </ul>
-          </dd>
-        </dl>
-      </article>
-    }
-  </section>
-
-  <!-- 03 · MESSAGE HOUSE: the roof (umbrella and line), three pillars, the foundation, the audiences -->
-  <section [class]="section" aria-label="Message house" data-testid="mktg-framework-print-message-house">
-    <ng-container *ngTemplateOutlet="runningHead" />
-    <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[2].number }}</span
-      >{{ v.sections[2].title }}
-    </h2>
-    <div class="flex flex-col gap-[8pt] break-inside-avoid">
-      <div class="flex flex-col items-center gap-[4pt] rounded-[6pt] bg-[color:var(--mfp-dark)] p-[14pt] text-center text-[color:var(--mfp-on-dark)]">
-        <span class="text-[7pt] font-semibold uppercase tracking-[0.16em] opacity-70">Umbrella</span>
-        <p class="text-[11pt]">{{ v.mh.umbrella }}</p>
-        <p class="text-[15pt] font-medium leading-[1.25]">{{ v.mh.line }}</p>
-      </div>
-      <div class="grid grid-cols-3 gap-[8pt]" data-testid="mktg-framework-print-pillars">
-        @for (pillar of v.pillars; track pillar.t) {
-          <article class="border-t-[3pt] border-t-[color:var(--mfp-accent)]" [class]="card">
-            <h3 class="text-[10.5pt] font-semibold">{{ pillar.t }}</h3>
-            <p>{{ pillar.m }}</p>
-            <ul class="border-t border-black/10 pt-[4pt]" [class]="proofList">
-              @for (proof of pillar.proofRows; track $index) {
-                <li [class]="proofRow">
-                  <span>{{ proof.fact }}</span
-                  ><span [class]="proofSource">{{ proof.source }}</span>
-                </li>
-              }
-            </ul>
-          </article>
-        }
-      </div>
-      <div class="items-center text-center" [class]="tinted">
-        <span [class]="eyebrow">Foundation</span>
-        <p class="text-[10pt]">{{ v.mh.found }}</p>
-      </div>
-    </div>
-    @if (v.audiences.length > 0) {
-      <div [class]="card">
-        <h3 [class]="subTitle">Audiences</h3>
-        <dl class="grid grid-cols-[1.6in_1fr] gap-x-[10pt] gap-y-[4pt]" data-testid="mktg-framework-print-audiences">
-          @for (row of v.audiences; track row.name) {
-            <dt class="font-semibold">{{ row.name }}</dt>
-            <dd>{{ row.lead }}</dd>
-          }
-        </dl>
-      </div>
-    }
-  </section>
-
-  <!-- 04 · KEY NUMBERS -->
+  <!-- 02 · KEY NUMBERS -->
   <section [class]="section" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <h2 [class]="sectionTitle">
-      <span [class]="sectionNumber">{{ v.sections[3].number }}</span
-      >{{ v.sections[3].title }}
-    </h2>
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" [accent]="v.brand.accent" />
     <div class="grid grid-cols-3 gap-[10pt]">
       @for (row of v.numbers; track $index) {
         <div class="items-center text-center" [class]="tinted">
@@ -309,12 +221,5 @@
 
 <!-- The running head of every section: what the document is, and the brand's logo on white. -->
 <ng-template #runningHead>
-  <div [class]="head">
-    <span class="opacity-75">{{ v.runningHead }}</span>
-    @if (v.brand.logoOnLight; as logo) {
-      <img class="h-[16pt] max-w-[1.6in] object-contain object-right" [src]="logo.src" [alt]="logo.alt" />
-    } @else if (v.versionLabel) {
-      <span class="opacity-75">{{ v.versionLabel }}</span>
-    }
-  </div>
+  <lfx-mktg-print-running-head [brand]="v.brand" [label]="v.runningHead" [versionLabel]="v.versionLabel" />
 </ng-template>

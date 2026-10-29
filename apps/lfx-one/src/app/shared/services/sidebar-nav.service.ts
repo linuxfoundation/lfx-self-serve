@@ -23,6 +23,7 @@ import {
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -67,7 +68,7 @@ export class SidebarNavService {
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off, matching `mentorshipEnabledGuard`. */
+  /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off or while the provider is not ready (unlike `mentorshipEnabledGuard`, which fails open). */
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
@@ -953,11 +954,15 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range,
+            // not page-specific params.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
           },
           {
             label: 'Events',

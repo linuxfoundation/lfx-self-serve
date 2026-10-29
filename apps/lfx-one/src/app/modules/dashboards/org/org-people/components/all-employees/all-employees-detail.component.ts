@@ -3,12 +3,15 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
-import type { OrgAllEmployeeDetail } from '@lfx-one/shared/interfaces';
+import { ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT } from '@lfx-one/shared/constants';
+import type { OrgAllEmployeeDetail, OrgPersonCodeCount } from '@lfx-one/shared/interfaces';
+import { orgPersonCodeCount } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 
 /** Expandable detail sub-table for one All Employees row — up to five sections, empty ones hidden. */
 @Component({
   selector: 'lfx-org-people-all-employees-detail',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, TooltipModule],
   templateUrl: './all-employees-detail.component.html',
 })
 export class AllEmployeesDetailComponent {
@@ -16,6 +19,10 @@ export class AllEmployeesDetailComponent {
   public readonly loading = input<boolean>(false);
   public readonly error = input<boolean>(false);
   public readonly retry = output<void>();
+
+  protected readonly maintainerRolesUnavailableHint = ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT;
+  // The code column counts what the row does — the page's range, project type and code count (lfx-self-serve#4404).
+  protected readonly codeCount: Signal<OrgPersonCodeCount> = computed(() => orgPersonCodeCount(this.detail()?.codeView));
 
   protected readonly hasAnyDetail: Signal<boolean> = computed(() => this.initHasAnyDetail());
 

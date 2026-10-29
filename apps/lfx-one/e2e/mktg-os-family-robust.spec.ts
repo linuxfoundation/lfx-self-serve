@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  MKTG_AGENTS,
-  MKTG_KIT_FAMILIES,
-  MKTG_KIT_POSITIONING_FAMILY_ID,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_AGENT_INTAKES,
-} from '../../../packages/shared/src/constants';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_DOCUMENT_TYPES } from '../../../packages/shared/src/constants';
 import { expect } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, openKit, setupKit } from './helpers/mktg-kit.helper';
@@ -22,22 +16,11 @@ test.describe('Marketing family responsive structure', () => {
         await page.setViewportSize({ width, height: 1000 });
         await setupKit(page, { loaded: true, approvedFramework: true });
         await openKit(page, `/families/${familyId}`);
-        await expect(page.getByTestId('mktg-family-assets').getByRole('listitem')).toHaveCount(
-          MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.length ?? 0
-        );
-        const eligible = (MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets ?? []).filter((asset) => {
-          const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === asset.agentKey && entry.kind === 'living');
-          return (
-            !!type?.catalogAgentId &&
-            !!MKTG_AGENT_INTAKES[type.catalogAgentId] &&
-            MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
-          );
-        });
-        await expect(page.getByTestId('mktg-family-assets').locator('[data-testid^="mktg-family-run-"]')).toHaveCount(eligible.length);
-        for (const asset of eligible) {
-          const action = page.getByTestId(`mktg-family-asset-${asset.id}`).getByTestId(`mktg-family-run-${asset.id}`).getByRole('link');
-          await expect(action).toBeVisible();
-          await expect(action).toHaveAttribute('href', /mode=new/);
+        await expect(page.getByTestId('mktg-family-assets').getByRole('listitem')).toHaveCount(familyId === MKTG_KIT_POSITIONING_FAMILY_ID ? 4 : 1);
+        await expect(page.getByTestId('mktg-family-asset-one-pager')).toHaveCount(0);
+        await expect(page.getByTestId('mktg-family-asset-pitch-deck')).toHaveCount(0);
+        for (const row of await page.getByTestId('mktg-family-assets').getByRole('listitem').all()) {
+          if (await row.locator('[data-testid^="mktg-family-open-"]').count()) await expect(row.locator('lfx-button')).toHaveCount(0);
         }
         const title = await page.getByTestId('mktg-family-title').boundingBox();
         const intro = await page.getByTestId('mktg-family-intro').boundingBox();
@@ -66,7 +49,7 @@ test.describe('Marketing family responsive structure', () => {
           await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
           const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === familyId);
           const runnable = MKTG_AGENTS.find((agent) => family?.agentIds.includes(agent.id) && agent.status === 'active');
-          const runButton = page.getByTestId('mktg-family-run').getByRole('button');
+          const runButton = page.getByTestId('mktg-family-run').getByRole(runnable ? 'link' : 'button');
           const run = await page.getByTestId('mktg-family-run').boundingBox();
           expect(run).not.toBeNull();
           if (runnable) {
@@ -74,17 +57,30 @@ test.describe('Marketing family responsive structure', () => {
             const asset = family?.assets.find((row) =>
               MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === row.agentKey && type.catalogAgentId === runnable.id)
             );
-            await expect(runButton).toHaveAccessibleName('Run ' + (asset?.runName ?? asset?.label ?? runnable.name));
+            await expect(runButton).toHaveAccessibleName('Create ' + (asset?.runName ?? asset?.label ?? runnable.name));
+            await expect(page.getByTestId('mktg-family-run-next')).toHaveCount(0);
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {
-            await expect(runButton).toBeDisabled();
-            const reason = await page.getByTestId('mktg-family-run-unavailable').boundingBox();
-            expect(reason).not.toBeNull();
-            if (run && reason) expect(reason.y).toBeGreaterThanOrEqual(run.y + run.height);
+            await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
           }
         }
-        await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
-        await expect(page.getByTestId('mktg-family-exports').getByRole('button')).toHaveCount(2);
+        await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+        await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+        // Sources retains its live toggle while roadmap sign-off stays hidden;
+        // scope export assertions to the real export actions, not every aside button.
+        const exportSlot = page.getByTestId('mktg-family-exports');
+        const exportActions = exportSlot.getByTestId('family-export-actions');
+        if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
+          await expect(exportActions.getByTestId('family-export-pdf').getByRole('button', { name: 'Download PDF', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-slides').getByRole('button', { name: 'Export to Google Slides', exact: true })).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Show', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-unsupported')).toHaveCount(0);
+        } else {
+          await expect(exportActions.getByTestId('family-export-pdf')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-slides')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-unsupported')).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle')).toHaveCount(0);
+        }
         const table = await page.getByTestId('mktg-family-assets').boundingBox();
         const exports = await page.getByTestId('mktg-family-exports').boundingBox();
         expect(table).not.toBeNull();

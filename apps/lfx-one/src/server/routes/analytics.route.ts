@@ -246,6 +246,9 @@ router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, 
   analyticsController.getEventsRegistrationForecastCurve(req, res, next)
 );
 
+// Health Metrics Overview past event registration trend (#4321)
+router.get('/events-registration-history', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationHistory(req, res, next));
+
 // Health Metrics Events "Past events" section (#2965)
 router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
 
@@ -286,8 +289,7 @@ router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => anal
 router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
 router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
 
-// Health Metrics Training tab (#3198) and its enrollment (#3199) and courses (#3200) sections
-router.get('/training-presence', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingPresence(req, res, next));
+// Health Metrics Training tab's enrollment (#3199) and courses (#3200) sections
 router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
 router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
 

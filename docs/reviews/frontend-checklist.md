@@ -15,7 +15,7 @@ Components must follow the 11-section structure defined in `.claude/rules/compon
 
 ## 2. PrimeNG wrapper strategy (SHOULD FIX)
 
-No direct `p-*` components in feature module templates. Must use `lfx-*` wrappers.
+No direct `p-*` components in feature module templates. Must use `lfx-*` wrappers (or an `lfx-ui-*` uikit component from `shared/uikit/`, which has no PrimeNG).
 
 **Violation:**
 
@@ -257,7 +257,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | No `console.log` — use `console.warn` or `console.error`                                                                                                                                                                                                                              | SHOULD FIX |
 | No nested ternaries                                                                                                                                                                                                                                                                   | SHOULD FIX |
-| Selector prefix must be `lfx-`                                                                                                                                                                                                                                                        | SHOULD FIX |
+| Selector prefix must be `lfx-` (`lfx-ui-` in `shared/uikit/`)                                                                                                                                                                                                                         | SHOULD FIX |
 | Use `inject()` for DI — never constructor-based injection                                                                                                                                                                                                                             | SHOULD FIX |
 | Use `@if`/`@for` template syntax — not `*ngIf`/`*ngFor`                                                                                                                                                                                                                               | SHOULD FIX |
 | Use `ReactiveFormsModule` always — never `[(ngModel)]` for forms                                                                                                                                                                                                                      | SHOULD FIX |
@@ -305,7 +305,7 @@ export class MyService {
 
 ## 14. High-recurrence reviewer patterns
 
-These 15 audits cover the patterns most commonly flagged by reviewers across 20+ LFX PRs. They are judgment-based — not auto-fixable. Scope to changed files only. Severity is the reviewer's reaction (CRITICAL = always flagged; DISCUSS = judgment call worth surfacing). Use these in addition to sections 1-13 above; some overlap is intentional (e.g., 14.1 echoes #2 with specific raw-element coverage).
+These audits cover the patterns most commonly flagged by reviewers across 20+ LFX PRs. They are judgment-based — not auto-fixable. Scope to changed files only. Severity is the reviewer's reaction (CRITICAL = always flagged; SHOULD FIX = expected to be addressed; DISCUSS = judgment call worth surfacing). Use these in addition to sections 1-13 above; some overlap is intentional (e.g., 14.1 echoes #2 with specific raw-element coverage).
 
 ### 14.1 Raw HTML form elements (CRITICAL)
 
@@ -318,7 +318,7 @@ In changed `.html` files, look for raw form elements that must use LFX wrappers:
 | `<textarea`                       | `lfx-textarea`                                    |
 | `<div` with `animate-pulse` class | `<p-skeleton>` from PrimeNG                       |
 
-Exceptions: elements inside comments, or `<input type="hidden">`. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
+Exceptions: anything under `shared/uikit/**` (the PrimeNG-free uikit builds on raw `<input>` and `<button>` by design), elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output; `lfx-ui-checkbox` supports `indeterminate`, a `[(checked)]` model and reactive forms) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
 
 ### 14.2 Dead code (CRITICAL for unused providers/imports/unbound outputs; DISCUSS for unused methods)
 
@@ -456,7 +456,13 @@ In changed `.html` templates of a main lens page (a page reached from the Me, Fo
 - The header is not restyled: no font, size or colour classes on its title, and no top margin above it (`mt-*` on the header or on the page's first element, or a `p-6`/`py-6` page wrapper). Space below the header is `mb-6` (or a parent `gap-6`). A sticky header that cancels the layout's `py-6` with `-mt-6` and restores it with `pt-6` (social listening) is fine.
 - Right-side buttons or filters go in `[pageHeaderActions]`, inline tags in `[pageHeaderTitleSuffix]`, and description copy with markup in `[pageHeaderDescription]`. Content in those slots does not belong in a sibling wrapper beside the header.
 
-Pages opened from a list or an action (detail, create and manage pages), placeholder pages, and pages whose title sits inside a card (org profile) or a breadcrumb (campaigns) keep their own heading. Health Metrics is the one sidebar page that builds its own sticky header, to its design's title type. See [component-architecture § Page header](../architecture/frontend/component-architecture.md#page-header-lfx-page-header).
+Pages opened from a list or an action (detail, create and manage pages), placeholder pages, and pages whose title sits inside a card (org profile) or a breadcrumb (campaigns) keep their own heading. Health Metrics and the flag-gated Meetings redesign (`meetings-redesign`) build their own sticky headers, to their designs' title type. See [component-architecture § Page header](../architecture/frontend/component-architecture.md#page-header-lfx-page-header).
+
+---
+
+### 14.17 User docs currency (SHOULD FIX)
+
+If the diff adds or removes a user-reachable feature, or changes UI a user sees (renamed button/tab/label/route, changed flow, new or changed permission, lens or feature-flag availability, a page redesign), check that it also updates the matching `docs/user/<section>/` article(s), or that the PR description says "No user docs impact" with a reason. Flag a visible change with neither. Pure internal changes (refactors, types, tests, server-only changes with no visible effect) are exempt; a server-side change to permissions, personas or lens access is not. Rule: `.claude/rules/development-rules.md` § User Documentation Maintenance.
 
 ---
 

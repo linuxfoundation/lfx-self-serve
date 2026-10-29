@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -53,7 +53,7 @@ import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -74,6 +74,7 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
 type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
@@ -113,6 +114,7 @@ export class OrgProjectsComponent {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Configuration
@@ -179,6 +181,10 @@ export class OrgProjectsComponent {
   private readonly workspaceReload = signal(0);
   private addableProjectsSearchRequestId = 0;
   private addableProjectsSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last name each employee id was listed under, so a selected id the current projects don't list keeps its label. */
+  private readonly employeeLabels = new Map<string, string>();
+  /** Set while `resetFilters` resets the form, so its single navigation is the only URL write. */
+  private resettingFilters = false;
   /** Action menu items rebuilt per row when the kebab is opened. */
   protected rowMenuItems: MenuItem[] = [];
 
@@ -210,6 +216,7 @@ export class OrgProjectsComponent {
   protected readonly selectedWorkspaceName = computed<string>(() => this.selectedWorkspace()?.name ?? '');
   private readonly workspacesResponse = this.initWorkspaces();
   private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
+  protected readonly maintainerRolesUnavailable = computed<boolean>(() => this.response()?.maintainerRolesUnavailable === true);
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 
@@ -282,15 +289,11 @@ export class OrgProjectsComponent {
   public constructor() {
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      void this.router.navigate([], {
-        relativeTo: this.route,
-        queryParams: {
-          foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
-          employees: value.employees && value.employees.length ? value.employees.join(',') : null,
-          page: null,
-        },
-        queryParamsHandling: 'merge',
-        replaceUrl: true,
+      if (this.resettingFilters) return;
+      this.writeQueryParams({
+        foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
+        employees: value.employees && value.employees.length ? value.employees.join(',') : null,
+        page: null,
       });
     });
 
@@ -304,6 +307,18 @@ export class OrgProjectsComponent {
       this.editingWorkspace.set(null);
     });
 
+    // The selection came from the previous org's roster, so a change between two resolved orgs (a switch, or Back /
+    // Forward across one) clears it; the switch navigation strips `?employees=` too. The first org resolving
+    // (null → uid) must keep a deep-linked selection.
+    this.orgUid$
+      .pipe(
+        filter((uid) => uid !== null),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.employees.setValue([]));
+
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value.name?.trim()) {
         this.workspaceNameError.set(null);
@@ -311,7 +326,7 @@ export class OrgProjectsComponent {
     });
 
     // Clear pending debounce timer on teardown.
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
       }
@@ -352,9 +367,12 @@ export class OrgProjectsComponent {
     });
   }
 
+  /** One navigation clears every filter and the workspace, so neither write can restore the other's pre-reset params. */
   protected resetFilters(): void {
+    this.resettingFilters = true;
     this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
-    this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
+    this.resettingFilters = false;
+    this.writeQueryParams({ foundation: null, employees: null, workspace: null, page: null });
   }
 
   protected openAddProjects(): void {
@@ -757,6 +775,13 @@ export class OrgProjectsComponent {
           return concat(
             of(null),
             this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+              tap((response) => {
+                for (const project of response.projects) {
+                  for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+                    this.employeeLabels.set(person.id, person.name);
+                  }
+                }
+              }),
               catchError((err) => {
                 console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
@@ -985,14 +1010,20 @@ export class OrgProjectsComponent {
         byId.set(person.id, person.name);
       }
     }
-    return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    const options = [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    // A selected id no project here lists (stale link, other workspace) stays offered so the picker can show and remove it.
+    for (const id of new Set(this.formValue().employees ?? [])) {
+      if (!byId.has(id)) options.push({ value: id, label: this.employeeLabels.get(id) ?? id });
+    }
+    return options;
   }
 
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
-    const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
-    const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
+    // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
+    // predicate and match nothing, so a selection never widens the list or the CSV export.
+    const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
@@ -1183,5 +1214,12 @@ export class OrgProjectsComponent {
   private readEmployeesFromUrl(): string[] {
     const raw = this.route.snapshot.queryParamMap.get('employees');
     return raw ? raw.split(',').filter(Boolean) : [];
+  }
+
+  /** Merges `queryParams` into the URL once no other navigation (an org switch swapping the path) is in flight. */
+  private writeQueryParams(queryParams: Params): void {
+    runWhenRouterIdle(this.router, this.destroyRef, () => {
+      void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+    });
   }
 }

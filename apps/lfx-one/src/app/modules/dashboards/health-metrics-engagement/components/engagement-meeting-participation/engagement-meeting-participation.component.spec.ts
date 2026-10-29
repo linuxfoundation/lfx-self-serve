@@ -89,6 +89,7 @@ describe('EngagementMeetingParticipationComponent', () => {
   let fixture: ComponentFixture<EngagementMeetingParticipationComponent>;
   let getEngagementMeetingParticipation: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
 
   function text(testId: string): string {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent.replace(/\s+/g, ' ').trim() ?? '';
@@ -118,6 +119,7 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     fixture = TestBed.createComponent(EngagementMeetingParticipationComponent);
     if (onSection) fixture.componentInstance.sectionPicked.subscribe(onSection);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -131,6 +133,7 @@ describe('EngagementMeetingParticipationComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, and renders the roll-up the view computed', async () => {
@@ -142,6 +145,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-delta')).toBe('+4.0pp vs prior period');
     expect(text('engagement-meeting-participation-count')).toBe('12 meetings in period');
     expect(text('engagement-meeting-participation-secondary')).toBe('12');
+    expect(verdicts).toEqual([false]);
   });
 
   // The hero must read the view's own `all` row: summing the type rows double-counts a meeting
@@ -385,14 +389,36 @@ describe('EngagementMeetingParticipationComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).toBeNull();
+    expect(verdicts).toEqual([false, false]);
     expect(text('engagement-meeting-participation-count')).toBe('—');
   });
 
-  it('renders the empty state for a foundation the view has no roll-up row for', async () => {
+  it('settles empty, with no body, for a foundation the view has no roll-up row for', async () => {
     await render(response({ total: null, rows: [] }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
+  });
+
+  it('settles empty, with no body, for a period whose roll-up held no meetings', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null }));
+    await render(response({ total }));
+
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
+  });
+
+  // A count the view never filled in is unmeasured, not zero, so it keeps the body.
+  it('keeps the body for a period whose meeting count is unmeasured', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, meetingsHeld: null }));
+    await render(response({ total }));
+
+    expect(verdicts).toEqual([false]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).not.toBeNull();
   });
 
   // An unresolved foundation is not a foundation with no meetings, and the two must not look alike.
@@ -402,7 +428,7 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     expect(getEngagementMeetingParticipation).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-loading"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).toBeNull();
+    expect(verdicts).toEqual([]);
   });
 
   // The URL is the only carrier of the mode across a reload or a shared link.

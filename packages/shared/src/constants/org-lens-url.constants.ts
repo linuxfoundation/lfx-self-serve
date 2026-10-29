@@ -42,6 +42,16 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
   'not-found': true,
 };
 
+/**
+ * Query parameters an organization switch nulls (a `queryParamsHandling: 'merge'` navigation) on every Org Lens
+ * page: an Employees selection came from the previous organization's roster, so it would match nothing, or the
+ * wrong people, under the next one. Back does not restore it: the pages that filter by Employees (Projects, Code
+ * Contributions) clear the selection whenever the organization changes between two resolved organizations.
+ */
+export const ORG_LENS_SWITCH_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
+  employees: null,
+});
+
 /** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
 export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;
 

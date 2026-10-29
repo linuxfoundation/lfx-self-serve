@@ -289,8 +289,6 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       REGISTRATIONS: 900,
       REGISTRATIONS_GOAL: 800,
       HAS_GOAL: true,
-      GOAL_MET: true,
-      PACE_STATUS: 'healthy',
       ACCEPTED_TALKS: null,
       TOTAL_PROPOSALS: null,
       CFP_STATUS: null,
@@ -354,8 +352,6 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       registrations: 313,
       registrationsGoal: 700,
       compScore: 'high',
-      goalMet: null,
-      paceStatus: null,
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
@@ -365,8 +361,8 @@ describe('HealthMetricsOverviewService.getEvents', () => {
     expect(events.truncated).toBe(false);
   });
 
-  it("maps a past event's outcome and periods, letting the view's own flag decide whether it had a goal", async () => {
-    mockReads([], [past({}), past({ EVENT_ID: 'p2', HAS_GOAL: false, GOAL_MET: false, PACE_STATUS: 'needs_action', IS_IN_PERIOD_YTD: true })]);
+  it("maps a past event's goal and periods, letting the view's own flag decide whether it had one", async () => {
+    mockReads([], [past({}), past({ EVENT_ID: 'p2', HAS_GOAL: false, IS_IN_PERIOD_YTD: true })]);
 
     const { past: rows } = await new HealthMetricsOverviewService().getEvents(req, query);
 
@@ -374,12 +370,10 @@ describe('HealthMetricsOverviewService.getEvents', () => {
       eventId: 'p1',
       registrations: 900,
       registrationsGoal: 800,
-      goalMet: true,
-      paceStatus: 'healthy',
       compScore: null,
       ranges: ['COMPLETED_YEAR'],
     });
-    expect(rows[1]).toMatchObject({ eventId: 'p2', registrationsGoal: null, goalMet: null, paceStatus: null, ranges: ['COMPLETED_YEAR', 'YTD'] });
+    expect(rows[1]).toMatchObject({ eventId: 'p2', registrationsGoal: null, ranges: ['COMPLETED_YEAR', 'YTD'] });
   });
 
   it('caps each list on its own, so a full past list never crowds out upcoming events', async () => {

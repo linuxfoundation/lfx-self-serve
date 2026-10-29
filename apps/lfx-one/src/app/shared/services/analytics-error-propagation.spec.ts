@@ -85,6 +85,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
     {
+      name: 'getEventsRegistrationHistory',
+      url: '/api/analytics/events-registration-history',
+      call: () => service.getEventsRegistrationHistory({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
       name: 'getEventsPast',
       url: '/api/analytics/events-past',
       // Its empty list renders "no past events in this period", which a swallowed failure would fake.
@@ -215,12 +220,6 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/non-members-conversion',
       // A swallowed failure would read as a foundation with no pipeline.
       call: () => service.getNonMembersConversion({ foundationSlug: 'aaif', range: 'YTD' }),
-    },
-    {
-      name: 'getTrainingPresence',
-      url: '/api/analytics/training-presence',
-      // A swallowed failure would read as a foundation with no training programme.
-      call: () => service.getTrainingPresence({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getTrainingEnrollment',

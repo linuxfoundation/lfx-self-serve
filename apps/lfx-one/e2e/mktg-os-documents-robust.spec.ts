@@ -3,6 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 
 import {
   DOCUMENT_PROJECT,
@@ -27,10 +28,19 @@ test.describe('Marketing OS Documents structure', () => {
 
   for (const width of [390, 1024]) {
     test(`recorded progress is a labelled, keyboard-accessible section at ${width}px`, async ({ page }) => {
-      const run = startedDocumentRun('questions');
-      await setupDocuments(page, { empty: true, runs: [run] });
+      // ICP is intentionally the Markdown default but has no answers endpoint; do not invent an ICP questions turn.
+      const type = MKTG_DOCUMENT_TYPES.find(
+        (entry) =>
+          entry.kind === 'living' &&
+          entry.catalogAgentId &&
+          MKTG_AGENT_INTAKES[entry.catalogAgentId]?.endpoints.answers &&
+          MKTG_AGENTS.some((agent) => agent.id === entry.catalogAgentId && agent.status === 'active')
+      );
+      if (!type) throw new Error('Expected an answerable living intake');
+      const run = { ...startedDocumentRun('questions'), agentKey: type.agentKey };
+      await setupDocuments(page, { empty: true, runs: [run], documentType: type });
       await page.setViewportSize({ width, height: 1000 });
-      await openDocuments(page);
+      await openDocuments(page, `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${type.agentKey}`);
       const section = page.getByRole('region', { name: 'Started runs', exact: true });
       await expect(section).toBeVisible();
       await expect(section.getByRole('heading', { level: 2 })).toHaveText('Started runs');
@@ -39,12 +49,17 @@ test.describe('Marketing OS Documents structure', () => {
       await open.focus();
       await expect(open).toBeFocused();
       await open.press('Enter');
-      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveAttribute('aria-live', 'polite');
-      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Waiting for your answers.');
-      const intake = page.getByTestId('mktg-document-view-intake-link').getByRole('button');
-      await intake.focus();
-      await expect(intake).toBeFocused();
-      await expect(page.getByTestId('mktg-document-view-page').locator('h1')).toHaveCount(1);
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      const live = page.getByTestId('mktg-run-progress-status');
+      // WAI-ARIA status has implicit aria-live=polite on this run-page surface.
+      await expect(live).toHaveAttribute('role', 'status');
+      await expect(live).toMatchAriaSnapshot('- status: /Waiting for your answers/');
+      await expect(live).toContainText('Waiting for your answers');
+      await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
+      const refresh = page.getByTestId('mktg-document-view-refresh-progress').getByRole('button');
+      await refresh.focus();
+      await expect(refresh).toBeFocused();
+      await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
@@ -79,6 +94,7 @@ test.describe('Marketing OS Documents structure', () => {
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
     await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-agent-run-form-title')).toHaveJSProperty('tagName', 'H2');
     await expect(page.getByTestId('mktg-agent-run-version-chips')).toHaveCount(0);
   });
 
@@ -169,7 +185,6 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-open-1')).toBeVisible();
       if (width >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible();
-      const sideBySide = width === 1000 || width >= 1264;
       const root = page.getByTestId('mktg-document-view-page');
       const content = await root.getByRole('region', { name: 'Document content' }).boundingBox();
       const details = await root.getByRole('region', { name: 'Revision details' }).boundingBox();
@@ -178,7 +193,7 @@ test.describe('Marketing OS Documents structure', () => {
       if (!content || !details || !label || !open) throw new Error('Document layout must be rendered before measuring it');
       const availableWidth = await page.getByTestId('mktg-document-view-width').evaluate((element) => element.clientWidth);
       const viewDiagnostic = `viewport ${width}px, document-view host ${availableWidth}px`;
-      if (sideBySide) {
+      if (availableWidth >= 800) {
         expect(details.x, viewDiagnostic).toBeGreaterThanOrEqual(content.x + content.width);
         expect(Math.abs(details.y - content.y), viewDiagnostic).toBeLessThan(2);
       } else {
@@ -200,24 +215,27 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(page.getByTestId('mktg-documents-page').locator('main')).toHaveCount(0);
       await expect(page.getByTestId('mktg-documents-revision-when-2').getByTestId('mktg-documents-current-2')).toHaveCount(0);
       await expect(page.getByTestId('mktg-documents-revision-actions-2').getByTestId('mktg-documents-current-2')).toBeAttached();
-      const documentsWidth = await page.getByTestId('mktg-documents-width').evaluate((element) => element.clientWidth);
+      const documentsWidth = await page.getByTestId('mktg-documents-page').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return element.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+      });
       const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
       const documentPanel = await page.getByRole('region', { name: 'Documents and revisions' }).boundingBox();
       if (!navigation || !documentPanel) throw new Error('Documents navigation and content must be rendered before measuring');
       const documentsDiagnostic = `viewport ${width}px, documents host ${documentsWidth}px`;
-      if (sideBySide) expect(documentPanel.x, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.x + navigation.width);
+      if (documentsWidth >= 800) expect(documentPanel.x, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.x + navigation.width);
       else expect(documentPanel.y, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.y + navigation.height);
       if (width === 1280) {
         const scroller = page.getByTestId('mktg-documents-revisions-scroll');
         const visible = await scroller.boundingBox();
         const actionsCell = await page.getByTestId('mktg-documents-revision-actions-3').boundingBox();
-        const makeCurrent = await page.getByTestId('mktg-documents-restore-3').boundingBox();
-        if (!visible || !actionsCell || !makeCurrent) throw new Error('Desktop table actions must be rendered before measuring');
+        const open = await page.getByTestId('mktg-documents-view-3').boundingBox();
+        if (!visible || !actionsCell || !open) throw new Error('Desktop table actions must be rendered before measuring');
         expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(0);
         expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
         expect(actionsCell.x).toBeGreaterThanOrEqual(visible.x);
         expect(actionsCell.x + actionsCell.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
-        expect(makeCurrent.x + makeCurrent.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
+        expect(open.x + open.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
       }
       if (width === 390) {
         const pageWidth = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));

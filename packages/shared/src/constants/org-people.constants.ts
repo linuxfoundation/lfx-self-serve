@@ -6,21 +6,20 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
+  OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgContributorTimeRange,
-  OrgContributorTimeRangeOption,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
   OrgEventAttendeesResponse,
-  OrgEventAttendeeTimeWindow,
-  OrgEventAttendeeTimeWindowOption,
   OrgTraineesResponse,
-  OrgTraineeTimeWindow,
-  OrgTraineeTimeWindowOption,
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
+import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -43,6 +42,9 @@ export const VALID_PEOPLE_TAB_IDS: ReadonlySet<PeopleTabId> = new Set(PEOPLE_TAB
 
 /** Initial visible-row cap on the All Employees table before "Show All" is clicked. */
 export const ORG_ALL_EMPLOYEES_INITIAL_LIMIT = 30;
+
+/** Display name of a roster row whose stored name is blank or a bracketed placeholder and that carries no address. */
+export const ORG_PEOPLE_UNKNOWN_MEMBER_NAME = 'Unknown member';
 
 /** Zero-valued OrgAllEmployeeStats — fallback when the stats query returns no rows. */
 export const EMPTY_ORG_ALL_EMPLOYEE_STATS: OrgAllEmployeeStats = {
@@ -70,26 +72,38 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
   { label: 'Training', value: 'training' },
 ] as const;
 
+/** Employment-filter dropdown options for the All Employees table (lfx-self-serve#4311). */
+export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploymentOption[] = [
+  { label: 'Current employees', value: 'current' },
+  { label: 'Former employees', value: 'former' },
+  { label: 'All employees', value: 'all' },
+] as const;
+
+/** Default employment filter — the URL drops `?employment=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
+
+/** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
+export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
+
+/** Accessible label of a People tab's employment filter. */
+export const ORG_EMPLOYMENT_LABEL = 'Employment';
+
+/**
+ * Default employment filter on People → Contributors and Org Lens Access (lfx-self-serve#4627) — the URL drops
+ * `?employment=` when it is active. Everyone, former employees included: Contributors keeps matching the Overview's
+ * Active Contributors card, and Access lists every principal. All Employees has its own default.
+ */
+export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
+
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
 /** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
 export const ORG_TRAINEES_INITIAL_LIMIT = 30;
 
-/** Default Trainees time-window — Past 12 Months per Item 2 lock (matches prototype default). */
-export const ORG_TRAINEE_DEFAULT_TIME_WINDOW: OrgTraineeTimeWindow = '12m';
-
-/** Time-window dropdown options for Trainees / Event Attendees families — ordered narrowest-first as the prototype renders them. */
-export const ORG_TRAINEE_TIME_WINDOW_OPTIONS: readonly OrgTraineeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
   foundationOptions: [],
@@ -101,18 +115,6 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
 /** Initial visible-row cap on the Event Attendees table before "Show All" is clicked. */
 export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 
-/** Default Event Attendees time-window — Past 12 Months per Item 2 R2.4 lock (matches prototype default). */
-export const ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW: OrgEventAttendeeTimeWindow = '12m';
-
-/** Time-window dropdown options for the Event Attendees tab — ordered narrowest-first. */
-export const ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS: readonly OrgEventAttendeeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
@@ -122,26 +124,14 @@ export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   eventOptions: [],
 };
 
-// Contributors tab (LFXV2-1874) — A1: one BFF slice per timeRange, filter trio client-side; stats anchored on BFF (Item 3); window vocab 30d/90d/12mo/all.
+// Contributors tab (LFXV2-1874) — A1: one BFF slice per range, filter trio client-side; stats anchored on BFF (Item 3).
 
 /** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
 export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
-/** Default Contributors time-range — Past 12 Months per the prototype default. */
-export const ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE: OrgContributorTimeRange = '12mo';
-
-/** Time-range dropdown options for the Contributors tab — ordered narrowest-first, matches Dano's JIRA description. */
-export const ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS: readonly OrgContributorTimeRangeOption[] = [
-  { label: 'Last 30 Days', value: '30d' },
-  { label: 'Last 90 Days', value: '90d' },
-  { label: 'Last 12 Months', value: '12mo' },
-  // `all` is not all-time: the ORG_PEOPLE_CONTRIBUTORS_DAILY dbt model is capped at a 3-year rolling window.
-  { label: 'Past 3 Years', value: 'all' },
-] as const;
-
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
-  maintainers: 0,
+  maintainerRoles: 0,
   contributors: 0,
   projects: 0,
   foundations: 0,
@@ -150,7 +140,7 @@ export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
 /** Zero-valued Contributors response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
   accountId: '',
-  timeRange: ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE,
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   contributors: [],
   projects: [],
   foundationOptions: [],

@@ -3,9 +3,13 @@
 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH,
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
+  AUDIENCE_REGISTRANTS_EVENT_MESSAGE,
   AUDIENCE_SPEAKER_SCOPES,
+  CAMPAIGN_EMAIL_STAGES,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
@@ -67,7 +71,6 @@ const CUSTOM_MAX_VALUES = 25;
 const CUSTOM_MAX_PAGE_VIEW_URLS = 10;
 const CUSTOM_VALUE_MAX_LENGTH = 200;
 const CUSTOM_MAX_FILTERS = 10;
-const CUSTOM_NAME_MAX_LENGTH = 250;
 // Derived from the shared constants the UI offers, so an operator or scope added there is never
 // refused here.
 const CUSTOM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
@@ -179,6 +182,29 @@ function invalid(req: Request, operation: string, field: string, message: string
     service: 'audience_builder_controller',
     path: req.path,
   });
+}
+
+/**
+ * The `currentRegistrantsEvent` body field: the trimmed edition name, '' when omitted or blank, or
+ * null when provided but not a string or too long. A mistyped value is refused rather than
+ * dropped: dropping it would send without the registrants suppression the operator ticked.
+ */
+function parseRegistrantsEvent(value: unknown): string | null {
+  if (value === undefined) {
+    return '';
+  }
+  if (typeof value !== 'string' || value.trim().length > AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH) {
+    return null;
+  }
+  return value.trim();
+}
+
+/**
+ * The `registrantsEvent` query param, or '' when it is over the limit: a truncated edition would
+ * look up a list attach can never create (attach refuses the full name), so no row is better.
+ */
+function registrantsQuery(value: string): string {
+  return value.length > AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH ? '' : value;
 }
 
 /** One trimmed query param, or `''` when absent or repeated. */
@@ -399,12 +425,19 @@ export class AudienceBuilderController {
     const startTime = logger.startOperation(req, 'audience_suppression_lists', {});
 
     try {
-      // Both params are optional: the portfolio-wide hygiene lists are found by fixed name, and
-      // the brand and event tiers only add to them. An empty answer is a real answer.
-      const lists = await this.audienceBuilder.getSuppressionLists(req, projectSlug, queryString(req, 'brandShort'), queryString(req, 'eventName'));
+      // Every param is optional: the portfolio-wide hygiene lists are found by fixed name, and
+      // the brand, event and current-registrants tiers only add to them. An empty answer is a
+      // real answer.
+      const result = await this.audienceBuilder.getSuppressionLists(
+        req,
+        projectSlug,
+        queryString(req, 'brandShort'),
+        queryString(req, 'eventName'),
+        registrantsQuery(queryString(req, 'registrantsEvent'))
+      );
 
-      logger.success(req, 'audience_suppression_lists', startTime, { count: lists.length });
-      res.json(lists);
+      logger.success(req, 'audience_suppression_lists', startTime, { count: result.lists.length, standard_list: result.standardList !== undefined });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -549,9 +582,16 @@ export class AudienceBuilderController {
     // silently would compose two real HubSpot lists and leave them ATTACHED TO NOTHING, while the
     // operator watches a success banner — and compose is not idempotent, so the correction costs
     // a second master list.
-    const mistyped = (['name', 'brandShort', 'eventName', 'briefId'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
+    const mistyped = (['name', 'brandShort', 'eventName', 'briefId', 'currentRegistrantsEvent'] as const).find(
+      (field) => body[field] !== undefined && typeof body[field] !== 'string'
+    );
     if (mistyped) {
       next(invalid(req, 'audience_compose_master', mistyped, `${mistyped} must be a string when provided`));
+      return;
+    }
+    const composeRegistrants = parseRegistrantsEvent(body.currentRegistrantsEvent);
+    if (composeRegistrants === null) {
+      next(invalid(req, 'audience_compose_master', 'currentRegistrantsEvent', AUDIENCE_REGISTRANTS_EVENT_MESSAGE));
       return;
     }
 
@@ -594,6 +634,7 @@ export class AudienceBuilderController {
         ...(typeof body.brandShort === 'string' ? { brandShort: body.brandShort } : {}),
         ...(typeof body.eventName === 'string' ? { eventName: body.eventName } : {}),
         ...(eventDates ? { eventDates } : {}),
+        ...(composeRegistrants ? { currentRegistrantsEvent: composeRegistrants } : {}),
         // Forwarded only when NON-EMPTY. A blank string passes the string check above and would
         // be sent as an attach request naming no brief, which upstream answers with a 404 after
         // refusing to create anything — a worse outcome than the exploratory compose the caller
@@ -705,6 +746,12 @@ export class AudienceBuilderController {
       return;
     }
 
+    const attachRegistrants = parseRegistrantsEvent(body.currentRegistrantsEvent);
+    if (attachRegistrants === null) {
+      next(invalid(req, 'audience_attach_existing', 'currentRegistrantsEvent', AUDIENCE_REGISTRANTS_EVENT_MESSAGE));
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'audience_attach_existing', {
       includes: includeListIds ? includeListIds.length : 1,
       suppressions: suppressionListIds.length,
@@ -715,6 +762,7 @@ export class AudienceBuilderController {
         briefId,
         ...(includeListIds ? { includeListIds } : { masterListId }),
         suppressionListIds,
+        ...(attachRegistrants ? { currentRegistrantsEvent: attachRegistrants } : {}),
         ...(body.inclusionSummary ? { inclusionSummary: body.inclusionSummary } : {}),
       });
       logger.success(req, 'audience_attach_existing', startTime, { masterListId: result.master.listId });
@@ -744,6 +792,16 @@ export class AudienceBuilderController {
 
     try {
       const eventName = typeof body.eventName === 'string' ? body.eventName.trim() : '';
+      // The send's email stage, forwarded so campaign-service can set the current-registrants
+      // check aside for a Post-Event send (lfx-v2-campaign-service#244). The UI's stages are
+      // spelled exactly as campaign-service's enum. Refused rather than dropped when present
+      // but unknown: a dropped stage would silently audit a thank-you send as a registration push.
+      const rawStage: unknown = body.stage;
+      const stage = CAMPAIGN_EMAIL_STAGES.find((known) => known === rawStage);
+      if (rawStage !== undefined && rawStage !== null && rawStage !== '' && stage === undefined) {
+        next(invalid(req, 'audience_qa_run', 'stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`));
+        return;
+      }
       const sendSuppression = body.sendSuppressionListIds === undefined ? [] : stringArray(body.sendSuppressionListIds);
       if (!sendSuppression) {
         next(invalid(req, 'audience_qa_run', 'sendSuppressionListIds', `sendSuppressionListIds must be an array of at most ${MAX_LIST_IDS} list ids`));
@@ -754,6 +812,7 @@ export class AudienceBuilderController {
         targetsEu: body.targetsEu === true,
         targetsCa: body.targetsCa === true,
         ...(eventName ? { eventName } : {}),
+        ...(stage ? { stage } : {}),
         ...(sendSuppression.length ? { sendSuppressionListIds: sendSuppression } : {}),
       });
 
@@ -873,8 +932,8 @@ export class AudienceBuilderController {
       return null;
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
-    if (body['name'] !== undefined && (typeof body['name'] !== 'string' || body['name'].length > CUSTOM_NAME_MAX_LENGTH)) {
-      next(invalid(req, operation, 'name', `name must be a string of at most ${CUSTOM_NAME_MAX_LENGTH} characters`));
+    if (body['name'] !== undefined && (typeof body['name'] !== 'string' || body['name'].length > AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH)) {
+      next(invalid(req, operation, 'name', `name must be a string of at most ${AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH} characters`));
       return null;
     }
     const parsed = parseCustomCriteria(body['criteria']);

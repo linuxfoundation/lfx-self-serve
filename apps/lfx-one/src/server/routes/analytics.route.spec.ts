@@ -137,6 +137,7 @@ describe.each([
   ['/events-registration-forecast', 'foundationSlug'],
   // The event id rides ahead of the slug so the gate still reads the foundation it is testing.
   ['/events-registration-forecast-curve', 'eventId=evt-1&foundationSlug'],
+  ['/events-registration-history', 'eventId=evt-1&foundationSlug'],
   ['/events-past', 'foundationSlug'],
   ['/events-at-a-glance', 'foundationSlug'],
   ['/events-registrations-growth', 'foundationSlug'],
@@ -160,7 +161,6 @@ describe.each([
   ['/non-members-orgs', 'foundationSlug'],
   ['/non-members-people', 'foundationSlug'],
   ['/non-members-conversion', 'foundationSlug'],
-  ['/training-presence', 'foundationSlug'],
   ['/training-enrollment', 'foundationSlug'],
   ['/training-courses', 'foundationSlug'],
   ['/overview-participating-orgs', 'foundationSlug'],

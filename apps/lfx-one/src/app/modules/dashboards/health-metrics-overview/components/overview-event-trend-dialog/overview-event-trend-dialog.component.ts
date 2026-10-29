@@ -5,12 +5,17 @@ import { afterNextRender, Component, computed, ElementRef, inject, linkedSignal,
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { HEALTH_METRICS_OVERVIEW_FILL_CLASSES, HEALTH_METRICS_OVERVIEW_STROKES, HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL } from '@lfx-one/shared/constants';
-import { buildHealthMetricsOverviewEventMeta, buildHealthMetricsOverviewTrendView, pickHealthMetricsEventsForecastFormat } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewTrendMeta,
+  buildHealthMetricsOverviewTrendView,
+  pickHealthMetricsEventsForecastFormat,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, forkJoin, of, tap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, tap } from 'rxjs';
 
 import type {
   FilterPillOption,
@@ -22,8 +27,9 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * The design's registration trend for one upcoming event, opened through `DialogService`: its headline figures and
- * this year's curve against last year's and the forecast. Formats are never summed, so an event with both picks one.
+ * The design's registration trend for one event, opened through `DialogService`: its headline figures and this
+ * year's curve against last year's, with the forecast for an upcoming event and none for a past one. Formats are
+ * never summed, so an event with both picks one.
  */
 @Component({
   selector: 'lfx-overview-event-trend-dialog',
@@ -40,11 +46,12 @@ export class OverviewEventTrendDialogComponent {
   private readonly dialogConfig = inject(DynamicDialogConfig<HealthMetricsOverviewTrendDialogData>);
 
   protected readonly event = this.dialogConfig.data!.event;
+  protected readonly isPast = this.dialogConfig.data!.isPast;
   protected readonly headingId = OverviewEventTrendDialogComponent.headingId;
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly bandFill = HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL;
   protected readonly thisYearClass = HEALTH_METRICS_OVERVIEW_FILL_CLASSES.purple;
-  protected readonly meta = buildHealthMetricsOverviewEventMeta(this.event);
+  protected readonly meta = buildHealthMetricsOverviewTrendMeta(this.event);
   protected readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
   private readonly reads = this.initReads();
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
@@ -55,10 +62,18 @@ export class OverviewEventTrendDialogComponent {
   });
   protected readonly view = computed<HealthMetricsOverviewTrendView>(() => {
     const reads = this.reads();
-    const headline = reads?.forecast.events.find((candidate) => candidate.eventId === this.event.eventId) ?? null;
     const formats = reads?.curve.formats ?? [];
     const series = formats.find((candidate) => candidate.format === this.format()) ?? formats[0] ?? null;
+    if (this.isPast) return buildHealthMetricsOverviewPastTrendView(this.event, reads?.curve ?? null, series);
+
+    const headline = reads?.forecast?.events.find((candidate) => candidate.eventId === this.event.eventId) ?? null;
     return buildHealthMetricsOverviewTrendView(this.event, headline, series);
+  });
+
+  /** An event the view holds no curve for shows a note in place of an empty chart. */
+  protected readonly hasCurve = computed(() => {
+    const view = this.view();
+    return !!(view.currentPath || view.lastYearPath || view.predictedPath);
   });
 
   public constructor() {
@@ -70,14 +85,18 @@ export class OverviewEventTrendDialogComponent {
     this.dialogRef.close();
   }
 
-  /** Headline and curve for the event; a failed read leaves the dialog to say so instead of drawing nothing. */
+  /** Headline and curve for an upcoming event, the history alone for a past one; a failed read says so instead of drawing nothing. */
   private initReads() {
-    const foundationSlug = this.projectContextService.selectedFoundation()?.slug ?? '';
-    return toSignal<{ forecast: HealthMetricsEventsForecast; curve: HealthMetricsEventsForecastCurve } | null>(
-      forkJoin({
-        forecast: this.analyticsService.getEventsRegistrationForecast({ foundationSlug }),
-        curve: this.analyticsService.getEventsRegistrationForecastCurve({ foundationSlug, eventId: this.event.eventId }),
-      }).pipe(
+    const query = { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', eventId: this.event.eventId };
+    const reads: Observable<{ forecast: HealthMetricsEventsForecast | null; curve: HealthMetricsEventsForecastCurve }> = this.isPast
+      ? this.analyticsService.getEventsRegistrationHistory(query).pipe(map((curve) => ({ forecast: null, curve })))
+      : forkJoin({
+          forecast: this.analyticsService.getEventsRegistrationForecast({ foundationSlug: query.foundationSlug }),
+          curve: this.analyticsService.getEventsRegistrationForecastCurve(query),
+        });
+
+    return toSignal(
+      reads.pipe(
         tap(() => this.status.set('ready')),
         catchError(() => {
           this.status.set('failed');

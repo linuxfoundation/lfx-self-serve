@@ -39,6 +39,8 @@ export interface MktgSessionInfo {
  * Omit/null `sessionId` to create a new session; provide it to post a follow-up.
  */
 export interface MktgChatRequest {
+  /** Explicitly replace this active run when starting a new session. */
+  discard?: string;
   /** Durable run scope when this chat turn belongs to a registered intake. */
   project?: string;
   /** Catalog agent id; resolved server-side to a Guild routing handle. */
@@ -94,4 +96,15 @@ export interface GuildSessionEvent {
   created_at: string;
   /** Event content — a bare string, or an object with a content type + data. */
   content?: { type?: string; data?: string } | string;
+}
+
+/** Server-side raw event page; metadata can be absent in older Guild responses. */
+export interface GuildRawEventsPage {
+  items?: Partial<GuildSessionEvent>[];
+  pagination?: {
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+    total_count?: number;
+  };
 }

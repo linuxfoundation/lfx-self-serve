@@ -577,7 +577,8 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipM
  * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
  * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
  * term that is not in the program, 422 an applicant or term that fails an eligibility rule (the
- * term is outside its application window, no mentee profile, reapply limit, ...), and 409 an
+ * term is outside its application window, no mentee profile, reapply limit, too many applications
+ * under review, ...), and 409 an
  * existing application for the term (pending, decided or declined; upstream does not say which).
  * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` refines the state when the message names the rule.
  * Any other status keeps the form and reports the failure.
@@ -639,6 +640,14 @@ export const MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES: readonly MentorshipM
       icon: 'fa-light fa-user-check',
       title: 'You are already in a mentorship',
       subtitle: 'You have been accepted into a mentorship that has not ended yet, so you cannot apply to another one until it does.',
+    },
+  },
+  {
+    match: 'applications under review',
+    state: {
+      icon: 'fa-light fa-layer-group',
+      title: 'You have reached the application limit',
+      subtitle: 'You can have up to 3 applications under review at a time. Withdraw one from your overview before applying to another term.',
     },
   },
   {

@@ -213,6 +213,9 @@ export interface MeetingOrganizerChipModel {
   overflow: MeetingOrganizerLink[];
 }
 
+/** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
+export type MeetingGuestRole = 'organizer' | 'host' | null;
+
 /**
  * Minimal host-candidate shape for the organizer host-fallback derivation.
  * Satisfied structurally by both {@link MeetingRegistrant} and {@link PastMeetingParticipant}.
@@ -630,6 +633,11 @@ export interface MeetingRegistrant {
   avatar_url: string | null;
   /** Registrant's LFID username */
   username: string | null;
+  /**
+   * The LF user the registrant is linked to, as the index stores it. Upstream treats it as immutable, so an
+   * update has to send it back as it is; leaving it out reads as a change and fails with "user_id cannot be changed".
+   */
+  user_id?: string | null;
   /** Registrant's LinkedIn profile URL */
   linkedin_profile: string | null;
   /** Creation timestamp */
@@ -814,6 +822,8 @@ export interface UpdateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /** The LF user the registrant is linked to; sent back unchanged, because upstream rejects an update that changes it. */
+  user_id?: string;
   /** User's LinkedIn profile URL */
   linkedin_profile?: string | null;
 }
@@ -862,6 +872,10 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /** The host toggle's accessible name, built from the same name as `removeLabel` and flipping with the guest's host flag. */
+  hostLabel: string;
+  /** The host toggle's tooltip: `Make host`, or `Remove host` when the guest already is one. */
+  hostTooltip: string;
   /**
    * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
    * `This occurrence`. `null` everywhere else, where every guest shares the same scope.
@@ -872,6 +886,26 @@ export interface ComposerGuestRow {
    * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
    */
   removable: boolean;
+}
+
+/**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**
@@ -2315,3 +2349,11 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** A placeholder block in the meetings redesign's right column. */
+export interface MeetingsRailBlock {
+  /** Stable key, also used in the block's test ids. */
+  key: string;
+  /** Uppercase kicker shown above the block. */
+  label: string;
+}

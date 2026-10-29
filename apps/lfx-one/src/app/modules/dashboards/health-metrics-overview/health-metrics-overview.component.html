@@ -1,20 +1,26 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Rows wrap: a wide card takes about two thirds of a row and a narrow one a third, stacking once they no longer fit. -->
 <div class="flex flex-col gap-[24px]" data-testid="health-metrics-overview-page">
-  <div class="flex flex-wrap items-stretch gap-[24px]">
-    <lfx-overview-orgs-card class="flex-[2_1_560px]" />
-    <lfx-overview-nps-card class="flex-[1_1_340px]" />
+  @if (blank(); as blank) {
+    <lfx-health-metrics-blank-card [tiles]="blankTiles" [copy]="blank" testId="health-metrics-overview-blank" />
+  }
+
+  <!-- Rows wrap: a wide card takes two thirds of a row and a narrow one a third, side by side down to 984px of content (600 + 360 + 24). -->
+  <div class="flex flex-col gap-[24px]" [class.hidden]="!!blank()" data-testid="health-metrics-overview-cards">
+    <div class="flex flex-wrap items-stretch gap-[24px]">
+      <lfx-overview-orgs-card class="flex-[2_1_600px]" />
+      <lfx-overview-nps-card class="flex-[1_1_360px]" />
+    </div>
+    <div class="flex flex-wrap items-stretch gap-[24px]">
+      <lfx-overview-churn-card class="flex-[2_1_600px]" />
+      <lfx-overview-balance-card class="flex-[1_1_360px]" />
+    </div>
+    <lfx-overview-events-card />
+    <div class="flex flex-wrap items-stretch gap-[24px]">
+      <lfx-overview-training-card class="flex-[2_1_600px]" />
+      <lfx-overview-code-card class="flex-[1_1_360px]" />
+    </div>
+    <lfx-overview-board-card />
   </div>
-  <div class="flex flex-wrap items-stretch gap-[24px]">
-    <lfx-overview-churn-card class="flex-[2_1_560px]" />
-    <lfx-overview-balance-card class="flex-[1_1_340px]" />
-  </div>
-  <lfx-overview-events-card />
-  <div class="flex flex-wrap items-stretch gap-[24px]">
-    <lfx-overview-training-card class="flex-[2_1_560px]" />
-    <lfx-overview-code-card class="flex-[1_1_340px]" />
-  </div>
-  <lfx-overview-board-card />
 </div>

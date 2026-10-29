@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -43,6 +43,7 @@ import {
   matchesMyVotesQuickFilter,
   toAbsoluteUrl,
   votePermalinkPath,
+  votePresenterPath,
 } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
@@ -53,6 +54,7 @@ import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -83,6 +85,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
+    NgTemplateOutlet,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -187,6 +190,11 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
+  protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
+  protected readonly actionButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'whitespace-nowrap min-h-[44px]' : 'whitespace-nowrap'));
+  protected readonly moreButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'min-w-[44px] min-h-[44px]' : ''));
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();
@@ -293,6 +301,10 @@ export class VotesTableComponent {
     // other status. Gated on the vote's own writer flag, not project-level hasPMOAccess() — a
     // committee writer without project write access can still extend their own vote's deadline
     // (per @copilot-pull-request-reviewer).
+    // Present: chrome-less presenter in a new tab (#4140). Open votes show the live count, ended votes land on the result state.
+    if (vote.writer === true && (vote.status === PollStatus.ACTIVE || vote.status === PollStatus.ENDED)) {
+      items.push({ label: 'Present', icon: 'fa-light fa-presentation-screen', command: () => this.openPresenter(vote.uid) });
+    }
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Extend', icon: 'fa-light fa-calendar', command: () => this.onExtendDeadline(vote) });
       items.push({
@@ -323,6 +335,11 @@ export class VotesTableComponent {
     }
     this.rowActionMenuItems.set(items);
     menu.toggle(event);
+  }
+
+  /** Opens the presenter view in a new tab; browser-only (menu commands only run from a click). */
+  protected openPresenter(voteUid: string): void {
+    this.document.defaultView?.open(votePresenterPath(voteUid), '_blank', 'noopener,noreferrer');
   }
 
   /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */

@@ -5,7 +5,12 @@ import {
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
   ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
+  ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE,
+  ORG_MAINTAINER_ROLES_LABEL,
+  ORG_UNKNOWN_MAINTAINER_NAME,
+  ORG_PROJECT_MAINTAINER_ROLES_DEFINITION,
   PD_HEALTH_TAG,
+  PD_ORG_LENS_TIME_RANGE,
   PD_TIME_RANGE_MONTHS,
   PD_TIME_RANGE_TYPE,
   VALKEY_CACHE,
@@ -30,10 +35,12 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
+  OrgMaintainerRolesCountRow,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
@@ -58,7 +65,6 @@ interface HeroRow {
 }
 
 interface CardsRow {
-  TECH_MAINTAINERS_COUNT: number | null;
   TECH_CONTRIBUTORS_PCT: number | null;
   TECH_COMMITS_PCT: number | null;
   TECH_PR_OPENED_PCT: number | null;
@@ -153,12 +159,22 @@ interface RosterProvider {
   table: string;
   /** Column projection for the page query. */
   select: string;
-  /** Optional extra predicate ANDed after the (account, slug) filter — a constant, never user input. */
+  /** The column the page's project slug is matched on (default `PROJECT_SLUG`). */
+  slugColumn?: string;
+  /** Optional extra predicate ANDed after the (account, slug) filter — never user input; its placeholders bind `whereBinds`. */
   where?: string;
+  whereBinds?: (string | number)[];
+  /** The roster total's expression (default `COUNT(*)`), so it can count the same thing as the card it backs. */
+  countExpression?: string;
   /** Stable ORDER BY for deterministic pagination. */
   orderBy: string;
   /** Map one fetched row to its drawer cells. */
   map: (row: Record<string, unknown>) => OrgLensCardDetailRow;
+  /**
+   * Paged instead — served, never stored — when the statement fails only because `missingObject` (an optional
+   * enrichment join) does not exist; a missing table of the fallback itself still degrades to an empty roster.
+   */
+  fallback?: { missingObject: string; provider: RosterProvider };
 }
 
 /**
@@ -374,9 +390,9 @@ export class OrgLensProjectDetailService {
   private static readonly cardDefs: Record<string, CardDefMeta> = {
     // Technical (5) — dataSource derived from the platforms model; total from the gold _tr.
     maintainers: {
-      text: 'Individuals granted maintainer status with merge rights and code ownership for this project.',
+      text: ORG_PROJECT_MAINTAINER_ROLES_DEFINITION,
       totalType: 'count',
-      columns: ['Our Contributors', 'Username', 'Maintainer Since'],
+      columns: ['Our Contributors', 'Maintainer Since', 'Maintainer Until'],
       totalField: 'TECH_MAINTAINERS_TOTAL',
       platformField: 'MAINTAINER_PLATFORMS',
     },
@@ -505,7 +521,7 @@ export class OrgLensProjectDetailService {
     page: number,
     pageSize: number
   ): Promise<OrgLensCardRosterPage> {
-    const provider = this.rosterProvider(cardKey);
+    const provider = this.rosterProvider(cardKey, range);
     if (provider === null) return { rows: [], total: 0 };
 
     const slug = projectSlug.trim().toLowerCase();
@@ -513,38 +529,30 @@ export class OrgLensProjectDetailService {
     const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
 
-    const cacheKey = `project-detail-roster:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}`;
+    // `v2`: the maintainers roster is the account's maintainer roles following the toggle (lfx-self-serve#4482).
+    const cacheKey = `project-detail-roster:v2:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardRosterPage>(key, OrgLensProjectDetailService.isRosterPage);
       if (cached !== null) return cached;
     }
 
-    const whereExtra = provider.where ? ` AND ${provider.where}` : '';
-    let result: OrgLensCardRosterPage;
+    let result: OrgLensCardRosterPage | null = null;
     let degradedMissingObject = false;
     try {
-      const [pageResult, countResult] = await Promise.all([
-        this.snowflakeService.execute<Record<string, unknown>>(
-          `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ${safeSize} OFFSET ${offset}`,
-          [orgUid, slug],
-          { expectMissingObject: true }
-        ),
-        this.snowflakeService.execute<{ N: number }>(
-          `SELECT COUNT(*) AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?${whereExtra}`,
-          [orgUid, slug],
-          { expectMissingObject: true }
-        ),
-      ]);
-      result = {
-        rows: pageResult.rows.map((row) => provider.map(row)),
-        total: this.num(countResult.rows[0]?.N ?? 0),
-      };
+      result = await this.fetchRosterPage(provider, orgUid, slug, safeSize, offset);
     } catch (error) {
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
       degradedMissingObject = true;
-      result = { rows: [], total: 0 };
+      const fallback = provider.fallback;
+      if (fallback && SnowflakeService.isMissingObjectError(error, fallback.missingObject)) {
+        result = await this.fetchRosterPage(fallback.provider, orgUid, slug, safeSize, offset).catch((fallbackError: unknown) => {
+          if (!SnowflakeService.isMissingObjectError(fallbackError)) throw fallbackError;
+          return null;
+        });
+      }
     }
+    result ??= { rows: [], total: 0 };
     if (key !== null && !degradedMissingObject) {
       await valkeyService.setJson(key, result, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -577,7 +585,8 @@ export class OrgLensProjectDetailService {
   public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:${this.paramSignature([slug, range])}`);
+    // `v3`: the maintainers card counts the account's maintainer roles following the toggle (lfx-self-serve#4482).
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v3:${this.paramSignature([slug, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -594,8 +603,9 @@ export class OrgLensProjectDetailService {
     // 1y/2y read the trailing monthly sparkline model and slice client-side over a fixed month axis;
     // `all` reads the adaptive lifetime-bucketed model and carries its own variable `periods[]` axis
     // (LFXV2-2867 D9) — the same shared bucket axis the trend chart uses (D7).
-    const [cardRows, viewing, sparkData] = await Promise.all([
+    const [cardRows, maintainerRoles, viewing, sparkData] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
+      this.fetchMaintainerRolesCount(orgUid, slug, range),
       // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
       // that single row rather than the whole board — the board itself is now paged separately.
       this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
@@ -605,7 +615,7 @@ export class OrgLensProjectDetailService {
     const cards = cardRows[0] ?? null;
 
     const block: OrgLensInfluenceBlock = {
-      technical: this.buildTechnicalCards(cards, sparkData.index, sparkData.axis),
+      technical: this.buildTechnicalCards(cards, maintainerRoles, sparkData.index, sparkData.axis),
       ecosystem: this.buildEcosystemCards(cards, heroRow.PROJECT_NAME, foundationLabel, isNonLf, sparkData.index, sparkData.axis),
       isNonLfProject: isNonLf,
       levels: {
@@ -616,7 +626,8 @@ export class OrgLensProjectDetailService {
       // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
-    if (key !== null) {
+    // A block read while the roles table is missing (its maintainers card unavailable) is served, never stored.
+    if (key !== null && maintainerRoles !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return block;
@@ -696,7 +707,8 @@ export class OrgLensProjectDetailService {
   ): Promise<OrgLensCardDetailSection | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:${this.paramSignature([slug, cardKey, range])}`);
+    // `v2`: the maintainers definition now states the maintainer roles rule (lfx-self-serve#4482).
+    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v2:${this.paramSignature([slug, cardKey, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardDetailSection>(key, OrgLensProjectDetailService.isCardDetailSection);
       if (cached !== null) return cached;
@@ -1119,7 +1131,7 @@ export class OrgLensProjectDetailService {
   private async fetchCards(orgUid: string, slug: string, timeRangeType: string): Promise<CardsRow[]> {
     const result = await this.snowflakeService.execute<CardsRow>(
       `
-        SELECT TECH_MAINTAINERS_COUNT, TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,
+        SELECT TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,
                TECH_AVG_MERGE_TIME_SPEED_PCT, TECH_AVG_MERGE_TIME_SPEED_CATEGORY,
                ECO_COLLABORATION_PCT, ECO_MEETING_ATTENDANCE_COUNT, ECO_BOARD_MEMBERS_COUNT,
                ECO_COMMITTEE_MEMBERS_PCT, ECO_EVENT_ATTENDANCE_PCT, ECO_EVENT_SPEAKERS_PCT,
@@ -1136,6 +1148,23 @@ export class OrgLensProjectDetailService {
       [orgUid, slug, timeRangeType]
     );
     return result.rows;
+  }
+
+  /** The account's maintainer roles on the project overlapping the toggle's range (lfx-self-serve#4482); `null` when the roles table is missing. */
+  private async fetchMaintainerRolesCount(orgUid: string, slug: string, range: OrgLensLeaderboardTimeRange): Promise<number | null> {
+    const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
+    const rows = await readMaintainerRoles<OrgMaintainerRolesCountRow>(
+      this.snowflakeService,
+      'ORG_MAINTAINER_ROLES',
+      `
+        SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
+        FROM ${this.maintainerRolesTable()}
+        WHERE ACCOUNT_ID = ? AND INSIGHTS_PROJECT_SLUG = ?
+          AND ${overlap.sql}
+      `,
+      [orgUid, slug, ...overlap.binds]
+    );
+    return rows === null ? null : this.num(rows[0]?.MAINTAINER_ROLES ?? 0);
   }
 
   private async fetchSparklines(orgUid: string, slug: string): Promise<SparkRow[]> {
@@ -1417,8 +1446,31 @@ export class OrgLensProjectDetailService {
     return details;
   }
 
+  /** One roster page and its total; a missing table rejects (`expectMissingObject`) so the caller can degrade. */
+  private async fetchRosterPage(provider: RosterProvider, orgUid: string, slug: string, pageSize: number, offset: number): Promise<OrgLensCardRosterPage> {
+    const slugColumn = provider.slugColumn ?? 'PROJECT_SLUG';
+    const whereExtra = provider.where ? ` AND ${provider.where}` : '';
+    const binds = [orgUid, slug, ...(provider.whereBinds ?? [])];
+    const [pageResult, countResult] = await Promise.all([
+      this.snowflakeService.execute<Record<string, unknown>>(
+        `SELECT ${provider.select} FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra} ORDER BY ${provider.orderBy} LIMIT ${pageSize} OFFSET ${offset}`,
+        binds,
+        { expectMissingObject: true }
+      ),
+      this.snowflakeService.execute<{ N: number }>(
+        `SELECT ${provider.countExpression ?? 'COUNT(*)'} AS N FROM ${provider.table} WHERE ACCOUNT_ID = ? AND ${slugColumn} = ?${whereExtra}`,
+        binds,
+        { expectMissingObject: true }
+      ),
+    ]);
+    return {
+      rows: pageResult.rows.map((row) => provider.map(row)),
+      total: this.num(countResult.rows[0]?.N ?? 0),
+    };
+  }
+
   /** Per-card roster provider (wrapper table + projection + optional predicate + order + row mapping); null when a card has no roster. */
-  private rosterProvider(cardKey: string): RosterProvider | null {
+  private rosterProvider(cardKey: string, range: OrgLensLeaderboardTimeRange): RosterProvider | null {
     switch (cardKey) {
       case 'board-members':
         return {
@@ -1534,19 +1586,51 @@ export class OrgLensProjectDetailService {
             ],
           }),
         };
-      case 'maintainers':
-        return {
-          table: this.maintainersTable(),
-          select: 'PERSON_NAME, PERSON_AVATAR_URL, USERNAME, GRANTED_DATE',
-          orderBy: 'GRANTED_DATE DESC NULLS LAST',
+      case 'maintainers': {
+        // One row per maintainer role (person × Insights project unit) overlapping the toggle's range, totalled with the
+        // card's own distinct count. The avatar comes from the person's row on this project in ORG_LENS_PROJECT_PEOPLE,
+        // as on the Projects page; when that table is missing the roster is paged without avatars rather than emptied,
+        // while a missing roles table degrades to an empty roster like every other card's.
+        const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
+        const withoutAvatars: RosterProvider = {
+          table: this.maintainerRolesTable(),
+          select: 'MAINTAINER_NAME, NULL AS PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
+          slugColumn: 'INSIGHTS_PROJECT_SLUG',
+          where: overlap.sql,
+          whereBinds: overlap.binds,
+          countExpression: 'COUNT(DISTINCT MEMBER_ID, SEGMENT_ID)',
+          orderBy: 'ROLE_END_DATE DESC NULLS FIRST, ROLE_START_DATE DESC, MAINTAINER_NAME ASC, MEMBER_ID ASC, SEGMENT_ID ASC',
           map: (r) => ({
             cells: [
-              this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
-              { text: this.str(r['USERNAME']) ?? '—' },
-              { text: this.formatDrawerDate(this.dateVal(r['GRANTED_DATE'])) },
+              this.personCell(this.str(r['MAINTAINER_NAME']) ?? ORG_UNKNOWN_MAINTAINER_NAME, this.str(r['PERSON_AVATAR_URL'])),
+              // The warehouse's unknown-start sentinel reads "Unknown", not "Jan 1, 2000".
+              {
+                text:
+                  toIsoDate(this.dateVal(r['ROLE_START_DATE'])) === ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE
+                    ? 'Unknown'
+                    : this.formatDrawerDate(this.dateVal(r['ROLE_START_DATE'])),
+              },
+              { text: r['ROLE_END_DATE'] === null || r['ROLE_END_DATE'] === undefined ? 'Current' : this.formatDrawerDate(this.dateVal(r['ROLE_END_DATE'])) },
             ],
           }),
         };
+        return {
+          ...withoutAvatars,
+          table: `(
+            SELECT r.ACCOUNT_ID, r.INSIGHTS_PROJECT_SLUG, r.MEMBER_ID, r.SEGMENT_ID, r.MAINTAINER_NAME, r.ROLE_START_DATE, r.ROLE_END_DATE,
+                   pp.PERSON_AVATAR_URL
+            FROM ${this.maintainerRolesTable()} r
+            LEFT JOIN (
+              SELECT ACCOUNT_ID, LOWER(PROJECT_SLUG) AS PROJECT_SLUG, PARTICIPANT_ID, MAX(PARTICIPANT_AVATAR_URL) AS PERSON_AVATAR_URL
+              FROM ${this.projectPeopleTable()}
+              GROUP BY ACCOUNT_ID, LOWER(PROJECT_SLUG), PARTICIPANT_ID
+            ) pp
+              ON pp.ACCOUNT_ID = r.ACCOUNT_ID AND pp.PROJECT_SLUG = r.INSIGHTS_PROJECT_SLUG AND pp.PARTICIPANT_ID = r.MEMBER_ID
+          )`,
+          select: 'MAINTAINER_NAME, PERSON_AVATAR_URL, ROLE_START_DATE, ROLE_END_DATE',
+          fallback: { missingObject: 'ORG_LENS_PROJECT_PEOPLE', provider: withoutAvatars },
+        };
+      }
       case 'collaboration':
         return {
           table: this.collaborationTable(),
@@ -1917,8 +2001,8 @@ export class OrgLensProjectDetailService {
     return category != null && row.HEALTH_OVERALL_SCORE_V2 != null ? category : null;
   }
 
-  private buildTechnicalCards(cards: CardsRow | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
-    const maintainers = this.numOrNull(cards?.TECH_MAINTAINERS_COUNT);
+  /** `maintainerRoles` is `null` when the roles table is missing: the card shows the no-data caption, never "no maintainer roles". */
+  private buildTechnicalCards(cards: CardsRow | null, maintainerRoles: number | null, index: SparklineIndex, axis: string[]): OrgLensProjectInfluenceCard[] {
     const mergePct = cards?.TECH_AVG_MERGE_TIME_SPEED_PCT;
     const mergeCategory = cards?.TECH_AVG_MERGE_TIME_SPEED_CATEGORY;
     // The warehouse returns NULL speed % + category when there is no merged-PR data for the project
@@ -1928,12 +2012,12 @@ export class OrgLensProjectDetailService {
     return [
       this.card(
         'maintainers',
-        'Maintainers',
+        ORG_MAINTAINER_ROLES_LABEL,
         null,
-        this.countCaption(maintainers, { prefix: 'Our company employs ', emphasis: 'no', suffix: ' maintainers for this project.' }, (n) => ({
-          prefix: 'Our company employs ',
+        this.countCaption(maintainerRoles, { prefix: 'Our company holds ', emphasis: 'no', suffix: ' maintainer roles on this project.' }, (n) => ({
+          prefix: 'Our company holds ',
           emphasis: `${n}`,
-          suffix: ` ${this.plural(n, 'maintainer', 'maintainers')} for this project.`,
+          suffix: ` maintainer ${this.plural(n, 'role', 'roles')} on this project.`,
         })),
         index,
         axis
@@ -1946,7 +2030,7 @@ export class OrgLensProjectDetailService {
         index,
         axis
       ),
-      this.card('commits', 'Commit Activities', null, this.pctCaption(cards?.TECH_COMMITS_PCT, 'Employees made ', ' of all commit activities.'), index, axis),
+      this.card('commits', 'Commits', null, this.pctCaption(cards?.TECH_COMMITS_PCT, 'Employees made ', ' of all commits.'), index, axis),
       this.card(
         'pull-requests',
         'Pull Requests Opened',
@@ -2241,8 +2325,12 @@ export class OrgLensProjectDetailService {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_CONTRIBUTORS`;
   }
 
-  private maintainersTable(): string {
-    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_DETAIL_MAINTAINERS`;
+  private maintainerRolesTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_MAINTAINER_ROLES`;
+  }
+
+  private projectPeopleTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_PEOPLE`;
   }
 
   private collaborationTable(): string {

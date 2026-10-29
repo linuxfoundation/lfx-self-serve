@@ -42,9 +42,6 @@ import {
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
   HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
   HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
-  HEALTH_METRICS_OVERVIEW_BADGE_CLASSES,
-  HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
-  HEALTH_METRICS_OVERVIEW_ERROR_COPY,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
   lfxColors,
@@ -69,7 +66,34 @@ import {
   MONITOR_PLATFORM_BUTTON_COLORS,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/src/constants/index.ts';
+import plugin from 'tailwindcss/plugin';
 import PrimeUI from 'tailwindcss-primeui';
+
+import { varName as uiVarName } from './scripts/lib/build-ui-tokens.mjs';
+import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
+
+// LFX UI Library (uikit) mapping. Everything is derived from the canonical tokens.json and points at the
+// `--ui-*` CSS variables in src/styles/ui-tokens.css, so values follow the active `data-theme`.
+// Generated utilities: colours `*-ui-{background|neutral|neutral-alpha|accent|success|warning|danger|feature}-<step>`,
+// `*-ui-focus`, `*-ui-overlay` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
+// with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
+// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
+// `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
+// classes; `edge`, `edge-hover`. The 14px root font makes rem scale, so every size is a literal px value.
+// Any `ui-<family>-<step>` colour token is picked up, so a new role family needs no change here.
+const uiVar = (name) => `var(${uiVarName(name)})`;
+const uiColors = {};
+for (const { name } of uiTokens.color.tokens) {
+  if (!name.startsWith('ui-')) continue;
+  const scaled = /^ui-(.+)-(\d+)$/.exec(name);
+  if (scaled) (uiColors[scaled[1]] ??= {})[scaled[2]] = uiVar(name);
+  else uiColors[name.slice('ui-'.length)] = uiVar(name);
+}
+const uiVarMap = (tokens, prefix, keyPrefix = '') =>
+  Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
+const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
+const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
+const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -186,10 +210,8 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
-    // Health Metrics Overview fills, status pills and empty-state circles (HEALTH_METRICS_OVERVIEW_* in @lfx-one/shared) — applied via [class].
+    // Health Metrics Overview fills (HEALTH_METRICS_OVERVIEW_FILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_OVERVIEW_FILL_CLASSES),
-    ...Object.values(HEALTH_METRICS_OVERVIEW_BADGE_CLASSES).flatMap((c) => c.split(' ')),
-    ...[...Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY), HEALTH_METRICS_OVERVIEW_ERROR_COPY].flatMap((c) => [c.circleClass, c.iconClass]),
     // Events speaker-proposal status badges (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS in @lfx-one/shared, not scanned
     // here) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => g.badgeClass.split(' ')),
@@ -249,8 +271,14 @@ export default {
       '2xl': '1440px',
     },
     extend: {
-      colors: lfxColors,
+      colors: { ...lfxColors, ui: uiColors },
+      borderRadius: uiVarMap(uiTokens.radius.tokens, 'radius-', 'ui-'),
+      height: uiVarMap(uiTokens.height.tokens, 'height-', 'ui-'),
+      transitionDuration: uiMotion('duration-'),
+      // The library's spring `--ease` maps to `ease-ui`; `--ease-standard` to `ease-ui-standard`.
+      transitionTimingFunction: { ui: uiVar('ease'), ...uiMotion('ease-') },
       boxShadow: {
+        ...uiVarMap(uiTokens.shadow.tokens, 'shadow-'),
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
         // Health Metrics card surface: inset gray-100 ring plus a soft drop shadow.
         card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
@@ -401,7 +429,7 @@ export default {
         },
       },
     },
-    fontSize: lfxFontSizes,
+    fontSize: { ...lfxFontSizes, ...uiFontSizes },
     fontFamily: {
       inter: ['Inter', 'sans-serif'],
       display: ['Roboto Slab', 'serif'],
@@ -409,5 +437,31 @@ export default {
       mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
     },
   },
-  plugins: [PrimeUI, typography, containerQueries],
+  plugins: [
+    PrimeUI,
+    typography,
+    containerQueries,
+    plugin(({ addComponents, addUtilities }) => {
+      // Geist edge: a 1px translucent ring instead of a border.
+      addUtilities({
+        '.edge': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-200')}` },
+        '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+      });
+      // Full type roles (`heading-24`, `copy-14`, `button-14`, ...): family, size, line height, weight and tracking.
+      addComponents(
+        Object.fromEntries(
+          uiTypeStyles.map((s) => [
+            `.${s.name}`,
+            {
+              fontFamily: uiVar(`font-${s.family}`),
+              fontSize: s.fontSize,
+              lineHeight: s.lineHeight,
+              fontWeight: String(s.fontWeight),
+              ...(s.letterSpacing ? { letterSpacing: s.letterSpacing } : {}),
+            },
+          ])
+        )
+      );
+    }),
+  ],
 };

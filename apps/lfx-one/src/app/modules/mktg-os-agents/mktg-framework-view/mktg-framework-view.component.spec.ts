@@ -6,7 +6,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { provideRouter, Router } from '@angular/router';
-import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_CONTENT_LIMITS, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -15,7 +15,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
 
@@ -134,8 +134,8 @@ const ASSET: MktgFrameworkAsset = {
 describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
-  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; ensureFontStylesheet: ReturnType<typeof vi.fn> };
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let printer: { prepare: Mock; printNow: Mock; clear: Mock; ensureFontStylesheet: Mock };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -145,7 +145,7 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+    printer = { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -169,21 +169,18 @@ describe('MktgFrameworkViewComponent', () => {
 
   it('reads shared tab URLs and pushes switches without dropping project or edit state', async () => {
     const router = TestBed.inject(Router);
-    await router.navigateByUrl('/?project=synthetic&profile=edit&tab=icps');
+    await router.navigateByUrl('/?project=synthetic&profile=edit&tab=numbers');
     host.asset.set(ASSET);
     host.state.set('ready');
     await fixture.whenStable();
-    expect(query('mktg-framework-view-tab-icps')?.getAttribute('aria-selected')).toBe('true');
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('aria-selected')).toBe('true');
     const navigate = vi.spyOn(router, 'navigate');
     const push = vi.spyOn(TestBed.inject(Location), 'go');
-    await tab('message-house');
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { tab: 'message-house', project: 'synthetic' }, queryParamsHandling: 'merge' })
-    );
+    await tab('sources');
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: 'sources', project: 'synthetic' }, queryParamsHandling: 'merge' }));
     expect(router.url).toContain('project=synthetic');
     expect(router.url).toContain('profile=edit');
-    expect(router.url).toContain('tab=message-house');
+    expect(router.url).toContain('tab=sources');
     expect(push).toHaveBeenCalledTimes(1);
     push.mockRestore();
     await router.navigateByUrl('/?tab=unknown');
@@ -207,14 +204,14 @@ describe('MktgFrameworkViewComponent', () => {
     });
     query('mktg-framework-view-tab-framework')?.focus();
     const before = document.activeElement;
-    query('mktg-framework-view-tab-icps')?.click();
+    query('mktg-framework-view-tab-numbers')?.click();
     await fixture.whenStable();
-    expect(query('mktg-framework-view-panel-icps')).toBeNull();
+    expect(query('mktg-framework-view-panel-numbers')).toBeNull();
     expect(document.activeElement).toBe(before);
     release();
     await pending.mock.results[0]?.value;
     await fixture.whenStable();
-    const panel = query('mktg-framework-view-panel-icps');
+    const panel = query('mktg-framework-view-panel-numbers');
     expect(panel).not.toBeNull();
     expect(document.activeElement).toBe(panel);
     expect(panel?.getAttribute('tabindex')).toBe('-1');
@@ -249,8 +246,8 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-state')?.textContent).toContain('Generating');
     expect(query('mktg-framework-view-generating')?.textContent).toContain('The feed goes here');
     expect(query('mktg-framework-view-panel-framework')).toBeNull();
-    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]').length).toBe(5);
-    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(5);
+    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]').length).toBe(3);
+    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(3);
     expect(element().textContent).not.toContain('Paul');
     // Nothing to print or export until the framework exists.
     expect(query('mktg-framework-view-actions')).toBeNull();
@@ -271,7 +268,7 @@ describe('MktgFrameworkViewComponent', () => {
     await fixture.whenStable();
     expect(query('mktg-framework-view')?.className).toContain('[@media_screen]:@container/asset');
     expect(query('mktg-framework-view')?.className).not.toContain('@container/framework');
-    expect(query('mktg-framework-view-panel-framework')?.firstElementChild?.className).toContain('@lg/asset:grid-cols-2');
+    expect(query('mktg-framework-view-statements')?.className).toContain('@lg/asset:grid-cols-4');
     const has = (field: string) => element().querySelector(`[data-mktg-comment-field="${field}"]`);
     const keys = new Set<string>();
     const collect = () =>
@@ -293,27 +290,20 @@ describe('MktgFrameworkViewComponent', () => {
       'mf.anchor',
     ])
       expect(has(field)).not.toBeNull();
-    await tab('icps');
-    collect();
-    expect(query('mktg-framework-view-panel-icps')?.className).toContain('@4xl/asset:grid-cols-2');
-    expect(has('icp[0]')).not.toBeNull();
-    expect(has('icp[1]')).not.toBeNull();
-    expect(has('icp[0].cta')).not.toBeNull();
-    await tab('message-house');
-    collect();
-    expect(query('mktg-framework-view-pillars')?.className).toContain('@2xl/asset:grid-cols-3');
-    for (const field of ['mh.umbrella', 'mh.line', 'mh.pillars[0]', 'mh.pillars[0].m', 'mh.found', 'mh.aud']) expect(has(field)).not.toBeNull();
+    // The ICPs and the message house are not shown, so nothing anchors a comment on them.
+    expect(has('icp[0]')).toBeNull();
+    expect(has('mh.umbrella')).toBeNull();
     await tab('numbers');
     collect();
     expect(query('mktg-framework-view-panel-numbers')?.className).toContain('@2xl/asset:grid-cols-4');
     expect(has('nums[0]')).not.toBeNull();
     await tab('sources');
     expect(element().querySelector('[data-mktg-comment-field]')).toBeNull();
-    expect(keys.size).toBeGreaterThan(20);
+    expect(keys.size).toBeGreaterThan(12);
     for (const key of keys) expect(isMktgDocumentCommentAnchor('foundation-message', ASSET.content, { kind: 'field', key })).toBe(true);
   });
 
-  it('renders the framework tab first once ready: the statements, the goal columns with their segments, say and avoid', async () => {
+  it('renders the framework tab first once ready: the statements on top, one table column per goal in rank order, say and avoid', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     host.version.set(1);
@@ -326,11 +316,17 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-mode')).toBeNull();
     expect(query('mktg-framework-view-vision')?.textContent).toContain('A vision.');
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
-    const adoption = query('mktg-framework-view-goal-adoption');
-    expect(adoption?.textContent).toContain('Goal 1');
-    expect(adoption?.textContent).toContain('1,200 members');
-    expect(adoption?.textContent).toContain('Website');
-    expect(adoption?.textContent).toContain('End users');
+    const goals = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(goals.tagName).toBe('TABLE');
+    const headers = Array.from(goals.querySelectorAll('thead th[data-testid]')).map((th) => th.getAttribute('data-testid'));
+    expect(headers).toEqual(['mktg-framework-view-goal-adoption', 'mktg-framework-view-goal-community']);
+    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('Goal 1');
+    const rows = Array.from(goals.querySelectorAll('tbody th')).map((th) => th.textContent?.trim());
+    expect(rows).toEqual(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+    expect(goals.textContent).toContain('1,200 members');
+    expect(goals.textContent).toContain('Website');
+    // Segments belong to the hidden ICPs: the table does not name them.
+    expect(goals.textContent).not.toContain('End users');
     expect(query('mktg-framework-view-bite-community')?.textContent).toContain('Built together');
     expect(query('mktg-framework-view-say')?.textContent).toContain('community-governed');
     expect(query('mktg-framework-view-avoid')?.textContent).toContain('working together');
@@ -338,23 +334,15 @@ describe('MktgFrameworkViewComponent', () => {
     expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(0);
   });
 
-  it('switches between the ICPs, the message house, the key numbers and the sources and gaps', async () => {
+  it('switches between the key numbers and the sources and gaps, and never offers the ICPs or the message house', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     await fixture.whenStable();
 
-    await tab('icps');
-    expect(query('mktg-framework-view-icp-users')?.textContent).toContain('Engineers running releases.');
-    expect(query('mktg-framework-view-icp-lead-users')?.textContent).toContain('Ship with confidence.');
-    expect(query('mktg-framework-view-icp-users')?.textContent).toContain('Adoption');
-    expect(query('mktg-framework-view-icp-users')?.textContent).toContain('Adopters are in production.');
-    expect(query('mktg-framework-view-icp-contributors')?.textContent).toContain('Hard to start?');
-
-    await tab('message-house');
-    expect(query('mktg-framework-view-umbrella')?.textContent).toContain('Open releases for everyone.');
-    expect(query('mktg-framework-view-pillars')?.querySelectorAll('article').length).toBe(3);
-    expect(query('mktg-framework-view-found')?.textContent).toContain('A Linux Foundation project.');
-    expect(query('mktg-framework-view-audiences')?.textContent).toContain('Build it with us.');
+    expect(query('mktg-framework-view-tab-icps')).toBeNull();
+    expect(query('mktg-framework-view-tab-message-house')).toBeNull();
+    expect(element().querySelectorAll('[role="tab"]').length).toBe(3);
+    expect(element().textContent).not.toContain('Open releases for everyone.');
 
     await tab('numbers');
     expect(query('mktg-framework-view-panel-numbers')?.textContent).toContain('1,200');
@@ -367,6 +355,22 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-report-notes')?.textContent).toContain('Check the dates.');
     expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
     expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('widens the goal table with the goal count, so the schema’s eight goals scroll sideways instead of squeezing', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const { rowHeader, goal } = FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM;
+    expect((query('mktg-framework-view-goals') as HTMLTableElement).style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+
+    const [adoption] = ASSET.content.mf.goals;
+    const eight = Array.from({ length: FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max }, (_, index) => ({ ...adoption, id: `goal-${index}`, n: index + 1 }));
+    host.asset.set({ ...ASSET, content: { ...ASSET.content, mf: { ...ASSET.content.mf, goals: eight } } });
+    await fixture.whenStable();
+    const goals = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(goals.querySelectorAll('thead th[data-testid]').length).toBe(8);
+    expect(goals.style.minWidth).toBe(`${rowHeader + goal * 8}rem`);
   });
 
   it('moves between the tabs with the arrow keys, Home and End, wrapping round, and focuses the tab it lands on', async () => {
@@ -382,13 +386,13 @@ describe('MktgFrameworkViewComponent', () => {
 
     // Only the selected tab is in the tab order; the keys move the selection along.
     expect(query('mktg-framework-view-tab-framework')?.getAttribute('tabindex')).toBe('0');
-    expect(query('mktg-framework-view-tab-icps')?.getAttribute('tabindex')).toBe('-1');
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('tabindex')).toBe('-1');
 
     await press('ArrowRight');
-    expect(selected()).toBe('mktg-framework-tab-icps');
-    expect(query('mktg-framework-view-panel-icps')).not.toBeNull();
-    expect(document.activeElement?.id).toBe('mktg-framework-tab-icps');
-    expect(query('mktg-framework-view-tab-icps')?.getAttribute('tabindex')).toBe('0');
+    expect(selected()).toBe('mktg-framework-tab-numbers');
+    expect(query('mktg-framework-view-panel-numbers')).not.toBeNull();
+    expect(document.activeElement?.id).toBe('mktg-framework-tab-numbers');
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('tabindex')).toBe('0');
 
     await press('End');
     expect(selected()).toBe('mktg-framework-tab-sources');
@@ -448,9 +452,12 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
     expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
     expect(query('mktg-framework-print-contents')?.textContent).not.toContain('Sources and gaps');
-    expect(query('mktg-framework-print-goals')?.querySelectorAll('article').length).toBe(2);
-    expect(query('mktg-framework-print-icp-contributors')?.textContent).toContain('Build it with us.');
-    expect(query('mktg-framework-print-pillars')?.querySelectorAll('article').length).toBe(3);
+    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead th').length).toBe(3);
+    expect(query('mktg-framework-print-goals')?.textContent).toContain('Built together');
+    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('ICPs');
+    expect(query('mktg-framework-print-icp-contributors')).toBeNull();
+    expect(query('mktg-framework-print-pillars')).toBeNull();
+    expect(print?.textContent).not.toContain('Open releases for everyone.');
     expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
     expect(print?.textContent).not.toContain('No member count.');
     expect(print?.textContent).not.toContain('Check the member count.');
@@ -459,7 +466,8 @@ describe('MktgFrameworkViewComponent', () => {
     // Export to Google Slides waits for the page to name a stored revision.
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, null);
+    expect(printer.prepare).toHaveBeenCalledWith(null);
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
 
     fixture.destroy();
     expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
@@ -485,7 +493,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
     expect(query('mktg-framework-view-print')).toBeNull();
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).not.toHaveBeenCalled();
+    expect(printer.printNow).not.toHaveBeenCalled();
   });
 
   it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
@@ -526,16 +534,18 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
-    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Montserrat');
+    expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   });
 
-  it('opens Sources from the reviewer note and focuses its panel start', async () => {
+  it('opens Sources from its tab without the duplicate reviewer-note link', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     await fixture.whenStable();
     document.body.appendChild(element());
 
-    query('mktg-framework-view-notes-sources')?.click();
+    expect(query('mktg-framework-view-notes-sources')).toBeNull();
+    query('mktg-framework-view-tab-sources')?.click();
     await fixture.whenStable();
     expect(query('mktg-framework-view-panel-sources')).not.toBeNull();
     expect(document.activeElement).toBe(query('mktg-framework-view-panel-sources'));

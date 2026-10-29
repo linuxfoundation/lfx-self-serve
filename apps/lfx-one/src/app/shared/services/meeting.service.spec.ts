@@ -156,6 +156,21 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
     });
+
+    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
+    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
+    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    });
+
+    // `username` and `avatar_url` are derived from the linked user, and the Edit Guest form never sent them.
+    it('never sends the username or avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', username: 'guest-a', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('username');
+      expect(body).not.toHaveProperty('avatar_url');
+    });
   });
 });
 
@@ -598,6 +613,7 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   // `getMeetingDetail` calls `this.http.get(...)` once and pipes `retryPropagationLag()` directly

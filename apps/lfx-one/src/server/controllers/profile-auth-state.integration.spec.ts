@@ -49,7 +49,11 @@ vi.mock('@lfx-one/shared/constants', () => ({
   CDP_PLATFORM_ICONS: {},
   CDP_PLATFORM_TO_TYPE_MAP: {},
   CDP_TO_AUTH0_PROVIDER_MAP: {},
+  EMAIL_ALREADY_CONNECTED_MESSAGE: 'already connected',
+  EMAIL_ALREADY_CONNECTED_STATUS: 'already_connected',
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: 'retry_required',
+  EMAIL_CALLBACK_STATUS_PARAM: 'email_status',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
@@ -203,5 +207,44 @@ describe('ProfileController + real AuthStateService — Flow C survives a concur
     // A fault must be treated the same as an authoritative miss — no session fallback, no
     // acceptance of the nonce (auth-state.service.ts's fail-closed-on-fault guarantee).
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+  });
+
+  // A pending email verification is replayed only after the nonce and sub checks pass. Without a
+  // usable management token it is dropped once with the generic retry marker and never replayed.
+  describe('with a pending email verification (#4253)', () => {
+    const pendingEmailVerification = { email: 'pending@example.test', otp: '654321' };
+
+    it('rejects a nonce issued to a different sub and leaves the pending attempt untouched', async () => {
+      const authStateService = new AuthStateService();
+      const state = await authStateService.issue(buildReq(), 'user-1', '/profile/emails');
+      const appSession = { pendingEmailVerification: { ...pendingEmailVerification } };
+
+      const res = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'someone-else' } }, appSession }), res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/profile/emails?error=invalid_state');
+      expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+      expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+      expect(appSession.pendingEmailVerification).toEqual(pendingEmailVerification);
+    });
+
+    it('consumes the attempt once on the valid callback and rejects a replay without an email outcome', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+      const authStateService = new AuthStateService();
+      const state = await authStateService.issue(buildReq(), 'user-1', '/profile/emails');
+      const appSession: { pendingEmailVerification?: typeof pendingEmailVerification } = { pendingEmailVerification: { ...pendingEmailVerification } };
+
+      const res = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'user-1' } }, appSession }), res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/profile/emails?success=profile_token_obtained&email_status=retry_required');
+      expect(appSession.pendingEmailVerification).toBeUndefined();
+
+      const replayRes = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c2', state }, oidc: { user: { sub: 'user-1' } }, appSession }), replayRes);
+
+      expect(replayRes.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+      expect(profileAuthSvc.exchangeCodeForToken).toHaveBeenCalledTimes(1);
+    });
   });
 });

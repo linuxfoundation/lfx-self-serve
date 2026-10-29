@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat } from '../interfaces';
+import { AEO_GEO_SECTIONS } from './aeo-geo.constants';
 import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
@@ -45,6 +46,16 @@ import {
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
+import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
+
+/** A start must explicitly discard the current active run before replacing it. */
+export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+/** Another writer already accepted the answers for this exact questions turn. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
+/** A discarded or superseded session cannot accept another turn. */
+export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
+export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -683,7 +694,10 @@ export const ICP_INTAKE: MktgAgentIntake = {
 /** Dedicated per-user profile and source intake; no project dependencies or feedback round. */
 export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
+  liveActivity: true,
   oneOffDocument: true,
+  tracksDocumentRun: true,
+  lastIntakeFields: ['content_source', 'content_text', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY],
   formTitleAction: 'Draft',
   documentName: 'LinkedIn post',
   intro: 'Three post options in your voice, from pasted text, a link or a file.',
@@ -696,6 +710,25 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
     answers: '/api/mktg-agents/linkedin-post/answers',
   },
   persistsDocument: true,
+};
+
+/** Domain-only audit; key pages are optional but must number 2–5 when supplied. */
+export const AEO_GEO_INTAKE: MktgAgentIntake = {
+  agentId: 'aeo-geo',
+  formTitleAction: 'Run',
+  documentName: 'AEO/GEO report',
+  intro:
+    'Scores how a website shows up in AI search and answer engines, with prioritised recommendations. One input: the site. Each audit is its own report; to update it, audit again.',
+  batchPreamble: [],
+  fields: [
+    { key: 'domain', question: 'The website to audit', kind: 'text' },
+    { key: 'key_pages', question: 'Key pages', kind: 'textarea', optional: true },
+  ],
+  sections: AEO_GEO_SECTIONS.map((heading) => heading.replace(/^## /, '')),
+  endpoints: { generate: '/api/mktg-agents/aeo-geo/generate', result: '/api/mktg-agents/aeo-geo/result', answers: '/api/mktg-agents/aeo-geo/answers' },
+  persistsDocument: true,
+  oneOffDocument: true,
+  liveActivity: true,
 };
 
 /** A last runtime error must settle before it is considered terminal. */
@@ -716,16 +749,23 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    oneOffDocument: true,
+    tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
     intro: 'Scores member engagement for the active, entitlement-checked project.',
     batchPreamble: [],
     fields: [],
     sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
-    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    endpoints: {
+      generate: '/api/mktg-agents/member-360/generate',
+      result: '/api/mktg-agents/member-360/result',
+      answers: '/api/mktg-agents/member-360/answers',
+    },
     persistsDocument: true,
     regenerateViaGenerate: true,
   },
+  [AEO_GEO_INTAKE.agentId]: AEO_GEO_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
@@ -832,7 +872,7 @@ export const MKTG_DOCUMENT_STATUS_LEAD_REGEX = /^(?:[\s#>|*_-]*|[\s#>|*_-]*statu
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
-/** Pending LinkedIn capabilities; namespace/shape converged with the in-flight AEO/GEO intake. */
+/** User/project/document-scoped capabilities for pending one-off documents. */
 export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
 /** Separately scoped intake/attempt recovery, including submissions that never received an ACK. */
 export const MKTG_PENDING_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-pending-run';
@@ -878,6 +918,8 @@ export const MKTG_RUN_POLL = {
   initialDelayMs: 4000,
   /** Interval between subsequent polls. */
   intervalMs: 5000,
+  /** Reconcile another writer's answers while a questions screen is open. */
+  questionsIntervalMs: 10000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;
@@ -894,11 +936,20 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
+/** Bound raw Guild history reads to 2,000 events per result request. */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
+
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
 /** Content-free BFF marker: a user/trigger turn queued before runtime_start appears. */
 export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
 /** Model reasoning is never a reply, a questions turn, or feed activity. */
 export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
-/** Stable questions-block hash carried by accepted-answers continuation. */
-export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
+/** Stable questions-block hash: catalog's short digest or LinkedIn's full SHA-256. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
+
+/** Plain validation message shared by every answers transport. */
+export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';
+
+/** Only LinkedIn's stable avoid question accepts a literal none answer. */
+export const MKTG_NONE_ALLOWED_QUESTION_IDS: readonly string[] = ['avoid'];

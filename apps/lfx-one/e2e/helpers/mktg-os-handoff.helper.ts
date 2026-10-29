@@ -2,20 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
-import {
-  BRAND_KIT_CONTRACT_ID,
-  BRAND_KIT_INTAKE,
-  FOUNDATION_MESSAGE_INTAKE,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_SLIDES_EXPORT_API_PATH,
-} from '@lfx-one/shared/constants';
-import type {
-  MktgArtifactStoredResponse,
-  MktgDocumentRunProgress,
-  MktgRevisionResponse,
-  MktgRunResultResponse,
-  MktgRunSessionResponse,
-} from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_CONTRACT_ID } from '@lfx-one/shared/constants/brand-kit.constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
+import { MKTG_FAMILY_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-family-export.constants';
+import { MKTG_LAST_INTAKE_API, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
+import type { MktgArtifactStoredResponse } from '@lfx-one/shared/interfaces/mktg-artifact.interface';
+import type { MktgDocumentRunProgress, MktgRunPendingQuestions } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
+import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { expect, Page } from '@playwright/test';
@@ -31,6 +27,40 @@ export async function setupNoQuestionsHandoff(page: Page) {
   const intake = BRAND_KIT_INTAKE;
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === intake.agentId);
   if (!type || !FOUNDATION_MESSAGE_INTAKE.endpoints.stored) throw new Error('Missing registered handoff fixture');
+  await page.route('**' + MKTG_LAST_INTAKE_API + '/' + type.agentKey + '/last?*', (route) => fulfillDocumentJson(route, { intake: null }));
+  const framework = assetRevision();
+  framework.project = DOCUMENT_PROJECT.uid;
+  framework.approval = { approvedAt: '2026-10-19T08:00:00Z', approvedBy: null };
+  framework.revision.approval = framework.approval;
+  framework.approvedCurrent = { revisionId: framework.revision.id, number: framework.revision.number };
+  const listing: MktgDocumentsResponse = {
+    project: DOCUMENT_PROJECT.uid,
+    approvedFramework: {
+      agentKey: framework.type.agentKey,
+      revisionId: framework.revision.id,
+      revisionNumber: framework.revision.number,
+      contentSha256: framework.revision.contentSha256,
+    },
+    groups: MKTG_DOCUMENT_TYPES.map((entry) => ({
+      type: entry,
+      documents:
+        entry.agentKey === framework.type.agentKey
+          ? [
+              {
+                agentKey: entry.agentKey,
+                documentId: 'living',
+                revisionCount: 1,
+                latestRevisionId: framework.revision.id,
+                approvedCurrent: framework.approvedCurrent,
+                createdAt: framework.revision.createdAt,
+                updatedAt: framework.revision.createdAt,
+              },
+            ]
+          : [],
+    })),
+  };
+  await page.route('**/api/mktg-agents/documents?*', (route) => fulfillDocumentJson(route, listing));
+  await page.route('**/api/mktg-agents/documents/' + framework.type.agentKey + '/living**', (route) => fulfillDocumentJson(route, framework));
   const kit = brandKitTestRevision();
   const sidecar = {
     contract: BRAND_KIT_CONTRACT_ID,
@@ -61,17 +91,19 @@ export async function setupNoQuestionsHandoff(page: Page) {
     current: { revisionId: summary.id, changedAt: summary.createdAt, changedBy: null },
   };
   const prerequisite: MktgArtifactStoredResponse = {
-    documentMarkdown: '# Synthetic framework',
+    documentMarkdown: framework.markdown,
+    format: 'json',
     revisionNumber: 1,
     receipt: { project: DOCUMENT_PROJECT.uid, s3_key: 'synthetic-framework.md', content_sha256: 'a'.repeat(64), version: 1, intake_mode: 'form' },
-    sidecar: {
-      contract: 'messaging-document-output/v1',
-      fields: { 'md.tagline': { value: 'Open, together', source: 'Synthetic source', status: 'approved' } },
-    },
+    sidecar: JSON.parse(framework.markdown) as Record<string, unknown>,
   };
   await page.route('**' + FOUNDATION_MESSAGE_INTAKE.endpoints.stored + '**', (route) => fulfillDocumentJson(route, prerequisite));
   await page.route('**' + MKTG_SLIDES_EXPORT_API_PATH + '**', (route) => fulfillDocumentJson(route, { last: null, latestRevision: null }));
-  let stage: 'research' | 'between-rounds' | 'writing' | 'checking' | 'early-ready' | 'storing' | 'ready' | 'unconfirmed' = 'research';
+  await page.route('**' + MKTG_FAMILY_EXPORT_API_PATH + '/last?*', (route) =>
+    fulfillDocumentJson(route, { last: null, currentMembers: [], skippedMembers: [], stale: false })
+  );
+  let stage: 'research' | 'between-rounds' | 'questions' | 'writing' | 'checking' | 'early-ready' | 'storing' | 'ready' | 'unconfirmed' = 'research';
+  let pendingQuestions: MktgRunPendingQuestions | null = null;
   const posts: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
@@ -81,6 +113,8 @@ export async function setupNoQuestionsHandoff(page: Page) {
   await page.route('**' + intake.endpoints.generate, (route) => fulfillDocumentJson(route, ack));
   await page.route('**' + intake.endpoints.result, (route) => {
     if (stage === 'unconfirmed') return fulfillDocumentJson(route, { error: 'Synthetic invalid check' }, 400);
+    if (stage === 'questions' && pendingQuestions)
+      return fulfillDocumentJson(route, { status: 'questions', questionsId: pendingQuestions.questionsId, questions: pendingQuestions.questions });
     let activityStage: 'research' | 'between-rounds' | 'writing' | 'checked' = 'writing';
     if (stage === 'research' || stage === 'between-rounds') activityStage = stage;
     if (stage === 'checking') activityStage = 'checked';
@@ -106,12 +140,16 @@ export async function setupNoQuestionsHandoff(page: Page) {
   await page.route(new RegExp('/documents/' + type.agentKey + '/living(?:\\?|$)'), (route) => {
     const runs: MktgDocumentRunProgress[] = [];
     if (stage !== 'ready') {
+      let state: MktgDocumentRunProgress['state'] = 'writing';
+      if (stage === 'questions') state = 'questions';
+      else if (stage === 'storing') state = 'storing';
       runs.push({
         project: DOCUMENT_PROJECT.uid,
         agentKey: type.agentKey,
         documentId: 'living',
         runId: 'b'.repeat(64),
-        state: stage === 'storing' ? 'storing' : 'writing',
+        state,
+        ...(stage === 'questions' && pendingQuestions && { pendingQuestions }),
         startedAt: '2026-10-20T10:00:05Z',
       });
     }
@@ -125,6 +163,12 @@ export async function setupNoQuestionsHandoff(page: Page) {
   if (!firstReading || !lastReading) throw new Error('Missing real producer research rows');
   return {
     posts,
+    documentUrl: `/project/mktg-os-agents/documents/${type.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`,
+    // Rule 1/#4592: advance private and canonical projections together, never a cache-only question state.
+    askQuestions: (questions: MktgRunPendingQuestions) => {
+      pendingQuestions = questions;
+      stage = 'questions';
+    },
     firstReadingId: firstReading.id,
     lastReadingId: lastReading.id,
     revision: summary,
@@ -149,18 +193,22 @@ export async function setupNoQuestionsHandoff(page: Page) {
     unconfirm: () => {
       stage = 'unconfirmed';
     },
-    openAndGenerate: async () => {
-      await page.evaluate((url) => {
-        history.pushState({}, '', url);
-        dispatchEvent(new PopStateEvent('popstate'));
-      }, `/project/mktg-os-agents/${intake.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    openAndGenerate: async (navigate = true) => {
+      if (navigate) {
+        await page.evaluate((url) => {
+          history.pushState({}, '', url);
+          dispatchEvent(new PopStateEvent('popstate'));
+        }, `/project/mktg-os-agents/${intake.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+      }
       await expect(page.getByTestId('mktg-agent-run-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      const sourcesEntry = new URL(page.url()).searchParams.get('mode') === MKTG_RUN_NEW_MODE;
+      if (sourcesEntry) await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
       for (const field of intake.fields) {
         if (field.optional) continue;
         if (field.kind !== 'text' && field.kind !== 'textarea') throw new Error('Unexpected required handoff fixture field');
         await page.locator(`[data-test="mktg-intake-${field.key}"]`).fill(field.format?.includes('url') ? 'https://synthetic.example' : 'Synthetic project');
       }
-      const generate = page.getByTestId('mktg-agent-run-submit-button').getByRole('button');
+      const generate = page.getByTestId(sourcesEntry ? 'mktg-run-start' : 'mktg-agent-run-submit-button').getByRole('button');
       await expect(generate).toBeEnabled();
       await generate.click();
       const search = buildMktgRunActivity(noQuestionsActivityPayloads('research', true)).find((step) => step.kind === 'search');

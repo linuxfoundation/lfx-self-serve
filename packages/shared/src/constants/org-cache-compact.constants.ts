@@ -9,7 +9,6 @@ import type {
   OrgLensProjectPerson,
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleAllRowRaw,
-  OrgPeopleAllStatsRow,
   OrgPeopleAllTraineeRow,
   OrgPeopleEventRow,
   OrgPeopleFoundationOptionRow,
@@ -83,20 +82,12 @@ export const ORG_PEOPLE_ALL_ROW_COLUMNS = [
   'BOARD_SEATS_COUNT',
   'COMMITTEE_SEATS_COUNT',
   'COMMITS_COUNT',
+  'MERGED_COMMITS_COUNT',
+  'CODE_ACTIVITIES_COUNT',
   'EVENTS_COUNT',
   'COURSES_COUNT',
   'ENGAGED_FOUNDATION_IDS',
 ] as const satisfies readonly (keyof OrgPeopleAllRowRaw)[];
-
-/** `CompactOrgAllEmployeesRawCache.statsRaw`. */
-export const ORG_PEOPLE_ALL_STATS_COLUMNS = [
-  'ACCOUNT_ID',
-  'ACTIVE_IN_OSS',
-  'IN_GOVERNANCE',
-  'CODE_CONTRIBUTORS',
-  'EVENT_ATTENDEES',
-  'TRAINEES',
-] as const satisfies readonly (keyof OrgPeopleAllStatsRow)[];
 
 /** `CompactOrgAllEmployeesRawCache.foundationRaw`. */
 export const ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof OrgPeopleFoundationOptionRow)[];
@@ -185,8 +176,7 @@ export const ORG_CONTRIBUTOR_ROW_COLUMNS = [
   'DISPLAY_NAME',
   'TITLE',
   'COMMITS',
+  'MERGED_COMMITS',
   'CODE_ACTIVITIES',
   'LAST_ACTIVE_DATE',
-  'IS_DECLARED_MAINTAINER_FOR_PROJECT',
-  'IS_DECLARED_MAINTAINER_FOR_ORG',
 ] as const satisfies readonly (keyof ContributorPersonProjectRow)[];

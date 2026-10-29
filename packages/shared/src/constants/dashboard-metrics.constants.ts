@@ -7,6 +7,7 @@ import { hexToRgba } from '../utils/color.utils';
 import { formatCurrency, formatNumber } from '../utils/number.utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
+import { ORG_MAINTAINER_ROLES_LABEL } from './org-maintainer-roles.constants';
 
 import type {
   BoardMeetingParticipationSummaryResponse,
@@ -348,7 +349,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
   },
   {
-    title: 'Maintainers',
+    title: ORG_MAINTAINER_ROLES_LABEL,
     icon: 'fa-light fa-user-check',
     chartType: 'bar',
     category: 'contributors',

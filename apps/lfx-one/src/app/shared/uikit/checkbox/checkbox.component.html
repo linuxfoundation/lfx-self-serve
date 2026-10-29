@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<label [class]="labelClasses()" data-testid="ui-checkbox-label">
+  <span class="relative inline-flex shrink-0">
+    <input
+      type="checkbox"
+      [class]="boxClasses()"
+      [checked]="checked()"
+      [indeterminate]="indeterminate()"
+      [disabled]="isDisabled()"
+      [attr.name]="name() || null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      (change)="onChange($event)"
+      (blur)="onBlur()"
+      data-testid="ui-checkbox-input" />
+    @if (indeterminate()) {
+      <!-- 9px dash, 2px thick, centred in the 16px box. -->
+      <span
+        class="pointer-events-none absolute left-[3.5px] top-[7px] h-[2px] w-[9px] rounded-[1px] bg-white forced-colors:bg-[color:HighlightText]"
+        data-testid="ui-checkbox-dash"></span>
+    } @else if (checked()) {
+      <svg class="pointer-events-none absolute inset-0 h-[16px] w-[16px]" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-testid="ui-checkbox-check">
+        <path d="M4 8.3 6.6 10.9 12 5.2" class="stroke-white forced-colors:stroke-[color:HighlightText]" stroke-width="2" stroke-linecap="square" />
+      </svg>
+    }
+  </span>
+  @if (label()) {
+    <span data-testid="ui-checkbox-text">{{ label() }}</span>
+  }
+</label>

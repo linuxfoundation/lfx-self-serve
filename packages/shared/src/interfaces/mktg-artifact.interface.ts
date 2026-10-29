@@ -19,7 +19,7 @@ import type { MktgRunPersistReceipt } from './mktg-run.interface';
  * `foundation-message`. Keying storage by the catalog id would make the
  * storage layout hostage to a marketplace-facing label.
  */
-export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp' | 'boilerplates' | 'faq' | 'linkedin-post';
+export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp' | 'boilerplates' | 'faq' | 'linkedin-post' | 'aeo-geo';
 
 /**
  * How an agent's intake answers were collected. Every Marketing OS envelope
