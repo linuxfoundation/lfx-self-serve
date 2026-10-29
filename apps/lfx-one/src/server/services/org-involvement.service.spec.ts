@@ -226,7 +226,9 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
   it("reads the trend's inclusive column, and does not store the card, while the view has no team-member count yet", async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS')) throw invalidIdentifier('UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS');
-      return isContributorsTrend(sql) ? { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), UNIQUE_CONTRIBUTORS: 312 }] } : { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
+      return isContributorsTrend(sql)
+        ? { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), UNIQUE_CONTRIBUTORS: 312 }] }
+        : { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
     });
 
     const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');

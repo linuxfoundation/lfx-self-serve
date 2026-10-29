@@ -251,8 +251,8 @@ describe('OrgLensPeopleController team members filter (lfx-self-serve#4685)', ()
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS, 'include');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', DEFAULT_FILTERS, 'include');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', DEFAULT_FILTERS, 'include');
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'all', 'include');
+    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'include');
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all', 'include');
   });
 
   it.each(['Exclude', 'true', 'none'])('rejects teamMembers=%s with a 400 naming the field before any read', async (teamMembers) => {
