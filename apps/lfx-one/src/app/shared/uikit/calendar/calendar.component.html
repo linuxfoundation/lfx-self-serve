@@ -46,7 +46,8 @@
             <button
               type="button"
               [class]="day.classes"
-              [attr.tabindex]="day.key === focusedKey() ? 0 : -1"
+              [disabled]="formDisabled()"
+              [attr.tabindex]="!formDisabled() && day.key === focusedKey() ? 0 : -1"
               [attr.aria-label]="day.label"
               [attr.aria-current]="day.today ? 'date' : null"
               [attr.aria-disabled]="day.disabled ? 'true' : null"

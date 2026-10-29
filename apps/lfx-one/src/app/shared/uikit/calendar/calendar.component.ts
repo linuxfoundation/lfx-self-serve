@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { _IdGenerator } from '@angular/cdk/a11y';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -33,11 +34,10 @@ import { UiButtonComponent } from '../button/button.component';
   imports: [UiButtonComponent],
   templateUrl: './calendar.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'inline-block' },
+  host: { class: 'inline-block', '(focusout)': 'onFocusOut($event)' },
 })
 export class UiCalendarComponent implements ControlValueAccessor {
-  private static nextId = 0;
-
+  private readonly titleBaseId = inject(_IdGenerator).getId('lfx-ui-calendar-');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
@@ -51,7 +51,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   /** The selected date, or `null`. Supports two-way binding with `[(value)]`. */
   public readonly value = model<Date | null>(null);
 
-  protected readonly titleId = `lfx-ui-calendar-${UiCalendarComponent.nextId++}-title`;
+  protected readonly titleId = `${this.titleBaseId}title`;
   protected readonly formDisabled = signal(false);
   /** The date that holds the roving tab stop; its month is the month on show. Resets when the value changes. */
   protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfDay(new Date()));
@@ -84,18 +84,28 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   protected select(day: UiCalendarDay): void {
+    if (this.formDisabled()) return;
     this.focusedDate.set(day.date);
-    if (day.disabled || this.formDisabled()) return;
+    // Clicking a day from another month rebuilds the rows, so put focus back on the clicked day.
+    this.focusActiveDay();
+    if (day.disabled) return;
     this.value.set(day.date);
     this.onChange?.(day.date);
     this.onTouched?.();
   }
 
   protected shiftMonth(months: number): void {
+    if (this.formDisabled()) return;
     this.focusedDate.set(this.addMonths(this.focusedDate(), months));
   }
 
+  protected onFocusOut(event: FocusEvent): void {
+    // Touched when focus leaves the whole calendar, not when it moves between its own buttons.
+    if (!this.host.nativeElement.contains(event.relatedTarget as Node | null)) this.onTouched?.();
+  }
+
   protected onKeydown(event: KeyboardEvent): void {
+    if (this.formDisabled()) return;
     const current = this.focusedDate();
     const weekStart = (current.getDay() - this.weekStartsOn() + 7) % 7;
     const next = {
@@ -111,7 +121,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
     if (!next) return;
     event.preventDefault();
     this.focusedDate.set(next());
-    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-date="${this.focusedKey()}"]`)?.focus(), { injector: this.injector });
+    this.focusActiveDay();
   }
 
   private initWeekdays(): Signal<{ short: string; long: string }[]> {
@@ -161,6 +171,10 @@ export class UiCalendarComponent implements ControlValueAccessor {
         return { key: days[0].key, days };
       });
     });
+  }
+
+  private focusActiveDay(): void {
+    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-date="${this.focusedKey()}"]`)?.focus(), { injector: this.injector });
   }
 
   private dayClasses(day: UiCalendarDay, gridOff: boolean): string {

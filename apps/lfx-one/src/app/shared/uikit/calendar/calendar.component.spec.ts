@@ -127,6 +127,23 @@ describe('UiCalendarComponent', () => {
     expect(title()).toBe('September 2026');
   });
 
+  it('keeps focus on the clicked day when it belongs to another month', async () => {
+    day('2026-09-30').click();
+    await fixture.whenStable();
+
+    expect(title()).toBe('September 2026');
+    expect(document.activeElement?.getAttribute('data-date')).toBe('2026-09-30');
+  });
+
+  it('gives each instance its own title id', () => {
+    const other = TestBed.createComponent(UiCalendarComponent);
+    other.detectChanges();
+
+    expect((other.nativeElement as HTMLElement).querySelector('[data-testid="ui-calendar-title"]')?.id).not.toBe(
+      host.querySelector('[data-testid="ui-calendar-title"]')?.id
+    );
+  });
+
   it('ignores keys it does not handle', async () => {
     await press('a');
 
@@ -177,7 +194,7 @@ describe('UiCalendarComponent', () => {
       expect(formFixture.componentInstance.control.value).toEqual(new Date(2026, 9, 12));
     });
 
-    it('marks the grid aria-disabled, disables the month buttons and drops hover once the control is disabled', async () => {
+    it('makes the whole grid inert once the control is disabled', async () => {
       const root = formFixture.nativeElement as HTMLElement;
       expect(root.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBeNull();
 
@@ -187,8 +204,32 @@ describe('UiCalendarComponent', () => {
       expect(root.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
       expect((root.querySelector('[data-testid="ui-calendar-prev"] button') as HTMLButtonElement).disabled).toBe(true);
       expect((root.querySelector('[data-testid="ui-calendar-next"] button') as HTMLButtonElement).disabled).toBe(true);
+      expect(formDay('2026-10-20').disabled).toBe(true);
+      expect(root.querySelectorAll('[data-testid="ui-calendar-day"][tabindex="0"]').length).toBe(0);
       expect(formDay('2026-10-20').className).toContain('cursor-not-allowed');
       expect(formDay('2026-10-20').className).not.toContain('hover:bg-ui-neutral-alpha-100');
+    });
+
+    it('ignores keys once the control is disabled', async () => {
+      const root = formFixture.nativeElement as HTMLElement;
+      formFixture.componentInstance.control.disable();
+      await formFixture.whenStable();
+      (root.querySelector('[role="grid"]') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+      await formFixture.whenStable();
+
+      expect(root.querySelector('[data-testid="ui-calendar-title"]')?.textContent?.trim()).toBe('October 2026');
+    });
+
+    it('marks the control touched when focus leaves the calendar without a pick', async () => {
+      const root = formFixture.nativeElement as HTMLElement;
+      formDay('2026-10-12').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: formDay('2026-10-13') }));
+      expect(formFixture.componentInstance.control.touched).toBe(false);
+
+      formDay('2026-10-12').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+      await formFixture.whenStable();
+
+      expect(root).toBeTruthy();
+      expect(formFixture.componentInstance.control.touched).toBe(true);
     });
   });
 });
