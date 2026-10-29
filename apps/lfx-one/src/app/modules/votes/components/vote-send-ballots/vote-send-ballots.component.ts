@@ -62,7 +62,12 @@ export class VoteSendBallotsComponent {
         switchMap((uid) => {
           this.remaining.set(null);
           if (!isPlatformBrowser(this.platformId)) return EMPTY;
-          return this.voteService.getReminderRecipients(uid).pipe(catchError(() => EMPTY));
+          return this.voteService.getReminderRecipients(uid).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to read the voter list for the Send ballots state', error);
+              return EMPTY;
+            })
+          );
         }),
         takeUntilDestroyed()
       )
@@ -113,7 +118,9 @@ export class VoteSendBallotsComponent {
           }
           this.confirm(uid, count);
         },
-        error: () => this.loadFailed(),
+        error: () => {
+          if (uid === this.voteUid()) this.loadFailed();
+        },
       });
   }
 

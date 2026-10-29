@@ -1773,6 +1773,22 @@ describe('VotesTableComponent — Close vote (#4740)', () => {
     expect(closed).not.toHaveBeenCalled();
   });
 
+  it('ignores a second accept while the first close is in flight, and one for a vote that is already closed', async () => {
+    const pending = new Subject<Vote>();
+    endVote.mockReturnValue(pending);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+
+    pending.next(vote('active', { status: PollStatus.ENDED }));
+    pending.complete();
+    await settle();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores an accept for a row that has left the list', async () => {
     (await closeItem('active'))!.command!({});
     fixture.componentRef.setInput(

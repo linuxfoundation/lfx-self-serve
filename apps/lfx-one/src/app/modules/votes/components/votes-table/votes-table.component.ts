@@ -182,15 +182,16 @@ export class VotesTableComponent {
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
   /**
+   * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
+   * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
+   */
+  private readonly closingUids = signal<Set<string>>(new Set());
+  private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
+  /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
    * here immediately rather than waiting on `refresh.emit()`'s possibly-stale search-index refetch.
    * Self-healing: an effect below evicts an entry once the incoming `votes()` row shows the same value.
    */
-  /**
-   * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
-   * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
-   */
-  private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   private readonly extendedDeadlines = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
 
   // === Computed Signals ===
@@ -538,7 +539,9 @@ export class VotesTableComponent {
     this.confirmationService.confirm({
       ...VOTE_CLOSE_CONFIRMATION,
       accept: () => {
-        if (!this.votes().some((row) => row.uid === uid)) return;
+        // Still listed, still open, and not already being closed: a second accept would only earn an upstream rejection.
+        const row = this.displayedVotes().find((r) => r.uid === uid);
+        if (row?.status !== PollStatus.ACTIVE || this.closingUids().has(uid)) return;
         this.endVote(uid);
       },
     });
@@ -658,14 +661,21 @@ export class VotesTableComponent {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
   }
 
-  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
-   *  Tier-prefixes the route from the source vote's own is_foundation (not getEntityCommands — that builder takes an id/leaf shaped for
-   *  edit/details routes, and create has neither) so vote-manage's entity-context sync lands the clone in the source's own project. */
   /** Ends the vote, flips its row to `ended` locally and lets the host refresh its counters; a failure leaves the row alone. */
   private endVote(uid: string): void {
+    this.closingUids.update((ids) => new Set(ids).add(uid));
     this.voteService
       .endVote(uid)
-      .pipe(take(1))
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.closingUids.update((ids) => {
+            const next = new Set(ids);
+            next.delete(uid);
+            return next;
+          })
+        )
+      )
       .subscribe({
         next: (updatedVote) => {
           this.closedVotes.update((map) => new Map(map).set(uid, { status: PollStatus.ENDED, early_end_time: updatedVote.early_end_time }));
@@ -700,6 +710,9 @@ export class VotesTableComponent {
     if (next.size !== closed.size) this.closedVotes.set(next);
   }
 
+  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
+   *  Tier-prefixes the route from the source vote's own is_foundation (not getEntityCommands — that builder takes an id/leaf shaped for
+   *  edit/details routes, and create has neither) so vote-manage's entity-context sync lands the clone in the source's own project. */
   private cloneVote(vote: VoteTableRow): void {
     let tierSegment: 'foundation' | 'project' | null = null;
     if (vote.is_foundation === true) tierSegment = 'foundation';
