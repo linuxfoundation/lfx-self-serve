@@ -43,6 +43,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-checkbox`       | `UiCheckboxComponent`      | Native 16px checkbox: checked, indeterminate, disabled, label; `[(checked)]` and reactive forms                                                                        |
 | `lfx-ui-radio-group`    | `UiRadioGroupComponent`    | Fieldset of native radios (`lfx-ui-radio` options); arrow keys, `[(value)]` and reactive forms                                                                         |
 | `lfx-ui-toggle`         | `UiToggleComponent`        | On/off switch (`role="switch"`): three sizes, accent, warning or danger; `[(checked)]` and reactive forms                                                              |
+| `lfx-ui-loading-dots`   | `UiLoadingDotsComponent`   | Three pulsing dots, 4, 5 or 7px, current colour; hidden beside visible text, `role="status"` when given a `label`                                                      |
 
 ## Design tokens
 
