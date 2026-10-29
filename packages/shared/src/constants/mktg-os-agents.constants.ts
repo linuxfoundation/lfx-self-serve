@@ -46,7 +46,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     tags: ['Messaging', 'Positioning'],
     status: 'active',
     description:
-      'Vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.',
+      'Vision, mission, positioning, tagline, goal columns, the messaging framework and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.',
     icon: 'fa-light fa-landmark',
     accent: 'blue',
     guildAgentHandle: 'foundation-message',

@@ -16,9 +16,9 @@ test.describe('Marketing family responsive structure', () => {
         await page.setViewportSize({ width, height: 1000 });
         await setupKit(page, { loaded: true, approvedFramework: true });
         await openKit(page, `/families/${familyId}`);
-        await expect(page.getByTestId('mktg-family-assets').getByRole('listitem')).toHaveCount(
-          MKTG_KIT_FAMILIES.find((family) => family.id === familyId)?.assets.length ?? 0
-        );
+        await expect(page.getByTestId('mktg-family-assets').getByRole('listitem')).toHaveCount(familyId === MKTG_KIT_POSITIONING_FAMILY_ID ? 4 : 1);
+        await expect(page.getByTestId('mktg-family-asset-one-pager')).toHaveCount(0);
+        await expect(page.getByTestId('mktg-family-asset-pitch-deck')).toHaveCount(0);
         for (const row of await page.getByTestId('mktg-family-assets').getByRole('listitem').all()) {
           if (await row.locator('[data-testid^="mktg-family-open-"]').count()) await expect(row.locator('lfx-button')).toHaveCount(0);
         }
@@ -64,8 +64,10 @@ test.describe('Marketing family responsive structure', () => {
             await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
           }
         }
-        await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
-        // The aside also contains #4498's source/sign-off Show toggles; they are not export actions.
+        await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
+        await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
+        // Sources retains its live toggle while roadmap sign-off stays hidden;
+        // scope export assertions to the real export actions, not every aside button.
         const exportSlot = page.getByTestId('mktg-family-exports');
         const exportActions = exportSlot.getByTestId('family-export-actions');
         if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
@@ -79,7 +81,6 @@ test.describe('Marketing family responsive structure', () => {
           await expect(exportActions.getByTestId('family-export-unsupported')).toBeVisible();
           await expect(exportSlot.getByTestId('mktg-family-sources-toggle')).toHaveCount(0);
         }
-        await expect(exportSlot.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Show', exact: true })).toBeVisible();
         const table = await page.getByTestId('mktg-family-assets').boundingBox();
         const exports = await page.getByTestId('mktg-family-exports').boundingBox();
         expect(table).not.toBeNull();
