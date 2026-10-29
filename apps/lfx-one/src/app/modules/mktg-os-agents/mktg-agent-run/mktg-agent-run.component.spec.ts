@@ -1612,10 +1612,14 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(privateResult.observed).toBe(true);
-      component['onPublicObserved']({ detail: record('failed'), view: null });
+      const measured = record('writing');
+      const failed: MktgDocumentDetailResponse = { ...measured, runs: [{ ...measured.runs[0], state: 'failed' }] };
+      component['onPublicObserved']({ detail: failed, view: null });
       expect(privateResult.observed).toBe(false);
       expect(attempts.load(PROJECT_1.uid, intake.agentId)?.state).toBe('failed');
       expect(component['questionsPending']()).toBeNull();
+      expect(component['waitingRun']()).toBeNull();
+      expect(component['waitingQuestions']()).toBe(false);
       expect(generate).not.toHaveBeenCalled();
     });
 

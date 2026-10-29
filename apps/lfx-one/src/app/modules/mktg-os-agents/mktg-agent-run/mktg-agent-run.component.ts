@@ -732,6 +732,8 @@ export class MktgAgentRunComponent {
       return;
     }
     if (run?.state === 'failed') {
+      this.waitingRun.set(null);
+      this.waitingQuestions.set(false);
       this.generationSub?.unsubscribe();
       this.generationSub = null;
       this.answersSending.set(false);
@@ -744,7 +746,7 @@ export class MktgAgentRunComponent {
       if (!run) {
         this.runAttempts.clear(this.publicProject(), this.agent?.id ?? '');
       } else if (run && (run.state !== 'questions' || owned.pendingQuestions.questionsId !== run.pendingQuestions?.questionsId)) {
-        this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: run.state === 'failed' ? 'failed' : 'writing' });
+        this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: 'writing' });
       }
     }
     if (this.answersSending() && run?.state === 'questions') return;
