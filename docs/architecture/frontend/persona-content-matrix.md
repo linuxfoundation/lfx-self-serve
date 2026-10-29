@@ -70,7 +70,7 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 |                   | Settings                      | `/profile/settings`              |
 
 > **Meetings** (`/meetings`) is flag-gated between two pages: `MeetingsEntryComponent` renders the current meetings dashboard, or, when `MEETINGS_REDESIGN_FLAG` is on, the Me lens redesign. `/foundation/meetings` and `/project/meetings` always render the current dashboard.
-
+>
 > **Profile & Account** is not a nav section: on the Home lens the navbar's me card carries a "Profile & Account" action (links to `/profile`), and the navbar footer account menu links to Profile & Account (`/profile`) and Settings (`/profile/settings`).
 
 ---
