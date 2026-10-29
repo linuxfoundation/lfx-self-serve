@@ -86,8 +86,11 @@ export class PersonDetailDrawerService {
           return of({ request, detail: null, error: false });
         }
         // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the past 365 days.
+        // An opener with code filters gets its own row's Code counts in that range; without them, the trailing 12 months' commits.
         const range = request.context?.range;
-        return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params: range ? { range } : {} }).pipe(
+        const codeFilters = request.context?.codeFilters;
+        const params = { ...(range ? { range } : {}), ...(codeFilters ?? {}) };
+        return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params }).pipe(
           map((detail) => ({ request, detail, error: false })),
           catchError((err: unknown) => {
             console.error('Failed to load person detail:', err);

@@ -401,6 +401,20 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', range: '90d' }));
   });
+
+  it("opens the person drawer with the tab's project type and code count, so its Code tab counts this row (lfx-self-serve#4404)", async () => {
+    await mount('/?range=730d&projectScope=non_lf&metric=merged');
+    const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+    (fixture.componentInstance as unknown as { onPersonClick(row: object, event: Event): void }).onPersonClick(
+      { personKey: 'p-1', displayName: 'Ada', title: null, initials: 'A', avatarColorClass: '' },
+      new Event('click')
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({ personKey: 'p-1', range: '730d', codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' } })
+    );
+  });
 });
 
 describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {

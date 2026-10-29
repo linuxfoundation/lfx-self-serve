@@ -431,16 +431,51 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
     await controller.getEmployeeDetail(detailReq({ range: '90d' }), buildRes(), vi.fn());
     await controller.getEmployeeDetailByUsername(detailReq({ range: 'all' }), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '90d');
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all');
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '90d', null);
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all', null);
   });
 
   it('defaults to the past 365 days when the opener sends no range', async () => {
     await controller.getEmployeeDetail(detailReq({}), buildRes(), vi.fn());
     await controller.getEmployeeDetailByUsername(detailReq({}), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d');
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d');
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null);
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d', null);
+  });
+
+  it("forwards the opener's code filters with its range, for a person key and for a username (lfx-self-serve#4404)", async () => {
+    const query = { range: '730d', projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' };
+    await controller.getEmployeeDetail(detailReq(query), buildRes(), vi.fn());
+    await controller.getEmployeeDetailByUsername(detailReq(query), buildRes(), vi.fn());
+
+    const filters = { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' };
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', filters);
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '730d', filters);
+  });
+
+  it('fills the code filters an opener leaves out with their defaults once it sends any', async () => {
+    await controller.getEmployeeDetail(detailReq({ projectScope: 'all' }), buildRes(), vi.fn());
+
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', {
+      projectScope: 'all',
+      commitScope: 'all',
+      metric: 'code',
+    });
+  });
+
+  it('rejects an unknown code filter with a 400 before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(detailReq({ projectScope: 'everything' }), buildRes(), next);
+    await controller.getEmployeeDetail(detailReq({ commitScope: 'squashed' }), buildRes(), next);
+    await controller.getEmployeeDetailByUsername(detailReq({ metric: 'lines' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(3);
+    for (const [error] of next.mock.calls) {
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error).toMatchObject({ statusCode: 400 });
+    }
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
+    expect(getEmployeeDetailByUsername).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown range with a 400 before any read', async () => {

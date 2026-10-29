@@ -3,7 +3,7 @@
 
 import { createRequire } from 'node:module';
 
-import type { CompactOrgAllEmployeesRawCache, OrgCommitFilters, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type { CompactOrgAllEmployeesRawCache, OrgCommitFilters, OrgLensTimeRange, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,6 +81,7 @@ vi.mock('./logger.service', () => ({
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
+import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
@@ -123,7 +124,9 @@ function daysAgo(days: number): string {
 
 function addDailyCode(account: string, key: string, activityDate: string, foundationId: string, foundationName: string, isLfProject = 1): void {
   database
-    .prepare('INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .prepare(
+      'INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )
     .run(account, key, `project-${foundationId}`, activityDate, foundationId, foundationName, isLfProject);
 }
 
@@ -211,9 +214,12 @@ beforeEach(() => {
           .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
           .replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW)
           .replaceAll('DATEADD(day, 0 - ?, CURRENT_DATE())', SQLITE_DAYS_BEFORE_TODAY)
+          .replace(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 days')")
           .replaceAll('CURRENT_DATE()', "date('now')")
       )
-      .all(...binds);
+      .all(...binds)
+      // Snowflake answers unquoted identifiers upper-cased, whatever case the query wrote them in.
+      .map((row) => Object.fromEntries(Object.entries(row).map(([column, value]) => [column.toUpperCase(), value])));
     for (const row of rows) {
       for (const column of ['IS_BOARD', 'IS_SPEAKER']) {
         if (column in row) row[column] = row[column] === 1;
@@ -535,7 +541,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
       );
       CREATE TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY (
-        ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
+        LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
+        DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER
       );
     `);
     database
@@ -588,7 +596,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['course-recent', 'Enrolled'],
     ]);
     expect(detail.training[0]?.coursesCount).toBe(3);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v4:${personKey}`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v5:${personKey}`)!)).toBe(true);
   });
 
   it('shows one row per course, a certificate superseding a later re-enrollment, and counts the rows shown', async () => {
@@ -1049,6 +1057,127 @@ describe('OrgLensPeopleService person-key company emails', () => {
         /ORG_PEOPLE_(COMMITTEE_MEMBERSHIP|CODE_CONTRIBUTIONS|EVENTS|TRAINING|COMPANY_EMAILS)/.test(query)
       );
       expect(activityReads).toEqual([]);
+    });
+  });
+
+  describe("Code tab in the opener's view (lfx-self-serve#4404)", () => {
+    const LF_COMMITS: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+    const ALL_MERGED: OrgCommitFilters = { projectScope: 'all', commitScope: 'merged', metric: 'commits' };
+    const NON_LF_CODE: OrgCommitFilters = { projectScope: 'non_lf', commitScope: 'all', metric: 'code' };
+    const LF_MERGED: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
+
+    /** One day of code: authored, merged, in-scope authored, in-scope merged commits and code activities. */
+    function addCode(key: string, projectId: string, isLfProject: number, daysBefore: number, counts: number[], account = ACCOUNT): void {
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(account, key, projectId, daysAgo(daysBefore), 'foundation-one', 'Foundation One', isLfProject, `cdp-${key}`, key, `Name ${projectId}`, ...counts);
+    }
+
+    async function codeIn(range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<{ total: number; code: [string, number][] }> {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, range, filters);
+      return { total: detail.totalCommits, code: detail.code.map((row) => [row.projectId, row.commits]) };
+    }
+
+    function dailyReads(): string[] {
+      return (execute.mock.calls as [string][]).map(([query]) => query).filter((query) => query.includes('ORG_PEOPLE_CONTRIBUTORS_DAILY'));
+    }
+
+    beforeEach(() => {
+      // The People → Contributors read filters the maintainer roles by project type.
+      database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_LF_PROJECT INTEGER');
+      // A mirrored commit credits each scope once, so an LF day can carry more in-scope than all-project commits.
+      addCode(personKey, 'project-lf', 1, 10, [3, 2, 4, 3, 9]);
+      addCode(personKey, 'project-lf', 1, 200, [5, 5, 5, 5, 6]);
+      addCode(personKey, 'project-other', 0, 50, [1, 0, 2, 1, 4]);
+      addCode(personKey, 'project-old', 1, 800, [7, 7, 7, 7, 7]);
+      // Another person's and another account's code never counts.
+      addCode('person-two', 'project-lf', 1, 10, [50, 50, 50, 50, 50]);
+      addCode(personKey, 'project-lf', 1, 10, [90, 90, 90, 90, 90], 'other-account');
+    });
+
+    it('counts the range, project type and code count per project and in total, highest count first', async () => {
+      expect(await codeIn('90d', LF_COMMITS)).toEqual({ total: 4, code: [['project-lf', 4]] });
+      expect(await codeIn('365d', ALL_MERGED)).toEqual({
+        total: 7,
+        code: [
+          ['project-lf', 7],
+          ['project-other', 0],
+        ],
+      });
+      expect(await codeIn('365d', NON_LF_CODE)).toEqual({ total: 4, code: [['project-other', 4]] });
+      expect(await codeIn('all', LF_MERGED)).toEqual({
+        total: 15,
+        code: [
+          ['project-lf', 8],
+          ['project-old', 7],
+        ],
+      });
+    });
+
+    it('equals the People → Contributors row and its project rows for the same range and filters', async () => {
+      const contributors = new OrgPeopleContributorsService();
+      const combos: [OrgLensTimeRange, OrgCommitFilters][] = [
+        ['90d', LF_COMMITS],
+        ['365d', ALL_MERGED],
+        ['730d', NON_LF_CODE],
+        ['all', LF_MERGED],
+        ['all', { projectScope: 'all', commitScope: 'all', metric: 'code' }],
+      ];
+
+      for (const [range, filters] of combos) {
+        const response = await contributors.getContributors(ACCOUNT, range, filters);
+        const count = (row: { commits: number; codeActivities: number }): number => (filters.metric === 'code' ? row.codeActivities : row.commits);
+        const row = response.contributors.find((contributor) => contributor.personKey === personKey);
+        const projects = response.projects.filter((project) => project.personKey === personKey).map((project) => [project.projectId, count(project)]);
+        const drawer = await codeIn(range, filters);
+
+        expect(drawer.total).toBe(row ? count(row) : 0);
+        expect([...drawer.code].sort()).toEqual(projects.sort());
+      }
+    });
+
+    it('echoes the view, dates each project by its last activity in it, and never reads the trailing-year table', async () => {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', ALL_MERGED);
+
+      expect(detail.codeView).toEqual({ range: '365d', ...ALL_MERGED });
+      expect(detail.code.find((row) => row.projectId === 'project-lf')?.lastActivityDate).toBe(daysAgo(10));
+      expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_CODE_CONTRIBUTIONS'))).toBe(false);
+    });
+
+    it('serves every code count of a range and project type from one cached read', async () => {
+      await codeIn('365d', LF_COMMITS);
+      await codeIn('365d', LF_MERGED);
+      await codeIn('365d', { ...LF_COMMITS, metric: 'code' });
+
+      expect(dailyReads()).toHaveLength(1);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:lf`)!)).toBe(true);
+    });
+
+    it('keeps the trailing-year commits, without a view, when the opener sends no filters', async () => {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d');
+
+      expect(detail.codeView).toBeUndefined();
+      expect(detail.code.map((row) => [row.projectId, row.commits])).toEqual([['project-one', 12]]);
+      expect(detail.totalCommits).toBe(12);
+      expect(dailyReads()).toEqual([]);
+    });
+
+    it('follows the view for a username opener and answers a live-only person with an empty view without a read', async () => {
+      addRosterRow(ACCOUNT, personKey, 'mixeduser');
+
+      const byUsername = await service.getEmployeeDetailByUsername(REQ, ACCOUNT, 'mixeduser', '90d', LF_COMMITS);
+      expect(byUsername?.codeView).toEqual({ range: '90d', ...LF_COMMITS });
+      expect(byUsername?.totalCommits).toBe(4);
+
+      execute.mockClear();
+      const liveOnly = await service.getEmployeeDetail(REQ, ACCOUNT, LIVE_PERSON, '90d', LF_COMMITS);
+      expect(liveOnly).toMatchObject({ code: [], totalCommits: 0, codeView: { range: '90d', ...LF_COMMITS } });
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 });

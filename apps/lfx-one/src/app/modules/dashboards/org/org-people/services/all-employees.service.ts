@@ -20,10 +20,13 @@ export class AllEmployeesService {
     return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/former`, { params: { range, ...filters } });
   }
 
-  /** `range` is the window the Maintainer pills on the expanded row follow — the page range. */
-  public getEmployeeDetail(orgUid: string, personKey: string, range: OrgLensTimeRange): Observable<OrgAllEmployeeDetail> {
+  /**
+   * The expanded row's detail in the page's view: the Maintainer pills follow `range`, and the code rows count what the
+   * row counts — `range` and the commit filters (lfx-self-serve#4404).
+   */
+  public getEmployeeDetail(orgUid: string, personKey: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Observable<OrgAllEmployeeDetail> {
     return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`, {
-      params: { range },
+      params: { range, ...filters },
     });
   }
 }

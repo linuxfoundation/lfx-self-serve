@@ -21,6 +21,15 @@ export function parseOrgCommitFilters(req: Request, operation: string): OrgCommi
   };
 }
 
+/**
+ * The commit filters when the request names any of them (each validated and defaulted as by {@link parseOrgCommitFilters}),
+ * else `null`: a caller that sends none — the person drawer opened from a page without code filters — keeps its unfiltered read.
+ */
+export function parseOptionalOrgCommitFilters(req: Request, operation: string): OrgCommitFilters | null {
+  const fields: (keyof OrgCommitFilters)[] = ['projectScope', 'commitScope', 'metric'];
+  return fields.some((field) => getStringQueryParam(req, field)) ? parseOrgCommitFilters(req, operation) : null;
+}
+
 function parseParam<T extends string>(
   req: Request,
   field: keyof OrgCommitFilters,

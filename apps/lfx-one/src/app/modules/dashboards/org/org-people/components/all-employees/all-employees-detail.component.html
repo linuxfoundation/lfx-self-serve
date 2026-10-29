@@ -110,12 +110,12 @@
                   <th class="border-b border-gray-200 px-3 py-2">Role</th>
                   <th class="border-b border-gray-200 px-3 py-2">
                     <span class="inline-flex items-center gap-1" data-testid="org-people-all-employees-detail-commits-header">
-                      Commits
+                      {{ codeCount().label }}
                       <button
                         type="button"
                         class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        aria-label="How commits are counted"
-                        [pTooltip]="commitsDefinition"
+                        [attr.aria-label]="codeCount().ariaLabel"
+                        [pTooltip]="codeCount().definition"
                         tooltipPosition="top"
                         tooltipEvent="both"
                         data-testid="org-people-all-employees-detail-commits-info">

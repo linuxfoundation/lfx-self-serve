@@ -293,13 +293,12 @@ export class AllEmployeesComponent {
       this.resetAllState();
     });
 
-    // The expanded rows' Maintainer pills follow the page range, so a new range drops every loaded detail and collapses the rows.
-    toObservable(this.selectedRange)
-      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
-      .subscribe(() => {
-        this.detailCancel$.next();
-        this.resetDetailState();
-      });
+    // The expanded rows follow the page range (Maintainer pills) and its project type and code count (code rows), so a new
+    // range or filter drops every loaded detail and collapses the rows.
+    this.rosterQuery$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.detailCancel$.next();
+      this.resetDetailState();
+    });
 
     // Reset pagination to the initial cap when any filter/sort input changes; skip(1) drops the synchronous initial combineLatest emission.
     combineLatest([
@@ -427,8 +426,9 @@ export class AllEmployeesComponent {
       avatarColorClass: row.avatarColorClass,
       // Live-only rows come from this range and project scope's live directory; the address lookup reads that one first.
       directoryView: { range: this.selectedRange(), projectScope: this.selectedFilters().projectScope },
-      // The Code tab's Maintainer pills follow the page range.
+      // The Code tab's Maintainer pills and counts follow the page range, project type and code count.
       range: this.selectedRange(),
+      codeFilters: this.selectedFilters(),
       isFormer: row.isFormer === true,
     });
   }
@@ -856,7 +856,7 @@ export class AllEmployeesComponent {
     this.clearDetailError(key);
     this.detailLoading.update((state) => ({ ...state, [key]: true }));
     this.dataService
-      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange())
+      .getEmployeeDetail(orgUid, row.personKey, this.selectedRange(), this.selectedFilters())
       .pipe(
         take(1),
         takeUntil(this.detailCancel$),

@@ -18,7 +18,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject } from 'rxjs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgContributionsComponent } from './org-contributions.component';
 import { ContributionsService } from './services/contributions.service';
@@ -117,6 +117,25 @@ describe('OrgContributionsComponent', () => {
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-content-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-no-company-empty-state"]')).toBeNull();
+  });
+
+  it("opens the committer's drawer with the page's range, project type and code count (lfx-self-serve#4404)", async () => {
+    const { fixture } = await render(null, { queryParams: { range: '730d', projectScope: 'non_lf', metric: 'merged' } });
+    const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+    (fixture.componentInstance as unknown as { openCommitterPanel(commit: object): void }).openCommitterPanel({
+      personKey: 'person-one',
+      committerName: 'Ada',
+    });
+
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        personKey: 'person-one',
+        defaultTab: 'code',
+        range: '730d',
+        codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+      })
+    );
   });
 
   it('trims an over-cap filter selection (e.g. keyboard select-all past selectionLimit) to the cap in the form itself', async () => {
