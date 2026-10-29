@@ -165,6 +165,7 @@ export class Member360RunComponent {
     return project ? { project } : {};
   });
   private lastScope = '';
+  private scopeVersion = 0;
   private lastHistoryRevision = '';
   private uploadSequence = 0;
   private answerSequence = 0;
@@ -213,7 +214,9 @@ export class Member360RunComponent {
       compare: this.form.controls.compare.value,
       trackers: this.trackers().map((upload) => upload.tracker),
     };
-    const current = () => !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    const version = this.scopeVersion;
+    const current = () =>
+      version === this.scopeVersion && !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
     const onSession = (session: Member360Session) => {
       if (!current()) return;
       const pending = this.attempts.load(project, 'member-360', session.documentId);
@@ -425,6 +428,7 @@ export class Member360RunComponent {
         distinctUntilChanged((a, b) => a.key === b.key && a.retry === b.retry),
         tap(({ key, project, user }) => {
           if (key !== this.lastScope) {
+            this.scopeVersion++;
             this.confirmation.close();
             this.confirmedScope.set('');
             this.checkedHistoryScope.set('');

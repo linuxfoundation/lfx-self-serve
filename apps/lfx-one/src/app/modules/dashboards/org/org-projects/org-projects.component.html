@@ -106,6 +106,11 @@
       </div>
 
       <div class="p-5">
+        @if (maintainerRolesUnavailable()) {
+          <p class="mb-3 text-xs text-gray-500" data-testid="org-projects-maintainer-roles-unavailable">
+            Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.
+          </p>
+        }
         @if (workspaceError()) {
           <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
             <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>

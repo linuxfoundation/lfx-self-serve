@@ -111,9 +111,11 @@ import {
   take,
   takeUntil,
   Subject,
+  ReplaySubject,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -174,6 +176,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     Member360ResultComponent,
     MktgRunActivityComponent,
     MktgRunProgressComponent,
+    MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
@@ -625,8 +628,11 @@ export class MktgDocumentViewComponent {
               saved && (saved.state === 'writing' || needsQuestions) && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId)
                 ? saved
                 : null;
+            const closedAttempt$ = new ReplaySubject<void>(1);
             const resume = (pending: MktgPendingGeneration) =>
               this.runService.resume(pending).pipe(
+                takeUntil(closedAttempt$),
+                filter(() => !this.closedRun()),
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
                 catchError((error: unknown) => {
@@ -718,6 +724,10 @@ export class MktgDocumentViewComponent {
                       .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                   : metadata$.pipe(
                       switchMap((detail) => {
+                        const selected = detail.runs?.find((run) => run.runId === (request.runId || this.handoffRunId()));
+                        if (selected?.state === 'discarded' || selected?.state === 'superseded') {
+                          return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
+                        }
                         const revisionId =
                           request.revisionId ||
                           detail.current?.revisionId ||
@@ -742,6 +752,7 @@ export class MktgDocumentViewComponent {
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
                   if (this.closedRun()) {
+                    closedAttempt$.next();
                     this.localProgress.set(null);
                     this.runFailed.set(false);
                     this.errorText.set('');
@@ -775,6 +786,7 @@ export class MktgDocumentViewComponent {
                     tap((cycle) => {
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
+                        closedAttempt$.next();
                         this.localProgress.set(null);
                         this.runFailed.set(false);
                         this.errorText.set('');

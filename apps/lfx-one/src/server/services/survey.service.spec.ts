@@ -22,7 +22,9 @@ vi.mock('../utils/auth-helper', () => ({
   resolveUserIdentity: resolveUserIdentityMock,
 }));
 vi.mock('./microservice-proxy.service', () => ({
-  MicroserviceProxyService: vi.fn().mockImplementation(() => ({ proxyRequest: proxyRequestMock })),
+  MicroserviceProxyService: vi.fn().mockImplementation(function () {
+    return { proxyRequest: proxyRequestMock };
+  }),
 }));
 // The shared utils barrel pulls in @angular/forms, which cannot load in a plain Node runtime.
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -33,7 +35,9 @@ vi.mock('../helpers/entity-project-enrichment.helper', () => ({ fetchEntityProje
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources: fetchAllQueryResourcesMock }));
 vi.mock('./etag.service', () => ({ ETagService: vi.fn() }));
 vi.mock('./project.service', () => ({
-  ProjectService: vi.fn().mockImplementation(() => ({ enrichWithProjectData: enrichWithProjectDataMock, getProjectById: vi.fn() })),
+  ProjectService: vi.fn().mockImplementation(function () {
+    return { enrichWithProjectData: enrichWithProjectDataMock, getProjectById: vi.fn() };
+  }),
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint: vi.fn().mockResolvedValue(true) }));
 vi.mock('./logger.service', () => ({

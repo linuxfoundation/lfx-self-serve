@@ -17,13 +17,6 @@
       data-testid="engagement-attendance-trend-error" />
   } @else if (loading()) {
     <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="engagement-attendance-trend-loading" aria-hidden="true" />
-  } @else if (summary().state === 'empty') {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-line"
-      title="No meeting attendance in the last 12 months"
-      [subtitle]="'A month appears here once it holds ' + minMeetings + ' or more meetings with invited attendees.'"
-      data-testid="engagement-attendance-trend-empty" />
   } @else if (summary().state === 'insufficient') {
     <lfx-empty-state
       variant="compact"
@@ -31,7 +24,7 @@
       title="Not enough data to chart a trend"
       [subtitle]="'Only one of the last 12 months has attendance from ' + minMeetings + ' or more meetings.'"
       data-testid="engagement-attendance-trend-insufficient" />
-  } @else {
+  } @else if (!empty()) {
     <!-- The design's hero: latest value with its delta inline, caption below, then label-over-value side stats. -->
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
       <div class="flex flex-col gap-2" data-testid="engagement-attendance-trend-hero">

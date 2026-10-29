@@ -25,6 +25,56 @@ export interface HealthMetricsL2Section {
   footnoteCaution: boolean;
   /** A pill beside the heading, e.g. for figures still pending validation. */
   headingBadge?: string;
+  /** What the section shows once it settles with nothing for the period. */
+  empty: HealthMetricsL2SectionEmpty;
+}
+
+/** A section's empty state: its icon, and where its data comes from, finishing "This fills in …". */
+export interface HealthMetricsL2SectionEmpty {
+  icon: string;
+  source: string;
+  /** The section shows today's figures whatever the period, so its empty state never names a past year. */
+  snapshot?: boolean;
+}
+
+/** A section's empty state as shown, worded for YTD or the selected past year. */
+export interface HealthMetricsL2EmptyCopy {
+  icon: string;
+  title: string;
+  text: string;
+}
+
+/** The single card that replaces a Health Metrics page when it has no data for the period. */
+export interface HealthMetricsBlankCopy {
+  title: string;
+  lead: string;
+  reasons: readonly string[];
+}
+
+/** One icon tile on a blank card; the Overview curves five of them, a tab shows one. */
+export interface HealthMetricsBlankTile {
+  icon: string;
+  /** The tile's drop and tilt, which lay the Overview's row out as a gentle upward curve. */
+  transform: string;
+  iconSizePx: number;
+}
+
+/**
+ * A tab's blank card: its icon, the noun in "No {noun} data yet", the YTD lead and reasons, and the
+ * activity a past year's lead names ("No {pastActivity} was recorded…").
+ */
+export interface HealthMetricsL2Blank {
+  icon: string;
+  noun: string;
+  lead: string;
+  reasons: readonly string[];
+  pastActivity: string;
+}
+
+/** A tab's blank card as shown for the period. */
+export interface HealthMetricsL2BlankView {
+  tile: HealthMetricsBlankTile;
+  copy: HealthMetricsBlankCopy;
 }
 
 /** A section with its DOM ids resolved once, so the template never calls a builder per render. */

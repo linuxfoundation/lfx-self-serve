@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
 import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
 
@@ -33,6 +34,8 @@ export interface PersonDrawerContext {
   isFormer?: boolean;
   /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
   directoryView?: OrgPeopleDirectoryView;
+  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (past 365 days when omitted). */
+  range?: OrgLensTimeRange;
 }
 
 /** One rendered address line in the drawer header. */

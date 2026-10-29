@@ -405,4 +405,21 @@ describe('SnowflakeService pool creation failure', () => {
     expect(body).not.toContain('acme.snowflakecomputing.com');
     expect(body).not.toContain('Incorrect username or password');
   });
+
+  it('creates the pool with CRL revocation checks in advisory mode', async () => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    vi.mocked(snowflakeSdk.createPool).mockImplementation(() => {
+      throw new Error('stop after the options are captured');
+    });
+
+    await SnowflakeService.getInstance()
+      .execute('SELECT 1')
+      .catch(() => undefined);
+
+    // snowflake-sdk 3.4 turned OCSP off by default; without this the pool would skip revocation checks.
+    expect(vi.mocked(snowflakeSdk.createPool).mock.calls[0]?.[0]).toMatchObject({ certRevocationCheckMode: 'ADVISORY' });
+  });
 });

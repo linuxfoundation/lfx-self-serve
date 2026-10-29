@@ -182,6 +182,8 @@ export class TraineesComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'training',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.timeRange(),
     });
   }
 

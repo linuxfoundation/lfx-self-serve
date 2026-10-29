@@ -53,8 +53,8 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
-import { BehaviorSubject, concat, from, NEVER, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BehaviorSubject, concat, from, NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -133,19 +133,19 @@ describe('MktgAgentRunComponent', () => {
   let dependencyDocs: Record<string, MktgDependencyDocument>;
   /** Remembered answers per projectUid, returned by the mocked answer memory. */
   let rememberedAnswers: Record<string, MktgAnswerMemory>;
-  let loadRun: ReturnType<typeof vi.fn>;
-  let lastIntake: ReturnType<typeof vi.fn>;
-  let listDocuments: ReturnType<typeof vi.fn>;
+  let loadRun: Mock;
+  let lastIntake: Mock;
+  let listDocuments: Mock;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let generate: ReturnType<typeof vi.fn>;
-  let answerQuestions: ReturnType<typeof vi.fn>;
-  let resolveDependencies: ReturnType<typeof vi.fn>;
-  let resolveBrandKit: ReturnType<typeof vi.fn>;
-  let rememberAnswers: ReturnType<typeof vi.fn>;
-  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
-  let readFile: ReturnType<typeof vi.fn>;
+  let getProject: Mock;
+  let generate: Mock;
+  let answerQuestions: Mock;
+  let resolveDependencies: Mock;
+  let resolveBrandKit: Mock;
+  let rememberAnswers: Mock;
+  let notifyDocumentsChanged: Mock;
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
+  let readFile: Mock;
   let confirmationService: ConfirmationService;
   const discardPrompt = () => vi.mocked(confirmationService.confirm).mock.calls.at(-1)?.[0];
 
@@ -1129,6 +1129,40 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
+    it.each(['timeout', 'denied', 'network'] as const)('returns accepted recheck %s failures to the editable form without another start', async (failure) => {
+      await configure('browser', agentId, { mode: 'new' });
+      const conflict = activeConflict();
+      lastIntake.mockReturnValue(of(history));
+      generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onSubmit']();
+      await fixture.whenStable();
+      const events = new Subject<MktgGenerateProgress>();
+      const recheck = vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict);
+      recheck.mockReturnValue(events);
+      window.dispatchEvent(new Event('focus'));
+      events.next({ type: 'submitted' });
+      expect(component['phase']()).toBe('running');
+      let error: Error = new TimeoutError();
+      if (failure === 'denied') error = new HttpErrorResponse({ status: 403 });
+      if (failure === 'network') error = new HttpErrorResponse({ status: 0 });
+      events.error(error);
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('form');
+      expect(component['navigating']()).toBe(false);
+      expect(component['recheckingAttempt']()).toBe(false);
+      expect(component['writingStretch']()).toBe(false);
+      expect(component['navigation']()).toBeNull();
+      expect(component['waitingRun']()).toBeNull();
+      expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers['website_url']);
+      expect(host().textContent).toContain('The original start could not be confirmed');
+      expect(query('mktg-run-sources')).not.toBeNull();
+      window.dispatchEvent(new Event('focus'));
+      expect(generate).toHaveBeenCalledOnce();
+      expect(recheck).toHaveBeenCalledTimes(2);
+    });
+
     it('does not automatically loop when the server rejects an already-discarding retry', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of(history));
@@ -1293,6 +1327,57 @@ describe('MktgAgentRunComponent', () => {
       expect(loadRun).not.toHaveBeenCalled();
       expect(generate).not.toHaveBeenCalled();
     });
+  });
+
+  it('restores the ICP request before a conflict handoff recheck opens its exact document receipt', async () => {
+    await configure('browser', 'icp');
+    const intake = MKTG_AGENT_INTAKES['icp'];
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === intake.agentId);
+    if (!type) throw new Error('Missing synthetic ICP type');
+    const request: MktgGenerateRequest = { agentId: intake.agentId, intake, projectUid: PROJECT_1.uid, answers: {} };
+    const conflict: MktgActiveRunConflict = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'A run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: type.agentKey,
+      documentId: 'living',
+      startedBy: 'Synthetic writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T12:00:00Z',
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save({ request, state: 'failed', activeRunConflict: conflict, updatedAt: new Date().toISOString() });
+    const token = attempts.prepare(request, true);
+    const run = { ...storedRun(PROJECT_1.uid, '# Synthetic ICP', {}), agentId: intake.agentId };
+    const location = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    run.versions[0].documentLocation = location;
+    const attempt = {
+      runId: 'c'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: intake.agentId, sessionId: 'synthetic-recheck', ownerToken: 'synthetic-proof' },
+    };
+    const events = new Subject<MktgGenerateProgress>();
+    const recheck = vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict);
+    recheck.mockReturnValue(events);
+    queryParams.next(convertToParamMap({ questions: token }));
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    expect(component['activeRequest']).toEqual(request);
+    events.next({ type: 'submitted' });
+    expect(component['activeRequest']).toEqual(request);
+    expect(component['phase']()).toBe('running');
+    window.dispatchEvent(new Event('focus'));
+    expect(recheck).toHaveBeenCalledOnce();
+    events.next(mktgRunProgressFixture('document', run, 1, attempt));
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+      ['..', 'documents', type.agentKey, 'living'],
+      expect.objectContaining({ queryParams: expect.objectContaining({ revision: location.revisionId }) })
+    );
+    expect(component['errorText']()).not.toContain('The completed run could not be opened');
+    expect(generate).not.toHaveBeenCalled();
+    events.complete();
   });
 
   it('leaves the running phase on terminal failure, keeps typed inputs and offers Retry', async () => {

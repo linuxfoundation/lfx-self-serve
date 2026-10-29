@@ -5,6 +5,27 @@ import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DOCUMENT_TYPE, DOCUMENT_VIEW_URL, documentFixture, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
 
+test('keeps a run discarded elsewhere visible as a closed run instead of opening older output', async ({ page }, info) => {
+  await suppressCookieBanner(page);
+  const closed = startedDocumentRun('discarded');
+  await setupDocuments(page, { runs: [] });
+  await page.route(`**/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living?*`, (route) => {
+    expect(new URL(route.request().url()).searchParams.get('run')).toBe(closed.runId);
+    return route.fulfill({ json: { ...documentFixture(), runs: [closed] } });
+  });
+  const root = DOCUMENT_VIEW_URL.split('/documents/')[0];
+  const project = new URL(DOCUMENT_VIEW_URL, 'http://localhost').searchParams.get('project');
+  const url = `${root}/${DOCUMENT_TYPE.catalogAgentId}?project=${project}&run=${closed.runId}`;
+  await page.evaluate((destination) => {
+    history.pushState({}, '', destination);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, url);
+  await expect(page.getByTestId('mktg-run-progress-closed-message')).toHaveText('This run was discarded.');
+  await expect(page.getByTestId('mktg-run-progress-live')).toHaveCount(0);
+  await expect(page).toHaveURL(url);
+  await page.screenshot({ path: info.outputPath('discarded-run-page.png'), fullPage: true });
+});
+
 test('names the discarding writer and opens the exact replacement run', async ({ page }, info) => {
   await suppressCookieBanner(page);
   const newer = { ...startedDocumentRun('writing'), runId: 'c'.repeat(64) };
@@ -38,8 +59,11 @@ for (const state of ['discarded', 'superseded'] as const) {
     );
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${closed.runId}`);
     const message = page.getByTestId('mktg-document-view-closed-message');
-    if (state === 'discarded') await expect(message).toContainText('This run was discarded at');
-    else await expect(message).toHaveText('A newer run replaced this one.');
+    if (state === 'discarded') {
+      await expect(message).toContainText('This run was discarded at');
+      await expect(message).not.toContainText('a newer run was started');
+    } else await expect(message).toHaveText('A newer run replaced this one.');
+    await expect(page.getByTestId('mktg-document-view-newer-run')).toHaveText('View started runs');
     await expect(page.getByTestId('mktg-document-view-run-steps')).toHaveCount(0);
     await expect(page.getByTestId('mktg-run-activity-steps')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-progress-retry')).toHaveCount(0);

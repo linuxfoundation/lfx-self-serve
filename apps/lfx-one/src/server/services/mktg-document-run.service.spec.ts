@@ -46,6 +46,7 @@ const flows = vi.hoisted(() => ({
   beforePut: vi.fn(),
   beforeConditionalPut: vi.fn(),
   omitEtag: false,
+  beforePredicate: vi.fn(),
   active: 0,
   max: 0,
 }));
@@ -158,6 +159,7 @@ vi.mock('./object-store.service', () => ({
       options: { refreshMetadataWhen?: (value: Record<string, string>) => boolean }
     ) {
       const old = objects.get(key);
+      if (old) await flows.beforePredicate(old.metadata);
       if (old && !options.refreshMetadataWhen?.(old.metadata)) {
         return false;
       }
@@ -212,6 +214,7 @@ describe('MktgDocumentRunService core', () => {
     flows.beforePut.mockReset();
     flows.beforeConditionalPut.mockReset();
     flows.omitEtag = false;
+    flows.beforePredicate.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.events.mockReset().mockResolvedValue([]);
     flows.interrupt.mockReset().mockResolvedValue(undefined);
@@ -443,6 +446,80 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('discarded');
   });
 
+  it.each([true, false])('audits a successful discard with subjects only and persists its private actor (self=%s)', async (self) => {
+    const creatorSubject = 'synthetic-creator';
+    const discardedBySubject = self ? creatorSubject : 'synthetic-discarder';
+    const creator = Object.assign({} as Request, { oidc: { user: { sub: creatorSubject, name: 'Synthetic creator display', email: 'creator@example.test' } } });
+    const viewer = Object.assign({} as Request, {
+      oidc: { user: { sub: discardedBySubject, name: 'Synthetic viewer display', email: 'viewer@example.test' } },
+    });
+    await service.start(creator, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    const audits = vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual([
+      viewer,
+      'mktg_run_discard',
+      'Active run discarded before a new start',
+      {
+        project,
+        runId: hash(session),
+        documentId: 'living',
+        agentKey: types[0].agentKey,
+        discardedBySubject,
+        creatorSubject,
+        self,
+        at: '2026-10-19T12:00:00.000Z',
+      },
+    ]);
+    expect(stored().metadata['closed-by']).toBe(discardedBySubject);
+    expect(stored().metadata['closed-at']).toBe('2026-10-19T12:00:00.000Z');
+    const publicRun = await service.readClosedProgress(viewer, project, types[0].agentKey, 'living', hash(session));
+    expect(publicRun).not.toHaveProperty('closedBySubject');
+    expect(publicRun).not.toHaveProperty('creatorSubject');
+    expect(publicRun).not.toHaveProperty('closedBy');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('@');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('display');
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    expect(vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard')).toHaveLength(1);
+  });
+
+  it.each(['discarded', 'superseded'] as const)(
+    'refuses follow-ups and fresh turn tracking on a %s session without retiring its replacement',
+    async (state) => {
+      await service.start(req, project, types[0].agentKey, session);
+      Object.assign(stored().metadata, { state });
+      await service.start(req, project, types[0].agentKey, 'replacement-session');
+      const agentId = types[0].catalogAgentId ?? '';
+      await expect(service.assertRunOpen(req, project, agentId, session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+      await expect(service.start(req, project, types[0].agentKey, session, 0, 'follow-up')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+      expect(stored().metadata['state']).toBe(state);
+      expect(stored('replacement-session').metadata['state']).toBe('writing');
+      await expect(service.assertRunOpen(req, project, agentId, 'replacement-session')).resolves.toBeUndefined();
+    }
+  );
+
+  it('refuses a completed older session while another run occupies the slot', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'completed';
+    await service.start(req, project, types[0].agentKey, 'replacement-session');
+    await expect(service.assertRunOpen(req, project, types[0].catalogAgentId ?? '', session)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ACTIVE',
+      details: { activeRunId: hash('replacement-session') },
+    });
+  });
+
+  it('checks closed metadata again in the turn tracking predicate', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.beforePredicate.mockImplementationOnce((metadata) => {
+      metadata['state'] = 'discarded';
+    });
+    await expect(service.start(req, project, types[0].agentKey, session, 0, 'follow-up')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(stored().metadata['attempt-id']).toBe('initial');
+  });
+
   it.each(['discarded', 'superseded'] as const)('returns %s closure only for a matching selected detail and keeps it out of listings', async (state) => {
     await service.start(req, project, types[0].agentKey, session);
     if (state === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
@@ -621,6 +698,25 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('writing');
   });
 
+  it.each([true, false])('keeps the unknown creator slot when a legacy run is retried (active is unknown=%s)', async (unknownActive) => {
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-retrying-writer' } } });
+    await service.startForOneOff(req, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    await service.startForOneOff(unknownActive ? req : writer, 'member-360', project, 'legacy-active');
+    const retry = service.retry(writer, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session));
+    if (unknownActive) await expect(retry).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash('legacy-active') } });
+    else await expect(retry).resolves.toBeUndefined();
+    expect(JSON.parse(stored().body).creatorSubject).toBeNull();
+  });
+
+  it.each([null, undefined])('distinguishes an explicit unknown creator from the absent option (%s)', async (creatorSubject) => {
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-retrying-writer' } } });
+    await service.startForOneOff(writer, 'member-360', project, session);
+    const check = service.assertSingleActiveRun(writer, project, 'member-360', { creatorSubject });
+    if (creatorSubject === null) await expect(check).resolves.toBeUndefined();
+    else await expect(check).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash(session) } });
+  });
+
   it.each([true, false])('checks the selected creator slot when another writer retries (active belongs to creator=%s)', async (creatorActive) => {
     const creator = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-creator-a' } } });
     const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-writer-b' } } });
@@ -649,6 +745,60 @@ describe('MktgDocumentRunService core', () => {
         lastModified: new Date(Date.now() + i + 1),
       });
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it.each([false, true])('reads and reconciles an uncached selected active run beyond the navigation window (poll=%s)', async (poll) => {
+    await service.start(req, project, types[0].agentKey, session);
+    for (let i = 0; i < 129; i++)
+      objects.set(key(`selected-window-${i}`), {
+        body: '{}',
+        metadata: { state: 'discarded' },
+        lastModified: new Date(Date.now() + i + 1),
+      });
+    const reader = new MktgDocumentRunService();
+    const snapshot = await reader.readProgress(req, project, types[0].agentKey, 'living', poll);
+    expect(snapshot.runs).toEqual([]);
+    expect(flows.result).not.toHaveBeenCalled();
+    const detail = await reader.detailWithProgress(req, project, types[0], 'living', null, snapshot, poll, undefined, hash(session));
+    expect(detail).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state: 'writing' }] });
+    expect(flows.result).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(detail)).not.toContain(session);
+  });
+
+  it.each([
+    ['discarded', 'pending'],
+    ['superseded', 'pending'],
+    ['discarded', 'questions'],
+    ['superseded', 'questions'],
+  ] as const)('preserves a concurrent %s during selected %s reconciliation', async (state, outcome) => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.result.mockImplementationOnce(async () => {
+      Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+      return outcome === 'questions' ? { status: 'questions', questionsId: 'a'.repeat(64), questions: [] } : { status: 'pending' };
+    });
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state, closedAt: new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+  });
+
+  it.each(['discarded', 'superseded'])('refuses a retired LinkedIn session before an answers continuation (%s)', async (state) => {
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    await service.startForOneOff(owner, 'linkedin-post', project, session);
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).resolves.toBeUndefined();
+    stored().metadata['state'] = state;
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+  });
+
+  it('keeps selected closed records lightweight even when omitted from discovery', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'discarded';
+    flows.get.mockClear();
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state: 'discarded' });
+    expect(flows.get).toHaveBeenCalledTimes(1);
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
   });
 
   it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {

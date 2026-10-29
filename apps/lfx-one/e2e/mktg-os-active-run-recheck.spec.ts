@@ -18,6 +18,45 @@ import {
 
 test.use({ video: 'on', timezoneId: 'UTC' });
 
+test('returns an accepted catalog recheck to editable Sources when polling is denied', async ({ page }, info) => {
+  await suppressCookieBanner(page);
+  const sources = await setupFreshSources(page);
+  let accept = false;
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+    if (accept) return route.fallback();
+    return route.fulfill({
+      status: 409,
+      json: {
+        code: 'MKTG_RUN_ACTIVE',
+        message: 'A run is in progress.',
+        activeRunId: 'b'.repeat(64),
+        state: 'writing',
+        agentKey: BRAND_KIT_INTAKE.agentId,
+        documentId: 'living',
+        startedBy: 'Synthetic writer',
+        startedByViewer: true,
+        startedAt: '2026-10-19T12:00:00Z',
+      },
+    });
+  });
+  await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) => route.fulfill({ status: 403, json: { code: 'FORBIDDEN' } }));
+  await sources.open();
+  await page.getByTestId('mktg-run-start').getByRole('button').click();
+  await expect(page.getByRole('alertdialog')).toContainText('Started 19 Oct 2026, 12:00.');
+  accept = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(
+    page.getByText('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.', {
+      exact: true,
+    })
+  ).toBeVisible();
+  await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+  await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
+  expect(sources.generated).toHaveLength(3);
+  await page.screenshot({ path: info.outputPath('recheck-denied-editable-intake.png'), fullPage: true });
+});
+
 for (const surface of ['catalog', 'linkedin', 'member'] as const) {
   for (const outcome of ['fresh-conflict', 'started'] as const) {
     test(`${surface} guard paints neutrally and rechecks on focus: ${outcome}`, async ({ page }, info) => {
@@ -70,7 +109,7 @@ for (const surface of ['catalog', 'linkedin', 'member'] as const) {
       if (surface === 'linkedin') await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       if (surface === 'member') await selectMember360Option(page, 'member-360-compare', 'No comparison');
       await page.getByTestId(submit).getByRole('button').click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('alertdialog');
       await expect(dialog).toContainText('Checking the active run…');
       await expect(dialog.getByRole('button', { name: 'Discard and start over' })).toBeDisabled();
       const originalNode = await dialog.elementHandle();

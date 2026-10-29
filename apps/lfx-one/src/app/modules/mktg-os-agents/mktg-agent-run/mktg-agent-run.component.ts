@@ -976,6 +976,7 @@ export class MktgAgentRunComponent {
   private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
     if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
     if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
+    this.activeRequest = request;
     this.phase.set('form');
     this.runFailed.set(false);
     this.errorText.set('');
@@ -1026,6 +1027,16 @@ export class MktgAgentRunComponent {
           });
         },
         onError: () => {
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.recheckingAttempt.set(false);
+          this.writingStretch.set(false);
+          this.clearQuestions();
+          this.waitingRun.set(null);
+          this.existingRun.set(null);
+          this.hasAcknowledgement.set(false);
+          this.runFailed.set(false);
+          this.phase.set('form');
           this.restoreInputs(request, 'returned');
           this.errorText.set('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.');
         },
