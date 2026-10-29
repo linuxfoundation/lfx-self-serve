@@ -84,6 +84,75 @@ test('two document progress polls keep the selected tab, expanded history, compo
   expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
 });
 
+test('approving during progress polls keeps the settled rail without inserting parent skeletons', async ({ page }) => {
+  await setupKit(page, { loaded: true });
+  const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
+  if (!type) throw new Error('Missing synthetic framework type');
+  const response = { ...kitRevision(type, false), runs: [{ ...startedDocumentRun('writing'), project: KIT_PROJECT.uid, agentKey: type.agentKey }] };
+  const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
+  let approved = false;
+  let polls = 0;
+  let rereads = 0;
+  let release = () => {};
+  const hold = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === path || url.pathname.startsWith(`${path}/revisions/`),
+    async (route) => {
+      if (route.request().method() === 'POST' && new URL(route.request().url()).pathname.endsWith('/approve')) {
+        approved = true;
+        response.approval = { approvedAt: '2026-10-29T10:00:00Z', approvedBy: null };
+        response.revision = { ...response.revision, approval: response.approval };
+        response.revisions = [response.revision];
+        response.approvedCurrent = { revisionId: response.revision.id, number: response.revision.number };
+      }
+      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
+      await kitJson(route, response);
+    }
+  );
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/documents',
+    async (route) => {
+      if (approved) {
+        rereads++;
+        await hold;
+      }
+      await kitJson(route, kitDocuments(true));
+    }
+  );
+  await openKit(page, `/documents/${type.agentKey}/living`);
+  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  const rail = page.locator('section[aria-label="Revision details"]');
+  const identities = await rail.evaluate((element) => {
+    element.setAttribute('data-skeleton-added', 'false');
+    const selector = '[data-testid^="mktg-document-view-"][data-testid$="-skeleton"]';
+    new MutationObserver((records) => {
+      if (
+        records.some((record) =>
+          Array.from(record.addedNodes).some((node) => node instanceof Element && (node.matches(selector) || node.querySelector(selector)))
+        )
+      ) {
+        element.setAttribute('data-skeleton-added', 'true');
+      }
+    }).observe(element, { childList: true, subtree: true });
+    return Array.from(element.children).map((child, index) => {
+      const identity = `${child.tagName}-${index}`;
+      child.setAttribute('data-refresh-identity', identity);
+      return identity;
+    });
+  });
+  await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+  await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
+  await expect.poll(() => rereads).toBeGreaterThan(0);
+  const before = polls;
+  await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+  await expect(page.getByTestId('mktg-comments-panel')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  await expect(rail).toHaveAttribute('data-skeleton-added', 'false');
+  expect(await rail.evaluate((element) => Array.from(element.children).map((child) => child.getAttribute('data-refresh-identity')))).toEqual(identities);
+  release();
+  await expect(page.getByTestId('mktg-document-view-downstream-skeleton')).toHaveCount(0);
+});
+
 test('the first framework content settles with its last-export answer and the rail', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setupKit(page, { loaded: true, approvedFramework: true });

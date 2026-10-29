@@ -315,7 +315,11 @@ export class MktgDocumentViewComponent {
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
-  protected readonly railReady = this.initRailReady();
+  /** Only scope navigation resets the first-paint barrier; refreshes update the visible cards in place. */
+  protected readonly railReady = linkedSignal({
+    source: this.initRailReady(),
+    computation: (ready, previous) => ready || Boolean(previous?.value),
+  });
   /** Once painted, keep this document's content in place during later refreshes. */
   protected readonly contentReady = linkedSignal({
     source: () => ({ key: JSON.stringify(this.exportLookupTarget()), ready: this.railReady() }),
@@ -591,6 +595,7 @@ export class MktgDocumentViewComponent {
               this.refreshedFailures.clear();
               this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
+              this.railReady.set(false);
               this.notice.set('');
               this.restoringId.set(null);
               this.restoreEpoch++;
@@ -1322,7 +1327,7 @@ export class MktgDocumentViewComponent {
         view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
       const exportLookup = this.exportLookupTarget();
       const exportReady = !exportLookup || this.exportLookupAnsweredKey() === JSON.stringify(exportLookup);
-      return commentsReady && downstreamReady && exportReady;
+      return !!view && commentsReady && downstreamReady && exportReady;
     });
   }
 

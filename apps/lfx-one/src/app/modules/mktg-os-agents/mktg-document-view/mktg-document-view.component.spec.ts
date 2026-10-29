@@ -3391,6 +3391,71 @@ describe('MktgDocumentViewComponent', () => {
     }
   );
 
+  it('keeps the settled rail cards without parent skeletons when a revision is approved during polling, and resets on scope navigation', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic framework draft');
+    const cards = ['mktg-comments-panel', 'mktg-document-view-revisions', 'mktg-document-view-about'];
+    const original = cards.map(query);
+    const downstream = harness.routeNativeElement?.querySelector('lfx-mktg-downstream');
+    expect(original.every(Boolean)).toBe(true);
+    expect(component['railReady']()).toBe(true);
+    const response = { ...loaded, runs: [{ ...started('writing'), agentKey: 'foundation-message' }] };
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    component['onRefreshProgress']();
+    await settle();
+    const listing = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(listing);
+    const approval = { approvedAt: '2026-10-29T10:00:00Z', approvedBy: null };
+    const approved = {
+      ...response,
+      approval,
+      revision: { ...response.revision, approval },
+      revisions: response.revisions.map((entry) => ({ ...entry, approval })),
+      approvedCurrent: { revisionId: response.revision.id, number: response.revision.number },
+    };
+    store.approveRevision.mockReturnValue(of(approved));
+    component['onApprove']();
+    await settle();
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id);
+    expect(listing.observed).toBe(true);
+    store.getDocument.mockReturnValue(of(approved));
+    store.getRevision.mockReturnValue(of(approved));
+    const reads = store.getDocument.mock.calls.length;
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument.mock.calls.length).toBeGreaterThan(reads + cycle);
+      expect(component['railReady']()).toBe(true);
+      cards.forEach((id, index) => {
+        expect(query(id)).toBe(original[index]);
+        expect(query(id)?.closest('.hidden')).toBeNull();
+      });
+      expect(harness.routeNativeElement?.querySelector('lfx-mktg-downstream')).toBe(downstream);
+      for (const card of ['comments', 'downstream', 'about']) expect(query(`mktg-document-view-${card}-skeleton`)).toBeNull();
+    }
+    listing.next({ project: PROJECT.uid, groups: [] });
+    await settle();
+    expect(component['railReady']()).toBe(true);
+    store.getDocument.mockReturnValue(NEVER);
+    activeContext.set({ ...PROJECT, uid: 'synthetic-other-project' });
+    await settle();
+    expect(component['railReady']()).toBe(false);
+    expect(query('mktg-document-view-loading')).not.toBeNull();
+  });
+
   it('keeps content and an accepted approval alive through progressive refresh', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const response = faqResponse();
