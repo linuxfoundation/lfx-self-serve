@@ -643,6 +643,24 @@ describe('Member360RunComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Open document');
   });
+  it('lets an answers write finish after destruction without mutating the destroyed view', async () => {
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'questions' });
+    run.questions.mockReturnValue(of(serverQuestions()));
+    documents.getDocument.mockReturnValue(of(progress('questions')));
+    const response = new Subject<unknown>();
+    run.answer.mockReturnValue(response);
+    await render();
+    const component = fixture.componentInstance;
+    const accepted = component['accepted']();
+    component['onAnswers']([{ key: 'window', text: 'Use the current analysis window.', origin: 'accepted' }]);
+    expect(response.observed).toBe(true);
+    fixture.destroy();
+    expect(response.observed).toBe(true);
+    response.next({ success: true });
+    response.complete();
+    expect(response.observed).toBe(false);
+    expect(component['accepted']()).toBe(accepted);
+  });
   it('keeps the accepted capability after navigation without polling or navigating again', async () => {
     TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
     const http = TestBed.inject(HttpTestingController);

@@ -340,18 +340,18 @@ export class Member360RunComponent {
     const request = runId ? this.api.answer(pending, questionsId, answers, runId) : this.api.answer(pending, questionsId, answers);
     request
       .pipe(
-        takeUntilDestroyed(this.destroyRef),
+        take(1),
         finalize(() => {
-          if (answerSequence === this.answerSequence) this.answering.set(false);
+          if (!this.destroyRef.destroyed && answerSequence === this.answerSequence) this.answering.set(false);
         })
       )
       .subscribe({
         next: () => {
-          if (pending !== this.pending()) return;
+          if (this.destroyRef.destroyed || pending !== this.pending()) return;
           this.accepted.set([subject, { ...pending, state: 'writing', answeredQuestionsId: questionsId }]);
         },
         error: (error: HttpErrorResponse) => {
-          if (pending !== this.pending()) return;
+          if (this.destroyRef.destroyed || pending !== this.pending()) return;
           const answered = error.status === 409 ? readMktgRunAnsweredConflict(error.error) : null;
           if (answered) {
             this.error.set('');
