@@ -120,7 +120,7 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 - Overlays, when needed, build on `@angular/cdk`
 - Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
 
-Components: `lfx-ui-button`, `lfx-ui-tabs`, `lfx-ui-search-input`, `lfx-ui-badge`. See `apps/lfx-one/src/app/shared/uikit/README.md`.
+The component list lives in `apps/lfx-one/src/app/shared/uikit/README.md`, the single source; each component PR adds its entry there.
 
 ## 🧩 Current Wrapper Components
 

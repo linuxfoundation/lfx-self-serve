@@ -81,7 +81,7 @@ export const RadiiAndHeights: Story = {
           <div class="h-16 w-24 rounded-ui-sm bg-ui-accent-100 p-2 label-12">rounded-ui-sm 12px</div>
           <div class="h-16 w-24 rounded-ui-md bg-ui-accent-100 p-2 label-12">rounded-ui-md 16px</div>
           <div class="h-16 w-24 rounded-ui-lg bg-ui-accent-100 p-2 label-12">rounded-ui-lg 20px</div>
-          <div class="h-16 w-24 rounded-full bg-ui-accent-100 p-2 label-12">rounded-full</div>
+          <div class="h-16 w-24 rounded-ui-full bg-ui-accent-100 p-2 label-12">rounded-ui-full</div>
         </div>
         <div class="flex items-end gap-4">
           <div class="h-ui-tiny w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-12 text-white flex items-center">h-ui-tiny 24px</div>

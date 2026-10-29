@@ -4,12 +4,20 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { format, resolveConfig } from 'prettier';
 import { describe, expect, it } from 'vitest';
 
 import { buildUiTokensCss, resolveValue, varName } from './lib/build-ui-tokens.mjs';
 
 const tokens = JSON.parse(readFileSync(resolve(import.meta.dirname, 'ui-tokens/tokens.json'), 'utf8'));
-const committed = readFileSync(resolve(import.meta.dirname, '../src/styles/ui-tokens.css'), 'utf8');
+const CSS_PATH = resolve(import.meta.dirname, '../src/styles/ui-tokens.css');
+const committed = readFileSync(CSS_PATH, 'utf8');
+
+/** The generated CSS as `yarn ui:tokens` commits it: the generator output run through the repo's Prettier config. */
+async function generatedAsCommitted() {
+  const options = await resolveConfig(CSS_PATH);
+  return format(buildUiTokensCss(tokens), { ...options, filepath: CSS_PATH });
+}
 
 describe('ui-tokens.css', () => {
   it('prefixes every custom property with --ui- and never doubles it', () => {
@@ -19,10 +27,14 @@ describe('ui-tokens.css', () => {
     expect(committed).not.toMatch(/var\(--(?!ui-)/);
   });
 
-  it('matches tokens.json as committed (run `yarn ui:tokens` after editing tokens.json)', () => {
-    // Prettier owns whitespace and quote style in the committed file, so compare content only.
-    const normalise = (css) => css.replace(/[\s'"]+/g, '');
-    expect(normalise(committed)).toBe(normalise(buildUiTokensCss(tokens)));
+  it('matches tokens.json as committed (run `yarn ui:tokens` after editing tokens.json)', async () => {
+    expect(committed).toBe(await generatedAsCommitted());
+  });
+
+  it('fails on a spacing-only hand edit', async () => {
+    const edited = committed.replace('0 0 0 1px', '0 001px');
+    expect(edited).not.toBe(committed);
+    expect(edited).not.toBe(await generatedAsCommitted());
   });
 
   it('resolves references and escapes dots in names', () => {
