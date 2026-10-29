@@ -9,7 +9,8 @@ import {
   ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE,
   ORG_MAINTAINER_ROLES_LABEL,
   ORG_UNKNOWN_MAINTAINER_NAME,
-  ORG_LENS_PROJECT_ACCOUNT_ROLES_EXCLUDING_COLUMN,
+  ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY,
+  ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN,
   ORG_PROJECT_MAINTAINER_ROLES_DEFINITION,
   PD_HEALTH_TAG,
   PD_ORG_LENS_TIME_RANGE,
@@ -39,9 +40,6 @@ import type {
   OrgLensTrendBlock,
   OrgMaintainerRolesCountRow,
   OrgOrganizationMaintainerRolesRow,
-  OrgProjectMaintainerRolesLifetimeRow,
-  OrgProjectMaintainerRolesMonthlyRow,
-  OrgProjectMaintainerRolesSeriesRow,
   OrgTeamMembersFilter,
   SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
@@ -157,6 +155,8 @@ interface SparklineData {
   axis: string[];
   /** Variable adaptive-bucket axis labels, one per point; present only for `all` (absent for 1y/2y). */
   periods?: string[];
+  /** True when the Maintainer roles series' count without team members is not built yet (team members' roles then counted). */
+  teamMembersUnavailable: boolean;
 }
 
 interface PlatformsRow {
@@ -594,9 +594,11 @@ export class OrgLensProjectDetailService {
   public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    // `v5`: the account's maintainer roles (the card count and its sparkline series) leave CDP team members out
-    // (lfx-self-serve#4685). (`v4`: the maintainers sparkline counts maintainer roles following the toggle, lfx-self-serve#4605.)
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v5:${this.paramSignature([slug, range])}`);
+    // `v6`: the Maintainer roles sparkline reads the `maintainer-roles` series of the shared sparkline tables, its
+    // account line without CDP team members' roles (lf-dbt#3149). (`v5`: the card count and its sparkline series leave
+    // CDP team members out, lfx-self-serve#4685; `v4`: the maintainers sparkline counts maintainer roles following the
+    // toggle, lfx-self-serve#4605.)
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v6:${this.paramSignature([slug, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -613,22 +615,23 @@ export class OrgLensProjectDetailService {
     // 1y/2y read the trailing monthly sparkline model and slice client-side over a fixed month axis;
     // `all` reads the adaptive lifetime-bucketed model and carries its own variable `periods[]` axis
     // (LFXV2-2867 D9) — the same shared bucket axis the trend chart uses (D7).
-    const [cardRows, maintainerRoles, viewing, sparkData, maintainerRolesSparkline] = await Promise.all([
+    const [cardRows, maintainerRoles, viewing, sparkData] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
       this.fetchMaintainerRolesCount(orgUid, slug, range),
       // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
       // that single row rather than the whole board — the board itself is now paged separately.
       this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
       range === 'all' ? this.fetchLifetimeSparklineData(orgUid, slug) : this.fetchMonthlySparklineData(orgUid, slug),
-      this.fetchMaintainerRolesSparkline(orgUid, slug, range),
     ]);
 
     const cards = cardRows[0] ?? null;
-    // The maintainers card's series is the roles series alone, on the same axis; an account with no roles in it has
-    // no series ("No data"), and a missing roles table leaves the sparkline empty rather than showing anything else.
+    // The maintainers card draws the `maintainer-roles` series alone (lfx-self-serve#4605), never the older people-based
+    // `maintainers` series the tables still carry; an account with no roles in the window has no series ("No data").
+    const maintainerRolesSeries = sparkData.index.get(ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY);
+    sparkData.index.delete(ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY);
     sparkData.index.delete('maintainers');
-    if (maintainerRolesSparkline.value !== null && maintainerRolesSparkline.value.org.size > 0) {
-      sparkData.index.set('maintainers', maintainerRolesSparkline.value);
+    if (maintainerRolesSeries !== undefined) {
+      sparkData.index.set('maintainers', maintainerRolesSeries);
     }
 
     const block: OrgLensInfluenceBlock = {
@@ -643,13 +646,9 @@ export class OrgLensProjectDetailService {
       // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
-    // A block read while a roles table or its team-member flag is missing (the maintainers card unavailable, or counting
-    // team members) is served, never stored.
-    const rolesComplete =
-      maintainerRoles.value !== null &&
-      maintainerRolesSparkline.value !== null &&
-      !maintainerRoles.teamMembersUnavailable &&
-      !maintainerRolesSparkline.teamMembersUnavailable;
+    // A block read while the roles table or a team-member flag or column is missing (the maintainers card unavailable,
+    // or counting team members) is served, never stored.
+    const rolesComplete = maintainerRoles.value !== null && !maintainerRoles.teamMembersUnavailable && !sparkData.teamMembersUnavailable;
     if (key !== null && rolesComplete) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
@@ -1283,85 +1282,45 @@ export class OrgLensProjectDetailService {
   }
 
   /**
-   * The Maintainer roles card's sparkline (lfx-self-serve#4605): per point, the account's roles on the project and every
-   * company's, on the axis the other cards use — trailing months for 1y/2y, the project's lifetime buckets for `all`.
-   * The account's series leaves CDP team members' roles out (ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS, lfx-self-serve#4685);
-   * the grey all-companies line stays inclusive. `value` is `null` when the series table is missing, and
-   * `teamMembersUnavailable` when its excluding column is (the inclusive one then read).
+   * One sparkline table's rows for the account on the project, every card's series in one read. Under the default the
+   * `maintainer-roles` series' account value is lf-dbt's count without CDP team members' roles (lfx-self-serve#4685),
+   * aliased to ORG_VALUE; the column is NULL on every other series, which keep ORG_VALUE, and the grey all-companies line
+   * (PROJECT_VALUE) stays inclusive. Until the column is built the read falls back to ORG_VALUE for every series (team
+   * members' roles counted) and reports `teamMembersUnavailable`, so its absence never blanks the other cards.
    */
-  private async fetchMaintainerRolesSparkline(
+  private async fetchSparklineRows<T>(
     orgUid: string,
     slug: string,
-    range: OrgLensLeaderboardTimeRange
-  ): Promise<{ value: SparkEntry | null; teamMembersUnavailable: boolean }> {
+    table: string,
+    periodColumn: 'SPAN_MONTH' | 'BUCKET_INDEX'
+  ): Promise<{ value: T[]; teamMembersUnavailable: boolean }> {
     return readWithOrgTeamMembersFallback(
       DEFAULT_ORG_TEAM_MEMBERS,
-      'get_org_lens_project_detail_maintainer_roles_sparkline',
+      'get_org_lens_project_detail_sparklines',
       async (teamMembers) => {
-        const accountRoles = `${teamMembers === 'exclude' ? `${ORG_LENS_PROJECT_ACCOUNT_ROLES_EXCLUDING_COLUMN} AS ` : ''}ACCOUNT_ROLES`;
-        const options = orgTeamMembersQueryOptions(teamMembers, ORG_LENS_PROJECT_ACCOUNT_ROLES_EXCLUDING_COLUMN);
-        if (range === 'all') {
-          const rows = await readMaintainerRoles<OrgProjectMaintainerRolesLifetimeRow>(
-            this.snowflakeService,
-            'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME',
-            `
-              SELECT BUCKET_INDEX, ${accountRoles}, PROJECT_ROLES
-              FROM ${this.projectMaintainerRolesLifetimeTable()}
-              WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
-            `,
-            [orgUid, slug],
-            options
-          );
-          return rows === null
-            ? null
-            : this.maintainerRolesSparkEntry(
-                rows.map((row) => [row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined ? null : String(this.num(row.BUCKET_INDEX)), row])
-              );
-        }
-        const rows = await readMaintainerRoles<OrgProjectMaintainerRolesMonthlyRow>(
-          this.snowflakeService,
-          'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY',
+        const orgValue =
+          teamMembers === 'exclude'
+            ? `IFF(METRIC_KEY = '${ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY}', COALESCE(${ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN}, ORG_VALUE), ORG_VALUE) AS ORG_VALUE`
+            : 'ORG_VALUE';
+        const result = await this.snowflakeService.execute<T>(
           `
-            SELECT SPAN_MONTH, ${accountRoles}, PROJECT_ROLES
-            FROM ${this.projectMaintainerRolesMonthlyTable()}
+            SELECT METRIC_KEY, ${periodColumn}, ${orgValue}, PROJECT_VALUE
+            FROM ${table}
             WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
           `,
           [orgUid, slug],
-          options
+          orgTeamMembersQueryOptions(teamMembers, ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN)
         );
-        return rows === null ? null : this.maintainerRolesSparkEntry(rows.map((row) => [this.toYearMonth(row.SPAN_MONTH), row]));
+        return result.rows;
       },
-      ORG_LENS_PROJECT_ACCOUNT_ROLES_EXCLUDING_COLUMN
+      ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN
     );
-  }
-
-  /** Index roles series points by axis key (year-month or bucket index), skipping a point without one. */
-  private maintainerRolesSparkEntry(points: [string | null, OrgProjectMaintainerRolesSeriesRow][]): SparkEntry {
-    const entry: SparkEntry = { org: new Map(), project: new Map() };
-    for (const [axisKey, row] of points) {
-      if (axisKey === null) continue;
-      entry.org.set(axisKey, this.num(row.ACCOUNT_ROLES));
-      entry.project.set(axisKey, this.num(row.PROJECT_ROLES));
-    }
-    return entry;
-  }
-
-  private async fetchSparklines(orgUid: string, slug: string): Promise<SparkRow[]> {
-    const result = await this.snowflakeService.execute<SparkRow>(
-      `
-        SELECT METRIC_KEY, SPAN_MONTH, ORG_VALUE, PROJECT_VALUE
-        FROM ${this.sparklinesTable()}
-        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
-      `,
-      [orgUid, slug]
-    );
-    return result.rows;
   }
 
   /** 1y/2y card sparklines: trailing monthly values on the fixed month axis (client slices to range). */
   private async fetchMonthlySparklineData(orgUid: string, slug: string): Promise<SparklineData> {
-    const rows = await this.fetchSparklines(orgUid, slug);
-    return { index: this.buildSparklineIndex(rows), axis: this.monthAxis() };
+    const rows = await this.fetchSparklineRows<SparkRow>(orgUid, slug, this.sparklinesTable(), 'SPAN_MONTH');
+    return { index: this.buildSparklineIndex(rows.value), axis: this.monthAxis(), teamMembersUnavailable: rows.teamMembersUnavailable };
   }
 
   /**
@@ -1370,24 +1329,16 @@ export class OrgLensProjectDetailService {
    * with the trend and with each other even when a metric has no data in some buckets.
    */
   private async fetchLifetimeSparklineData(orgUid: string, slug: string): Promise<SparklineData> {
-    const [rows, axis] = await Promise.all([this.fetchSparklinesLifetime(orgUid, slug), this.fetchLifetimeAxis(slug)]);
+    const [rows, axis] = await Promise.all([
+      this.fetchSparklineRows<SparkLifetimeRow>(orgUid, slug, this.sparklinesLifetimeTable(), 'BUCKET_INDEX'),
+      this.fetchLifetimeAxis(slug),
+    ]);
     return {
-      index: this.buildSparklineLifetimeIndex(rows),
+      index: this.buildSparklineLifetimeIndex(rows.value),
       axis: axis.map((bucket) => String(bucket.index)),
       periods: axis.map((bucket) => bucket.label),
+      teamMembersUnavailable: rows.teamMembersUnavailable,
     };
-  }
-
-  private async fetchSparklinesLifetime(orgUid: string, slug: string): Promise<SparkLifetimeRow[]> {
-    const result = await this.snowflakeService.execute<SparkLifetimeRow>(
-      `
-        SELECT METRIC_KEY, BUCKET_INDEX, ORG_VALUE, PROJECT_VALUE
-        FROM ${this.sparklinesLifetimeTable()}
-        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
-      `,
-      [orgUid, slug]
-    );
-    return result.rows;
   }
 
   private async fetchPlatforms(slug: string, timeRangeType: string): Promise<PlatformsRow[]> {
@@ -2547,14 +2498,6 @@ export class OrgLensProjectDetailService {
 
   private projectMaintainerRolesTable(): string {
     return `${this.lfxOnePlatinumSchema()}.PROJECT_MAINTAINER_ROLES`;
-  }
-
-  private projectMaintainerRolesMonthlyTable(): string {
-    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY`;
-  }
-
-  private projectMaintainerRolesLifetimeTable(): string {
-    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME`;
   }
 
   private projectPeopleTable(): string {

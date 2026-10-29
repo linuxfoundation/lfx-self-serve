@@ -9,19 +9,19 @@ import {
   OrgInvolvementMaintainersMonthlyResponse,
   OrgMaintainerRolesCountRow,
   OrgMaintainerRolesMonthlyRow,
-  OrgTeamMembersFilter,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   DEFAULT_ORG_TEAM_MEMBERS,
+  ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
+  ORG_CONTRIBUTORS_MONTHLY_VIEW,
   ORG_LENS_DEFAULT_TIME_RANGE,
-  ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN,
-  ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW,
-  ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN,
+  ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
+import type { OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
@@ -99,15 +99,16 @@ export class OrgInvolvementService {
   }
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    // `contributors:v4`: the headline counts all projects over the last 2 years, the Org Lens default view
+    // `contributors:v5`: the trend reads lf-dbt's ORG_CONTRIBUTORS_MONTHLY, now every project with team members left out
+    // (lf-dbt#3149). (`v4`: the headline counts all projects over the last 2 years, the Org Lens default view
     // (lfx-self-serve#4694), and leaves out CDP team members as the People -> Contributors default does
-    // (lfx-self-serve#4685); the trend is lf-dbt's view with the same rule. (`v2`: the headline became the live People ->
-    // Contributors default count.) Set by the fetcher, read by `storable`: a card read while the trend view or the
-    // team-member flag is missing is served, never stored.
+    // (lfx-self-serve#4685); `v2`: the headline became the live People -> Contributors default count.) Set by the
+    // fetcher, read by `storable`: a card read while the trend view or a team-member column is missing is served, never
+    // stored.
     let degraded = false;
     return withOrgCache(
       accountId,
-      'contributors:v4',
+      'contributors:v5',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchContributorsMonthly(accountId);
@@ -120,14 +121,15 @@ export class OrgInvolvementService {
   }
 
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
-    // `maintainer-roles:v3`: the headline counts all projects over the last 2 years, the Org Lens default view
-    // (lfx-self-serve#4694), and leaves out CDP team members' roles (lfx-self-serve#4685); the trend is lf-dbt's view with
-    // the same rule. (`v1`: maintainer roles replaced the people count, lfx-self-serve#4482.) Set by the fetcher, read by
-    // `storable`: a card read while a roles table, the trend view or the team-member flag is missing is served, never stored.
+    // `maintainer-roles:v4`: the trend reads lf-dbt's ORG_MAINTAINER_ROLES_MONTHLY, now every project with team members'
+    // roles left out (lf-dbt#3149). (`v3`: the headline counts all projects over the last 2 years, the Org Lens default
+    // view (lfx-self-serve#4694), and leaves out CDP team members' roles (lfx-self-serve#4685); `v1`: maintainer roles
+    // replaced the people count, lfx-self-serve#4482.) Set by the fetcher, read by `storable`: a card read while a roles
+    // table, the trend view or a team-member column is missing is served, never stored.
     let degraded = false;
     return withOrgCache(
       accountId,
-      'maintainer-roles:v3',
+      'maintainer-roles:v4',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchMaintainersMonthly(accountId);
@@ -207,11 +209,11 @@ export class OrgInvolvementService {
   /**
    * Overview Active Contributors card. The headline is the People -> Contributors default tile, counted live with the
    * same rule — distinct people with code at the Org Lens default view (all projects, the last 2 years to today), CDP
-   * team members left out (lfx-self-serve#4685) — so the two agree. The trend is lf-dbt's ORG_OVERVIEW_CONTRIBUTORS_TREND
+   * team members left out (lfx-self-serve#4685) — so the two agree. The trend is lf-dbt's ORG_CONTRIBUTORS_MONTHLY
    * view: the same people from the same table, per calendar month in every project, over the 12 months ending with this
    * one (to date), team members left out through its UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS column. The headline read
-   * failing fails the card; a missing trend view answers an empty trend (the view ships from lf-dbt ahead of this app),
-   * and a missing team-member flag or column counts team members.
+   * failing fails the card; a missing trend view answers an empty trend, and a missing team-member flag or column counts
+   * team members.
    */
   private async fetchContributorsMonthly(
     accountId: string
@@ -226,8 +228,8 @@ export class OrgInvolvementService {
     `;
     // Under `exclude` the trend reads the view's count without team members, aliased to the inclusive column's name.
     const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
-      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? `${ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN} AS ` : ''}UNIQUE_CONTRIBUTORS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW}
+      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? `${ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN} AS ` : ''}UNIQUE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
     `;
@@ -242,15 +244,15 @@ export class OrgInvolvementService {
         (teamMembers) =>
           this.snowflakeService
             .execute<ContributorsMonthlyRow>(trendQuery(teamMembers), [accountId], {
-              expectMissingObject: ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW,
-              ...orgTeamMembersQueryOptions(teamMembers, ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN),
+              expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_VIEW,
+              ...orgTeamMembersQueryOptions(teamMembers, ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN),
             })
             .then((result) => result.rows)
             .catch((error: unknown) => {
-              if (isMissingObjectError(error, ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW)) return null;
+              if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_VIEW)) return null;
               throw error;
             }),
-        ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN
+        ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN
       ),
     ]);
 
@@ -269,9 +271,9 @@ export class OrgInvolvementService {
   /**
    * Overview Maintainers card. The headline counts roles overlapping the Org Lens default view (all projects, the last
    * 2 years to today) with the same rule as People -> Contributors, so the two default views agree; CDP team members'
-   * roles are left out, as LFX Insights does (lfx-self-serve#4685). The trend is lf-dbt's
-   * ORG_OVERVIEW_MAINTAINER_ROLES_TREND view: the roles in every project held in each calendar month, over the 12 months
-   * ending with this one (to date), team members' roles left out through its ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS column.
+   * roles are left out, as LFX Insights does (lfx-self-serve#4685). The trend is lf-dbt's ORG_MAINTAINER_ROLES_MONTHLY
+   * view: the roles in every project held in each calendar month, over the 12 months ending with this one (to date),
+   * team members' roles left out through its ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS column.
    */
   private async fetchMaintainersMonthly(accountId: string): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
@@ -284,10 +286,10 @@ export class OrgInvolvementService {
         ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
     `;
     const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
-      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? `${ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN} AS ` : ''}ACTIVE_ROLES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_OVERVIEW_MAINTAINER_ROLES_TREND
+      SELECT METRIC_MONTH, ${teamMembers === 'exclude' ? `${ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN} AS ` : ''}ACTIVE_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
       WHERE ACCOUNT_ID = ?
-      ORDER BY MONTH_START_DATE ASC
+      ORDER BY METRIC_MONTH ASC
     `;
 
     // Each part degrades on its own: a missing roles table answers an unavailable (null) headline, a missing trend view
@@ -308,12 +310,12 @@ export class OrgInvolvementService {
         (teamMembers) =>
           readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
             this.snowflakeService,
-            'ORG_OVERVIEW_MAINTAINER_ROLES_TREND',
+            'ORG_MAINTAINER_ROLES_MONTHLY',
             trendQuery(teamMembers),
             [accountId],
-            orgTeamMembersQueryOptions(teamMembers, ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN)
+            orgTeamMembersQueryOptions(teamMembers, ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN)
           ),
-        ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN
+        ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN
       ),
     ]);
 
@@ -322,7 +324,7 @@ export class OrgInvolvementService {
         accountId,
         maintainerRoles: headline.value === null ? null : (headline.value[0]?.MAINTAINER_ROLES ?? 0),
         monthlyData: (trend.value ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
-        monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+        monthlyLabels: (trend.value ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
       },
       rolesMissing: headline.value === null || trend.value === null || headline.teamMembersUnavailable || trend.teamMembersUnavailable,
     };

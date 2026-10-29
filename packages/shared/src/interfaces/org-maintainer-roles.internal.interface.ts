@@ -14,15 +14,9 @@ export interface OrgMaintainerRoleOverlap {
 
 /**
  * The maintainer roles tables and the Overview trend view over ORG_MAINTAINER_ROLES (lfx-self-serve#4694); a read names
- * the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role, with or without an account; the
- * ORG_LENS_PROJECT_* series are Project Detail's sparkline per account and project.
+ * the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role, with or without an account.
  */
-export type OrgMaintainerRolesTable =
-  | 'ORG_MAINTAINER_ROLES'
-  | 'ORG_OVERVIEW_MAINTAINER_ROLES_TREND'
-  | 'PROJECT_MAINTAINER_ROLES'
-  | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY'
-  | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME';
+export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES' | 'ORG_MAINTAINER_ROLES_MONTHLY' | 'PROJECT_MAINTAINER_ROLES';
 
 /** A count of distinct maintainer roles. */
 export interface OrgMaintainerRolesCountRow {
@@ -56,26 +50,10 @@ export interface OrgProjectMaintainerRoleRow {
   MAINTAINER_AVATAR_URL: string | null;
 }
 
-/** One month of the account's maintainer roles (ORG_OVERVIEW_MAINTAINER_ROLES_TREND): the roles overlapping that calendar month. */
+/** One month of the account's maintainer roles (ORG_MAINTAINER_ROLES_MONTHLY): the roles overlapping that calendar month. */
 export interface OrgMaintainerRolesMonthlyRow {
-  MONTH_START_DATE: Date;
+  METRIC_MONTH: Date;
   ACTIVE_ROLES: number | null;
-}
-
-/** One sparkline point of Project Detail's Maintainer roles card: the account's and every company's roles in that period. */
-export interface OrgProjectMaintainerRolesSeriesRow {
-  ACCOUNT_ROLES: number | null;
-  PROJECT_ROLES: number | null;
-}
-
-/** A calendar month of the 1y/2y sparkline (ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY). */
-export interface OrgProjectMaintainerRolesMonthlyRow extends OrgProjectMaintainerRolesSeriesRow {
-  SPAN_MONTH: Date | string | null;
-}
-
-/** A lifetime bucket of the all-time sparkline (ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME). */
-export interface OrgProjectMaintainerRolesLifetimeRow extends OrgProjectMaintainerRolesSeriesRow {
-  BUCKET_INDEX: number | null;
 }
 
 /** A leaderboard organization's roles on a project and every company's roles there, overlapping one range. */

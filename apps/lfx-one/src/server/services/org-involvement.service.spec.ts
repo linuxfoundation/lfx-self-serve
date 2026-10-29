@@ -24,7 +24,7 @@ const invalidIdentifier = (column: string): Error =>
 
 const { OrgInvolvementService } = await import('./org-involvement.service');
 
-// The trend read is the one selecting ACTIVE_ROLES (ORG_OVERVIEW_MAINTAINER_ROLES_TREND); the headline selects MAINTAINER_ROLES.
+// The trend read is the one selecting ACTIVE_ROLES (ORG_MAINTAINER_ROLES_MONTHLY); the headline selects MAINTAINER_ROLES.
 const isRolesTrend = (sql: string): boolean => sql.includes('ACTIVE_ROLES');
 const missing = (object: string): Error => new Error(`SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.${object}' does not exist or not authorized.`);
 
@@ -35,8 +35,8 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
       isRolesTrend(sql)
         ? {
             rows: [
-              { MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 12 },
-              { MONTH_START_DATE: new Date(2030, 1, 15), ACTIVE_ROLES: null },
+              { METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 12 },
+              { METRIC_MONTH: new Date(2030, 1, 15), ACTIVE_ROLES: null },
             ],
           }
         : { rows: [{ MAINTAINER_ROLES: 764 }] }
@@ -62,7 +62,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
     expect(sql).toContain('ROLE_START_DATE <= CURRENT_DATE() AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
     expect(sql).not.toContain('IS_LF_PROJECT');
     expect(binds).toEqual(['acc-1', 730]);
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('maintainer-roles:v3');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('maintainer-roles:v4');
   });
 
   // lfx-self-serve#4685: Insights leaves team members' roles unattributed, so the company's count never has them.
@@ -73,9 +73,9 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
     expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
     const [trendSql, , trendOptions] = execute.mock.calls.find(([query]) => isRolesTrend(String(query)))!;
-    expect(trendSql).toContain('SELECT MONTH_START_DATE, ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS AS ACTIVE_ROLES');
+    expect(trendSql).toContain('SELECT METRIC_MONTH, ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS AS ACTIVE_ROLES');
     expect(trendOptions).toMatchObject({
-      expectMissingObject: 'ORG_OVERVIEW_MAINTAINER_ROLES_TREND',
+      expectMissingObject: 'ORG_MAINTAINER_ROLES_MONTHLY',
       expectInvalidIdentifier: 'ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS',
     });
   });
@@ -83,7 +83,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
   it('counts team members, and does not store the card, while the roles table has no team-member flag yet', async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('IS_CDP_TEAM_MEMBER')) throw invalidIdentifier('IS_CDP_TEAM_MEMBER');
-      return isRolesTrend(sql) ? { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] } : { rows: [{ MAINTAINER_ROLES: 770 }] };
+      return isRolesTrend(sql) ? { rows: [{ METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] } : { rows: [{ MAINTAINER_ROLES: 770 }] };
     });
 
     const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
@@ -95,14 +95,14 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
   it("reads the trend's inclusive column, and does not store the card, while the view has no team-member count yet", async () => {
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS')) throw invalidIdentifier('ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS');
-      return isRolesTrend(sql) ? { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 13 }] } : { rows: [{ MAINTAINER_ROLES: 764 }] };
+      return isRolesTrend(sql) ? { rows: [{ METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 13 }] } : { rows: [{ MAINTAINER_ROLES: 764 }] };
     });
 
     const response = await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
     expect(response).toEqual({ accountId: 'acc-1', maintainerRoles: 764, monthlyData: [13], monthlyLabels: ['Jan 2030'] });
     const trendReads = execute.mock.calls.filter(([query]) => isRolesTrend(String(query)));
-    expect(trendReads.at(-1)?.[0]).toContain('SELECT MONTH_START_DATE, ACTIVE_ROLES\n');
+    expect(trendReads.at(-1)?.[0]).toContain('SELECT METRIC_MONTH, ACTIVE_ROLES\n');
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
   });
 
@@ -128,14 +128,14 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
     await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => isRolesTrend(String(query)))!;
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_OVERVIEW_MAINTAINER_ROLES_TREND');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY');
     expect(sql).not.toContain('COUNT(');
     expect(binds).toEqual(['acc-1']);
   });
 
   it('keeps the headline and answers an empty trend when the trend view is missing, and does not store the card', async () => {
     execute.mockImplementation(async (sql: string) => {
-      if (isRolesTrend(sql)) throw missing('ORG_OVERVIEW_MAINTAINER_ROLES_TREND');
+      if (isRolesTrend(sql)) throw missing('ORG_MAINTAINER_ROLES_MONTHLY');
       return { rows: [{ MAINTAINER_ROLES: 764 }] };
     });
 
@@ -147,7 +147,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
 
   it('answers an unavailable (null) headline, not zero, when the roles table is missing, and does not store the card', async () => {
     execute.mockImplementation(async (sql: string) => {
-      if (isRolesTrend(sql)) return { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] };
+      if (isRolesTrend(sql)) return { rows: [{ METRIC_MONTH: new Date(2030, 0, 15), ACTIVE_ROLES: 12 }] };
       throw missing('ORG_MAINTAINER_ROLES');
     });
 
@@ -158,7 +158,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
   });
 });
 
-// The trend read is the one selecting UNIQUE_CONTRIBUTORS (ORG_OVERVIEW_CONTRIBUTORS_TREND); the headline selects ACTIVE_CONTRIBUTORS.
+// The trend read is the one selecting UNIQUE_CONTRIBUTORS (ORG_CONTRIBUTORS_MONTHLY); the headline selects ACTIVE_CONTRIBUTORS.
 const isContributorsTrend = (sql: string): boolean => sql.includes('UNIQUE_CONTRIBUTORS');
 
 describe('OrgInvolvementService.getContributorsMonthly — the People -> Contributors default count', () => {
@@ -181,7 +181,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [310, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v4');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5');
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
   });
 
@@ -206,7 +206,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     const [sql, , options] = execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
     expect(sql).toContain('SELECT MONTH_START_DATE, UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
     expect(options).toEqual({
-      expectMissingObject: 'ORG_OVERVIEW_CONTRIBUTORS_TREND',
+      expectMissingObject: 'ORG_CONTRIBUTORS_MONTHLY',
       expectInvalidIdentifier: 'UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS',
     });
   });
@@ -243,14 +243,14 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_OVERVIEW_CONTRIBUTORS_TREND');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY');
     expect(sql).not.toContain('COUNT(');
     expect(binds).toEqual(['acc-1']);
   });
 
   it('keeps the headline and answers an empty trend when the trend view is missing, and does not store the card', async () => {
     execute.mockImplementation(async (sql: string) => {
-      if (isContributorsTrend(sql)) throw missing('ORG_OVERVIEW_CONTRIBUTORS_TREND');
+      if (isContributorsTrend(sql)) throw missing('ORG_CONTRIBUTORS_MONTHLY');
       return { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
     });
 
