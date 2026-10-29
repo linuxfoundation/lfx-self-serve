@@ -10,10 +10,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { ObjectStoreService } from './object-store.service';
+import { logger } from './logger.service';
 
 /** Private tracker rows share the durable run store, never a browser round trip.
  * Callers must resolve the project's writer entitlement before invoking this service.
- * TTL is enforced on reads; physical retention follows the bucket lifecycle policy.
+ * Consumed and expired records are deleted best-effort. Bucket lifecycle remains
+ * the fallback for abandoned uploads and failed deletes.
  */
 export class Member360TrackerStoreService {
   private readonly store = new ObjectStoreService();
@@ -45,13 +47,18 @@ export class Member360TrackerStoreService {
     const creator = this.creator(req);
     const trackers: Member360Tracker[] = [];
     for (const id of ids) {
-      const object = await this.store.getPrivateObject(req, 'marketing-os-artifacts', this.key(project, id));
+      const key = this.key(project, id);
+      const object = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
       let record: Member360StoredTracker | undefined;
       try {
         const candidate = object ? (JSON.parse(object.body) as Member360StoredTracker) : undefined;
-        if (candidate?.project === project && candidate.creatorHash === creator && Number.isFinite(candidate.expiresAt) && candidate.expiresAt > Date.now()) {
-          const parsed = trackerSchema.safeParse(candidate.tracker);
-          if (parsed.success) record = { ...candidate, tracker: parsed.data };
+        if (candidate?.project === project && candidate.creatorHash === creator && Number.isFinite(candidate.expiresAt)) {
+          if (candidate.expiresAt <= Date.now()) {
+            await this.erase(req, key, 'expired');
+          } else {
+            const parsed = trackerSchema.safeParse(candidate.tracker);
+            if (parsed.success) record = { ...candidate, tracker: parsed.data };
+          }
         }
       } catch {
         // Never expose parser errors that can quote private row bytes.
@@ -62,6 +69,21 @@ export class Member360TrackerStoreService {
         throw ServiceValidationError.forField('trackerIds', 'The parsed trackers together must be smaller than 5 MB.');
     }
     return trackers;
+  }
+
+  /** Only called after these rows were included in a successfully started run. */
+  public async deleteConsumed(req: Request, project: string, ids: string[]): Promise<void> {
+    for (const id of new Set(ids)) await this.erase(req, this.key(project, id), 'consumed');
+  }
+
+  private async erase(req: Request, key: string, reason: 'consumed' | 'expired'): Promise<void> {
+    try {
+      await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
+    } catch {
+      // A Guild start must not be retried because cleanup failed. Never log rows,
+      // identity, private keys or provider error messages at this boundary.
+      logger.warning(req, 'member_360_tracker_delete', 'Private tracker cleanup failed; lifecycle cleanup is required', { reason });
+    }
   }
 
   private key(project: string, id: string): string {

@@ -56,6 +56,7 @@ import { Member360TrackerStoreService } from './member-360-tracker-store.service
 export class Member360Service {
   private readonly guild = new GuildService();
   private readonly projects = new ProjectService();
+  private readonly trackerStore = new Member360TrackerStoreService();
   private readonly documents: MktgDocumentStoreService;
 
   public constructor(attribution?: MktgGenerationAttribution) {
@@ -78,7 +79,7 @@ export class Member360Service {
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
-    const trackers = body.trackerIds?.length ? await new Member360TrackerStoreService().load(req, project.uid, body.trackerIds) : undefined;
+    const trackers = body.trackerIds?.length ? await this.trackerStore.load(req, project.uid, body.trackerIds) : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -96,6 +97,7 @@ export class Member360Service {
       message: renderMember360FormMessage(payload),
       mentionOnOwnLine: true,
     });
+    if (body.trackerIds?.length) await this.trackerStore.deleteConsumed(req, project.uid, body.trackerIds);
     return { sessionId, documentId: buildMktgRunDocumentId(sessionId) };
   }
 

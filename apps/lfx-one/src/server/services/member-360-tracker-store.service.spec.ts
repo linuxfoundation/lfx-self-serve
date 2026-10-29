@@ -5,12 +5,15 @@ import { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MEMBER_360_TRACKER_TTL_MS } from '@lfx-one/shared/constants';
 import { Member360TrackerStoreService } from './member-360-tracker-store.service';
+import { logger } from './logger.service';
 
-const mocks = vi.hoisted(() => ({ put: vi.fn(), get: vi.fn(), subject: 'synthetic-creator' }));
+const mocks = vi.hoisted(() => ({ put: vi.fn(), get: vi.fn(), remove: vi.fn(), subject: 'synthetic-creator' }));
+vi.mock('./logger.service', () => ({ logger: { warning: vi.fn() } }));
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
     putPrivateObjectIfAbsent = mocks.put;
     getPrivateObject = mocks.get;
+    deletePrivateObject = mocks.remove;
   },
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveSub: () => mocks.subject }));
@@ -28,6 +31,9 @@ beforeEach(() => {
     return true;
   });
   mocks.get.mockImplementation(async (_req, _purpose, key) => objects.get(key) ?? null);
+  mocks.remove.mockImplementation(async (_req, _purpose, key) => {
+    objects.delete(key);
+  });
 });
 
 describe('private parsed Member 360 tracker store', () => {
@@ -60,6 +66,8 @@ describe('private parsed Member 360 tracker store', () => {
       await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject({
         validationErrors: [expect.objectContaining({ field: 'trackerIds', message: expect.stringContaining('expired') })],
       });
+      expect(objects.size).toBe(0);
+      expect(mocks.remove).toHaveBeenCalledWith(req, 'marketing-os-artifacts', expect.stringContaining(receipt.trackerId));
     } finally {
       clock.mockRestore();
     }
@@ -79,6 +87,7 @@ describe('private parsed Member 360 tracker store', () => {
     object.body = JSON.stringify({ ...JSON.parse(object.body), expiresAt: Date.now() - 1 });
     await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject(unavailable);
     object.body = 'invalid private-row@example.test';
+    objects.set(key, object);
     await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject(unavailable);
     objects.clear();
     await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject(unavailable);
@@ -97,6 +106,23 @@ describe('private parsed Member 360 tracker store', () => {
     await expect(service.load(req, 'project-one', [receipt.trackerId, receipt.trackerId])).rejects.toMatchObject({
       validationErrors: [expect.objectContaining({ message: expect.stringContaining('together must be smaller') })],
     });
+  });
+  it('deletes consumed private rows and makes the receipt unavailable', async () => {
+    const service = new Member360TrackerStoreService();
+    const receipt = await service.save(req, 'project-one', tracker);
+    await service.load(req, 'project-one', [receipt.trackerId]);
+    await service.deleteConsumed(req, 'project-one', [receipt.trackerId]);
+    expect(objects.size).toBe(0);
+    expect(mocks.remove).toHaveBeenCalledOnce();
+    await expect(service.load(req, 'project-one', [receipt.trackerId])).rejects.toMatchObject({ statusCode: 400 });
+  });
+  it('keeps cleanup failures best-effort and logs no private data', async () => {
+    const service = new Member360TrackerStoreService();
+    const receipt = await service.save(req, 'project-one', tracker);
+    mocks.remove.mockRejectedValueOnce(new Error('private-row@example.test'));
+    await expect(service.deleteConsumed(req, 'project-one', [receipt.trackerId])).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'member_360_tracker_delete', expect.any(String), { reason: 'consumed' });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private-row');
   });
   it('fails closed on a write outage or collision', async () => {
     mocks.put.mockResolvedValue(false);

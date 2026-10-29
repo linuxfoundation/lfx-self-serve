@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   getRevision: vi.fn(),
   recordGeneration: vi.fn(),
   loadTrackers: vi.fn(),
+  deleteTrackers: vi.fn(),
   available: true,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -53,6 +54,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('./member-360-tracker-store.service', () => ({
   Member360TrackerStoreService: class {
     load = mocks.loadTrackers;
+    deleteConsumed = mocks.deleteTrackers;
   },
 }));
 vi.mock('./guild.service', () => ({
@@ -179,10 +181,18 @@ describe('Member 360 entitlement and generation', () => {
     expect(mocks.loadTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
     expect(mocks.getProjectById.mock.invocationCallOrder[0]).toBeLessThan(mocks.loadTrackers.mock.invocationCallOrder[0]);
     expect(mocks.createSession.mock.calls[0][1].message).toContain('synthetic@example.test');
+    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.createSession.mock.invocationCallOrder[0]).toBeLessThan(mocks.deleteTrackers.mock.invocationCallOrder[0]);
     mocks.createSession.mockClear();
     mocks.loadTrackers.mockRejectedValue(new Error('Expired tracker'));
     await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
     expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+  it('does not consume tracker rows if the Guild start fails', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    mocks.createSession.mockRejectedValue(new Error('Synthetic start unavailable'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Synthetic start unavailable');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
   });
   it('loads the previous stored ranking for trends, not caller-supplied scores', async () => {
     mocks.listDocuments.mockResolvedValue({
