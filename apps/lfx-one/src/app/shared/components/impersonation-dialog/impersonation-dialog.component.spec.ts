@@ -216,6 +216,31 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).not.toHaveBeenCalled();
     });
 
+    describe('while switching', () => {
+      beforeEach(async () => {
+        currentUser = { email: 'alex.smith@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+        currentImpersonator = { email: 'Admin@example.com' };
+        await createDialog({ switching: true });
+        startImpersonation.mockReturnValue(NEVER);
+      });
+
+      it('refuses the real admin’s email as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('ADMIN@example.com');
+
+        dialog().submit();
+
+        expect(startImpersonation).not.toHaveBeenCalled();
+        expect(dialog().error()).toBe(IMPERSONATION_SELF_MESSAGE);
+      });
+
+      it('sends the current target on for the server to refuse, not as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('asmith');
+        dialog().submit();
+        expect(startImpersonation).toHaveBeenCalledWith('asmith', true);
+        expect(dialog().error()).not.toBe(IMPERSONATION_SELF_MESSAGE);
+      });
+    });
+
     it('does not request impersonation with an empty field', () => {
       dialog().submit();
 

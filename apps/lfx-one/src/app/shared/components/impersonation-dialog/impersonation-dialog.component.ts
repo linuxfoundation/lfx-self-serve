@@ -211,10 +211,17 @@ export class ImpersonationDialogComponent {
     return excludeUserSearchIdentities(recents, this.ownIdentities());
   }
 
-  // True when the entered text is the admin's own username or email, which the directory and recents already leave out.
+  // True when the entered text is the real admin's own username or email. Not the current target: while switching,
+  // typing the target is left for the server to refuse with its already-impersonating 409.
   private isOwnIdentity(text: string): boolean {
     const entered = text.trim().toLowerCase();
-    return this.ownIdentities().some((identity) => [identity.username, identity.email].some((value) => !!value && value.trim().toLowerCase() === entered));
+    const user = this.userService.user();
+    // The impersonator carries no username, so while switching only the admin's email can be matched.
+    const admin = this.switching
+      ? { username: undefined, email: this.userService.impersonator()?.email }
+      : { username: user?.['https://sso.linuxfoundation.org/claims/username'], email: user?.email };
+
+    return [admin.username, admin.email].some((value) => !!value && value.trim().toLowerCase() === entered);
   }
 
   private ownIdentities(): { username?: string | null; email?: string | null }[] {
