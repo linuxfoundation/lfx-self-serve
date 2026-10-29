@@ -629,6 +629,7 @@ describe('LinkedIn profile and post surface', () => {
   });
 
   function intakePending(state: MktgPendingGeneration['state'] = 'questions'): MktgPendingGeneration {
+    if (!documentType) throw new Error('Missing synthetic LinkedIn document type');
     const intake = LINKEDIN_POST_INTAKE;
     const documentId = 'run-' + 'a'.repeat(24);
     // Synthetic BFF fixture is independent from browser persistence; stale-cache cases override it explicitly.
