@@ -9,8 +9,8 @@ import type { OrgLensTimeRange, OrgLensTimeRangeOption } from '../interfaces/org
 /** Valid `?range=` values, narrowest first. Also the BFF's allow-list. */
 export const ORG_LENS_TIME_RANGES = ['30d', '90d', '365d', '730d', 'all'] as const;
 
-/** Default range — Past 365 days, as on Insights. The URL drops `?range=` when it is active. */
-export const ORG_LENS_DEFAULT_TIME_RANGE: OrgLensTimeRange = '365d';
+/** Default range on every Org Lens page — Past 2 years, the window of LFX Insights' organization page (lfx-self-serve#4694). The URL drops `?range=` when it is active. */
+export const ORG_LENS_DEFAULT_TIME_RANGE: OrgLensTimeRange = '730d';
 
 /** Query parameter that carries the range in the URL, across People tabs and between People and Code Contributions. */
 export const ORG_LENS_TIME_RANGE_QUERY_PARAM = 'range';

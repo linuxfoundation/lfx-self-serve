@@ -15,7 +15,7 @@ import {
 } from './org-lens-time-range.utils';
 
 describe('Org Lens time range', () => {
-  it('offers Insights-style labels narrowest first, defaulting to Past 365 days', () => {
+  it('offers Insights-style labels narrowest first, defaulting to Past 2 years as on Insights', () => {
     expect(ORG_LENS_TIME_RANGE_OPTIONS).toEqual([
       { label: 'Past 30 days', value: '30d' },
       { label: 'Past 90 days', value: '90d' },
@@ -23,7 +23,7 @@ describe('Org Lens time range', () => {
       { label: 'Past 2 years', value: '730d' },
       { label: 'All time', value: 'all' },
     ]);
-    expect(ORG_LENS_DEFAULT_TIME_RANGE).toBe('365d');
+    expect(ORG_LENS_DEFAULT_TIME_RANGE).toBe('730d');
   });
 
   it.each(['30d', '90d', '365d', '730d', 'all'])('parses %s', (value) => {
@@ -32,9 +32,9 @@ describe('Org Lens time range', () => {
   });
 
   // Old links (`12mo` from the previous Code page and All Employees, `12m`/`2y` from the old Trainees/Events pickers) fall
-  // back to the new Past 365 days default.
+  // back to the Past 2 years default.
   it.each([null, undefined, '', '12mo', '12m', '2y', '3m', 'ALL'])('reads %s as the default', (value) => {
-    expect(parseOrgLensTimeRange(value)).toBe('365d');
+    expect(parseOrgLensTimeRange(value)).toBe('730d');
   });
 
   it('reads the legacy 12mo BFF value as 365d and leaves every other value for validation', () => {
@@ -55,9 +55,9 @@ describe('Org Lens time range', () => {
   });
 
   it('drops the default from the URL and keeps every other range', () => {
-    expect(orgLensTimeRangeUrlParam('365d')).toBeNull();
+    expect(orgLensTimeRangeUrlParam('730d')).toBeNull();
     expect(orgLensTimeRangeUrlParam('30d')).toBe('30d');
-    expect(orgLensTimeRangeUrlParam('730d')).toBe('730d');
+    expect(orgLensTimeRangeUrlParam('365d')).toBe('365d');
     expect(orgLensTimeRangeUrlParam('all')).toBe('all');
   });
 

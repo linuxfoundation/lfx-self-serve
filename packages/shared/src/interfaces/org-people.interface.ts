@@ -174,7 +174,7 @@ export interface OrgAllEmployeeCodeContribution {
   /** Distinct commits the person authored in this project. A commit mirrored in several projects counts in each, so the rows can sum to more than {@link OrgAllEmployeeDetail.totalCommits}. */
   commits: number;
   lastActivityDate: string | null;
-  /** The person holds a maintainer role on this project overlapping the detail's range (the page range, else the past 365 days). */
+  /** The person holds a maintainer role on this project overlapping the detail's range (the page range, else the Org Lens default range). */
   isMaintainer: boolean;
 }
 

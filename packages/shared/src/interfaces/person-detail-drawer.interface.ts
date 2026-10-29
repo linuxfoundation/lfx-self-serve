@@ -34,7 +34,7 @@ export interface PersonDrawerContext {
   isFormer?: boolean;
   /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
   directoryView?: OrgPeopleDirectoryView;
-  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (past 365 days when omitted). */
+  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (the Org Lens default range when omitted). */
   range?: OrgLensTimeRange;
 }
 

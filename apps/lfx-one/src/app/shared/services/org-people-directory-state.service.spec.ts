@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
 
-const urlFor = (range: string, projectScope = 'lf', commitScope = 'all', metric = 'code'): string =>
+const urlFor = (range: string, projectScope = 'all', commitScope = 'all', metric = 'code'): string =>
   `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}&projectScope=${projectScope}&commitScope=${commitScope}&metric=${metric}`;
 const URL = urlFor('365d');
 const ROSTER_URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
@@ -116,7 +116,7 @@ describe('OrgPeopleDirectoryStateService', () => {
     expect(cache.size).toBe(0);
     http.expectOne(URL).flush(roster('Default'));
     await next;
-    expect([...cache.keys()]).toEqual([`${SYNTHETIC_ORG_ACCOUNT_ID}:365d:lf:all:code`]);
+    expect([...cache.keys()]).toEqual([`${SYNTHETIC_ORG_ACCOUNT_ID}:365d:all:all:code`]);
 
     const again = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
     http.expectOne(urlFor('30d')).flush(roster('Recent Again'));

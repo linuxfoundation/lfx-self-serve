@@ -85,7 +85,7 @@ export class PersonDetailDrawerService {
         if (!path) {
           return of({ request, detail: null, error: false });
         }
-        // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the past 365 days.
+        // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the Org Lens default range.
         const range = request.context?.range;
         return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params: range ? { range } : {} }).pipe(
           map((detail) => ({ request, detail, error: false })),

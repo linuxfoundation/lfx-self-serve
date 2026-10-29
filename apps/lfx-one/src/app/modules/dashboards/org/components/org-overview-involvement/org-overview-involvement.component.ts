@@ -224,9 +224,10 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.contributorsLoading(),
       value: data.totalActiveContributors.toString(),
-      subtitle: 'Current and former employees contributing code',
+      subtitle: 'Current and former employees in all projects over the last 2 years',
       tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
       chartOptions: this.createBarChartOptions('Active contributors'),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -251,9 +252,10 @@ export class OrgOverviewInvolvementComponent {
       loading: this.maintainersLoading(),
       // `null` means the roles are unavailable (roles table missing or the read failed): a dash, never zero.
       value: data.maintainerRoles === null ? '—' : String(data.maintainerRoles),
-      subtitle: 'In LF projects over the past 365 days',
+      subtitle: 'In all projects over the last 2 years',
       tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
       chartOptions: this.createBarChartOptions(ORG_MAINTAINER_ROLES_LABEL),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -386,6 +388,17 @@ export class OrgOverviewInvolvementComponent {
       throw new Error(`ORG_INVOLVEMENT_METRICS is missing card titled '${title}'`);
     }
     return config;
+  }
+
+  /**
+   * The window a monthly trend covers, stated under its chart: "Per month, Nov 2025 – Oct 2026 to date, all projects".
+   * The BFF sends the 12 calendar months ending with this one, which is counted to date.
+   */
+  private static monthlyWindowCaption(labels: string[]): string | undefined {
+    if (labels.length === 0) {
+      return undefined;
+    }
+    return `Per month, ${labels[0]} – ${labels[labels.length - 1]} to date, all projects`;
   }
 
   private createBarChartOptions(label: string): ChartOptions<ChartType> {

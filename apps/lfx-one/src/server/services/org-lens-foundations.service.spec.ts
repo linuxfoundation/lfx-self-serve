@@ -44,7 +44,7 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     withOrgCache.mockClear();
   });
 
-  it('reads LF roles over the past 365 days on their own, binding the account then 365 days', async () => {
+  it('reads LF roles over the last 2 years on their own, binding the account then 730 days', async () => {
     execute.mockImplementation(async (sql: string) =>
       sql.includes('ORG_MAINTAINER_ROLES')
         ? {
@@ -64,7 +64,7 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     ]);
     const [rolesSql, rolesBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_MAINTAINER_ROLES'))!;
     expect(rolesSql).toContain('IS_LF_PROJECT = TRUE');
-    expect(rolesBinds).toEqual(['acc-1', 365]);
+    expect(rolesBinds).toEqual(['acc-1', 730]);
     const [mainSql, mainBinds] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_LENS_FOUNDATIONS_AND_PROJECTS'))!;
     expect(mainSql).not.toContain('ORG_MAINTAINER_ROLES');
     expect(mainBinds).toEqual(['acc-1']);

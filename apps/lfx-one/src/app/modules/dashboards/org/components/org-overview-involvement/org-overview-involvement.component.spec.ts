@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION } from '@lfx-one/shared/constants';
+import { ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION, ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION } from '@lfx-one/shared/constants';
 import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
@@ -85,17 +85,20 @@ describe('OrgOverviewInvolvementComponent training enrollments', () => {
 });
 
 describe('OrgOverviewInvolvementComponent maintainer roles', () => {
-  it('shows the past-365-day LF roles as the headline and the roles held per month as the trend', async () => {
+  it('shows the roles in all projects over the last 2 years as the headline and the roles held per month as the trend', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
     const card = metrics.find((metric) => metric.title === 'Maintainer roles');
 
     expect(card).toMatchObject({
       value: '20',
-      subtitle: 'In LF projects over the past 365 days',
       tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
       loading: false,
     });
+    expect(card?.subtitle).toMatch(/all projects/i);
+    expect(card?.subtitle).toMatch(/2 years/i);
     expect(card?.subtitle).not.toMatch(/employee/i);
+    expect(card?.chartCaption).toContain('Jan 2030');
+    expect(card?.chartCaption).toContain('Feb 2030');
     expect(card?.chartData?.labels).toEqual(['Jan 2030', 'Feb 2030']);
     expect(card?.chartData?.datasets[0]?.data).toEqual([12, 15]);
   });
@@ -116,5 +119,27 @@ describe('OrgOverviewInvolvementComponent maintainer roles', () => {
     );
 
     expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.value).toBe('0');
+  });
+
+  it('states no chart window when there is no trend', async () => {
+    const metrics = await buildMetrics(
+      { accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] },
+      { accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }
+    );
+
+    expect(metrics.find((metric) => metric.title === 'Maintainer roles')?.chartCaption).toBeUndefined();
+  });
+});
+
+describe('OrgOverviewInvolvementComponent active contributors', () => {
+  it('says the headline counts all projects over the last 2 years and states the trend window under the chart', async () => {
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
+    const card = metrics.find((metric) => metric.title === 'Active Contributors');
+
+    expect(card).toMatchObject({ value: '100', tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION, loading: false });
+    expect(card?.subtitle).toMatch(/all projects/i);
+    expect(card?.subtitle).toMatch(/2 years/i);
+    expect(card?.chartCaption).toContain('Jan 2030');
+    expect(card?.chartCaption).toMatch(/all projects/i);
   });
 });

@@ -30,8 +30,8 @@ describe('Org Lens code-count dropdown', () => {
       { label: 'Only main branch commits', value: 'merged' },
     ]);
     expect(DEFAULT_ORG_CODE_MEASURE).toBe('code');
-    expect(DEFAULT_ORG_COMMIT_FILTERS).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
-    expect(orgCommitFiltersFor({ projectScope: 'lf', metric: DEFAULT_ORG_CODE_MEASURE })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
+    expect(DEFAULT_ORG_COMMIT_FILTERS).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'code' });
+    expect(orgCommitFiltersFor({ projectScope: 'all', metric: DEFAULT_ORG_CODE_MEASURE })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
   it('defines each option for its tooltip', () => {
@@ -54,15 +54,15 @@ describe('Org Lens code-count dropdown', () => {
   });
 
   it('reads the option from ?metric=, an unknown or missing value as All code contributions', () => {
-    expect(read({ metric: 'merged' })).toEqual({ projectScope: 'lf', commitScope: 'merged', metric: 'commits' });
-    expect(read({ metric: 'commits' })).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'commits' });
+    expect(read({ metric: 'merged' })).toEqual({ projectScope: 'all', commitScope: 'merged', metric: 'commits' });
+    expect(read({ metric: 'commits' })).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'commits' });
     expect(read({ projectScope: 'non_lf', metric: 'code' })).toEqual({ projectScope: 'non_lf', commitScope: 'all', metric: 'code' });
     expect(read({ projectScope: 'LF', metric: 'prs' })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
     expect(read({})).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
   });
 
   it('reads a legacy commitScope=merged link (commits was the default then) as Only main branch commits unless it asked for code contributions', () => {
-    const merged: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
+    const merged: OrgCommitFilters = { projectScope: 'all', commitScope: 'merged', metric: 'commits' };
     expect(read({ commitScope: 'merged' })).toEqual(merged);
     expect(read({ commitScope: 'merged', metric: 'commits' })).toEqual(merged);
     expect(read({ commitScope: 'merged', metric: 'code' })).toEqual(DEFAULT_ORG_COMMIT_FILTERS);
@@ -71,19 +71,19 @@ describe('Org Lens code-count dropdown', () => {
 
   it('writes the option to ?metric=, drops the default and always drops ?commitScope=', () => {
     expect(orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS)).toEqual({ projectScope: null, commitScope: null, metric: null });
-    expect(orgCommitFiltersUrlParams({ projectScope: 'all', commitScope: 'merged', metric: 'commits' })).toEqual({
-      projectScope: 'all',
+    expect(orgCommitFiltersUrlParams({ projectScope: 'lf', commitScope: 'merged', metric: 'commits' })).toEqual({
+      projectScope: 'lf',
       commitScope: null,
       metric: 'merged',
     });
-    const commits: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+    const commits: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
     expect(orgCommitFiltersUrlParams(commits)).toEqual({ projectScope: null, commitScope: null, metric: 'commits' });
     // Round trip: an explicit ?metric=commits reads back as commits.
     expect(read({ metric: 'commits' })).toEqual(commits);
   });
 
   it('matches only a URL that already spells the filters canonically', () => {
-    const merged: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
+    const merged: OrgCommitFilters = { projectScope: 'all', commitScope: 'merged', metric: 'commits' };
     const matches = (filters: OrgCommitFilters, params: Record<string, string>): boolean => orgCommitFiltersUrlMatches(filters, (name) => params[name]);
 
     expect(matches(merged, { metric: 'merged', tab: 'contributors' })).toBe(true);
@@ -91,35 +91,35 @@ describe('Org Lens code-count dropdown', () => {
     expect(matches(DEFAULT_ORG_COMMIT_FILTERS, { metric: 'code' })).toBe(false);
     expect(matches(DEFAULT_ORG_COMMIT_FILTERS, {})).toBe(true);
     expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, metric: 'commits' }, { metric: 'commits' })).toBe(true);
-    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, { projectScope: 'all' })).toBe(true);
-    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'all' }, {})).toBe(false);
+    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' }, { projectScope: 'lf' })).toBe(true);
+    expect(matches({ ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' }, {})).toBe(false);
   });
 });
 
-// lfx-self-serve#4160 — LF projects by default, so every view counts what the Overview counts; LF and non-LF projects (what Insights counts) is explicit.
+// lfx-self-serve#4694 — LF and non-LF projects by default, as LFX Insights counts; LF projects only is explicit.
 describe('Org Lens project scope', () => {
-  it('offers LF projects first, as the default, then LF and non-LF projects and Non-LF projects', () => {
+  it('offers LF and non-LF projects first, as the default, then LF projects and Non-LF projects', () => {
     expect(ORG_PROJECT_SCOPE_OPTIONS).toEqual([
-      { label: 'LF projects', value: 'lf' },
       { label: 'LF and non-LF projects', value: 'all' },
+      { label: 'LF projects', value: 'lf' },
       { label: 'Non-LF projects', value: 'non_lf' },
     ]);
-    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('lf');
+    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('all');
   });
 
-  it('reads a link without projectScope, or with an unknown one, as LF projects', () => {
-    expect(read({}).projectScope).toBe('lf');
-    expect(read({ metric: 'code' })).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
-    expect(read({ projectScope: 'everything' }).projectScope).toBe('lf');
+  it('reads a link without projectScope, or with an unknown one, as LF and non-LF projects', () => {
+    expect(read({}).projectScope).toBe('all');
+    expect(read({ metric: 'code' })).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'code' });
+    expect(read({ projectScope: 'everything' }).projectScope).toBe('all');
   });
 
-  it('round-trips ?projectScope=all through the URL and drops the LF default', () => {
-    const all = read({ projectScope: 'all' });
+  it('round-trips ?projectScope=lf through the URL and drops the all-projects default', () => {
+    const lf = read({ projectScope: 'lf' });
 
-    expect(all).toEqual({ projectScope: 'all', commitScope: 'all', metric: 'code' });
-    const params = orgCommitFiltersUrlParams(all);
-    expect(params).toEqual({ projectScope: 'all', commitScope: null, metric: null });
-    expect(readOrgCommitFilters((name) => params[name])).toEqual(all);
-    expect(orgCommitFiltersUrlParams({ ...all, projectScope: 'lf' }).projectScope).toBeNull();
+    expect(lf).toEqual({ projectScope: 'lf', commitScope: 'all', metric: 'code' });
+    const params = orgCommitFiltersUrlParams(lf);
+    expect(params).toEqual({ projectScope: 'lf', commitScope: null, metric: null });
+    expect(readOrgCommitFilters((name) => params[name])).toEqual(lf);
+    expect(orgCommitFiltersUrlParams({ ...lf, projectScope: 'all' }).projectScope).toBeNull();
   });
 });

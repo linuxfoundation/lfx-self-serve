@@ -21,6 +21,15 @@ import { withOrgCache } from './valkey.service';
 
 const formatMonthLabel = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
+/**
+ * The 12 calendar months of the Overview trends, oldest first: the 11 before this one and this one to date
+ * (lfx-self-serve#4694). The trends LEFT JOIN onto it, so every month is a bar, 0 when nothing counts.
+ */
+const OVERVIEW_TREND_MONTHS_SQL = `
+  SELECT DATEADD(month, -(ROW_NUMBER() OVER (ORDER BY SEQ4()) - 1), DATE_TRUNC('month', CURRENT_DATE())) AS MONTH_START_DATE
+  FROM TABLE(GENERATOR(ROWCOUNT => 12))
+`;
+
 interface FoundationCoverageRow {
   ACCOUNT_ID: string;
   FOUNDATION_ID: string;
@@ -87,11 +96,11 @@ export class OrgInvolvementService {
   }
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    // `contributors:v2`: the headline is now the live People -> Contributors default count, not the monthly table's
-    // frozen 12-month total, so a `contributors` entry must not be read.
+    // `contributors:v3`: the headline counts all projects over the last 2 years, the Org Lens default view, and the trend
+    // every project (lfx-self-serve#4694). (`v2`: the headline became the live People -> Contributors default count.)
     return withOrgCache(
       accountId,
-      'contributors:v2',
+      'contributors:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributorsMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -99,12 +108,13 @@ export class OrgInvolvementService {
   }
 
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
-    // `maintainer-roles:v1`: maintainer roles replaced the people count (lfx-self-serve#4482), so a `maintainers` entry must not be read.
+    // `maintainer-roles:v2`: the headline counts all projects over the last 2 years, the Org Lens default view
+    // (lfx-self-serve#4694). (`v1`: maintainer roles replaced the people count, lfx-self-serve#4482.)
     // Set by the fetcher, read by `storable`: a card read while a roles table is missing is served, never stored.
     let rolesMissing = false;
     return withOrgCache(
       accountId,
-      'maintainer-roles:v1',
+      'maintainer-roles:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchMaintainersMonthly(accountId);
@@ -183,9 +193,9 @@ export class OrgInvolvementService {
 
   /**
    * Overview Active Contributors card. The headline is the People -> Contributors default tile, counted live with the
-   * same rule — distinct people with code in LF projects, the past 365 days to today — so the two agree; the frozen
-   * 12-month total of ORG_CONTRIBUTORS_MONTHLY (calendar months, built once a day) drifted from it. The trend stays the
-   * monthly table's distinct contributors per month. Either read failing fails the card, as before.
+   * same rule — distinct people with code at the Org Lens default view (all projects, the last 2 years to today) — so
+   * the two agree. The trend counts the same people from the same table per calendar month, over the 12 months ending
+   * with this one (to date), in the same projects. Either read failing fails the card, as before.
    */
   private async fetchContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
     const headlineQuery = `
@@ -196,12 +206,16 @@ export class OrgInvolvementService {
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
     `;
     const trendQuery = `
-      SELECT
-        MONTH_START_DATE,
-        UNIQUE_CONTRIBUTORS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY MONTH_START_DATE ASC
+      WITH months AS (${OVERVIEW_TREND_MONTHS_SQL})
+      SELECT m.MONTH_START_DATE, COUNT(DISTINCT d.person_key) AS UNIQUE_CONTRIBUTORS
+      FROM months m
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY d
+        ON d.account_id = ?
+        AND d.activity_date >= m.MONTH_START_DATE
+        AND d.activity_date < DATEADD(month, 1, m.MONTH_START_DATE)
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'd.is_lf_project')}
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
     `;
 
     const [headline, trend] = await Promise.all([
@@ -218,9 +232,9 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Maintainers card. The headline counts LF roles overlapping the past 365 days to today with the same rule
-   * as People -> Contributors, so the two default views agree (the monthly table stops at the last complete month).
-   * The trend is the roles held in each month.
+   * Overview Maintainers card. The headline counts roles overlapping the Org Lens default view (all projects, the last
+   * 2 years to today) with the same rule as People -> Contributors, so the two default views agree. The trend is the
+   * roles in the same projects held in each calendar month, over the 12 months ending with this one (to date).
    */
   private async fetchMaintainersMonthly(accountId: string): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
@@ -229,22 +243,26 @@ export class OrgInvolvementService {
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
       WHERE ACCOUNT_ID = ?
         AND ${overlap.sql}
-        ${orgProjectScopePredicate('lf', 'IS_LF_PROJECT')}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
     `;
     const trendQuery = `
-      SELECT
-        METRIC_MONTH,
-        ACTIVE_ROLES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY METRIC_MONTH ASC
+      WITH months AS (${OVERVIEW_TREND_MONTHS_SQL})
+      SELECT m.MONTH_START_DATE AS METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES
+      FROM months m
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES r
+        ON r.ACCOUNT_ID = ?
+        AND r.ROLE_START_DATE <= LEAST(LAST_DAY(m.MONTH_START_DATE), CURRENT_DATE())
+        AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= m.MONTH_START_DATE)
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'r.IS_LF_PROJECT')}
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
     `;
 
-    // Each part degrades on its own: a missing roles table answers an unavailable (null) headline, a missing monthly
-    // table an empty trend — never an error.
+    // Each part degrades on its own: a missing roles table answers an unavailable (null) headline and an empty trend —
+    // never an error.
     const [headline, trend] = await Promise.all([
       readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', headlineQuery, [accountId, ...overlap.binds]),
-      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_MONTHLY', trendQuery, [accountId]),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', trendQuery, [accountId]),
     ]);
 
     return {

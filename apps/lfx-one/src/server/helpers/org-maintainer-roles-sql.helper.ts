@@ -45,7 +45,7 @@ export async function readMaintainerRoles<T>(
 }
 
 /**
- * The account's LF maintainer roles per project overlapping the Overview window (past 365 days), keyed by project id —
+ * The account's LF maintainer roles per project overlapping the Overview window (last 2 years), keyed by project id —
  * the per-project count of the Overview's Foundations & Projects and the Memberships projects drawer. `null` when the
  * roles table is missing. Its own read, so a missing table never takes the project list down with it.
  */

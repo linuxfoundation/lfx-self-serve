@@ -627,13 +627,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(detail.totalCommits).toBe(7);
   });
 
-  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 365 days by default', async () => {
+  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 730 days by default', async () => {
     database.exec('DELETE FROM ORG_MAINTAINER_ROLES');
     database
       .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 2, 2, '2026-04-11');
     const insert = database.prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)');
-    // Ended 200 days ago: inside the past 365 days and all time, outside the past 90 days.
+    // Ended 200 days ago: inside the past 2 years and all time, outside the past 90 days.
     insert.run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', daysAgo(900), daysAgo(200));
     // Not started yet, another person's role, another account's role: never this person's pill.
     insert.run(ACCOUNT, personKey, 'member-one', 'segment-two', 'project-two', daysAgo(-10), null);
@@ -656,7 +656,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     ]);
     const roleReads = (execute.mock.calls as [string, unknown[]][]).filter(([query]) => query.includes('ORG_MAINTAINER_ROLES'));
     expect(roleReads.map(([, binds]) => binds)).toEqual([
-      [ACCOUNT, personKey, 365],
+      [ACCOUNT, personKey, 730],
       [ACCOUNT, personKey, 90],
       [ACCOUNT, personKey],
     ]);

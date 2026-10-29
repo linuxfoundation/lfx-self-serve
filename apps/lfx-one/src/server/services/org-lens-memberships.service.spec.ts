@@ -83,7 +83,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     expect(rolesQuery).toContain('COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES');
     expect(rolesQuery).toContain('IS_LF_PROJECT = TRUE');
     expect(rolesQuery).toContain('ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE())');
-    expect(rolesBinds).toEqual(['acc-1', 365]);
+    expect(rolesBinds).toEqual(['acc-1', 730]);
   });
 
   it('keeps listing the projects, with unavailable (null) roles and uncached, when the roles table is missing', async () => {
@@ -116,7 +116,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     await service.getFoundationProjects('acc-1', 'cncf');
     await service.getFoundationProjects('acc-1', 'lf-edge');
 
-    expect(cacheKeys).toEqual(['memberships-projects:v3:cncf', 'memberships-projects:v3:lf-edge']);
+    expect(cacheKeys).toEqual(['memberships-projects:v4:cncf', 'memberships-projects:v4:lf-edge']);
   });
 
   it('returns an empty envelope rather than failing when the org has no projects for the foundation', async () => {

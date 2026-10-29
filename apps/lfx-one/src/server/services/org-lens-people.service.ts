@@ -180,7 +180,7 @@ export class OrgLensPeopleService {
    * from a live warehouse view that takes seconds, so callers render activity without waiting for it. A code
    * project carries the Maintainer pill when the person holds a maintainer role on it overlapping
    * `maintainerRange` (lfx-self-serve#4482) — the page range for the All Employees row, the opener's range or the
-   * past 365 days for the drawer. When the roles table is missing no project is pilled and the detail says so with
+   * Org Lens default range (last 2 years) for the drawer. When the roles table is missing no project is pilled and the detail says so with
    * `maintainerRolesUnavailable`.
    */
   public async getEmployeeDetail(

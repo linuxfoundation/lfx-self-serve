@@ -415,11 +415,11 @@ describe('NavMenuBase — carried query params', () => {
     await router.navigateByUrl('/org/acme-inc/people?tab=training&range=30d');
     expect(linkParams()['Code Contributions']).toEqual({ range: '30d' });
 
-    await router.navigateByUrl('/org/acme-inc/people?tab=training&range=730d');
-    expect(linkParams()).toEqual({ People: { range: '730d' }, 'Code Contributions': { range: '730d' } });
+    await router.navigateByUrl('/org/acme-inc/people?tab=training&range=365d');
+    expect(linkParams()).toEqual({ People: { range: '365d' }, 'Code Contributions': { range: '365d' } });
   });
 
-  it.each(['12mo', '2y', '365d'])('carries no ?range=%s, which is legacy, unknown or the default', async (range) => {
+  it.each(['12mo', '2y', '730d'])('carries no ?range=%s, which is legacy, unknown or the default', async (range) => {
     await router.navigateByUrl(`/org/acme-inc/contributions?range=${range}`);
 
     expect(linkParams()).toEqual({ People: undefined, 'Code Contributions': undefined });
