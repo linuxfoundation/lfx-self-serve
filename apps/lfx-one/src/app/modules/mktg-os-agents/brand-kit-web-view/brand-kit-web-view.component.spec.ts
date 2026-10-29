@@ -7,7 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ProjectContextService } from '@services/project-context.service';
-import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
@@ -31,6 +31,7 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
  * never on the server.
  */
 describe('BrandKitWebViewComponent', () => {
+  const activeContext = signal({ slug: 'synthetic', name: 'Synthetic project' });
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
@@ -46,6 +47,7 @@ describe('BrandKitWebViewComponent', () => {
   };
 
   const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision(), url = '/'): Promise<void> => {
+    activeContext.set({ slug: 'synthetic', name: 'Synthetic project' });
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -55,7 +57,7 @@ describe('BrandKitWebViewComponent', () => {
       imports: [BrandKitWebViewComponent],
       providers: [
         provideRouter([{ path: '**', children: [] }]),
-        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+        { provide: ProjectContextService, useValue: { activeContext } },
         provideNoopAnimations(),
         provideMktgCommentsStub({
           loaded: signal(true),
@@ -251,9 +253,23 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
+    it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
+      const wrapper = query('brand-kit-web-view-print');
+      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
+      expect(head()).toContain('Synthetic project Brand kit');
+      expect(head()).not.toContain('Project One');
+      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
+      await fixture.whenStable();
+      expect(head()).toContain('Updated project context Brand kit');
+      expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
+    });
+
     it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
+      expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
+      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
       expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
       expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
       expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);

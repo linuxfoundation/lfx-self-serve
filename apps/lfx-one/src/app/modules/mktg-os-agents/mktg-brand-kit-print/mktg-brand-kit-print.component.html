@@ -29,7 +29,7 @@
     </thead>
     <tbody>
       <tr class="kit-title-row">
-        <td><lfx-mktg-print-chapter-header [number]="number() + '.' + index" [title]="title" [accent]="brand().accent" /></td>
+        <td><lfx-mktg-print-chapter-header [number]="number() ? number() + '.' + index : index" [title]="title" [accent]="brand().accent" /></td>
       </tr>
       <ng-container *ngTemplateOutlet="body" />
     </tbody>

@@ -20,6 +20,28 @@
 }
 
 @media print {
+  /* Match the standalone framework reset: neither shell containers nor filters
+     may anchor the native document to the app's narrow content column. */
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
+    :has(.lfx-brand-kit-portrait) {
+      position: static !important;
+      transform: none !important;
+      filter: none !important;
+      backdrop-filter: none !important;
+      perspective: none !important;
+      contain: none !important;
+      container-type: normal !important;
+      will-change: auto !important;
+    }
+
+    .lfx-brand-kit-portrait {
+      position: absolute !important;
+      inset: 0 0 auto !important;
+      width: 100% !important;
+      margin: 0 !important;
+    }
+  }
+
   html:has(body.lfx-print-family),
   html:has(body.lfx-print-brand-kit .lfx-brand-kit-portrait) {
     background: white !important;

@@ -23,8 +23,11 @@ export class MktgBrandKitPrintComponent {
 
   public readonly view = input.required<BrandKitBookView>();
   public readonly brand = input.required<MktgPrintBrand>();
-  public readonly number = input('02');
-  protected readonly head = computed(() => `${this.number()} Brand kit · ${this.view().projectName}`);
+  /** Project context, never the name embedded in kit content. */
+  public readonly projectName = input.required<string>();
+  /** Only the family exporter supplies the document prefix. */
+  public readonly number = input('');
+  protected readonly head = computed(() => `${this.projectName()} Brand kit`);
   protected readonly specimens = this.initSpecimens();
   protected readonly colourways = this.initColourways();
   protected readonly usageRows = this.initUsageRows();

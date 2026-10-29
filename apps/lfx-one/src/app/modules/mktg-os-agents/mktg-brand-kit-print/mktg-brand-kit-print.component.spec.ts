@@ -17,6 +17,7 @@ async function setup() {
   const fixture = TestBed.createComponent(MktgBrandKitPrintComponent);
   fixture.componentRef.setInput('view', view);
   fixture.componentRef.setInput('brand', brand);
+  fixture.componentRef.setInput('projectName', 'Synthetic project');
   await fixture.whenStable();
   const root: HTMLElement = fixture.nativeElement;
   return { kit, view, brand, fixture, root, print };
@@ -25,16 +26,20 @@ async function setup() {
 it('prints five native portrait chapters with branded heads, real SVG logo assets and no landscape plates', async () => {
   const { root, view, print } = await setup();
   expect(Array.from(root.querySelectorAll('h2')).map((heading) => heading.textContent?.trim())).toEqual([
-    '02.1 Logo system',
-    '02.2 Colour',
-    '02.3 Typography',
-    '02.4 Visual',
-    '02.5 Voice in brief',
+    '1 Logo system',
+    '2 Colour',
+    '3 Typography',
+    '4 Visual',
+    '5 Voice in brief',
   ]);
   expect(root.querySelectorAll('.kit-chapter')).toHaveLength(5);
   const heads = root.querySelectorAll('[data-testid="mktg-print-running-head"]');
   expect(heads).toHaveLength(5);
-  heads.forEach((head) => expect(head.textContent).toContain('02 Brand kit · Project One'));
+  heads.forEach((head) => {
+    expect(head.textContent).toContain('Synthetic project Brand kit');
+    expect(head.textContent).not.toContain('Project One');
+    expect(head.textContent).not.toContain('02');
+  });
   expect(root.textContent).not.toContain('V3.0');
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
@@ -108,8 +113,12 @@ it('renders two-up usage samples with ground, logo and the current server-suppli
   expect(frames[2].style.backgroundColor).toBe('white');
   fixture.componentRef.setInput('view', { ...view, projectName: 'Updated synthetic project', voice: { ...view.voice, line: 'Updated approved line' } });
   await fixture.whenStable();
-  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated synthetic project');
+  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Synthetic project Brand kit');
+  expect(root.querySelector('.kit-chapter > thead')?.textContent).not.toContain('Updated synthetic project');
   expect(root.querySelector('.kit-usage-frame')?.textContent).toContain('Updated approved line');
+  fixture.componentRef.setInput('projectName', 'Updated project context');
+  await fixture.whenStable();
+  expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated project context Brand kit');
 });
 
 it('keeps captioned pairs indivisible with explicit frame heights and the intro inside the first pair', async () => {

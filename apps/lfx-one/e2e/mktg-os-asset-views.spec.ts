@@ -220,6 +220,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paperViewport.width });
     if (key === 'brand-kit') {
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
+      await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');

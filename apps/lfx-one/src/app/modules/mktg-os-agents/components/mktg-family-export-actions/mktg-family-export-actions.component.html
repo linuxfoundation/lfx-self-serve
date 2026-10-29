@@ -141,7 +141,7 @@
       <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" />
     }
     @if (document.kit; as kit) {
-      <lfx-mktg-brand-kit-print [view]="kit" [brand]="document.brand" [number]="kitNumber" />
+      <lfx-mktg-brand-kit-print [view]="kit" [brand]="document.brand" [projectName]="document.projectName" [number]="kitNumber" />
     }
     @if (document.boilerplates; as boilerplates) {
       <lfx-mktg-boilerplates-print [view]="boilerplates" [number]="boilerplatesNumber" [projectName]="document.projectName" />

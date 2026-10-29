@@ -25,6 +25,7 @@ import {
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
   BRAND_KIT_WEB_VIEW_TABS,
+  FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
@@ -39,6 +40,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { ProjectContextService } from '@services/project-context.service';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
@@ -79,6 +81,7 @@ export class BrandKitWebViewComponent {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly printService = inject(MktgPrintService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -124,6 +127,7 @@ export class BrandKitWebViewComponent {
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
   protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
@@ -155,7 +159,7 @@ export class BrandKitWebViewComponent {
     const view = this.printView();
     return view?.fontUrl ? { family: view.type.family.trim(), weights: view.weights.map((entry) => entry.weight) } : null;
   });
-  protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
+  protected readonly printOnlyClass = `${BRAND_KIT_PRINT_ONLY_CLASS} ${FOUNDATION_MESSAGE_PRINT_ONLY_CLASS}`;
 
   // Literal class names so Tailwind's content scan generates them (the framework view's tab classes).
   private readonly tabClasses: Record<'selected' | 'idle', string> = {

@@ -806,7 +806,7 @@
   <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
     </div>
   }
 </section>
