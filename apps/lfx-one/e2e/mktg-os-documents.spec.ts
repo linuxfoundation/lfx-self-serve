@@ -292,17 +292,28 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
   });
 
-  test('nine revisions keep older open/current rows visible and expand in place', async ({ page }) => {
+  test('a history within four rows has no expansion control', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
+    await expect(page.getByTestId('mktg-document-view-show-all-revisions')).toHaveCount(0);
+  });
+
+  test('nine revisions keep older open/current within four rows and expand in place without moving the card top', async ({ page }) => {
     await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 2 });
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 2).revisions[8].id}`);
     const list = page.getByTestId('mktg-document-view-revisions');
-    await expect(list.locator('ol > li')).toHaveCount(7);
+    await expect(list.locator('ol > li')).toHaveCount(4);
     await expect(page.getByTestId('mktg-document-view-revision-1')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('Current');
     await expect(page.getByTestId('mktg-document-view-revision-3')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-show-all-revisions')).toHaveText('Show all 9 ▾');
-    await page.getByTestId('mktg-document-view-show-all-revisions').click();
+    const disclosure = list.getByRole('button', { name: 'Show all 9 ▾', exact: true });
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    const top = await list.evaluate((card) => card.getBoundingClientRect().top + window.scrollY);
+    await disclosure.click();
     await expect(list.locator('ol > li')).toHaveCount(9);
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(() => list.evaluate((card) => card.getBoundingClientRect().top + window.scrollY)).toBeCloseTo(top, 0);
     await page.getByTestId('mktg-document-view-open-3').click();
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
     await expect(list.locator('ol > li')).toHaveCount(9);

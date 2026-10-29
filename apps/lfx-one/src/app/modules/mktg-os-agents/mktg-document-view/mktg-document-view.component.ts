@@ -293,6 +293,7 @@ export class MktgDocumentViewComponent {
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
+  protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
@@ -1388,7 +1389,11 @@ export class MktgDocumentViewComponent {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
+      // Current/open rows use slots within the cap, never extra rows beyond it.
+      const pinned = new Set(rows.filter((revision) => revision.latest || revision.id === openId).map((revision) => revision.id));
+      const newest = rows.filter((revision) => !pinned.has(revision.id)).slice(0, MKTG_DOCUMENT_REVISION_PREVIEW_COUNT - pinned.size);
+      const visible = new Set([...pinned, ...newest.map((revision) => revision.id)]);
+      return rows.filter((revision) => visible.has(revision.id));
     });
   }
 

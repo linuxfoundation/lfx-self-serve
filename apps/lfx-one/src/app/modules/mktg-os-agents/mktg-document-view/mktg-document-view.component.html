@@ -669,7 +669,7 @@
                 </li>
               }
             </ol>
-            @if (showAllRevisions() || visibleRevisionRows().length < revisionRows().length) {
+            @if (revisionRows().length > revisionPreviewCount) {
               <button
                 type="button"
                 class="self-start text-sm text-blue-700 underline hover:text-blue-900"

@@ -3068,29 +3068,62 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-history-bar')).toBeNull();
   });
 
-  it('shows the newest five and pins older open/current revisions, with an in-place Show all 9 disclosure', async () => {
+  it('caps history at four including older open/current revisions, with an accessible in-place Show all 9 disclosure', async () => {
     const history = mockNineRevisionHistory();
     await render(`/documents/brand-kit/living?revision=${history.revisions[8].id}`);
-    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
-    for (const number of [9, 8, 7, 6, 5, 2, 1]) expect(query(`mktg-document-view-revision-${number}`)).not.toBeNull();
+    const card = query('mktg-document-view-revisions');
+    const title = query('mktg-document-view-title');
+    expect(card?.querySelectorAll('ol > li')).toHaveLength(4);
+    for (const number of [9, 8, 2, 1]) expect(query(`mktg-document-view-revision-${number}`)).not.toBeNull();
+    expect(query('mktg-document-view-revision-5')).toBeNull();
+    expect(query('mktg-document-view-revision-6')).toBeNull();
+    expect(query('mktg-document-view-revision-7')).toBeNull();
+    for (const row of card?.querySelectorAll('ol > li') ?? []) expect(row.classList.contains('min-h-16')).toBe(true);
+    expect(query('mktg-document-view-show-all-revisions')?.tagName).toBe('BUTTON');
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('type')).toBe('button');
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('false');
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-controls')).toBe('mktg-document-view-revision-list');
     expect(query('mktg-document-view-revision-3')).toBeNull();
     expect(query('mktg-document-view-revision-4')).toBeNull();
     expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v2 is current');
     expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 9 ▾');
     query('mktg-document-view-show-all-revisions')?.click();
     await settle();
-    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
+    expect(query('mktg-document-view-revisions')).toBe(card);
+    expect(query('mktg-document-view-title')).toBe(title);
+    expect(card?.querySelectorAll('ol > li')).toHaveLength(9);
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('true');
     expect(store.getRevision).toHaveBeenCalledTimes(1);
     query('mktg-document-view-show-all-revisions')?.click();
     await settle();
-    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('shows only five rows when both the open and current revisions are among the newest five', async () => {
+  it.each([1, 2, 3, 4])('shows all %i revisions without a disclosure when history fits the cap', async (count) => {
+    const revisions = Array.from({ length: count }, (_, index) => revision(count - index, { latest: index === 0 }));
+    store.getRevision.mockReturnValue(of({ ...detail, revisions, revision: revisions[0], markdown: '# Selected revision' }));
+    await render(`/documents/brand-kit/living?revision=${revisions[0].id}`);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(count);
+    expect(query('mktg-document-view-show-all-revisions')).toBeNull();
+  });
+
+  it('shows four of five revisions until the user expands in place', async () => {
+    const revisions = Array.from({ length: 5 }, (_, index) => revision(5 - index, { latest: index === 0 }));
+    store.getRevision.mockReturnValue(of({ ...detail, revisions, revision: revisions[0], markdown: '# Selected revision' }));
+    await render(`/documents/brand-kit/living?revision=${revisions[0].id}`);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
+    expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 5');
+    query('mktg-document-view-show-all-revisions')?.click();
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(5);
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows only four rows when both the open and current revisions are among the newest four', async () => {
     const history = mockNineRevisionHistory(9);
     await render(`/documents/brand-kit/living?revision=${history.revisions[2].id}`);
-    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(5);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
     expect(query('mktg-document-view-revision-1')).toBeNull();
     expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v9 is current');
   });
@@ -3105,7 +3138,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
     activeContext.set({ ...PROJECT, uid: 'proj-2', name: 'OtherOrbit' });
     await settle();
-    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('false');
   });
 
