@@ -18,6 +18,20 @@ export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 /** A human selection moved since the writer's read; refresh metadata, never replay the write. */
 export const MKTG_APPROVED_CURRENT_CHANGED = 'MKTG_APPROVED_CURRENT_CHANGED';
 
+/** Product-approved selection-conflict copy; tokens are interpolated as text, never HTML. */
+export const MKTG_DOCUMENT_CURRENT_CONFLICT_COPY = {
+  approve: {
+    known: '<Name> approved v<N> a moment ago. Check v<N> before you approve a different version.',
+    unknown: 'Someone just approved a newer version. Check it before you approve this one.',
+  },
+  restore: {
+    known: '<Name> made v<N> the current version a moment ago. Check it before you switch.',
+    unknown: 'Someone just changed the current version. Check it before you switch.',
+  },
+  openKnown: 'Open v<N>',
+  openUnknown: 'Open the latest version',
+} as const;
+
 /** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
 export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
 /** Only automatic timer reads skip older entries; not a discovery or retention limit. */

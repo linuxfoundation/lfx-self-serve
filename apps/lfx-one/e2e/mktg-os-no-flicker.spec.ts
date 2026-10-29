@@ -485,9 +485,11 @@ test('a stale approval after another context wins refreshes metadata and explain
     await expect(other.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
     await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
     await page.getByRole('button', { name: 'Approve anyway', exact: true }).click();
-    await expect(page.getByTestId('mktg-document-view-current-conflict')).toHaveText(
-      'Synthetic reviewer approved v4 at 12:50 — review it before approving another version'
+    await expect(page.getByTestId('mktg-document-view-current-conflict-message')).toHaveText(
+      'Synthetic reviewer approved v4 a moment ago. Check v4 before you approve a different version.'
     );
+    await expect(page.getByTestId('mktg-document-view-current-conflict-open')).toHaveText('Open v4');
+    await expect(page.getByTestId('mktg-document-view-current-conflict-open')).toHaveAttribute('href', new RegExp(`revision=${newer.id}`));
     await expect(page.getByTestId('mktg-document-view-current-4')).toBeVisible();
     await expect(content).toHaveAttribute('data-cas-identity', 'kept');
     await expect(content).toHaveText(before ?? '');

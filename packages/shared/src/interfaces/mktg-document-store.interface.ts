@@ -332,6 +332,16 @@ export interface MktgDocumentCurrentConflictResponse {
   } | null;
 }
 
+/** The attempted selection action; a conflict never automatically repeats it. */
+export type MktgDocumentCurrentConflictAction = 'approve' | 'restore';
+
+/** In-place conflict presentation; an absent selection has no invented revision link. */
+export interface MktgDocumentCurrentConflictNotice {
+  message: string;
+  buttonLabel: string;
+  revisionId: string | null;
+}
+
 /** Response of Make current (the compatibility route remains `/restore`): no new revision. */
 export interface MktgRestoreRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;

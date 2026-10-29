@@ -39,6 +39,7 @@ import {
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
   MKTG_APPROVED_CURRENT_CHANGED,
+  MKTG_DOCUMENT_CURRENT_CONFLICT_COPY,
   MKTG_DOCUMENT_MAKE_CURRENT_HINT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
@@ -64,6 +65,8 @@ import {
   MktgApprovedRevisionState,
   MktgDocumentDetailResponse,
   MktgDocumentCurrentConflictResponse,
+  MktgDocumentCurrentConflictAction,
+  MktgDocumentCurrentConflictNotice,
   MktgDocumentReadCycle,
   MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
@@ -246,7 +249,7 @@ export class MktgDocumentViewComponent {
   private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
-  protected readonly currentConflict = signal('');
+  protected readonly currentConflict = signal<MktgDocumentCurrentConflictNotice | null>(null);
   protected readonly approvalAnnouncement = signal('');
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
@@ -585,7 +588,7 @@ export class MktgDocumentViewComponent {
             this.errorText.set('');
             this.notice.set('');
             this.runHistory.set([]);
-            this.currentConflict.set('');
+            this.currentConflict.set(null);
             this.historyError.set('');
             this.runFailed.set(false);
             this.failureDetails.set('');
@@ -792,7 +795,7 @@ export class MktgDocumentViewComponent {
                     unavailableCount = 0;
                     this.refreshWarning.set('');
                   }
-                  this.currentConflict.set('');
+                  this.currentConflict.set(null);
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
@@ -829,7 +832,7 @@ export class MktgDocumentViewComponent {
                         cycle.detail.documentId === request.documentId
                     ),
                     tap((cycle) => {
-                      this.currentConflict.set('');
+                      this.currentConflict.set(null);
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
                         closedAttempt$.next();
@@ -1165,14 +1168,14 @@ export class MktgDocumentViewComponent {
         next: (approved) => {
           this.dependencyService.notifyDocumentsChanged(project);
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
-            this.currentConflict.set('');
+            this.currentConflict.set(null);
             this.view.set(approved);
             this.approvalAnnouncement.set(`Revision ${view.revision.number} is approved and current.`);
           }
         },
         error: (error: unknown) => {
           if (epoch === this.restoreEpoch && this.sameView(project, view, selection)) {
-            if (this.refreshCurrentConflict(error, view, selection)) return;
+            if (this.refreshCurrentConflict(error, view, selection, 'approve')) return;
             const message = extractErrorMessage(error, 'The approval could not be confirmed. Reload to see the current state before trying again.');
             this.approvalError.set(message);
             this.approvalAnnouncement.set(message);
@@ -1289,12 +1292,12 @@ export class MktgDocumentViewComponent {
             approval,
             revision: { ...view.revision, latest: view.revision.id === restored.revision.id, approval },
           });
-          this.currentConflict.set('');
+          this.currentConflict.set(null);
           this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
         },
         error: (error: HttpErrorResponse) => {
           if (epoch !== this.restoreEpoch || this.userService.user()?.sub !== subject || !this.sameView(project, view, selection)) return;
-          if (this.refreshCurrentConflict(error, view, selection)) return;
+          if (this.refreshCurrentConflict(error, view, selection, 'restore')) return;
           this.errorText.set(this.writeErrorText(error));
         },
       });
@@ -1499,22 +1502,15 @@ export class MktgDocumentViewComponent {
   }
 
   /** A rejected selection is never automatically replayed. Refresh metadata, not the viewed bytes. */
-  private refreshCurrentConflict(error: unknown, viewed: MktgRevisionResponse, selection: string): boolean {
+  private refreshCurrentConflict(error: unknown, viewed: MktgRevisionResponse, selection: string, action: MktgDocumentCurrentConflictAction): boolean {
     if (!(error instanceof HttpErrorResponse) || error.status !== 409 || error.error?.code !== MKTG_APPROVED_CURRENT_CHANGED) return false;
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
     const body = error.error as MktgDocumentCurrentConflictResponse;
-    const current = body.current;
-    let message = extractErrorMessage(error, 'The current revision changed. Review it before changing the current selection.');
-    if (current && typeof current.number === 'number' && (typeof current.approvedBy === 'string' || current.approvedBy === null)) {
-      const author = describeMktgRevisionAuthor({ name: current.approvedBy });
-      const time =
-        typeof current.approvedAt === 'string' && !Number.isNaN(Date.parse(current.approvedAt)) ? formatDate(current.approvedAt, 'HH:mm', 'en-US') : '—';
-      message = `${author} approved v${current.number} at ${time} — review it before approving another version`;
-    }
+    const notice = this.describeCurrentConflict(body.current, action);
     this.approvalError.set('');
     this.approvalAnnouncement.set('');
-    this.currentConflict.set(message);
+    this.currentConflict.set(notice);
     this.documentStore
       .getDocument(viewed.project, viewed.type.agentKey, viewed.documentId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -1534,12 +1530,28 @@ export class MktgDocumentViewComponent {
             revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
           });
           this.runDetail.set(detail);
-          this.currentConflict.set(message);
+          const selected = detail.current?.revisionId ?? detail.revisions.find((entry) => entry.latest)?.id ?? null;
+          this.currentConflict.set({ ...notice, revisionId: notice.revisionId ?? selected });
         },
         // Keep the conflict and existing content on a failed metadata refresh; never ask for a page reload.
         error: () => undefined,
       });
     return true;
+  }
+
+  private describeCurrentConflict(
+    current: MktgDocumentCurrentConflictResponse['current'],
+    action: MktgDocumentCurrentConflictAction
+  ): MktgDocumentCurrentConflictNotice {
+    const copy = MKTG_DOCUMENT_CURRENT_CONFLICT_COPY[action];
+    const name = typeof current?.approvedBy === 'string' ? current.approvedBy.trim() : '';
+    const known = !!name && typeof current?.number === 'number' && Number.isInteger(current.number) && current.number > 0;
+    const number = String(current?.number ?? '');
+    return {
+      message: known ? copy.known.replaceAll('<Name>', name).replaceAll('<N>', number) : copy.unknown,
+      buttonLabel: known ? MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openKnown.replaceAll('<N>', number) : MKTG_DOCUMENT_CURRENT_CONFLICT_COPY.openUnknown,
+      revisionId: typeof current?.revisionId === 'string' && current.revisionId ? current.revisionId : null,
+    };
   }
 
   private writeErrorText(error: HttpErrorResponse): string {
