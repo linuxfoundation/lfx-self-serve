@@ -75,6 +75,7 @@ const aeoGeoController = new AeoGeoController();
 router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
 router.post(
   '/member-360/tracker',
+  blockDuringImpersonation,
   raw({ type: 'application/octet-stream', limit: MEMBER_360_MAX_BYTES }),
   (err: unknown, req: Request, _res: Response, next: NextFunction) => {
     if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.too.large') {

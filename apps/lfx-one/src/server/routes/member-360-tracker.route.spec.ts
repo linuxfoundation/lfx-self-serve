@@ -5,7 +5,13 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const parseTracker = vi.hoisted(() => vi.fn((_req: express.Request, res: express.Response) => res.json({ parsed: true })));
+const objects = vi.hoisted(() => new Map<string, string>());
+const parseTracker = vi.hoisted(() =>
+  vi.fn((_req: express.Request, res: express.Response) => {
+    objects.set('private-tracker', 'synthetic parsed rows');
+    res.json({ parsed: true });
+  })
+);
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/foundation-message.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
@@ -23,16 +29,20 @@ vi.mock('../controllers/member-360-workbook.controller', () => ({
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn() } }));
 
 import { MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
-import { MicroserviceError } from '../errors';
+import { AuthorizationError, MicroserviceError } from '../errors';
 import router from './mktg-agents.route';
 
 let server: Server;
 let url: string;
 beforeAll(async () => {
   const app = express();
+  app.use((req, _res, next) => {
+    req.impersonationActive = req.headers['x-test-impersonation'] === '1';
+    next();
+  });
   app.use(router);
   app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (!(error instanceof MicroserviceError)) return next(error);
+    if (!(error instanceof MicroserviceError) && !(error instanceof AuthorizationError)) return next(error);
     res.status(error.statusCode).json({ code: error.code });
   });
   await new Promise<void>((resolve) => {
@@ -46,6 +56,16 @@ afterAll(async () => {
 });
 
 describe('Member 360 tracker raw parser', () => {
+  it('rejects an impersonated private upload before parsing or writing an object', async () => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-test-impersonation': '1' },
+      body: Buffer.from('company\nSynthetic Member'),
+    });
+    expect(response.status).toBe(403);
+    expect(parseTracker).not.toHaveBeenCalled();
+    expect(objects.size).toBe(0);
+  });
   it('translates an oversized raw upload into structured 413 before the controller', async () => {
     const response = await fetch(url, {
       method: 'POST',
