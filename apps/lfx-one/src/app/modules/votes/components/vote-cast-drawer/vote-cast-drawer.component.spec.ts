@@ -645,6 +645,22 @@ describe('VoteCastDrawerComponent — read-only ballot review (#4331)', () => {
     expect(submitButton()).toBeNull();
   });
 
+  it('shows the recorded abstention, not "no questions", when the vote metadata has no questions', async () => {
+    await openReview({ ...REVIEW_VOTE, poll_questions: undefined }, vi.fn().mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [] })));
+
+    expect(el('vote-cast-drawer-no-questions')).toBeNull();
+    expect((document.getElementById('vote-cast-abstain') as HTMLInputElement).checked).toBe(true);
+    expect(fixture.componentInstance.abstainControl.disabled).toBe(true);
+  });
+
+  it('shows the ballot loading state, not "no questions", while a review without question metadata loads', async () => {
+    const pending = new Subject<MyVoteBallot | null>();
+    await openReview({ ...REVIEW_VOTE, poll_questions: undefined }, vi.fn().mockReturnValue(pending.asObservable()));
+
+    expect(el('vote-cast-drawer-no-questions')).toBeNull();
+    expect(el('vote-cast-ballot-loading')).not.toBeNull();
+  });
+
   it('still shows a recorded abstention if abstaining is no longer offered', async () => {
     await openReview({ ...REVIEW_VOTE, allow_abstain: false }, vi.fn().mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [] })));
     expect((document.getElementById('vote-cast-abstain') as HTMLInputElement).checked).toBe(true);

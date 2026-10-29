@@ -78,7 +78,7 @@
             </div>
           }
         </div>
-      } @else if (questions().length === 0) {
+      } @else if (questions().length === 0 && !readOnly()) {
         <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="vote-cast-drawer-no-questions">
           <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
         </div>

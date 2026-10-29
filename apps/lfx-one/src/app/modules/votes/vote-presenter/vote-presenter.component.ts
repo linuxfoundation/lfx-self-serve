@@ -13,6 +13,8 @@ import {
   VOTE_PRESENTER_COPY_CONFIRMATION_MS,
   VOTE_PRESENTER_CLOCK_TICK_MS,
   VOTE_PRESENTER_POLL_INTERVAL_MS,
+  VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS,
+  VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS,
 } from '@lfx-one/shared/constants';
 import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
@@ -38,7 +40,7 @@ import {
 import { VoteService } from '@services/vote.service';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap, timer } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, expand, filter, map, Observable, of, switchMap, tap, timer } from 'rxjs';
 
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteSendBallotsComponent } from '../components/vote-send-ballots/vote-send-ballots.component';
@@ -148,8 +150,10 @@ export class VotePresenterComponent {
       })),
     }))
   );
-  /** True once `/results` has arrived; until then (or after a failure) no result-derived number is shown, since the stats default to zeros. */
-  protected readonly resultsReady = computed(() => this.results() !== null);
+  /** The BFF holds an ended pseudo-anonymous vote's results until they are final; the payload then has no tallies or abstention count. */
+  protected readonly resultsHeld = computed(() => this.results()?.results_held === true);
+  /** True once final `/results` has arrived; until then (or after a failure, or while held) no result-derived number is shown, since the stats default to zeros. */
+  protected readonly resultsReady = computed(() => this.results() !== null && !this.resultsHeld());
   /** Clock time the vote closed, formatted here because a pipe inside `??` would bind to the right operand only. */
   protected readonly closedClock = computed(() => {
     const vote = this.vote();
@@ -240,7 +244,11 @@ export class VotePresenterComponent {
       });
   }
 
-  /** `/results` is requested exactly once per ended period and never while the vote is open (the voting service does not gate it). */
+  /**
+   * `/results` is requested once per ended period and never while the vote is open (the voting service does not gate it).
+   * A held payload is re-requested every {@link VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS} for at most
+   * {@link VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS} requests, so the released results replace it without a reload.
+   */
   private initResults(): Signal<VoteResultsResponse | null> {
     return toSignal(
       toObservable(this.endedVoteUid).pipe(
@@ -251,18 +259,28 @@ export class VotePresenterComponent {
         }),
         switchMap((uid) =>
           uid
-            ? this.voteService.getVoteResults(uid).pipe(
-                catchError((error) => {
-                  console.error('Failed to load vote results for the presenter', error);
-                  this.resultsError.set(true);
-                  return of(null);
-                }),
+            ? this.loadResults(uid).pipe(
+                expand((results, index) =>
+                  results?.results_held === true && index + 1 < VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS
+                    ? timer(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS).pipe(switchMap(() => this.loadResults(uid)))
+                    : EMPTY
+                ),
                 tap(() => this.resultsLoading.set(false))
               )
             : of(null)
         )
       ),
       { initialValue: null }
+    );
+  }
+
+  private loadResults(uid: string): Observable<VoteResultsResponse | null> {
+    return this.voteService.getVoteResults(uid).pipe(
+      catchError((error) => {
+        console.error('Failed to load vote results for the presenter', error);
+        this.resultsError.set(true);
+        return of(null);
+      })
     );
   }
 

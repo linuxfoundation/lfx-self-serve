@@ -152,7 +152,7 @@ describe('resolveVoteCanManage', () => {
     const fetchCommittee = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     try {
       await expect(firstValueFrom(resolveVoteCanManage(vote, getProjectStrict, fetchCommittee))).resolves.toBe(false);
-      expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote', error);
+      expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote', { status: 500, message: error.message });
     } finally {
       logError.mockRestore();
     }

@@ -71,6 +71,17 @@ describe('VoteDetailHeaderComponent', () => {
   const text = (id: string): string => (fixture.nativeElement.querySelector(`[data-testid="${id}"]`)?.textContent ?? '').trim();
   const exists = (id: string): boolean => !!fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
+  it('lets a long unbroken title shrink and wrap inside its flex row', () => {
+    const name = 'a'.repeat(200);
+    render({ vote: makeVote({ name }) });
+
+    const title: HTMLElement = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-title"]');
+    expect(title.textContent?.trim()).toBe(name);
+    expect(title.classList).toContain('min-w-0');
+    expect(title.classList).toContain('max-w-full');
+    expect(title.classList).toContain('break-words');
+  });
+
   it('renders the title, status, group, method, privacy, close date and invited voters', () => {
     render();
 
@@ -185,10 +196,10 @@ describe('VoteDetailHeaderComponent', () => {
     });
 
     it.each([
-      [true, true, true],
-      [true, false, false],
-      [false, false, false],
-    ])('canPresent=%s, canSendBallots=%s → Present and Copy slide %s, Send ballots %s', (canPresent, canSendBallots) => {
+      [true, true],
+      [true, false],
+      [false, false],
+    ])('canPresent=%s, canSendBallots=%s → Present/Copy slide follow canPresent, Send ballots follows canSendBallots', (canPresent, canSendBallots) => {
       render({ audience: 'creator', canPresent, canSendBallots });
 
       expect(exists('vote-detail-header-present')).toBe(canPresent);

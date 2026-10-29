@@ -15,7 +15,7 @@
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
         <!-- Exact 20px title matches the committee detail header (styling.md accepts an arbitrary px size for a design value). -->
-        <h1 class="font-display font-light text-[20px] break-words" data-testid="vote-detail-header-title">{{ vote().name }}</h1>
+        <h1 class="font-display font-light text-[20px] break-words min-w-0 max-w-full" data-testid="vote-detail-header-title">{{ vote().name }}</h1>
         <lfx-tag [value]="vote().status | pollStatusLabel" [severity]="vote().status | pollStatusSeverity" data-testid="vote-detail-header-status" />
         @if (!limited()) {
           <lfx-tag

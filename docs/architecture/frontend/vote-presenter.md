@@ -35,4 +35,4 @@ Link first: the large vote link and a Copy link button (Clipboard API, inline co
 
 ## Entry points
 
-The votes-table row menu (writers of an open or ended vote) and the creator results drawer open the presenter in a new tab. The detail page from #4149 is not merged, so it has no entry point yet.
+The votes-table row menu and the vote detail page header (**Present**) open the presenter in a new tab. The header shows the action to viewers with project or committee write access on an open or ended vote; the route's `votePresenterGuard` remains the authoritative `vote#writer` check, so the header's project/committee check only decides whether the action is shown.

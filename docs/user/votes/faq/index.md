@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 ## Can I change my vote after submitting?
 
-No. A submitted ballot is final. From **Votes**, select **Review** on an active vote you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. There is no submit or change action. The **Your ballot** section on the vote's page also shows what is recorded.
+Not from the signed-in app: ballots are read-only there. (While a vote is active, your personalized ballot link, if you received one, still lets you update your ballot.) From **Votes**, select **Review** on an active vote you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. The signed-in drawer has no submit or change action. The **Your ballot** section on the vote's page also shows what is recorded.
 
 ## What does Abstain do?
 

@@ -109,7 +109,7 @@ export function resolveVoteCanManage(
     ? getProjectStrict(projectSlugOrUid).pipe(
         map((project) => project.writer === true),
         catchError((error) => {
-          console.error('Failed to check project write access for vote', error);
+          console.error('Failed to check project write access for vote', { status: error?.status, message: error?.message });
           return of(false);
         })
       )

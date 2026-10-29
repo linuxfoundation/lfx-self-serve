@@ -5,6 +5,7 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS, VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
@@ -266,6 +267,37 @@ describe('VotePresenterComponent', () => {
     expect(has('vote-presenter-turnout')).toBe(false);
     expect(has('vote-presenter-turnout-loading')).toBe(false);
     expect(has('vote-presenter-results-link')).toBe(true);
+  });
+
+  describe('held results on an ended pseudo-anonymous vote', () => {
+    const held = (): VoteResultsResponse =>
+      ({ num_recipients: 10, num_votes_cast: 0, poll_results: [], comment_results: [], results_held: true }) as unknown as VoteResultsResponse;
+
+    it('shows the finalizing state, not blank tallies or a zero abstain row, then the released results', async () => {
+      getVoteResults.mockReturnValueOnce(of(held())).mockReturnValue(of(results()));
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED, allow_abstain: true })));
+      await mount();
+      expect(has('vote-presenter-results-held')).toBe(true);
+      expect(has('vote-presenter-results')).toBe(false);
+      expect(has('vote-presenter-abstain')).toBe(false);
+      expect(has('vote-presenter-turnout')).toBe(false);
+
+      await tick(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS);
+      expect(getVoteResults).toHaveBeenCalledTimes(2);
+      expect(has('vote-presenter-results-held')).toBe(false);
+      expect(has('vote-presenter-results')).toBe(true);
+      expect(text('vote-presenter-turnout')).toContain('of 10 cast');
+    });
+
+    it('stops re-requesting after the bounded number of attempts and keeps the finalizing state', async () => {
+      getVoteResults.mockReturnValue(of(held()));
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+      await mount();
+      await tick(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS * (VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS + 3));
+      expect(getVoteResults).toHaveBeenCalledTimes(VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS);
+      expect(has('vote-presenter-results-held')).toBe(true);
+      expect(has('vote-presenter-results')).toBe(false);
+    });
   });
 
   it('formats the closed time as a clock time, never the raw timestamp', async () => {

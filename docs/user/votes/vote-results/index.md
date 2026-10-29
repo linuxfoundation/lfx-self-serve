@@ -23,11 +23,11 @@ The page header shows the vote's title, status, whether ballots are named or pse
 The page opens on the **Overview** tab and has these tabs:
 
 - **Overview** shows the vote's description, a short results summary with a **View full results** link, and recent comments.
-- **Results** shows **Live Results** while the vote is active and **Final Results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
+- **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
 - **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment.
 - **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted.
 
-Summary cards above the tabs show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
+Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
 
 The buttons at the top right depend on the vote's status:
 
@@ -48,13 +48,13 @@ Totals, abstentions and comments stay hidden until the vote closes, and the page
 
 Voters see only their own response while the vote is open. Totals and comments appear after it closes.
 
-| Your situation                    | What the page shows                                                                                                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| You haven't voted, vote is active | **Results available after voting closes**, a note that you haven't responded yet, and a **Cast vote** button.                                                                                                |
-| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**) and your recorded ballot. There is no way to change or resubmit.                                                   |
-| The vote has closed               | The final results for each question, abstentions, and comments without names. On a named vote, a note says **Your vote is included in these results.** If no one voted, it says **No votes were submitted.** |
-| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                        |
-| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                      |
+| Your situation                    | What the page shows                                                                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| You haven't voted, vote is active | **Results available after voting closes**, a note that you haven't responded yet, and a **Cast vote** button.                                                                                                                   |
+| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**) and your recorded ballot. The signed-in app offers no way to change it; a personalized ballot link can still update an active ballot. |
+| The vote has closed               | The final results for each question, abstentions, and comments without names. On a named vote, a note says **Your vote is included in these results.** If no one voted, it says **No votes were submitted.**                    |
+| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                           |
+| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                         |
 
 If the final results don't load, the page says **Couldn't load results. Try reloading this page.**
 

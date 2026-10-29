@@ -446,7 +446,7 @@ export class VoteDetailComponent {
               return { loading: false, notFound: false, error: false, vote };
             }),
             catchError((err) => {
-              console.error('Failed to load vote for detail page', err);
+              console.error('Failed to load vote for detail page', { status: err?.status, message: err?.message });
               // A failed in-place refresh keeps the page it already shows: the ballot was recorded, only the reload failed.
               return of(inPlace && lastLoaded ? lastLoaded : errorState);
             }),

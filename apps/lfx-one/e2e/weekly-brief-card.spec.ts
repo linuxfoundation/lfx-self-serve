@@ -725,7 +725,7 @@ test.describe('WG Weekly Brief card — Sources chips (flag ON)', () => {
     await mockCurrentBrief(page, { brief: BRIEF_WITH_SOURCES, throttle: USED_THROTTLE_AFTER_GENERATE });
 
     // Leaves mockCommitteeShell's default empty /api/votes* (list) mock in place — the vote is
-    // absent from committee-overview's votes() list (page_size=100 by updated_at), matching a
+    // absent from committee-overview's votes() list (page_size=100, newest active-first), matching a
     // weekly-brief vote ref older than that window. The page fetches it by uid itself.
     await mockVotePage(page, buildChipVote('src-vote-1', 'Q1 Budget'));
 

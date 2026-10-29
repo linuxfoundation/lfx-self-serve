@@ -649,7 +649,7 @@ export class VoteService {
       }),
       catchError((err: HttpErrorResponse) => {
         if (err?.status === 404) return of(null);
-        console.error(`Failed to load my-ballot for vote ${voteUid}:`, err);
+        console.error(`Failed to load my-ballot for vote ${voteUid}:`, { status: err?.status, message: err?.message });
         return throwError(() => err);
       })
     );

@@ -73,6 +73,11 @@
                 <p class="m-0 text-lg text-red-200" role="alert" data-testid="vote-presenter-results-error">
                   Couldn't load the final results. Exit and reopen this vote to retry.
                 </p>
+              } @else if (resultsHeld()) {
+                <!-- Held results are not final: no tallies and no abstain row until the BFF releases them. -->
+                <p class="m-0 text-lg text-gray-300" role="status" data-testid="vote-presenter-results-held">
+                  Final results are being finalized and will appear here shortly.
+                </p>
               } @else if (!resultsReady()) {
                 <!-- The final numbers arrive with /results; until then nothing derived from the zero defaults is shown. -->
                 <div class="flex flex-col gap-[18px]" aria-busy="true" data-testid="vote-presenter-results-loading">

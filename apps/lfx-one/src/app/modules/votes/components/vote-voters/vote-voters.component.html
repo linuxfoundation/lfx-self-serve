@@ -18,9 +18,9 @@
     <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600" data-testid="vote-voters-updated">
       <span>
         @if (updatedAt(); as updated) {
-          Updated {{ updated | date: 'h:mm a' }} · Submitted ballots cannot be changed.
+          Updated {{ updated | date: 'h:mm a' }} · Ballots are read-only here.
         } @else {
-          Submitted ballots cannot be changed.
+          Ballots are read-only here.
         }
       </span>
       <lfx-button

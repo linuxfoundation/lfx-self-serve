@@ -553,7 +553,7 @@ export class VoteCastDrawerComponent {
     const vote = this.vote();
     const ballot = this.myBallot();
     this.syncControls();
-    if (!this.readOnly() || !vote || !this.questions().length || !ballot || ballot.vote_uid !== vote.uid) return;
+    if (!this.readOnly() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
 
     const key = [
       vote.uid,

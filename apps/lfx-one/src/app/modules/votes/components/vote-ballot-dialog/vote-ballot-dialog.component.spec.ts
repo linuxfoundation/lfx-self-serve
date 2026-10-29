@@ -220,9 +220,7 @@ describe('VoteBallotDialogComponent', () => {
     const { fixture } = mount({ ...BASE_VOTE, status: PollStatus.ACTIVE }, [voter()]);
     current = fixture;
 
-    expect(byTestId(fixture, 'vote-ballot-dialog-active-notice')!.textContent).toContain(
-      "This is the voter's submitted ballot. Submitted ballots cannot be changed."
-    );
+    expect(byTestId(fixture, 'vote-ballot-dialog-active-notice')!.textContent).toContain("This is the voter's submitted ballot. Ballots are read-only here.");
   });
 
   it('steps through the ballots within bounds', () => {

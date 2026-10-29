@@ -65,7 +65,7 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
 5. Select **Submit Vote**.
 
-After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. There is no submit or change action: you can't change a ballot after submitting it. The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. The drawer has no submit or change action, so a ballot is read-only here (a personalized ballot link can still update an active ballot). The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
 
 ### While impersonating another user
 

@@ -37,6 +37,9 @@ export class VoteDetailFactsComponent {
   /** Capture the actual clicked element, independent of the button wrapper's DOM structure. */
   private visibilityTrigger: HTMLElement | null = null;
 
+  /** Live popover state from `onShow`/`onHide` — `overlayVisible` isn't a signal and goes stale on outside-click/Escape dismissals. */
+  protected readonly visibilityOpen: WritableSignal<boolean> = signal(false);
+
   // === Computed Signals ===
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ENDED);
   /** `creation_time` — for a draft opened later this is when it was saved, so the row reads "Created", not "Opened". */
@@ -49,8 +52,6 @@ export class VoteDetailFactsComponent {
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
   });
-  /** Live popover state from `onShow`/`onHide` — `overlayVisible` isn't a signal and goes stale on outside-click/Escape dismissals. */
-  protected readonly visibilityOpen: WritableSignal<boolean> = signal(false);
   protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
   /** The audience-specific first rule; the popover lists every rule including this one. */
   protected readonly visibilityHeadline: Signal<string> = computed(() => this.visibilityRules()[0] ?? '');

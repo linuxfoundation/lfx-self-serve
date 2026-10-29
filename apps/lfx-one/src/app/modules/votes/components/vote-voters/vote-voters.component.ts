@@ -281,7 +281,7 @@ export class VoteVotersComponent {
           return this.voteService.getVoteVoters(uid).pipe(
             tap(() => this.updatedAt.set(new Date())),
             catchError((error) => {
-              console.error('Failed to load vote voters', error);
+              console.error('Failed to load vote voters', { status: error?.status, message: error?.message });
               this.loadError.set(true);
               return of([] as VoteVoter[] | VoteParticipationVoter[]);
             }),

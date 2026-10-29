@@ -221,7 +221,7 @@ Profile **writes** cannot act on the target (there is no CTE equivalent for the 
 
 These restrictions apply only while actively impersonating another user, not to EDs or admins acting as themselves. Vote-management permissions and aggregate results visibility are unchanged.
 
-- `POST /api/votes/responses` uses `blockDuringImpersonation` and returns **403 `IMPERSONATION_READ_ONLY`** before submission side effects. The app exposes no ballot replacement PUT endpoint.
+- `POST /api/votes/responses` uses `blockDuringImpersonation` and returns **403 `IMPERSONATION_READ_ONLY`** before submission side effects. The authenticated `/api/votes` router has no ballot replacement PUT; replacement goes through `PUT /public/api/votes/link-responses` (personalized link).
 - `GET /api/votes/:uid/my-ballot` permits read-only inspection only when the vote is explicitly named (`pseudo_anonymity === false`), subject to the existing invitation/access checks. Pseudo-anonymous or unknown privacy returns **403 `IMPERSONATION_BALLOT_PRIVATE`** before fetching ballot content; a failed metadata lookup never grants access.
 - During impersonation, `my-response` returns only invitation identifiers, participation status and removal state, never indexed answers, abstention, comments or submission times. Named content is available through the privacy-checked `my-ballot` endpoint.
 - My Votes Review, the vote page and the Pending Actions inline ballot explain the privacy/read-only restriction instead of showing an editable empty ballot. Normal self-voting, including seeing one's own pseudo-anonymous ballot, is unaffected.

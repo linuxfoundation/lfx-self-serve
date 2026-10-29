@@ -109,9 +109,6 @@ export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
 /** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
 export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
 
-/** `?tab=` values the vote detail page accepts; anything else falls back to {@link VOTE_DETAIL_DEFAULT_TAB}. */
-export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<VoteDetailTab>(['overview', 'results', 'comments', 'voters']);
-
 /**
  * Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts;
  * the Voters tab (#3914, #3916) only to vote managers on a vote that is open or closed. Named votes show ballots;
@@ -123,6 +120,9 @@ export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
   { key: 'comments', label: 'Comments', icon: 'fa-comments' },
   { key: 'voters', label: 'Voters', icon: 'fa-users' },
 ];
+
+/** `?tab=` values the vote detail page accepts, derived from {@link VOTE_DETAIL_TABS}; anything else falls back to {@link VOTE_DETAIL_DEFAULT_TAB}. */
+export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<string>(VOTE_DETAIL_TABS.map((tab) => tab.key));
 
 /** Default page size for the Voters tab table on the vote detail page (#3914). */
 export const VOTE_VOTERS_PAGE_SIZE = 25;
@@ -163,7 +163,7 @@ export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
 /** Action keys on the vote detail page's clickable summary cards (#4447): Voters tab, Comments tab and the reminder dialog. */
 export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
 
-/** Display label per voting method — shared by the vote detail page's header and facts. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+/** Display label per voting method — read by the vote detail page's header. A missing `poll_type` reads as {@link PollType.GENERIC}. */
 export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.GENERIC]: 'Plurality vote',
   [PollType.MAJORITY]: 'Majority vote',
@@ -195,6 +195,12 @@ export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
 /** Copy-slide PNG (#4145): fixed 16:9 export size so it drops into Google Slides / PowerPoint uncropped. */
 export const VOTE_SLIDE_WIDTH_PX = 1920;
 export const VOTE_SLIDE_HEIGHT_PX = 1080;
+
+/** Presenter view: delay between `/results` re-requests while the BFF still holds an ended pseudo-anonymous vote's results. */
+export const VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS = 5_000;
+
+/** Presenter view: total `/results` requests (first included) before it stops re-requesting a still-held ended vote. */
+export const VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS = 12;
 
 /** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
 export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
