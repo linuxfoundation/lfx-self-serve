@@ -947,3 +947,6 @@ export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
 
 /** Plain validation message shared by every answers transport. */
 export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';
+
+/** Only LinkedIn's stable avoid question accepts a literal none answer. */
+export const MKTG_NONE_ALLOWED_QUESTION_IDS: readonly string[] = ['avoid'];

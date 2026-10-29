@@ -72,6 +72,8 @@ export class MktgRunProgressComponent {
   public readonly externalActivity = input<MktgRunActivity[] | undefined>();
   public readonly runPage = input(false);
   public readonly suppressCard = input(false);
+  /** The document host owns its one announcement, including stored-revision readiness. */
+  public readonly announceState = input(true);
   /** Keep the single public observer alive without rendering a living document's live presentation. */
   public readonly headless = input(false);
 
@@ -118,7 +120,7 @@ export class MktgRunProgressComponent {
   );
   protected readonly runFailure = computed(() => this.selectedRun()?.failureText || this.failureText());
   protected readonly runRecorded = computed(() => !this.submittingGeneration() && (!!this.runId() || !!this.selectedRun()));
-  protected readonly liveState = this.initLiveState();
+  public readonly liveState = this.initLiveState();
 
   public constructor() {
     const scope = computed(() => ({

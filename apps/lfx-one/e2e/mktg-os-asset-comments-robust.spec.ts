@@ -182,7 +182,7 @@ test.describe('asset comments structure', () => {
     await field.getByRole('textbox').fill('First captured comment.');
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
     await expect.poll(() => fixture.state.posts.length).toBe(1);
-    await page.getByTestId('mktg-framework-view-tab-icps').click();
+    await page.getByTestId('mktg-framework-view-tab-numbers').click();
     await page.getByTestId('mktg-framework-view-tab-framework').click();
     await expect(field.getByRole('textbox')).toHaveValue('First captured comment.');
     await field.getByRole('textbox').fill('Newer text typed while saving.');

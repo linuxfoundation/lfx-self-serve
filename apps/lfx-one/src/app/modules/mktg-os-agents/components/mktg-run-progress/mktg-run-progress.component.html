@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!headless() && !runPage()) {
+@if (announceState() && !headless() && !runPage()) {
   <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
 }
 @if (!headless() && runPage() && closedRun(); as run) {
@@ -130,13 +130,13 @@
     }
   </section>
 }
-@if (runPage() && !detail() && !readFailure()) {
+@if (!headless() && runPage() && !detail() && !readFailure()) {
   <p role="status" class="text-sm text-gray-500" data-testid="mktg-run-progress-loading">Loading run progress…</p>
 }
-@if (runPage() && detail() && !selectedRun() && !detail()?.revisions?.length && !warning()) {
+@if (!headless() && runPage() && detail() && !selectedRun() && !detail()?.revisions?.length && !warning()) {
   <p role="status" class="text-sm text-gray-600" data-testid="mktg-run-progress-empty">This run could not be found. Open Documents to choose a started run.</p>
 }
-@if (runPage() && readFailure()) {
+@if (!headless() && runPage() && readFailure()) {
   <lfx-message severity="error" [text]="readFailure()" data-testid="mktg-run-progress-error" />
   <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-run-progress-refresh" />
 }
