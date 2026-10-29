@@ -315,10 +315,10 @@ describe('Family export slot', () => {
     expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
     if (!document) throw new Error('Missing synthetic family print composition');
     expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
-    const framework = document.querySelector('[data-testid="mktg-framework-print"]');
-    expect(framework?.classList.contains('flex')).toBe(false);
-    expect(framework?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
-    expect(framework?.lastElementChild?.getAttribute('data-testid')).toBe('mktg-framework-print-numbers');
+    const frameworkRoot = document.querySelector('[data-testid="mktg-framework-print"]');
+    expect(frameworkRoot?.classList.contains('flex')).toBe(false);
+    expect(frameworkRoot?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
+    expect(frameworkRoot?.lastElementChild?.getAttribute('data-testid')).toBe('mktg-framework-print-numbers');
     expect(document.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
     expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
