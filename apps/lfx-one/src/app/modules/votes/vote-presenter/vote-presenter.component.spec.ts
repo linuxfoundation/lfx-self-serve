@@ -349,7 +349,7 @@ describe('VotePresenterComponent', () => {
   });
 
   describe('Close vote (#4143)', () => {
-    it('keeps Close disabled when the vote is not active', async () => {
+    it('does not render Close when the vote is not active', async () => {
       fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.DISABLED })));
       await mount();
 
@@ -369,15 +369,20 @@ describe('VotePresenterComponent', () => {
       expect(endVote).not.toHaveBeenCalled();
     });
 
-    it('does not end the vote when the dialog is cancelled', async () => {
+    it('does not end the vote when the dialog is dismissed without accepting', async () => {
       await mount();
-      const confirm = captureConfirm();
+      captureConfirm();
       closeButton()!.click();
       await tick(0);
 
-      expect(confirm.options?.accept).toBeDefined();
+      // Cancel and Esc both hide the dialog without running `accept`.
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+
       expect(endVote).not.toHaveBeenCalled();
       expect(closeButton()?.disabled).toBe(false);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(navigateByUrl).toHaveBeenCalledOnce();
     });
 
     it('ends the vote once on accept and keeps Close disabled while the request is in flight', async () => {
@@ -462,7 +467,7 @@ describe('VotePresenterComponent', () => {
       confirm.options?.accept?.();
       await tick(0);
 
-      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('still open') }));
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining("couldn't confirm") }));
     });
 
     it('keeps Esc from leaving the presenter while the Close dialog is open, and restores it afterwards', async () => {

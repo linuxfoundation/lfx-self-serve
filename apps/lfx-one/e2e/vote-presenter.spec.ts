@@ -145,7 +145,7 @@ test.describe('Vote presenter (#4140)', () => {
     expect(state.endRequests ?? 0).toBe(0);
     expect(state.resultsRequests).toBe(0);
 
-    await page.locator('.p-confirmdialog').getByRole('button', { name: 'Close vote' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
 
     await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: POLL_TIMEOUT });
     expect(state.endRequests).toBe(1);
@@ -159,7 +159,7 @@ test.describe('Vote presenter (#4140)', () => {
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
 
     await page.getByTestId('vote-presenter-close').getByRole('button').click();
-    await page.locator('.p-confirmdialog').getByRole('button', { name: 'Close vote' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
 
     await expect(page.getByText('poll has not started')).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible();

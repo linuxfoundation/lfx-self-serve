@@ -107,8 +107,8 @@ export class VotePresenterComponent {
   protected readonly closing = signal(false);
   /** True while the Close confirmation is up, so Esc cancels the dialog and never leaves the presenter. */
   private readonly closeDialogOpen = signal(false);
-  /** Set once the end request succeeded; the next poll result clears `closing`, whatever the vote's status says. */
-  private awaitingEndedPoll = false;
+  /** The poll generation (`retryTick`) the end request's forced restart started; only a result from that generation or later clears `closing`. */
+  private awaitingTick: number | null = null;
 
   // === Computed Signals ===
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
@@ -175,10 +175,14 @@ export class VotePresenterComponent {
   });
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private confirmHiddenTimer: ReturnType<typeof setTimeout> | null = null;
   private polledVoteId: string | null = null;
 
   public constructor() {
-    this.destroyRef.onDestroy(() => this.copyResetTimer && clearTimeout(this.copyResetTimer));
+    this.destroyRef.onDestroy(() => {
+      if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
+      if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
+    });
     if (this.isBrowser) {
       this.startPolling();
       timer(VOTE_PRESENTER_CLOCK_TICK_MS, VOTE_PRESENTER_CLOCK_TICK_MS)
@@ -201,7 +205,8 @@ export class VotePresenterComponent {
 
   /** Called a tick after the dialog hides, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
   protected onConfirmHidden(): void {
-    setTimeout(() => this.closeDialogOpen.set(false));
+    if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
+    this.confirmHiddenTimer = setTimeout(() => this.closeDialogOpen.set(false));
   }
 
   /** Close vote: always asks first. Nothing is sent until the dialog is accepted. */
@@ -238,42 +243,13 @@ export class VotePresenterComponent {
     }
   }
 
-  /**
-   * Ends the vote through the dedicated end action (never extend). On success the poll loop is restarted so the very next
-   * GET decides the state: the presenter moves to the result state only when that GET returns `ended`, and `/results` is
-   * then requested once by `initResults`, exactly as for a vote that ended on its own.
-   */
-  private endVote(): void {
-    const id = this.voteId();
-    if (!id || this.closing()) return;
-
-    this.closing.set(true);
-    this.voteService.endVote(id).subscribe({
-      next: () => {
-        this.awaitingEndedPoll = true;
-        this.retryTick.update((n) => n + 1);
-      },
-      error: (error: unknown) => {
-        this.closing.set(false);
-        this.messageService.add({ severity: 'error', summary: 'Unable to close the vote', detail: this.endErrorDetail(error), life: 8000 });
-      },
-    });
-  }
-
-  /** The upstream message when the voting service answered (for example "poll has not started"), a plain fallback otherwise. */
-  private endErrorDetail(error: unknown): string {
-    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown } | null) : null;
-    return typeof body?.error === 'string' && body.error ? body.error : 'Something went wrong. The vote is still open. Please try again.';
-  }
-
   // === Private Initializers ===
   private startPolling(): void {
     toObservable(computed(() => ({ id: this.voteId(), retry: this.retryTick() })))
       .pipe(
-        map(({ id }) => id),
-        filter((id): id is string => !!id),
+        filter((state): state is { id: string; retry: number } => !!state.id),
         // A new :id reuses this component: drop the previous vote's snapshot (and with it the ended-vote results) before polling it.
-        tap((id) => {
+        tap(({ id }) => {
           if (id !== this.polledVoteId) {
             this.snapshot.set(null);
             this.failures.set(0);
@@ -283,21 +259,23 @@ export class VotePresenterComponent {
         }),
         // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick. They also keep running
         // after `ended`, so a vote another manager reopens flips back to the open state; /results is still requested once per ended period.
-        switchMap((id) =>
+        // Each event carries the poll generation it came from, so a result from before an end request's forced restart
+        // (an in-flight GET that resolved just ahead of the restart) never counts as "the poll that follows the close".
+        switchMap(({ id, retry }) =>
           createVisibilityPoll(this.doc, () => this.voteService.fetchVote(id, { uncached: true }), {
             intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
             backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
             backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
-          })
+          }).pipe(map((event) => ({ event, retry })))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((event) => {
+      .subscribe(({ event, retry }) => {
         if (event.kind === 'ok') {
           this.failures.set(0);
           this.snapshot.set({ vote: event.value, receivedAtMs: Date.now() });
-          if (this.awaitingEndedPoll) {
-            this.awaitingEndedPoll = false;
+          if (this.awaitingTick !== null && retry >= this.awaitingTick) {
+            this.awaitingTick = null;
             this.closing.set(false);
           }
         } else {
@@ -355,5 +333,33 @@ export class VotePresenterComponent {
           return { value: '', rest: 'Count unavailable' };
       }
     });
+  }
+
+  /**
+   * Ends the vote through the dedicated end action (never extend). On success the poll loop is restarted so the very next
+   * GET decides the state: the presenter moves to the result state only when that GET returns `ended`, and `/results` is
+   * then requested once by `initResults`, exactly as for a vote that ended on its own.
+   */
+  private endVote(): void {
+    const id = this.voteId();
+    if (!id || this.closing()) return;
+
+    this.closing.set(true);
+    this.voteService.endVote(id).subscribe({
+      next: () => {
+        this.retryTick.update((n) => n + 1);
+        this.awaitingTick = this.retryTick();
+      },
+      error: (error: unknown) => {
+        this.closing.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Unable to close the vote', detail: this.endErrorDetail(error), life: 8000 });
+      },
+    });
+  }
+
+  /** The upstream message when the voting service answered (for example "poll has not started"), a plain fallback otherwise. */
+  private endErrorDetail(error: unknown): string {
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown } | null) : null;
+    return typeof body?.error === 'string' && body.error ? body.error : "We couldn't confirm the vote was closed. Please try again.";
   }
 }
