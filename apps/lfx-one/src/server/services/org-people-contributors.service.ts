@@ -32,7 +32,12 @@ import { toIsoDate } from '../helpers/date-format.helper';
 import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
-import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
+import {
+  orgTeamMembersPredicate,
+  orgTeamMembersQueryOptions,
+  readOrgTeamMemberPersonKeys,
+  readWithOrgTeamMembersFallback,
+} from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -55,10 +60,12 @@ export class OrgPeopleContributorsService {
    * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
    * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
    * roles. `all` (the default) reads no classification and filters nothing. `teamMembers: 'exclude'`
-   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile, the Projects/Foundations stats
-   * and options, and the roles — LFX Insights leaves team members' roles unattributed (no organization), so they never
-   * reach a company's Maintainer roles. While the flag is not in the warehouse, team members stay in and the response
-   * says so (`teamMembersUnavailable`).
+   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile and the Projects/Foundations
+   * stats and options, by the People team-member key set; and from the roles, by ORG_MAINTAINER_ROLES' own
+   * IS_CDP_TEAM_MEMBER — the Overview headline's source, so a team member holding only a role leaves both. LFX Insights
+   * leaves team members' roles unattributed (no organization), so they never reach a company's Maintainer roles. While
+   * a flag is not in the warehouse, team members stay in, the response says so (`teamMembersUnavailable`) and the
+   * roles are not stored.
    */
   public async getContributors(
     accountId: string,
@@ -73,7 +80,9 @@ export class OrgPeopleContributorsService {
 
     // `people-contributors:v5:{timeRange}:{projectScope}` (lfx-self-serve#4482): the rows no longer carry the
     // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric, employment and team members
-    // only pick after the read, so they share the entry.
+    // only pick after the read, so they share the entry. The roles filter team members in SQL, so their entry is per
+    // pick: `people-contributors-roles:v2:{timeRange}:{projectScope}:{teamMembers}` (`v1` held every role).
+    let rolesTeamMembersUnavailable = false;
     const [rows, roles, employmentKeys, teamMemberKeys] = await Promise.all([
       withOrgCompactCache(
         accountId,
@@ -84,12 +93,19 @@ export class OrgPeopleContributorsService {
       ),
       withOrgCache(
         accountId,
-        `people-contributors-roles:v1:${timeRange}:${filters.projectScope}`,
+        `people-contributors-roles:v2:${timeRange}:${filters.projectScope}:${teamMembers}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope),
+        async () => {
+          const fetched = await readWithOrgTeamMembersFallback(teamMembers, 'get_org_people_contributors_roles', (pick) =>
+            this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope, pick)
+          );
+          rolesTeamMembersUnavailable = fetched.teamMembersUnavailable;
+          return fetched.value;
+        },
         isMaintainerRoleRows,
-        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored.
-        (value) => value !== null
+        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored; nor
+        // are roles read with team members while the flag is missing.
+        (value) => value !== null && !rolesTeamMembersUnavailable
       ),
       readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
       readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers),
@@ -98,9 +114,8 @@ export class OrgPeopleContributorsService {
     const keptRows = rows.filter(
       (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (excluded === null || !excluded.has(row.PERSON_KEY))
     );
-    const keptRoles = roles === null || excluded === null ? roles : roles.filter((role) => !excluded.has(role.PERSON_KEY));
-    const response = buildResponse(accountId, timeRange, filters, keptRows, keptRoles);
-    return teamMemberKeys.unavailable ? { ...response, teamMembersUnavailable: true } : response;
+    const response = buildResponse(accountId, timeRange, filters, keptRows, roles);
+    return teamMemberKeys.unavailable || rolesTeamMembersUnavailable ? { ...response, teamMembersUnavailable: true } : response;
   }
 
   /**
@@ -139,11 +154,15 @@ export class OrgPeopleContributorsService {
     return result.rows;
   }
 
-  /** The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in it; `null` when the roles table is missing. */
+  /**
+   * The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in
+   * it, CDP team members' roles left out under `exclude`; `null` when the roles table is missing.
+   */
   private fetchMaintainerRoles(
     accountId: string,
     timeRange: OrgLensTimeRange,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    teamMembers: OrgTeamMembersFilter
   ): Promise<OrgContributorMaintainerRoleRow[] | null> {
     const overlap = orgMaintainerRoleOverlap(timeRange);
     const query = `
@@ -152,8 +171,15 @@ export class OrgPeopleContributorsService {
       WHERE ACCOUNT_ID = ?
         AND ${overlap.sql}
         ${orgProjectScopePredicate(projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
     `;
-    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', query, [accountId, ...overlap.binds]);
+    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(
+      this.snowflakeService,
+      'ORG_MAINTAINER_ROLES',
+      query,
+      [accountId, ...overlap.binds],
+      orgTeamMembersQueryOptions(teamMembers)
+    );
   }
 }
 

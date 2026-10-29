@@ -131,17 +131,20 @@ const ROLE_ROWS: OrgContributorMaintainerRoleRow[] = [
   { PERSON_KEY: 'person-no-code', MEMBER_ID: 'cdp-9', SEGMENT_ID: 'segment-b', PROJECT_ID: 'project-three' },
 ];
 
+/** The People team-member key read, which unions the People tables; the roles read filters its own flag instead. */
+const isTeamMembersSql = (sql?: string): boolean => !!sql?.includes('IS_CDP_TEAM_MEMBER') && sql.includes('UNION');
+
 /** Answers the roles read with `roles`, the team members read (excluded by default) with nobody and every other read with `rows`. */
 function mockWarehouse(rows: object[] = CONTRIBUTOR_ROWS, roles: OrgContributorMaintainerRoleRow[] = ROLE_ROWS): void {
   execute.mockImplementation(async (sql?: string) => {
-    if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [] };
+    if (isTeamMembersSql(sql)) return { rows: [] };
     return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? roles : rows };
   });
 }
 
 const ROWS_KEY = (suffix: string): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v5:${suffix}`)!;
 
-const isTeamMembersRead = (call: unknown[]): boolean => String(call[0]).includes('IS_CDP_TEAM_MEMBER');
+const isTeamMembersRead = (call: unknown[]): boolean => isTeamMembersSql(String(call[0]));
 
 /** Reads of `table`, the team members read (which unions the People tables) aside. */
 function readsOf(table: string): unknown[][] {
@@ -239,7 +242,7 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     const keys = [...cacheValues.keys()].filter((key) => key.includes('people-contributors')).sort();
     const expected = ['all:all', '30d:all', '30d:lf'].flatMap((suffix) => [
       ROWS_KEY(suffix),
-      buildOrgCacheKey(ACCOUNT, `people-contributors-roles:v1:${suffix}`)!,
+      buildOrgCacheKey(ACCOUNT, `people-contributors-roles:v2:${suffix}:exclude`)!,
     ]);
     expect(keys).toEqual(expected.sort());
     expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY')).toHaveLength(3);
@@ -511,14 +514,14 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
       if (sql?.includes('ORG_MAINTAINER_ROLES')) {
         throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
       }
-      return { rows: sql?.includes('IS_CDP_TEAM_MEMBER') ? [] : CONTRIBUTOR_ROWS };
+      return { rows: isTeamMembersSql(sql) ? [] : CONTRIBUTOR_ROWS };
     });
 
     const { stats, contributors } = await service.getContributors(ACCOUNT, '365d', FILTERS);
 
     expect(stats).toMatchObject({ maintainerRoles: null, contributors: 2 });
     expect(contributors.every((row) => row.role === 'Contributor')).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v1:365d:all')!)).toBe(false);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:exclude')!)).toBe(false);
   });
 
   it('still fails on any other error from the roles read', async () => {
@@ -532,7 +535,7 @@ describe('OrgPeopleContributorsService maintainer roles (lfx-self-serve#4482)', 
 
   it('treats a stored roles entry with a missing key as a miss', async () => {
     await service.getContributors(ACCOUNT, '365d', FILTERS);
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v1:365d:all')!, JSON.stringify([{ PERSON_KEY: 'person-one' }]));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:exclude')!, JSON.stringify([{ PERSON_KEY: 'person-one' }]));
 
     await service.getContributors(ACCOUNT, '365d', FILTERS);
 
@@ -564,7 +567,7 @@ describe('OrgPeopleContributorsService employment filter (lfx-self-serve#4627)',
   // The roster read answers EMPLOYMENT_ROWS, the roles read ROLE_ROWS and the rows read every contributor.
   beforeEach(() => {
     execute.mockImplementation(async (sql?: string) => {
-      if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [] };
+      if (isTeamMembersSql(sql)) return { rows: [] };
       if (sql?.includes('ORG_PEOPLE_ALL_RANGES')) return { rows: EMPLOYMENT_ROWS };
       return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : [...CONTRIBUTOR_ROWS, UNCLASSIFIED_ROW] };
     });
@@ -662,7 +665,7 @@ describe('OrgPeopleContributorsService employment filter (lfx-self-serve#4627)',
       if (sql?.includes('ORG_MAINTAINER_ROLES')) {
         throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
       }
-      if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [] };
+      if (isTeamMembersSql(sql)) return { rows: [] };
       return { rows: sql?.includes('ORG_PEOPLE_ALL_RANGES') ? EMPLOYMENT_ROWS : CONTRIBUTOR_ROWS };
     });
 
@@ -678,7 +681,7 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
   // person-two is a CDP team member; the roles read answers ROLE_ROWS and the rows read every contributor.
   beforeEach(() => {
     execute.mockImplementation(async (sql?: string) => {
-      if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [{ PERSON_KEY: 'person-two' }] };
+      if (isTeamMembersSql(sql)) return { rows: [{ PERSON_KEY: 'person-two' }] };
       return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : CONTRIBUTOR_ROWS };
     });
   });
@@ -691,17 +694,43 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
     expect(response.stats).toMatchObject({ contributors: 1, projects: 2, foundations: 1 });
   });
 
-  it("leaves team members' maintainer roles out of the tile under exclude, as LFX Insights does", async () => {
-    execute.mockImplementation(async (sql?: string) => {
-      // person-no-code holds two roles and is a team member.
-      if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [{ PERSON_KEY: 'person-no-code' }] };
-      return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : CONTRIBUTOR_ROWS };
-    });
+  // person-no-code holds two roles, has no code and is flagged only on ORG_MAINTAINER_ROLES: the People key set
+  // (person-two) never names them, so the roles read filters on its own flag, the Overview headline's source.
+  const rolesWithoutTeamMembers = async (sql?: string) => {
+    if (isTeamMembersSql(sql)) return { rows: [{ PERSON_KEY: 'person-two' }] };
+    if (!sql?.includes('ORG_MAINTAINER_ROLES')) return { rows: CONTRIBUTOR_ROWS };
+    return { rows: sql.includes('AND NOT IS_CDP_TEAM_MEMBER') ? ROLE_ROWS.filter((role) => role.PERSON_KEY !== 'person-no-code') : ROLE_ROWS };
+  };
+
+  it("leaves a role-only team member's maintainer roles out of the tile and the badges under exclude, as LFX Insights does", async () => {
+    execute.mockImplementation(rolesWithoutTeamMembers);
 
     const include = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'include');
     const exclude = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude');
 
     expect([include.stats.maintainerRoles, exclude.stats.maintainerRoles]).toEqual([4, 2]);
+    const [sql, , options] = readsOf('ORG_MAINTAINER_ROLES').at(-1)!;
+    expect(String(sql)).toContain('AND NOT IS_CDP_TEAM_MEMBER');
+    expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:include')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:exclude')!)).toBe(true);
+  });
+
+  it('counts every role, says so and stores no roles while ORG_MAINTAINER_ROLES has no team-member flag yet', async () => {
+    const missingColumn = Object.assign(new Error("SQL compilation error: error line 6 at position 16\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), {
+      code: '000904',
+    });
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('ORG_MAINTAINER_ROLES') && sql.includes('IS_CDP_TEAM_MEMBER')) throw missingColumn;
+      return rolesWithoutTeamMembers(sql);
+    });
+
+    const response = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude');
+
+    expect(response.teamMembersUnavailable).toBe(true);
+    expect(response.stats.maintainerRoles).toBe(4);
+    expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one']);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:exclude')!)).toBe(false);
   });
 
   it('serves everyone, says so and stores no team-member list while the warehouse has no flag yet', async () => {

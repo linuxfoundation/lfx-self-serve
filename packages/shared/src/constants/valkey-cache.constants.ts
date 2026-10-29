@@ -260,8 +260,8 @@ export const VALKEY_CACHE = {
     // all-projects view (largest 1.21 MiB estimated). 7.3 MiB × 1.25 rounds up to 10 MiB. The Past 2 years
     // all-projects default (lfx-self-serve#4694) peaks at 2.01 MiB (prod, 2026-10-29, same estimate).
     // `v5` (lfx-self-serve#4482) drops the two declared-maintainer flags from each row, so it is no larger than the
-    // `v4` measured here; the cap carries over. Maintainer roles are a separate entry (`people-contributors-roles:v1`,
-    // four short ids per role, a few thousand roles at most for the largest org) under the 1 MiB default.
+    // `v4` measured here; the cap carries over. Maintainer roles are a separate entry (`people-contributors-roles:v2`,
+    // per Team members pick; four short ids per role, a few thousand roles at most for the largest org) under the 1 MiB default.
     'org-lens-sf:v1:people-contributors:v5': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,

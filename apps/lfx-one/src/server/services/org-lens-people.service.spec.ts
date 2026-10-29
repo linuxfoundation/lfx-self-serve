@@ -1118,8 +1118,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
     }
 
     beforeEach(() => {
-      // The People → Contributors read filters the maintainer roles by project type.
+      // The People → Contributors read filters the maintainer roles by project type and, under the default, team members.
       database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_LF_PROJECT INTEGER');
+      database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0');
       // A mirrored commit credits each scope once, so an LF day can carry more in-scope than all-project commits.
       addCode(personKey, 'project-lf', 1, 10, [3, 2, 4, 3, 9]);
       addCode(personKey, 'project-lf', 1, 200, [5, 5, 5, 5, 6]);
