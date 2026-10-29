@@ -62,6 +62,17 @@ describe('UiAvatarGroupComponent', () => {
     expect(host.querySelector('[data-testid="ui-avatar-group-more"]')).toBeNull();
   });
 
+  it('clamps a limit of 0 or less to 1, so an avatar always precedes the +N tile', async () => {
+    for (const limit of [0, -1]) {
+      fixture.componentRef.setInput('limit', limit);
+      await fixture.whenStable();
+
+      expect(avatars().length).toBe(2);
+      expect(avatars()[0].style.marginLeft).toBe('0px');
+      expect(host.querySelector('[data-testid="ui-avatar-group-more"]')?.textContent?.trim()).toBe('+6');
+    }
+  });
+
   it('sizes every avatar', async () => {
     fixture.componentRef.setInput('size', 24);
     await fixture.whenStable();

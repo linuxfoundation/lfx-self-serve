@@ -47,6 +47,16 @@ describe('UiAvatarComponent', () => {
     expect(initials()).toBe('OC');
   });
 
+  it('takes initials by code point, not by UTF-16 unit', async () => {
+    fixture.componentRef.setInput('name', '😀 Zed');
+    await fixture.whenStable();
+    expect(initials()).toBe('😀Z');
+
+    fixture.componentRef.setInput('name', '😀😎');
+    await fixture.whenStable();
+    expect(initials()).toBe('😀😎');
+  });
+
   it('uses the initials override', async () => {
     fixture.componentRef.setInput('initials', '+14');
     await fixture.whenStable();

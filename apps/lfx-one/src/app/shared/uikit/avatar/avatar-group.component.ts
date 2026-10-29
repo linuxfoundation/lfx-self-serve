@@ -23,8 +23,8 @@ export class UiAvatarGroupComponent {
   public readonly items = input.required<UiAvatarItem[]>();
   /** Size of every avatar in px. Each one overlaps the previous by 28% of this. */
   public readonly size = input<number>(32);
-  /** How many avatars to show before collapsing the rest into a "+N" tile. */
-  public readonly limit = input<number>(3);
+  /** How many avatars to show before collapsing the rest into a "+N" tile. Values below 1 count as 1. */
+  public readonly limit = input<number, number>(3, { transform: (value) => Math.max(1, value) });
 
   protected readonly visible: Signal<UiAvatarItem[]> = this.initVisible();
   protected readonly overflow: Signal<number> = this.initOverflow();

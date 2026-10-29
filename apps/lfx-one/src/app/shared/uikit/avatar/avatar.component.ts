@@ -90,14 +90,16 @@ export class UiAvatarComponent {
       if (words.length === 0) {
         return '';
       }
-      const letters = words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2);
+      // Split by code point so an emoji or other astral character is not cut in half.
+      const chars = (word: string) => Array.from(word);
+      const letters = words.length > 1 ? chars(words[0])[0] + chars(words[1])[0] : chars(words[0]).slice(0, 2).join('');
       return letters.toUpperCase();
     });
   }
 
   private initFontSize(): Signal<number> {
     // Three-character text such as `+14` needs a smaller scale than one or two initials.
-    return computed(() => this.size() * (this.text().length > 2 ? 0.32 : 0.38));
+    return computed(() => this.size() * (Array.from(this.text()).length > 2 ? 0.32 : 0.38));
   }
 
   private initClasses(): Signal<string> {
@@ -105,6 +107,7 @@ export class UiAvatarComponent {
       const base = 'relative inline-grid shrink-0 select-none place-items-center font-medium leading-none';
       // Exact px, not rem: the app root font is 14px.
       const shapes = { circle: 'rounded-ui-full', rounded: 'rounded-[8px]' };
+      // text-white matches the library's --white on tints; no on-fill token exists yet.
       const tints = {
         neutral: 'bg-ui-neutral-50 text-ui-neutral-600',
         accent: 'bg-ui-accent-600 text-white',
