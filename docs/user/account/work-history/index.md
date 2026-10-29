@@ -48,7 +48,7 @@ If you have no entries yet, the section shows _No work experience added_ — use
 
 ## Project Involvement (affiliations)
 
-This section shows your role and organizational affiliation for each project you're involved in, whether through code, events, training, or other activity. Affiliations are calculated automatically — you don't add projects manually.
+This section shows your role and affiliation for each project you're involved in, whether through code, events, training, or other activity. Affiliations are calculated automatically — you don't add projects manually.
 
 Your contributions are attributed based on three inputs (see the **How affiliations work** dialog on the tab):
 
