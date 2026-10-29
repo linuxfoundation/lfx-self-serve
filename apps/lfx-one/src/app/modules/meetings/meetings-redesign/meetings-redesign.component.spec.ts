@@ -51,7 +51,7 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'ui-tab-upcoming')).toBeTruthy();
     expect(query(fixture, 'ui-tab-past')).toBeTruthy();
     expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
-    expect(query(fixture, 'meetings-redesign-list')?.getAttribute('role')).toBe('tabpanel');
+    expect(query(fixture, 'meetings-redesign-list-upcoming')?.getAttribute('role')).toBe('tabpanel');
     for (const block of ['next-meeting', 'last-meeting', 'pending-rsvps']) {
       expect(query(fixture, `meetings-redesign-rail-${block}`)).toBeTruthy();
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
@@ -65,14 +65,26 @@ describe('MeetingsRedesignComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Create meeting');
   });
 
-  it('links the tab panel to the selected tab', async () => {
+  it('renders a tabpanel per tab that every tab controls, hiding the inactive one', async () => {
     const fixture = render();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const panel = query(fixture, 'meetings-redesign-list');
-    expect(panel?.getAttribute('aria-labelledby')).toBe('meetings-redesign-tab-upcoming');
-    expect(query(fixture, 'ui-tab-upcoming')?.getAttribute('aria-controls')).toBe(panel?.id);
+    for (const value of ['upcoming', 'past']) {
+      const panel = query(fixture, `meetings-redesign-list-${value}`);
+      const controlled = fixture.nativeElement.querySelector(`#${query(fixture, `ui-tab-${value}`)?.getAttribute('aria-controls')}`);
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(controlled).toBe(panel);
+      expect(panel?.getAttribute('aria-labelledby')).toBe(query(fixture, `ui-tab-${value}`)?.id);
+    }
+    expect(query(fixture, 'meetings-redesign-list-upcoming')?.hidden).toBe(false);
+    expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(true);
+
+    query(fixture, 'ui-tab-past')?.click();
+    fixture.detectChanges();
+
+    expect(query(fixture, 'meetings-redesign-list-upcoming')?.hidden).toBe(true);
+    expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
   });
 
   it('sticks the tabs bar below the measured header on desktop', async () => {

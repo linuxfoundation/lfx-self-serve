@@ -64,13 +64,16 @@
           data-testid="meetings-redesign-search" />
       </div>
 
-      <!-- List area -->
-      <div
-        role="tabpanel"
-        class="min-h-[240px] rounded-[12px] border border-dashed border-gray-200"
-        [attr.id]="idPrefix + '-panel-' + activeTab()"
-        [attr.aria-labelledby]="idPrefix + '-tab-' + activeTab()"
-        data-testid="meetings-redesign-list"></div>
+      <!-- List areas: one tabpanel per tab, so every aria-controls resolves; the inactive one is hidden -->
+      @for (tab of tabs; track tab.value) {
+        <div
+          role="tabpanel"
+          class="min-h-[240px] rounded-[12px] border border-dashed border-gray-200"
+          [attr.id]="idPrefix + '-panel-' + tab.value"
+          [attr.aria-labelledby]="idPrefix + '-tab-' + tab.value"
+          [hidden]="activeTab() !== tab.value"
+          [attr.data-testid]="'meetings-redesign-list-' + tab.value"></div>
+      }
     </div>
   </div>
 
