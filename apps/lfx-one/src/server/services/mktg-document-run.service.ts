@@ -579,13 +579,17 @@ export class MktgDocumentRunService {
     if (!subject) throw new AuthorizationError('Sign in to read your runs.');
     const runs: MktgDocumentRunProgress[] = [];
     let memberLookupFailed = false;
-    for (let offset = 0; offset < snapshot.runs.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+    const candidates = snapshot.runs.filter(
+      (row) => row.agentKey === 'member-360' && (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+    );
+    for (let offset = 0; offset < candidates.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
       const batch = await Promise.all(
-        snapshot.runs.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
+        candidates.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
           try {
             const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
             return stored.record.creatorSubject === subject ? row : null;
           } catch (err) {
+            if (err instanceof ResourceNotFoundError) return null;
             if (row.agentKey === 'member-360') memberLookupFailed = true;
             logger.warning(req, 'mktg_owned_progress', 'Scoped run lookup unavailable; unrelated coverage does not decide ownership', {
               project,

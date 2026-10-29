@@ -260,6 +260,19 @@ describe('MktgDocumentRunService core', () => {
     expect(snapshot.runs.some((row) => row.agentKey === 'brand-kit')).toBe(true);
     expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [] });
   });
+  it('looks up only active Member candidates and treats a vanished record as not owned', async () => {
+    await waitingMember();
+    const snapshot = await service.readProgress(req, project);
+    const row = snapshot.runs[0];
+    if (!row) throw new Error('Missing synthetic Member row');
+    objects.delete(key());
+    flows.get.mockClear();
+    expect(
+      await service.ownProgress(memberOwner, project, { runs: [row, { ...row, state: 'failed' }, { ...row, agentKey: 'brand-kit', documentId: 'living' }] })
+    ).toEqual({ runs: [] });
+    expect(flows.get).toHaveBeenCalledOnce();
+    expect(flows.get).toHaveBeenCalledWith(key());
+  });
   it('resolves a private Member session only for the stored creator after writer authorization', async () => {
     await waitingMember();
     await expect(service.ownedMember360Session(memberOwner, project, hash(session))).resolves.toBe(session);
