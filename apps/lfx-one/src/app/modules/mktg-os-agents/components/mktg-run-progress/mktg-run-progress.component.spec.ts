@@ -186,7 +186,7 @@ describe('MktgRunProgressComponent', () => {
   it('stops answer submission on 403, retaining the waiting notice and server reason without retries', async () => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));
-    answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Synthetic access reason' } })));
+    answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Synthetic access reason', code: 'FORBIDDEN' } })));
     await fixture.whenStable();
     fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
     await fixture.whenStable();
@@ -629,7 +629,10 @@ describe('MktgRunProgressComponent', () => {
   it('rejects invalid public selectors rather than inferring a completed revision', async () => {
     await setup();
     fixture.componentRef.setInput('runId', 'invalid-run');
+    const failed = vi.fn();
+    fixture.componentInstance.readError.subscribe(failed);
     await fixture.whenStable();
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status: 400 }));
     expect(read).not.toHaveBeenCalled();
     expect(text()).toContain('This run could not be found');
   });

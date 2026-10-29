@@ -273,11 +273,7 @@ export class LinkedinPostRunComponent {
               if (!project.writer) return of(null);
               return this.documents.listDocuments(context.uid, true, true).pipe(
                 switchMap((snapshot) => {
-                  if (snapshot.progressUnavailable) {
-                    this.runLookupFailed.set(true);
-                    this.error.set('Your recorded run could not be checked. Try again before drafting.');
-                    return of(null);
-                  }
+                  if (snapshot.progressUnavailable) this.runWarning.set('Recorded runs could not be checked. Your inputs are available; checking again.');
                   return this.api.profile().pipe(map((profile) => ({ ...profile, snapshot })));
                 })
               );
@@ -356,7 +352,7 @@ export class LinkedinPostRunComponent {
       .subscribe(({ event, project, subject }) => {
         if (project !== this.context.activeContextUid() || subject !== this.user.user()?.sub) return;
         if (event.kind === 'error' || event.value.progressUnavailable) {
-          this.runWarning.set('Could not refresh recorded runs. Showing the last checked state.');
+          this.runWarning.set('Recorded runs could not be checked. Showing available inputs; checking again.');
           return;
         }
         this.runWarning.set('');
@@ -426,7 +422,7 @@ export class LinkedinPostRunComponent {
   protected onRecordedReadError(): void {
     this.checkingPending.set(false);
     this.runLookupFailed.set(true);
-    this.questions.set([]);
+    // Keep the last confirmed question DOM/draft during a transient read; only submission is paused.
     this.error.set('The recorded run could not be checked. Open its document or try again before answering.');
   }
 
@@ -602,7 +598,7 @@ export class LinkedinPostRunComponent {
   }
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending;
-    if (!pending?.pendingQuestions || this.answering()) return;
+    if (!pending?.pendingQuestions || this.answering() || this.runLookupFailed()) return;
     const version = this.scopeVersion;
     const owner = this.user.user()?.sub;
     const project = this.context.activeContextUid();
@@ -682,15 +678,31 @@ export class LinkedinPostRunComponent {
   /** The ownRuns projection, not private storage or activity/name inference, chooses this writer's run. */
   private reconcileOwnRuns(snapshot: MktgDocumentsResponse, hint: MktgPendingGeneration | null = null): void {
     const project = this.context.activeContextUid();
-    if (snapshot.project !== project || this.route.snapshot.queryParamMap.get('profile') === 'edit') return;
+    if (snapshot.project !== project || snapshot.progressUnavailable || this.route.snapshot.queryParamMap.get('profile') === 'edit') return;
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === this.intake().agentId);
     const selected = this.route.snapshot.queryParamMap.get('run');
-    const row = snapshot.runs?.find(
-      (run) =>
-        run.project === project &&
-        run.agentKey === type?.agentKey &&
-        (selected ? run.runId === selected : run.state === 'writing' || run.state === 'storing' || run.state === 'questions')
-    );
+    const candidates =
+      snapshot.runs?.filter(
+        (run) =>
+          run.project === project &&
+          run.agentKey === type?.agentKey &&
+          (selected ? run.runId === selected : run.state === 'writing' || run.state === 'storing' || run.state === 'questions')
+      ) ?? [];
+    const row = candidates.find((candidate) => {
+      if (snapshot.creatorScoped === true) return true;
+      const owned = hint ?? this.attempts.load(project, this.intake().agentId, candidate.documentId);
+      return (
+        owned?.request.projectUid === project &&
+        owned.request.agentId === this.intake().agentId &&
+        owned.attempt?.runId === candidate.runId &&
+        (owned.request.documentId ?? owned.attempt.documentId) === candidate.documentId
+      );
+    });
+    if (!row && candidates.length) {
+      this.runWarning.set('Your active drafts could not be verified. Your inputs are available; check Documents before drafting.');
+      this.checkingPending.set(false);
+      return;
+    }
     if (!row) {
       if (hint?.pendingQuestions && !this.serverRun()) {
         // Retain input hints, never a questions turn/capability contradicted by a successful server lookup.

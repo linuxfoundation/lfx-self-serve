@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ICP_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { FAQ_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import type { MktgRunAnswersRequest } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { DOCUMENT_PROJECT, DOCUMENT_TYPE, documentFixture, fulfillDocumentJson, setupDocuments } from './helpers/mktg-os-documents.helper';
+import { DOCUMENT_PROJECT, documentFixture, fulfillDocumentJson, setupDocuments } from './helpers/mktg-os-documents.helper';
 
 async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   const alreadyAnswered = info.title.includes('already answered');
@@ -20,11 +21,15 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   const firstRead = new Promise<void>((resolve) => {
     releaseRead = resolve;
   });
-  const history = documentFixture();
-  const revision = history.revisions[0];
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === FAQ_INTAKE.agentId);
+  if (!type || !FAQ_INTAKE.endpoints.answers) throw new Error('Missing answerable synthetic FAQ contract');
+  const history = { ...documentFixture(), type };
+  const base = history.revisions[0];
+  const revision = base ? { ...base, format: 'json' as const } : undefined;
   if (!revision) throw new Error('Missing synthetic revision');
   const produced = { ...revision, id: '000009-' + '9'.repeat(64), number: 9, contentSha256: '9'.repeat(64) };
-  const stored = { ...history, runs: [], revision, markdown: '# Synthetic cross-device draft', sidecar: null, approval: null };
+  const faq = (question: string) => JSON.stringify({ faq: [['Synthetic section', [[question, 'A synthetic answer.', 'Docs']]]] });
+  const stored = { ...history, runs: [], revision, markdown: faq('Synthetic cross-device draft'), sidecar: null, approval: null };
   await page.route('**/api/mktg-agents/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === `/api/mktg-agents/runs/${runId}/answers`) {
@@ -35,7 +40,7 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
         return fulfillDocumentJson(route, { code: 'MKTG_RUN_ANSWERED', details: { answeredBy: 'Another Writer', answeredAt: '2026-10-28T10:01:00Z' } }, 409);
       return fulfillDocumentJson(route, { runId, state: 'writing' });
     }
-    if (path.endsWith(`/documents/${DOCUMENT_TYPE.agentKey}/living`)) {
+    if (path.endsWith(`/documents/${type.agentKey}/living`)) {
       await firstRead;
       if (phase === 'landed')
         return fulfillDocumentJson(
@@ -47,7 +52,7 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
                 runs: [
                   {
                     project: DOCUMENT_PROJECT.uid,
-                    agentKey: DOCUMENT_TYPE.agentKey,
+                    agentKey: type.agentKey,
                     documentId: 'living',
                     runId,
                     state: 'completed',
@@ -60,14 +65,14 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
         );
       return fulfillDocumentJson(route, {
         project: DOCUMENT_PROJECT.uid,
-        type: DOCUMENT_TYPE,
+        type,
         documentId: 'living',
         revisions: [],
         approvedCurrent: null,
         runs: [
           {
             project: DOCUMENT_PROJECT.uid,
-            agentKey: DOCUMENT_TYPE.agentKey,
+            agentKey: type.agentKey,
             documentId: 'living',
             runId,
             startedAt: '2026-10-28T10:00:00Z',
@@ -86,7 +91,7 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     if (path.includes('/revisions/'))
       return fulfillDocumentJson(
         route,
-        exactProduced && path.endsWith(produced.id) ? { ...stored, revision: produced, markdown: '# Synthetic produced revision v9' } : stored
+        exactProduced && path.endsWith(produced.id) ? { ...stored, revision: produced, markdown: faq('Synthetic produced revision v9') } : stored
       );
     if (route.request().method() === 'POST' && (path.endsWith('/generate') || path.endsWith('/answers'))) {
       throw new Error('Public answers must never generate again or use the creator-only answers route');
@@ -96,7 +101,7 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
     dispatchEvent(new PopStateEvent('popstate'));
-  }, `/project/mktg-os-agents/${ICP_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
+  }, `/project/mktg-os-agents/${FAQ_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
   // #132/ea04412b3: the neutral shared skeleton exposes its checking label to assistive technology.
   await expect(page.getByTestId('mktg-run-progress-loading')).toHaveAttribute('aria-label', 'Checking the run…');
   await expect(page.getByTestId('mktg-run-progress-loading')).toHaveText('Checking the run…');
@@ -130,9 +135,9 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     },
   ]);
   phase = 'landed';
-  await expect(page.getByRole('heading', { name: exactProduced ? 'Synthetic produced revision v9' : 'Synthetic cross-device draft', exact: true })).toBeVisible(
-    { timeout: 20000 }
-  );
+  await expect(page.getByTestId('mktg-faq-view')).toContainText(exactProduced ? 'Synthetic produced revision v9' : 'Synthetic cross-device draft', {
+    timeout: 20000,
+  });
   if (exactProduced) expect(new URL(page.url()).searchParams.get('revision')).toBe(produced.id);
   else expect(new URL(page.url()).searchParams.has('revision')).toBe(false);
   expect(submitted).toHaveLength(1);

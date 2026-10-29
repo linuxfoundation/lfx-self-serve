@@ -257,6 +257,7 @@ export class MktgDocumentViewComponent {
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
   private loadedScope = '';
+  private progressReadUnavailable = false;
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -553,6 +554,7 @@ export class MktgDocumentViewComponent {
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
             // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
             if (selectionChanged) {
+              this.progressReadUnavailable = false;
               if (request.runId) {
                 this.loading.set(true);
                 this.view.set(null);
@@ -910,9 +912,21 @@ export class MktgDocumentViewComponent {
     const selectedRunId = this.runParam() || this.handoffRunId();
     const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
-    if (this.publicProgressPolling() && cycle.detail.progressUnavailable && !this.view()) {
-      this.loading.set(true);
+    if (this.publicProgressPolling() && cycle.detail.progressUnavailable) {
+      this.runDetail.set(cycle.detail);
+      this.refreshWarning.set('Run progress could not be checked. Showing available content; checking again.');
+      if (selectedRunId || !cycle.view) {
+        this.progressReadUnavailable = true;
+        this.errorText.set('This run could not be verified. Refresh to check its saved state.');
+      }
+      // A plain URL may show its verified revision; a selected unverified run must not expose an older body.
+      this.publicReads.next({ ...cycle, view: selectedRunId ? null : cycle.view });
+      this.loading.set(false);
       return;
+    }
+    if (this.progressReadUnavailable) {
+      this.progressReadUnavailable = false;
+      this.errorText.set('');
     }
     if (
       !this.publicProgressPolling() ||

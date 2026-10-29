@@ -1670,7 +1670,6 @@ export class MktgAgentsController {
     }
   }
 
-  /** Record the ACK through the catalog-aware domain service. */
   /** Project-writer continuation for a kit run, deliberately separate from creator-token session writes. */
   public async runAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_run_answers';
@@ -1769,6 +1768,7 @@ export class MktgAgentsController {
     }
   }
 
+  /** Record the ACK through the catalog-aware domain service. */
   private async trackStart(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }

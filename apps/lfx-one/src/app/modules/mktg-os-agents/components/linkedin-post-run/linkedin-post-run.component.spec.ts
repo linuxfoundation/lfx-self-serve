@@ -174,7 +174,7 @@ describe('LinkedIn profile and post surface', () => {
       state,
       startedAt: '2026-10-28T10:00:00Z',
     };
-    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [row] }));
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [row], creatorScoped: true }));
     documents.getDocument.mockReturnValue(of({ ...emptyDetail, runs: [row] }));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
     const fixture = await render();
@@ -198,11 +198,12 @@ describe('LinkedIn profile and post surface', () => {
     await fixture.whenStable();
     expect(component['contentForm'].controls.text.value).toBe('Synthetic unsent edit');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
-    expect(component['runWarning']()).toContain('last checked state');
+    expect(component['runWarning']()).toContain('checking again');
     documents.listDocuments.mockReturnValue(
       of({
         project: 'project-one',
         groups: [],
+        creatorScoped: true,
         runs: [
           {
             project: 'project-one',
@@ -221,6 +222,48 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['runWarning']()).toBe('');
     expect(navigate).toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-land an unadvertised project-wide run from an older server', async () => {
+    documents.listDocuments.mockReturnValue(
+      of({
+        project: 'project-one',
+        groups: [],
+        runs: [
+          {
+            project: 'project-one',
+            agentKey: documentType.agentKey,
+            documentId: emptyDetail.documentId,
+            runId: 'b'.repeat(64),
+            state: 'writing',
+            startedAt: '2026-10-28T10:00:00Z',
+          },
+        ],
+      })
+    );
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    const fixture = await render();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
+    expect(fixture.componentInstance['runWarning']()).toContain('could not be verified');
+    expect(api.startForDocument).not.toHaveBeenCalled();
+  });
+
+  it('settles an initially unavailable run lookup to inputs with a notice and retries on focus', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [], creatorScoped: true, progressUnavailable: true }));
+    api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
+    const fixture = await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).not.toBeNull();
+    expect(fixture.componentInstance['runWarning']()).toContain('checking again');
+    fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic unsent edit');
+    documents.listDocuments.mockReturnValue(of({ project: 'project-one', groups: [], runs: [], creatorScoped: true }));
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(fixture.componentInstance['runWarning']()).toBe('');
+    expect(fixture.componentInstance['contentForm'].controls.text.value).toBe('Synthetic unsent edit');
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
 
@@ -712,6 +755,32 @@ describe('LinkedIn profile and post surface', () => {
     vi.spyOn(TestBed.inject(ActivatedRoute).snapshot.queryParamMap, 'get').mockImplementation((key) => (key === 'questions' ? token : null));
     return savedIntake();
   }
+  it('retains the confirmed questions node and edits during an unavailable background read', async () => {
+    const fixture = await questionsIntake();
+    const component = fixture.componentInstance;
+    const root: HTMLElement = fixture.nativeElement;
+    const textarea = root.querySelector<HTMLTextAreaElement>('[data-testid="mktg-linkedin-questions"] textarea');
+    if (!textarea) throw new Error('Missing synthetic questions');
+    textarea.value = 'Synthetic unsent answer';
+    textarea.dispatchEvent(new Event('input'));
+    textarea.focus();
+    const answer = vi.spyOn(TestBed.inject(MktgAgentRunService), 'answerQuestions');
+    component['onRecordedReadError']();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"] textarea')).toBe(textarea);
+    expect(textarea.value).toBe('Synthetic unsent answer');
+    expect(document.activeElement).toBe(textarea);
+    component['onAnswers']([]);
+    expect(answer).not.toHaveBeenCalled();
+    const run = component['serverRun']();
+    if (!run) throw new Error('Missing recorded run');
+    component['onRecordedProgress']({ detail: { ...emptyDetail, runs: [{ ...run, state: 'questions' }] }, view: null });
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"] textarea')).toBe(textarea);
+    expect(textarea.value).toBe('Synthetic unsent answer');
+    expect(component['runLookupFailed']()).toBe(false);
+  });
+
   it('keeps intake submission explicit, textarea Enter editable, source guidance truthful and landmarks unnested', async () => {
     const fixture = await savedIntake();
     const element: HTMLElement = fixture.nativeElement;

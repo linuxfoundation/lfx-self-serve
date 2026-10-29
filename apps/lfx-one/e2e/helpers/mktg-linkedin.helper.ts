@@ -150,7 +150,7 @@ export async function setupLinkedin(
         });
       return json(
         route,
-        { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: recordedRuns },
+        { project: project.uid, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })), runs: recordedRuns, ...(own && { creatorScoped: true }) },
         options.writer === false ? 403 : 200
       );
     }

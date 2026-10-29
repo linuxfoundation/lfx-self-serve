@@ -251,6 +251,8 @@ export interface MktgDocumentGroup {
 export interface MktgDocumentsResponse extends Partial<MktgDocumentRunSnapshot> {
   project: string;
   groups: MktgDocumentGroup[];
+  /** True only when the BFF applied the authenticated creator filter requested by ownRuns=1. */
+  creatorScoped?: boolean;
   /** Approved-current framework identity for the Downstream card and rebuild precondition. */
   approvedFramework?: MktgRevisionRef | null;
 }

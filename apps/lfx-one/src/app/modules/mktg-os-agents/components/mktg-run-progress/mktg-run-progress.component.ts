@@ -39,7 +39,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { UserService } from '@services/user.service';
-import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
@@ -266,11 +266,11 @@ export class MktgRunProgressComponent {
                 catchError((error: HttpErrorResponse) => {
                   if (error.status === 403) {
                     this.answersDenied.set(true);
-                    const reason: unknown = error.error?.error?.message ?? error.error?.message;
                     this.answersError.set(
-                      typeof reason === 'string' && reason.trim()
-                        ? reason
-                        : 'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
+                      extractErrorMessage(
+                        error,
+                        'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
+                      )
                     );
                   } else if (error.status === 409 || error.status === 412) {
                     const answered = this.answeredConflict(error, run.runId, pending.questionsId);
@@ -319,6 +319,7 @@ export class MktgRunProgressComponent {
           if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
+            this.readError.emit(new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: this.readFailure() } }));
             return EMPTY;
           }
           const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === request.agentKey);

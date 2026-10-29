@@ -1756,6 +1756,18 @@ describe('MktgAgentRunComponent', () => {
       runs: [{ runId, project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', state, startedAt: '2026-10-28T10:00:00Z' }],
     });
 
+    it('settles a malformed run selector to an error and document recovery instead of a skeleton', async () => {
+      await configure('browser', type.catalogAgentId, { run: 'invalid-run' });
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['checkingRun']()).toBe(false);
+      expect(query('mktg-run-public-error')).not.toBeNull();
+      expect(query('mktg-run-public-document-link')).not.toBeNull();
+      expect(query('mktg-run-progress-loading')).toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
     it.each(['writing', 'questions'] as const)('opens public %s progress without starting or resuming a private run', async (state) => {
       await configure('browser', type.catalogAgentId, { run: runId });
       vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record(state)));

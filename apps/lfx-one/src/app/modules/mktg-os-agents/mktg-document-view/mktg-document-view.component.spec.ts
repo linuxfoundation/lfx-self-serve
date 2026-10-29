@@ -699,6 +699,27 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-again')).toBeNull();
   });
 
+  it('publishes the first loaded revision on a plain URL when run progress is unavailable', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, progressUnavailable: true }));
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['loading']()).toBe(false);
+    expect(component?.['view']()).not.toBeNull();
+    expect(component?.['refreshWarning']()).toContain('could not be checked');
+    expect(query('mktg-document-view-loading')).toBeNull();
+  });
+
+  it('settles an unverified initial selected run to an error and Retry, never an old document body', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, progressUnavailable: true, runs: [] }));
+    await render(`/documents/brand-kit/living?run=${started('writing').runId}`);
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    expect(component?.['loading']()).toBe(false);
+    expect(component?.['view']()).toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
+    expect(query('mktg-document-view-retry')).not.toBeNull();
+    expect(query('mktg-document-view-brand-kit')).toBeNull();
+  });
+
   it('re-reads a stored document on focus and observes another writer revision and approval without manual reload', async () => {
     await render('/documents/brand-kit/living');
     const next = revision(3, { latest: true });
