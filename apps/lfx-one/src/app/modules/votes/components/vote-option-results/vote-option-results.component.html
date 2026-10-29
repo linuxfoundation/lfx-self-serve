@@ -10,7 +10,8 @@
             {{ option.text }}
           </span>
           <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
-            {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }} · {{ option.percentage }}%
+            <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
+            · {{ option.percentage }}%
           </span>
         </div>
         <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -20,9 +21,6 @@
             [class.bg-slate-300]="!option.isLeading"
             [style.width.%]="option.percentage"></div>
         </div>
-        @if (showVoterLinks() && option.voteCount > 0) {
-          <ng-container [ngTemplateOutlet]="voterLink" [ngTemplateOutletContext]="{ $implicit: option }" />
-        }
       </div>
     } @else {
       <div
@@ -62,7 +60,7 @@
               [class.text-green-700]="option.isWinner"
               [class.text-amber-700]="option.isTied"
               [class.text-slate-700]="!option.isWinner && !option.isTied">
-              {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+              <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
             </span>
             <span
               class="text-sm"
@@ -82,21 +80,24 @@
             [class.bg-slate-400]="!option.isWinner && !option.isTied"
             [style.width.%]="option.percentage"></div>
         </div>
-        @if (showVoterLinks() && option.voteCount > 0) {
-          <ng-container [ngTemplateOutlet]="voterLink" [ngTemplateOutletContext]="{ $implicit: option }" />
-        }
       </div>
     }
   }
 </div>
 
-<ng-template #voterLink let-option>
-  <div class="flex justify-end">
-    <lfx-button
-      [label]="'View ' + option.voteCount + (option.voteCount === 1 ? ' voter' : ' voters')"
-      [text]="true"
-      size="small"
-      (onClick)="viewVoters.emit(option.choiceId)"
-      [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'" />
-  </div>
+<ng-template #count let-option>
+  @if (showVoterLinks() && option.voteCount > 0) {
+    <button
+      type="button"
+      class="text-blue-600 hover:underline py-1"
+      [attr.aria-label]="
+        option.voteCount + (option.voteCount === 1 ? ' vote' : ' votes') + ' for ' + option.text + ', view ' + (option.voteCount === 1 ? 'voter' : 'voters')
+      "
+      (click)="viewVoters.emit(option.choiceId)"
+      [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
+      {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+    </button>
+  } @else {
+    {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+  }
 </ng-template>

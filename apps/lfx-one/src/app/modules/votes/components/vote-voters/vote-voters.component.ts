@@ -62,7 +62,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
  * Voters tab of the vote detail page (#3914): every invited voter with their status and current ballot, for vote managers on
  * named votes. The page decides visibility; GET /api/votes/:uid/voters (#3911) enforces the same rules. Filtering, counts and
  * sorting run in the browser — an electorate is a few hundred people at most and the endpoint returns it in one response.
- * `initialChoice` and `initialBallotUid` carry the results' "View N voters" and the comments' "View ballot" links.
+ * `initialChoice` and `initialBallotUid` carry the results' count links and the comments' "View ballot" links.
  *
  * On a vote that is not explicitly named (#3916) the tab is participation-only: the endpoint returns Responded / Not responded
  * rows with no identifier or ballot, in name order, so there is no choice filter, Choice or Submitted column, or ballot dialog,
@@ -103,7 +103,6 @@ export class VoteVotersComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
-    role: new FormControl<string | null>(null),
     choice: new FormControl<string | null>(null),
   });
 
@@ -126,7 +125,6 @@ export class VoteVotersComponent {
 
   // === Data Signals (Complex — init via private functions) ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
-  private readonly roleFilter: Signal<string | null> = toSignal(this.filterForm.controls.role.valueChanges, { initialValue: null });
   private readonly choiceFilter: Signal<string | null> = toSignal(this.filterForm.controls.choice.valueChanges, { initialValue: null });
   private readonly response: Signal<VoteVoter[] | VoteParticipationVoter[]> = this.initVoters();
 
@@ -146,7 +144,7 @@ export class VoteVotersComponent {
       vote
     );
   });
-  /** Rows matching search, role and choice. Status counts follow these filters but not the selected status pill. */
+  /** Rows matching search and choice. Status counts follow these filters but not the selected status pill. */
   private readonly matchingRows: Signal<VoteVoterRowView[]> = this.initMatchingRows();
   protected readonly filteredRows: Signal<VoteVoterRowView[]> = computed(() => {
     const status = this.statusFilter();
@@ -161,11 +159,10 @@ export class VoteVotersComponent {
       : countVoteVotersByStatus(this.rows())[VoteVoterStatus.NOT_VOTED]
   );
   protected readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
-  protected readonly roleOptions: Signal<VoteVoterChoiceFilterOption[]> = this.initRoleOptions();
   protected readonly choiceOptions: Signal<VoteVoterChoiceFilterOption[]> = computed(() => buildVoteVoterChoiceFilterOptions(this.vote()));
   /** Participation-only rows (#3916), in the server's name order. */
   protected readonly participationRows: Signal<VoteParticipationVoterRowView[]> = this.initParticipationRows();
-  /** Participation rows matching search and role. Status counts follow these filters but not the selected status pill. */
+  /** Participation rows matching search. Status counts follow the search but not the selected status pill. */
   private readonly participationMatchingRows: Signal<VoteParticipationVoterRowView[]> = this.initParticipationMatchingRows();
   protected readonly participationFilteredRows: Signal<VoteParticipationVoterRowView[]> = computed(() => {
     const status = this.participationStatusFilter();
@@ -211,7 +208,7 @@ export class VoteVotersComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.reset({ search: '', role: null, choice: null });
+    this.filterForm.reset({ search: '', choice: null });
     this.statusFilter.set(VOTE_VOTERS_ALL_STATUS_FILTER);
     this.participationStatusFilter.set(VOTE_PARTICIPATION_ALL_STATUS_FILTER);
     this.tableFirst.set(0);
@@ -308,10 +305,9 @@ export class VoteVotersComponent {
   private initParticipationMatchingRows(): Signal<VoteParticipationVoterRowView[]> {
     return computed(() => {
       const term = this.searchTerm();
-      const role = this.roleFilter();
 
       return this.participationRows().filter(
-        (row) => (!term || row.displayName.toLowerCase().includes(term) || !!row.organization?.toLowerCase().includes(term)) && (!role || row.role === role)
+        (row) => !term || row.displayName.toLowerCase().includes(term) || !!row.organization?.toLowerCase().includes(term)
       );
     });
   }
@@ -319,14 +315,12 @@ export class VoteVotersComponent {
   private initMatchingRows(): Signal<VoteVoterRowView[]> {
     return computed(() => {
       const term = this.searchTerm();
-      const role = this.roleFilter();
       const choice = this.choiceFilter();
       const vote = this.vote();
 
       return this.rows().filter(
         (row) =>
           (!term || row.displayName.toLowerCase().includes(term) || !!row.organization?.toLowerCase().includes(term)) &&
-          (!role || row.role === role) &&
           (!choice || matchesVoteVoterChoice(row.voter, choice, vote))
       );
     });
@@ -368,13 +362,6 @@ export class VoteVotersComponent {
       const counts = this.participationStatusCounts();
       const ids = Object.keys(VOTE_PARTICIPATION_STATUS_FILTER_LABELS) as VoteParticipationStatusFilter[];
       return ids.map((id) => ({ id, label: `${VOTE_PARTICIPATION_STATUS_FILTER_LABELS[id]} (${counts[id]})` }));
-    });
-  }
-
-  private initRoleOptions(): Signal<VoteVoterChoiceFilterOption[]> {
-    return computed(() => {
-      const roles = new Set([...this.rows(), ...this.participationRows()].flatMap((row) => (row.role ? [row.role] : [])));
-      return [...roles].sort((a, b) => a.localeCompare(b)).map((role) => ({ label: role, value: role }));
     });
   }
 

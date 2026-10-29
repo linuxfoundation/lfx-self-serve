@@ -58,6 +58,7 @@ import type {
   VoteParticipationVoterRowView,
   VoteResultsOption,
   VoteResultsQuestion,
+  VoteResultsSummaryLine,
   VoteResultsResponse,
   VoteRowParticipation,
   VoterResultsState,
@@ -377,6 +378,65 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
       choiceDistributions,
       hasRoundSummary: !!pr.irv_round_summary || !!pr.meek_stv_round_summary,
     };
+  });
+}
+
+/**
+ * Joins names as "a", "a and b" or "a, b and c"
+ */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Builds the one-line-per-question results summary shown on the vote detail Overview
+ * @description Generic and majority votes read the leader/tie markers from `questions` without declaring an elected
+ * winner or inferring quorum/threshold rules. Ranked votes use the choice(s) with the most rank-1 votes. Abstentions are not part of the summary.
+ * @param questions - Processed plurality questions from `buildVoteResultsQuestions`
+ * @param rankedQuestions - Ranked views from `buildRankedQuestionViews`
+ * @param isGeneric - Whether the vote renders the plurality layout (otherwise the ranked views are summarised)
+ * @param isClosed - Whether the vote is finalized
+ * @returns One VoteResultsSummaryLine per question, in API order
+ */
+export function buildVoteResultsSummary(
+  questions: VoteResultsQuestion[],
+  rankedQuestions: RankedQuestionView[],
+  isGeneric: boolean,
+  isClosed: boolean
+): VoteResultsSummaryLine[] {
+  if (!isGeneric) {
+    return rankedQuestions.map((question) => {
+      const firstChoiceCounts = question.choiceDistributions.map((row) => ({
+        text: row.choiceText,
+        count: row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0,
+      }));
+      const topCount = Math.max(...firstChoiceCounts.map((row) => row.count), 0);
+      const leaders = firstChoiceCounts.filter((row) => row.count === topCount);
+
+      let text = isClosed ? 'No rankings recorded' : 'No rankings recorded yet';
+      if (topCount > 0 && leaders.length > 1) {
+        text = `Most first choices: ${joinNames(leaders.map((row) => row.text))} (${topCount} ${topCount === 1 ? 'voter' : 'voters'} each)`;
+      } else if (topCount > 0) {
+        text = `Most first choices: ${leaders[0].text} (${topCount} ${topCount === 1 ? 'voter' : 'voters'})`;
+      }
+
+      return { questionId: question.questionId, question: question.prompt, text };
+    });
+  }
+
+  return questions.map((question) => {
+    const leaders = question.options.filter((option) => (isClosed ? option.isWinner || option.isTied : option.isLeading));
+    const percentage = leaders.length > 0 ? Math.round(leaders[0].percentage) : 0;
+
+    let text = 'No choices selected';
+    if (question.totalVotes > 0 && leaders.length > 1) {
+      text = `Tied: ${joinNames(leaders.map((option) => option.text))} (${percentage}% each)`;
+    } else if (question.totalVotes > 0 && leaders.length === 1) {
+      text = `${leaders[0].text} ${isClosed ? 'received the most votes' : 'leads'} with ${percentage}%`;
+    }
+
+    return { questionId: question.questionId, question: question.question, text };
   });
 }
 
@@ -1032,7 +1092,7 @@ export function buildVoteVoterChoiceFilterOptions(vote: Pick<Vote, 'poll_type' |
 /**
  * Whether a voter's current ballot matches a Voters tab choice key (#3914)
  * @description Generic questions match any selected choice; ranked questions match the voter's rank-1 choice — the
- * same count the results' "View N voters" link shows. Only voted ballots match; a malformed key matches no one.
+ * same count the results' Rank 1 count link shows. Only voted ballots match; a malformed key matches no one.
  */
 export function matchesVoteVoterChoice(voter: VoteVoter, choiceKey: string, vote: Pick<Vote, 'poll_type'>): boolean {
   const key = parseVoteVoterChoiceKey(choiceKey);

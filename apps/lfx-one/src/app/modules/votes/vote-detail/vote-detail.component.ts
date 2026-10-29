@@ -38,11 +38,13 @@ import {
   VoteParticipationStats,
   VoteResultsQuestion,
   VoteResultsResponse,
+  VoteResultsSummaryLine,
   VoterResultsState,
 } from '@lfx-one/shared/interfaces';
 import {
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
+  buildVoteResultsSummary,
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
   getRecentCommentResponses,
@@ -89,7 +91,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
  *
  * The Voters tab (#3914) lists each invited voter's current ballot. It shows only to a manager on a vote that is open or
  * closed (`showVotersTab`), the same rules GET /api/votes/:uid/voters enforces; on a vote that is not explicitly named it is
- * participation-only (#3916). The results' "View N voters" and the comments' "View ballot" links open it through
+ * participation-only (#3916). The results' count links and the comments' "View ballot" links open it through
  * `voters_choice` / `voters_ballot`; both links and both params are named-vote only (`showNamedBallotLinks`).
  *
  * On a pseudo-anonymous vote the BFF holds totals, the abstention count and comments until the vote ends (`results_held`,
@@ -243,6 +245,10 @@ export class VoteDetailComponent {
   protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
+  /** One leader/winner line per question for the Overview results card; the full breakdown stays on the Results tab. */
+  protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
+    buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
+  );
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.commentResults().map((result) => result.prompt));
   protected readonly commentPromptCount: Signal<number> = computed(() =>
@@ -279,12 +285,12 @@ export class VoteDetailComponent {
     this.navigateToTab({ tab: tab === VOTE_DETAIL_DEFAULT_TAB ? null : tab, voters_choice: null, voters_ballot: null });
   }
 
-  /** "View N voters" on a generic option. */
+  /** The vote count on a generic option opens its filtered voter list. */
   protected onViewOptionVoters(questionId: string, choiceId: string): void {
     this.onViewVoters(`${questionId}:${choiceId}`);
   }
 
-  /** "View N voters" on the abstain row selects the Abstained status. */
+  /** The abstention count selects the Abstained status on the Voters tab. */
   protected onViewAbstainedVoters(): void {
     this.onViewVoters(VOTE_VOTERS_ABSTAINED_CHOICE_KEY);
   }

@@ -540,7 +540,7 @@ export interface VoteVoterRowView {
   /** Name, falling back to the username, then the email */
   displayName: string;
   organization?: string;
-  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column */
   role?: string;
   /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
   committeeRole?: string;
@@ -564,7 +564,7 @@ export interface VoteParticipationVoterRowView {
   /** Name, or "Unknown voter" */
   displayName: string;
   organization?: string;
-  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column */
   role?: string;
   /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
   committeeRole?: string;
@@ -859,6 +859,20 @@ export interface VoteResultsQuestion {
   options: VoteResultsOption[];
   /** Total votes cast for this question */
   totalVotes: number;
+}
+
+/**
+ * One-line results summary for a question
+ * @description Built by `buildVoteResultsSummary` for the vote detail Overview card, which shows the leading choice
+ * instead of the full breakdown.
+ */
+export interface VoteResultsSummaryLine {
+  /** Question identifier */
+  questionId: string;
+  /** Question text/prompt */
+  question: string;
+  /** Summary sentence, e.g. "Yes leads with 87%" */
+  text: string;
 }
 
 /**

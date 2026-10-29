@@ -68,7 +68,8 @@
                   </lfx-card>
                 }
                 @if (showsResults()) {
-                  <lfx-card data-testid="vote-detail-overview-results">
+                  <!-- Not interactive as a whole, so it opts out of the lfx-card hover border (#4450). -->
+                  <lfx-card styleClass="hover:!border-gray-200" data-testid="vote-detail-overview-results">
                     <div class="flex flex-col gap-4">
                       <div class="flex items-center justify-between gap-3">
                         <h2 class="text-base font-semibold text-gray-900">Results</h2>
@@ -77,10 +78,10 @@
                           [severity]="resultsStatusTag().severity"
                           data-testid="vote-detail-overview-results-status" />
                       </div>
-                      <ng-container [ngTemplateOutlet]="resultsBody" />
+                      <ng-container [ngTemplateOutlet]="overviewResultsSummary" />
                       <div class="flex justify-end border-t border-gray-100 pt-3">
                         <lfx-button
-                          label="Full results"
+                          label="View full results"
                           icon="fa-light fa-arrow-right"
                           iconPos="right"
                           [text]="true"
@@ -126,7 +127,7 @@
               }
               @case ('results') {
                 @if (showsResults()) {
-                  <lfx-card data-testid="vote-detail-results">
+                  <lfx-card styleClass="hover:!border-gray-200" data-testid="vote-detail-results">
                     <div class="flex flex-col gap-6">
                       @if (!isGenericPoll()) {
                         <div class="rounded-lg bg-gray-50 border border-gray-200 p-4 flex items-start gap-3" data-testid="vote-detail-results-ranked-method">
@@ -199,7 +200,7 @@
 
     <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted($event)" />
 
-    <!-- Generic option bars or ranked distributions, plus the vote-level abstain row — shared by Overview and Results. -->
+    <!-- Full Results tab breakdown: generic option bars or ranked distributions, plus the vote-level abstain row. -->
     <ng-template #resultsBody>
       @if (loadingVoteResults()) {
         <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
@@ -213,13 +214,11 @@
         <!-- Pseudo-anonymous totals and the abstain row are held until the vote ends (#3916). -->
         <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
       } @else {
-        @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
-          <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">Your vote is included in these results.</p>
-        }
+        <ng-container [ngTemplateOutlet]="youVotedNote" />
         @if (isGenericPoll()) {
           @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
             <div class="flex flex-col gap-3">
-              <h3 class="text-sm font-medium text-gray-700">
+              <h3 class="text-base font-semibold text-gray-900">
                 @if (questionsWithResults().length > 1) {
                   Q{{ idx + 1 }}.
                 }
@@ -255,6 +254,46 @@
             {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
           </p>
         }
+      }
+    </ng-template>
+
+    <!-- Compact Overview results: one leader/winner line per question, with the full breakdown on the Results tab (#4450). -->
+    <ng-template #overviewResultsSummary>
+      @if (loadingVoteResults()) {
+        <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
+          @for (i of [1, 2]; track i) {
+            <p-skeleton width="100%" height="2.5rem" />
+          }
+        </div>
+      } @else if (voteResultsError()) {
+        <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Try reloading this page.</p>
+      } @else if (resultsHeld()) {
+        <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
+      } @else {
+        <ng-container [ngTemplateOutlet]="youVotedNote" />
+        @if (hasZeroVotes()) {
+          <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
+            {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
+          </p>
+        } @else {
+          @for (line of overviewSummary(); track line.questionId; let idx = $index) {
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">
+                @if (overviewSummary().length > 1) {
+                  Q{{ idx + 1 }}.
+                }
+                {{ line.question }}
+              </h3>
+              <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
+            </div>
+          }
+        }
+      }
+    </ng-template>
+
+    <ng-template #youVotedNote>
+      @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
+        <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">Your vote is included in these results.</p>
       }
     </ng-template>
 

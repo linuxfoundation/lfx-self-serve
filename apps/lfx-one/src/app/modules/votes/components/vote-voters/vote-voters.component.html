@@ -52,17 +52,6 @@
           styleClass="w-full"
           size="small" />
       </div>
-      <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-role-filter">
-        <lfx-select
-          [form]="filterForm"
-          control="role"
-          [options]="roleOptions()"
-          placeholder="All roles"
-          ariaLabel="Filter by role"
-          [showClear]="true"
-          styleClass="w-full"
-          size="small" />
-      </div>
       @if (!participationOnly()) {
         <div class="w-full md:w-auto md:shrink-0" data-testid="vote-voters-choice-filter">
           <lfx-select

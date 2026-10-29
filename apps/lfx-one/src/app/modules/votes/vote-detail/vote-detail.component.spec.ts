@@ -1936,4 +1936,158 @@ describe('VoteDetailComponent', () => {
       expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Voting in progress');
     });
   });
+
+  describe('overview results summary (#4450)', () => {
+    const summary = (fixture: ComponentFixture<VoteDetailComponent>): string =>
+      testId(fixture, 'vote-detail-overview-summary-question-1')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    beforeEach(() => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
+    });
+
+    it('shows the leading choice and its share instead of the full breakdown', async () => {
+      const fixture = await setup();
+
+      expect(summary(fixture)).toMatch(/^Yes leads with \d+%$/);
+      expect(testId(fixture, 'vote-detail-overview-results')?.textContent).toContain('Approve the roadmap?');
+      expect(fixture.nativeElement.querySelector('lfx-vote-option-results')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
+    });
+
+    it('preserves long leading-choice text with word-breaking protection', async () => {
+      const results = makeMethodResults();
+      const label = 'SyntheticPackageIdentifier'.repeat(20);
+      results.poll_results[0].question.choices[0].choice_text = label;
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toContain(label);
+      expect(testId(fixture, 'vote-detail-overview-summary-question-1')?.classList).toContain('break-words');
+    });
+
+    it.each([
+      { status: PollStatus.ACTIVE, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, message: 'No votes were submitted.' },
+    ])('shows the empty state for $status votes without per-question results', async ({ status, message }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 0 }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
+    });
+
+    it.each([
+      { status: PollStatus.ACTIVE, pollType: PollType.GENERIC, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, pollType: PollType.GENERIC, message: 'No votes were submitted.' },
+      { status: PollStatus.ACTIVE, pollType: PollType.MAJORITY, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, pollType: PollType.MAJORITY, message: 'No votes were submitted.' },
+    ])('shows the empty state for $status $pollType votes with zero-count question results', async ({ status, pollType, message }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status, poll_type: pollType })));
+      const results = makeMethodResults();
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...results,
+          num_votes_cast: 0,
+          num_abstained: 0,
+          poll_results: results.poll_results.map((result) => ({
+            ...result,
+            generic_choice_votes: result.generic_choice_votes?.map((choice) => ({ ...choice, vote_count: 0, percentage: 0 })),
+          })),
+        })
+      );
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
+      expect(summary(fixture)).toBe('');
+    });
+
+    it.each([
+      { status: PollStatus.ACTIVE, pollType: PollType.GENERIC },
+      { status: PollStatus.ENDED, pollType: PollType.GENERIC },
+      { status: PollStatus.ACTIVE, pollType: PollType.MAJORITY },
+      { status: PollStatus.ENDED, pollType: PollType.MAJORITY },
+    ])('describes abstention-only $pollType results without denying recorded responses on an $status vote', async ({ status, pollType }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status, poll_type: pollType, pseudo_anonymity: false, allow_abstain: true })));
+      const results = makeMethodResults();
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...results,
+          num_votes_cast: 2,
+          num_abstained: 2,
+          poll_results: results.poll_results.map((result) => ({
+            ...result,
+            generic_choice_votes: result.generic_choice_votes?.map((choice) => ({ ...choice, vote_count: 0, percentage: 0 })),
+          })),
+        })
+      );
+      const fixture = await setup();
+
+      expect(summary(fixture)).toBe('No choices selected');
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[0]).toMatchObject({ value: '2 / 4', subLine: '50% participation · 2 abstentions' });
+    });
+
+    it.each([PollType.GENERIC, PollType.MAJORITY])('names the closed %s leader without declaring an elected winner', async (pollType) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
+    });
+
+    it.each([PollType.GENERIC, PollType.MAJORITY])('does not declare a 40-percent %s leader the winner', async (pollType) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
+      const results = makeMethodResults();
+      results.num_recipients = 10;
+      results.num_votes_cast = 10;
+      results.poll_results[0].question.choices.push({ choice_id: 'choice-later', choice_text: 'Later' });
+      results.poll_results[0].generic_choice_votes = [
+        { choice_id: 'choice-yes', vote_count: 4, percentage: 40 },
+        { choice_id: 'choice-no', vote_count: 3, percentage: 30 },
+        { choice_id: 'choice-later', vote_count: 3, percentage: 30 },
+      ];
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toBe('Yes received the most votes with 40%');
+    });
+
+    it('summarizes a ranked vote by first choices', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toBe('Most first choices: Yes (2 voters)');
+      expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
+    });
+
+    it('shows only the held panel on a held pseudo-anonymous vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), results_held: true }));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
+      expect(summary(fixture)).toBe('');
+      expect(testId(fixture, 'vote-detail-overview-results')?.textContent).not.toContain('Approve the roadmap?');
+    });
+
+    it('still tells a participant their vote is included', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-you-voted')?.textContent?.trim()).toBe('Your vote is included in these results.');
+      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
+    });
+
+    it('opens the Results tab from "View full results"', async () => {
+      const fixture = await setup();
+      const button = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-full-results"]'));
+
+      expect(button.nativeElement.getAttribute('label')).toBe('View full results');
+      button.triggerEventHandler('onClick', undefined);
+      expect(router.navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ tab: 'results' }) }));
+    });
+  });
 });
