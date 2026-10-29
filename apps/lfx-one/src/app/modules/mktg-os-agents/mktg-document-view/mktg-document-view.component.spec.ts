@@ -142,6 +142,17 @@ describe('MktgDocumentViewComponent', () => {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
   }
 
+  /** #4636 owns one inert, screen-reader-only state host even while living progress is routed elsewhere. */
+  function expectEmptyStateHost(): void {
+    const host = query('mktg-document-view-live-state');
+    if (!host) throw new Error('Missing host-owned live region');
+    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]')).toHaveLength(1);
+    expect(host.classList.contains('sr-only')).toBe(true);
+    expect(host.getAttribute('role')).toBe('status');
+    expect(host.getAttribute('aria-live')).toBe('polite');
+    expect(host.textContent?.trim()).toBe('');
+  }
+
   function progressReader(): MktgRunProgressComponent {
     return harness.routeDebugElement?.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
   }
@@ -1539,7 +1550,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     expect(progressReader().headless()).toBe(true);
     expect(query('mktg-document-view-run')).toBeNull();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expectEmptyStateHost();
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
@@ -2087,7 +2098,7 @@ describe('MktgDocumentViewComponent', () => {
     events.next({ type: 'submitted' });
     events.next(writingActivity());
     await settle();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expectEmptyStateHost();
     expect(progressReader().runState()).toBe('writing');
     const run: MktgStoredAgentRun = {
       agentId: pending.request.agentId,
@@ -2172,7 +2183,7 @@ describe('MktgDocumentViewComponent', () => {
         vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
         expect(store.getDocument).toHaveBeenCalledTimes(4);
         expect(progressReader().runState()).toBe('questions');
-        expect(query('mktg-document-view-live-state')).toBeNull();
+        expectEmptyStateHost();
       }
       if (state === 'failed') {
         expect(query('mktg-document-view-failure-reply')?.textContent).toBe(started(state).failureText);
@@ -2185,7 +2196,9 @@ describe('MktgDocumentViewComponent', () => {
         expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
         expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
         expect(query('mktg-document-view-failure-actions')?.textContent).toContain('only if you think it is still running; starts nothing new');
-        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64), false, 'b'.repeat(64));
+        // This is the plain-document case: no selected run in the route, hence the five-argument refresh.
+        expect(new URL(TestBed.inject(Router).url, 'https://synthetic.example').searchParams.has('run')).toBe(false);
+        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64));
         store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
         query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
         await settle();

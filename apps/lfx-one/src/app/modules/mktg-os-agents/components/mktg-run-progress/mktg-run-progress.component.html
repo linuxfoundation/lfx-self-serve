@@ -10,7 +10,14 @@
 @if (!headless() && runPage() && closedRun(); as run) {
   <section class="flex flex-col gap-3 text-sm text-gray-600" data-testid="mktg-run-progress-closed">
     <lfx-mktg-closed-run-message [run]="run" />
-    <a class="font-medium text-blue-700 hover:underline" [routerLink]="currentStateLink()" [queryParams]="{ run: currentRunId() || null, revision: null, generation: null, questions: null, mode: null, type: null }" queryParamsHandling="merge" data-testid="mktg-run-progress-current-link">{{ currentStateLabel() }}</a>
+    <a
+      class="font-medium text-blue-700 hover:underline"
+      [routerLink]="currentStateLink()"
+      [queryParams]="{ run: currentRunId() || null, revision: null, generation: null, questions: null, mode: null, type: null }"
+      queryParamsHandling="merge"
+      data-testid="mktg-run-progress-current-link"
+      >{{ currentStateLabel() }}</a
+    >
   </section>
 }
 @if (!headless() && !closedRun() && runPage() && (warning() || (runState() && runState() !== 'failed'))) {
