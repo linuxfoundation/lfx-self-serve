@@ -16,6 +16,7 @@ import {
   TemplateRef,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -195,6 +196,13 @@ export class MktgFrameworkViewComponent {
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
     this.destroyRef.onDestroy(() => this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    toObservable(this.printView)
+      .pipe(takeUntilDestroyed())
+      .subscribe((view) => {
+        if (!view) return;
+        if (view.brand.fontUrl) this.printService.ensureFontStylesheet(view.brand.fontUrl);
+        void this.printService.prepare(view.brand.fontFamily);
+      });
   }
 
   // === Protected methods ===
@@ -249,14 +257,14 @@ export class MktgFrameworkViewComponent {
 
   /**
    * Prints the framework as one document — the cover, the framework and
-   * the key numbers — through the browser's
-   * print dialog ("Save as PDF"), once the brand's typeface has loaded.
+   * the key numbers — through the browser's print dialog ("Save as PDF")
+   * inside the click; the typeface is prepared ahead.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, this.printView()?.brand.fontFamily ?? null);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   }
 
   // === Private initializers ===

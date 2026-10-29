@@ -15,7 +15,7 @@ Components must follow the 11-section structure defined in `.claude/rules/compon
 
 ## 2. PrimeNG wrapper strategy (SHOULD FIX)
 
-No direct `p-*` components in feature module templates. Must use `lfx-*` wrappers.
+No direct `p-*` components in feature module templates. Must use `lfx-*` wrappers (or an `lfx-ui-*` uikit component from `shared/uikit/`, which has no PrimeNG).
 
 **Violation:**
 
@@ -257,7 +257,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | No `console.log` — use `console.warn` or `console.error`                                                                                                                                                                                                                              | SHOULD FIX |
 | No nested ternaries                                                                                                                                                                                                                                                                   | SHOULD FIX |
-| Selector prefix must be `lfx-`                                                                                                                                                                                                                                                        | SHOULD FIX |
+| Selector prefix must be `lfx-` (`lfx-ui-` in `shared/uikit/`)                                                                                                                                                                                                                         | SHOULD FIX |
 | Use `inject()` for DI — never constructor-based injection                                                                                                                                                                                                                             | SHOULD FIX |
 | Use `@if`/`@for` template syntax — not `*ngIf`/`*ngFor`                                                                                                                                                                                                                               | SHOULD FIX |
 | Use `ReactiveFormsModule` always — never `[(ngModel)]` for forms                                                                                                                                                                                                                      | SHOULD FIX |
@@ -318,7 +318,7 @@ In changed `.html` files, look for raw form elements that must use LFX wrappers:
 | `<textarea`                       | `lfx-textarea`                                    |
 | `<div` with `animate-pulse` class | `<p-skeleton>` from PrimeNG                       |
 
-Exceptions: elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
+Exceptions: anything under `shared/uikit/**` (the PrimeNG-free uikit builds on raw `<input>` and `<button>` by design), elements inside comments, `<input type="hidden">`, or a signal-driven `<input type="checkbox">` that needs `[indeterminate]` and is not part of a form (`lfx-checkbox` binds a `FormGroup` control and has no indeterminate state or change output) — such a checkbox may stay raw with an in-template comment giving the rationale and pointing here. Note: LFX wrappers require `FormGroup` + `FormControl` — `ngModel` is not supported.
 
 ### 14.2 Dead code (CRITICAL for unused providers/imports/unbound outputs; DISCUSS for unused methods)
 

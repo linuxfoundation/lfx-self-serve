@@ -66,10 +66,20 @@ test.describe('Marketing family responsive structure', () => {
         }
         await expect(page.getByTestId('mktg-family-approve')).toHaveCount(0);
         await expect(page.getByTestId('mktg-family-sign-off-toggle')).toHaveCount(0);
-        // Sources still has its own live toggle; assert the named export controls,
-        // not every button in the aside, now that the roadmap toggle is hidden.
-        for (const id of ['family-export-pdf', 'family-export-slides']) {
-          await expect(page.getByTestId(id)).toHaveCount(familyId === MKTG_KIT_POSITIONING_FAMILY_ID ? 1 : 0);
+        // Sources retains its live toggle while roadmap sign-off stays hidden;
+        // scope export assertions to the real export actions, not every aside button.
+        const exportSlot = page.getByTestId('mktg-family-exports');
+        const exportActions = exportSlot.getByTestId('family-export-actions');
+        if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
+          await expect(exportActions.getByTestId('family-export-pdf').getByRole('button', { name: 'Download PDF', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-slides').getByRole('button', { name: 'Export to Google Slides', exact: true })).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Show', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-unsupported')).toHaveCount(0);
+        } else {
+          await expect(exportActions.getByTestId('family-export-pdf')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-slides')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-unsupported')).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle')).toHaveCount(0);
         }
         const table = await page.getByTestId('mktg-family-assets').boundingBox();
         const exports = await page.getByTestId('mktg-family-exports').boundingBox();
