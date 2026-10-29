@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 <section class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" aria-label="Comments" data-testid="mktg-comments-panel">
-  @if (comments.loading() || (!comments.loaded() && !comments.loadError())) {
+  @if (!comments.loaded() && !comments.loadError()) {
     <lfx-mktg-skeleton variant="card" [rows]="2" data-testid="mktg-comments-loading" />
   } @else {
     <h2 class="text-base font-semibold text-gray-900">Comments</h2>

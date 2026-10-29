@@ -7,6 +7,7 @@ import { kitTest as test, kitDocuments, kitRevision, kitJson, KIT_PROJECT, openK
 import { DOCUMENTS_URL, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
 import { member360Revision } from './fixtures/mock-data/member-360.mock';
+import { redraftFixture } from './helpers/mktg-os-redraft.helper';
 
 // Deliberately hold reads instead of racing fast local fixtures: QA can capture both paints.
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -82,6 +83,56 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await expect(composer).toHaveAttribute('data-refresh-identity', 'kept');
   await expect(composer).toBeFocused();
   expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+});
+
+test('two same-scope comments refreshes keep the heading and thread nodes without a skeleton', async ({ page }) => {
+  const { fixture } = await redraftFixture(page);
+  let reads = 0;
+  let release = () => {};
+  let pending = Promise.resolve();
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/documents/foundation-message/living/comments',
+    async (route) => {
+      reads++;
+      await pending;
+      await kitJson(route, { revisionId: new URL(route.request().url()).searchParams.get('revision'), threads: fixture.state.rows });
+    }
+  );
+  // A definitive refusal clears only the send intent and refreshes the same comments;
+  // no live generation, navigation or successful write is needed for either cycle.
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/documents/foundation-message/living/revise',
+    (route) => kitJson(route, { code: 'MKTG_REDRAFT_COMMENTS_BUSY' }, 409)
+  );
+  await fixture.open();
+  const panel = page.getByTestId('mktg-comments-panel');
+  const heading = panel.getByRole('heading', { name: 'Comments', exact: true });
+  const threads = panel.getByTestId('mktg-comment-thread');
+  await expect(heading).toBeVisible();
+  await expect(threads).toHaveCount(2);
+  await heading.evaluate((node) => node.setAttribute('data-refresh-identity', 'heading'));
+  for (let index = 0; index < 2; index++) {
+    await threads.nth(index).evaluate((node, id) => node.setAttribute('data-refresh-identity', id), `thread-${index}`);
+  }
+  for (let cycle = 0; cycle < 2; cycle++) {
+    pending = new Promise<void>((resolve) => (release = resolve));
+    const before = reads;
+    await panel.getByRole('button', { name: 'Send 2 open comments to the agent', exact: true }).click();
+    try {
+      await expect.poll(() => reads).toBeGreaterThan(before);
+      await expect(heading).toBeVisible();
+      await expect(heading).toHaveAttribute('data-refresh-identity', 'heading');
+      await expect(threads).toHaveCount(2);
+      for (let index = 0; index < 2; index++) await expect(threads.nth(index)).toHaveAttribute('data-refresh-identity', `thread-${index}`);
+      await expect(panel.getByTestId('mktg-comments-loading')).toHaveCount(0);
+    } finally {
+      release();
+    }
+    await expect(panel.getByRole('button', { name: 'Send 2 open comments to the agent', exact: true })).toBeEnabled();
+    await expect(heading).toHaveAttribute('data-refresh-identity', 'heading');
+    for (let index = 0; index < 2; index++) await expect(threads.nth(index)).toHaveAttribute('data-refresh-identity', `thread-${index}`);
+    await expect(panel.getByTestId('mktg-comments-loading')).toHaveCount(0);
+  }
 });
 
 test('approving during progress polls keeps the settled rail without inserting parent skeletons', async ({ page }) => {

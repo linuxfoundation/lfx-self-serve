@@ -214,6 +214,43 @@ describe('MktgCommentsPanelComponent', () => {
     expect(select).toHaveBeenLastCalledWith(null);
     expect(add).not.toHaveBeenCalled();
   });
+  it('keeps the settled heading and thread nodes through two same-scope refreshes, reserving skeletons for the first read', async () => {
+    const loading = signal(true);
+    const loaded = signal(false);
+    const threads = signal([mktgCommentFixture({ id: 'synthetic-first' }), mktgCommentFixture({ id: 'synthetic-second' })]);
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loading, loaded, threads })] });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    await fixture.whenStable();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector('[data-testid="mktg-comments-loading"]')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
+    expect(element.querySelector('h2')).toBeNull();
+    expect(element.querySelectorAll('[data-testid="mktg-comment-thread"]')).toHaveLength(0);
+    loaded.set(true);
+    loading.set(false);
+    await fixture.whenStable();
+    const heading = element.querySelector('h2');
+    const list = () => Array.from(element.querySelectorAll('[data-testid="mktg-comment-thread"]'));
+    const nodes = list();
+    expect(heading?.textContent).toBe('Comments');
+    expect(nodes).toHaveLength(2);
+    for (let cycle = 0; cycle < 2; cycle++) {
+      loading.set(true);
+      await fixture.whenStable();
+      expect(element.querySelector('[data-testid="mktg-comments-loading"]')).toBeNull();
+      expect(element.querySelector('h2')).toBe(heading);
+      list().forEach((node, index) => expect(node).toBe(nodes[index]));
+      expect(list()).toHaveLength(2);
+      threads.update((rows) => rows.map((row) => ({ ...row })));
+      loading.set(false);
+      await fixture.whenStable();
+      expect(element.querySelector('[data-testid="mktg-comments-loading"]')).toBeNull();
+      expect(element.querySelector('h2')).toBe(heading);
+      list().forEach((node, index) => expect(node).toBe(nodes[index]));
+      expect(list()).toHaveLength(2);
+    }
+  });
+
   it('distinguishes loading, failure, measured empty and loaded threads, and retries only reads', async () => {
     const loading = signal(true);
     const loaded = signal(false);
