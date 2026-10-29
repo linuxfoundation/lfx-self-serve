@@ -16,9 +16,9 @@ export default meta;
 type Story = StoryObj<UiProgressComponent>;
 
 export const Default: Story = {};
-export const Success: Story = { args: { value: 100, label: 'Import complete', valueText: '1,284 members', tone: 'success' } };
-export const Warning: Story = { args: { value: 86, label: 'Storage', valueText: '', tone: 'warning' } };
-export const ErrorState: Story = { name: 'Error', args: { value: 97, label: 'Build minutes', valueText: '', tone: 'error' } };
-export const Secondary: Story = { args: { value: 30, label: 'Secondary', valueText: '', tone: 'secondary' } };
+export const Success: Story = { args: { value: 100, max: 100, label: 'Import complete', valueText: '1,284 members', tone: 'success' } };
+export const Warning: Story = { args: { value: 86, max: 100, label: 'Storage', valueText: '', tone: 'warning' } };
+export const ErrorState: Story = { name: 'Error', args: { value: 97, max: 100, label: 'Build minutes', valueText: '', tone: 'error' } };
+export const Secondary: Story = { args: { value: 30, max: 100, label: 'Secondary', valueText: '', tone: 'secondary' } };
 export const RealMaximum: Story = { args: { value: 32, max: 50, valueText: '' } };
 export const WithoutLabelRow: Story = { args: { showLabel: false } };
