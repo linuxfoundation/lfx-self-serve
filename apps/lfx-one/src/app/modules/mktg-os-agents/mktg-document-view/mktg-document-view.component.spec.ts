@@ -20,6 +20,7 @@ import {
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
+  MKTG_RUN_ACTIVE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
@@ -57,7 +58,7 @@ import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -123,18 +124,18 @@ describe('MktgDocumentViewComponent', () => {
   const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
   const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
-  let resolveBrandKit: ReturnType<typeof vi.fn>;
+  let resolveBrandKit: Mock;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
   let store: {
-    listDocuments: ReturnType<typeof vi.fn>;
-    getDocument: ReturnType<typeof vi.fn>;
-    getRevision: ReturnType<typeof vi.fn>;
-    getApprovedRevision: ReturnType<typeof vi.fn>;
-    restoreRevision: ReturnType<typeof vi.fn>;
-    approveRevision: ReturnType<typeof vi.fn>;
-    saveLinkedinShareLink: ReturnType<typeof vi.fn>;
-    retryRun: ReturnType<typeof vi.fn>;
+    listDocuments: Mock;
+    getDocument: Mock;
+    getRevision: Mock;
+    getApprovedRevision: Mock;
+    restoreRevision: Mock;
+    approveRevision: Mock;
+    saveLinkedinShareLink: Mock;
+    retryRun: Mock;
   };
 
   function query(testId: string): HTMLElement | null {
@@ -351,7 +352,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: Member360Service, useValue: { download: vi.fn(() => of(new Blob(['synthetic workbook']))) } },
         { provide: UserService, useValue: { impersonating, user: computed(() => (subject() ? { sub: subject() } : undefined)) } },
-        { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER) } },
+        { provide: MktgAgentRunService, useValue: { resume: vi.fn(() => NEVER), activeRunConflict: MktgAgentRunService.prototype.activeRunConflict } },
         { provide: MktgRunAttemptService, useValue: { consume: vi.fn(() => null), load: vi.fn(() => null), prepare: vi.fn(), save: vi.fn() } },
         { provide: HttpClient, useValue: {} },
         { provide: MktgPendingDocumentService, useValue: pending },
@@ -1485,6 +1486,135 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
+  it.each(['discarded', 'superseded'] as const)('explains a %s selected run instead of a blank page, with no active controls or polling', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const closedAt = '2026-10-19T13:00:00Z';
+    const run = { ...started(state), closedAt };
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [run, { ...started('writing'), runId: 'c'.repeat(64) }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(store.getDocument).toHaveBeenCalledWith(PROJECT.uid, 'brand-kit', 'living', false, undefined, false, run.runId);
+    const message = query('mktg-document-view-closed-message')?.textContent?.trim();
+    if (state === 'discarded') {
+      expect(message).toContain('This run was discarded at');
+      expect(message).toContain('19 Oct 2026');
+      expect(message).not.toContain('a newer run was started');
+    } else expect(message).toBe('A newer run replaced this one.');
+    const link = query('mktg-document-view-newer-run');
+    expect(link?.textContent?.trim()).toBe('View started runs');
+    expect(link?.getAttribute('href')).toContain('/documents?project=');
+    for (const id of [
+      'mktg-document-view-run',
+      'mktg-document-view-run-steps',
+      'mktg-run-activity-steps',
+      'mktg-document-view-progress-retry',
+      'mktg-document-view-intake-link',
+    ])
+      expect(query(id)).toBeNull();
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3 * MKTG_RUN_POLL.intervalMs);
+    expect(store.getDocument).toHaveBeenCalledTimes(reads);
+    expect(store.retryRun).not.toHaveBeenCalled();
+  });
+
+  it.each(['discarded', 'superseded'] as const)('opens the exact replacement of a %s run when optional public metadata is present', async (state) => {
+    const replacedBy = 'c'.repeat(64);
+    const run = { ...started(state), closedAt: '2026-10-19T13:00:00Z', closedBy: 'Synthetic writer', replacedBy };
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [run] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    const message = query('mktg-document-view-closed-message')?.textContent?.trim();
+    if (state === 'discarded') expect(message).toBe('This run was discarded by Synthetic writer at 19 Oct 2026, 13:00; a newer run was started.');
+    else expect(message).toBe('A newer run replaced this one.');
+    const link = query('mktg-document-view-newer-run');
+    expect(link?.textContent?.trim()).toBe('Open the newer run');
+    const target = new URL(link?.getAttribute('href') ?? '', 'http://localhost');
+    expect(target.pathname).toBe('/mktg-os-agents/documents/brand-kit/living');
+    expect(target.searchParams.get('run')).toBe(replacedBy);
+    expect(target.searchParams.get('project')).toBe(PROJECT.slug);
+    expect(target.searchParams.has('revision')).toBe(false);
+  });
+
+  it.each([
+    { closedBy: null, closedAt: '2026-10-19T13:00:00Z', message: 'This run was discarded at 19 Oct 2026, 13:00.' },
+    { closedBy: 'Synthetic writer', closedAt: undefined, message: 'This run was discarded by Synthetic writer.' },
+    { closedBy: null, closedAt: undefined, message: 'This run was discarded.' },
+  ])('omits unknown closure facts: $message', async ({ closedBy, closedAt, message }) => {
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...started('discarded'), closedBy, closedAt }] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe(message);
+    expect(query('mktg-document-view-newer-run')?.getAttribute('href')).toBe('/mktg-os-agents/documents?project=testorbit');
+  });
+
+  it('settles an already open run page when the next timer read reports discard', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = started('writing');
+    store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [], runs: [run] }));
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...run, state: 'discarded' }] }));
+    await render(`/documents/brand-kit/living?run=${run.runId}`);
+    expect(progressReader().headless()).toBe(true);
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, 'brand-kit', 'living', true, undefined, false, run.runId);
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    expect(query('mktg-document-view-run-steps')).toBeNull();
+    expect(query('mktg-document-view-progress-retry')).toBeNull();
+  });
+
+  it.each([
+    ['prepared', 'discarded'],
+    ['recovered', 'discarded'],
+    ['recovered', 'superseded'],
+    ['one-off', 'discarded'],
+    ['one-off', 'superseded'],
+  ] as const)('cancels the %s creator stream on %s metadata before a failing body read can retain active state', async (kind, state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const type = kind === 'one-off' ? MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post') : BRAND_KIT;
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic run type');
+    const documentId = type.kind === 'run' ? 'run-' + 'a'.repeat(24) : 'living';
+    const pending = preparedPending();
+    pending.request = { ...pending.request, intake, agentId: intake.agentId, documentId };
+    const attempt = {
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: pending.request.agentId, sessionId: 'synthetic-closed-session', ownerToken: 'synthetic-proof' },
+    };
+    pending.attempt = attempt;
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    if (kind === 'prepared') vi.mocked(attempts.consume).mockReturnValue({ subject: 'synthetic-owner', pending });
+    else vi.mocked(attempts.load).mockReturnValue(pending);
+    const events = new Subject<MktgGenerateProgress>();
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(events);
+    const response = { ...detail, type, documentId };
+    const run = { ...started('writing'), agentKey: type.agentKey, documentId };
+    store.getDocument.mockReturnValueOnce(of({ ...response, runs: [run] }));
+    store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...run, state }] }));
+    store.getRevision
+      .mockReturnValueOnce(of({ ...revisionResponse(LATEST), type, documentId }))
+      .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render(`/documents/${type.agentKey}/${documentId}?` + (kind === 'prepared' ? 'generation=synthetic-closed-handoff' : `run=${attempt.runId}`));
+    expect(events.observed).toBe(true);
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    navigate.mockClear();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(events.observed).toBe(false);
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    expect(store.getRevision).toHaveBeenCalledOnce(); // Closure skips the now-failing body read.
+    events.next({ type: 'questions', pending: { attempt, questionsId: 'c'.repeat(64), questions: [] } });
+    await settle();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(attempts.prepare).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    events.complete();
+  });
+
+  it('does not invent a closure time or person for a legacy discarded run', async () => {
+    store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [started('discarded')] }));
+    await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded.');
+  });
+
   it.each(['cancelled', 'rejected'])('retries the same public run redirect after navigation is %s', async (outcome) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const response = { ...detail, runs: [started('writing')] };
@@ -1683,6 +1813,37 @@ describe('MktgDocumentViewComponent', () => {
       expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-questions' }) })
     );
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+  });
+
+  it('returns a validated no-answers 409 to the intake through the existing visit-only prepared token', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === ICP_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic ICP type');
+    const request = { agentId: ICP_INTAKE.agentId, intake: ICP_INTAKE, projectUid: PROJECT.uid, newRun: true, answers: { project_name: 'Synthetic ICP' } };
+    const conflict = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Another writer has a run in progress.',
+      activeRunId: 'c'.repeat(64),
+      state: 'writing',
+      agentKey: type.agentKey,
+      documentId: 'living',
+      startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    vi.mocked(attempts.consume).mockReturnValueOnce({ subject: 'synthetic-sub', pending: { request, state: 'draft', updatedAt: new Date().toISOString() } });
+    vi.mocked(attempts.prepare).mockReturnValue('generation-synthetic-conflict');
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    store.getDocument.mockReturnValue(of({ ...detail, type, revisions: [], runs: [] }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render('/documents/icp/living?generation=synthetic-start');
+    expect(attempts.save).toHaveBeenCalledWith(expect.objectContaining({ request, state: 'failed', activeRunConflict: conflict }));
+    expect(attempts.prepare).toHaveBeenCalledWith(request, true);
+    expect(navigate).toHaveBeenCalledWith(
+      expect.arrayContaining([ICP_INTAKE.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ questions: 'generation-synthetic-conflict', mode: null, generation: null }) })
+    );
+    expect(query('mktg-document-view-failure-reply')).toBeNull();
   });
 
   it('consumes an accepted one-off only with its exact document scope and resumes the shared poll', async () => {
@@ -1922,7 +2083,7 @@ describe('MktgDocumentViewComponent', () => {
         expect(query('mktg-document-view-intake-link')?.querySelector('button')?.className).not.toContain('p-button-text');
         expect(query('mktg-document-view-progress-retry')?.querySelector('button')?.className).toContain('p-button-text');
         expect(query('mktg-document-view-failure-actions')?.textContent).toContain('only if you think it is still running; starts nothing new');
-        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64));
+        expect(store.getDocument).toHaveBeenLastCalledWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', false, 'b'.repeat(64), false, 'b'.repeat(64));
         store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
         query('mktg-document-view-progress-retry')?.querySelector('button')?.click();
         await settle();

@@ -10,7 +10,7 @@ import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesRes
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { EventAttendeesService } from '../../services/event-attendees.service';
@@ -139,5 +139,17 @@ describe('EventAttendeesComponent — event dropdown follows the range (lfx-self
     expect(ada.lastAttendedTs).toBe(daysFromToday(-3));
     expect(ada.mostRecentEventName).toBe('newer-start-only');
     expect(component.expandedRowsMap()['p-1'].map((row) => row.eventId)).toEqual(['newer-start-only', 'older-ended']);
+  });
+
+  it('opens the person drawer for the range the tab lists the person in', async () => {
+    await mount('/?tab=events&range=90d');
+    const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+    (fixture.componentInstance as unknown as { onPersonClick(row: object, event: Event): void }).onPersonClick(
+      { personKey: 'p-1', name: 'Ada Lovelace', title: null, initials: 'AL', avatarColorClass: '' },
+      new Event('click')
+    );
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', defaultTab: 'events', range: '90d' }));
   });
 });

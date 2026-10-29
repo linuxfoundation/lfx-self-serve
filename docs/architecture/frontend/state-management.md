@@ -406,7 +406,7 @@ not the result or a feedback form. Direct no-answers runs, questions runs and
 restored accepted attempts stay there through checking and receipt-less readiness.
 Only the private attempt's exact stored-revision receipt lands with `revision=`;
 recorded terminal failures open the document page's failed run card. Navigation
-recovery retries only its saved destination, never Generate or answers.
+recovery retries only its saved destination, never Generate or answers. An active-conflict handoff restores its scoped request before opening the guard, so a successful recheck can follow that request's exact receipt. A recheck timeout or non-transient read error clears running/navigation flags and returns to the editable intake without another automatic start.
 A partial Guild stream cannot distinguish writing from another research/questions
 round; model starts or completions alone never authorize a landing. The producer
 can label no-questions writing retroactively once an unambiguous finalize confirms
@@ -416,7 +416,7 @@ it. Agent writing markers remain a contract follow-up in marketing-os-agents'
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
 single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
 failed card renders there, and an active `?run=` replaces to the run page. The
-run page owns one asset heading, one status line and the progress steps.
+run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver's matching private resume stream; late questions/results cannot replace the closed view.
 One-off receivers keep their existing poll and generating presentation. A living run-page `?run=` reader uses that public progress unless
 this browser holds the matching private attempt. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave

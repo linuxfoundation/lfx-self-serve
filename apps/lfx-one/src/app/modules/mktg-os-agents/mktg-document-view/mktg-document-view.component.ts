@@ -111,9 +111,11 @@ import {
   take,
   takeUntil,
   Subject,
+  ReplaySubject,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -174,6 +176,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     Member360ResultComponent,
     MktgRunActivityComponent,
     MktgRunProgressComponent,
+    MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
@@ -412,8 +415,21 @@ export class MktgDocumentViewComponent {
   );
 
   protected readonly selectedRun: Signal<MktgDocumentRunProgress | null> = this.initSelectedRun();
+  protected readonly closedRun = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'discarded' || run?.state === 'superseded' ? run : null;
+  });
+  protected readonly newerRunsLink = computed(() => {
+    const root = `${mktgKitRootPath(this.router.url)}/documents`;
+    const run = this.closedRun();
+    return run?.replacedBy ? `${root}/${run.agentKey}/${run.documentId}` : root;
+  });
+  protected readonly newerRunsParams = computed(() => ({
+    project: this.projectContext.activeContext()?.slug || this.routeProject(),
+    ...(this.closedRun()?.replacedBy && { run: this.closedRun()?.replacedBy }),
+  }));
   protected readonly progressView = viewChild(MktgRunProgressComponent);
-  protected readonly runState = computed(() => this.progressView()?.runState() ?? null);
+  protected readonly runState = computed(() => this.closedRun()?.state ?? this.progressView()?.runState() ?? null);
   protected readonly liveState = this.initLiveState();
   protected readonly waitingForQuestions = computed(
     () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
@@ -602,11 +618,36 @@ export class MktgDocumentViewComponent {
               saved && (saved.state === 'writing' || needsQuestions) && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId)
                 ? saved
                 : null;
+            const closedAttempt$ = new ReplaySubject<void>(1);
             const resume = (pending: MktgPendingGeneration) =>
               this.runService.resume(pending).pipe(
+                takeUntil(closedAttempt$),
+                filter(() => !this.closedRun()),
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
                 catchError((error: unknown) => {
+                  const conflict =
+                    error instanceof HttpErrorResponse &&
+                    error.status === 409 &&
+                    pending.request.projectUid === this.projectContext.activeContextUid() &&
+                    request.subject === (this.userService.user()?.sub ?? '')
+                      ? this.runService.activeRunConflict(error, pending.request)
+                      : null;
+                  if (conflict) {
+                    const retained = this.attempts.load(pending.request.projectUid, pending.request.agentId, pending.request.documentId) ?? pending;
+                    this.attempts.save({ ...retained, state: 'failed', activeRunConflict: conflict });
+                    const token = this.attempts.prepare(pending.request, true);
+                    void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
+                      queryParams: {
+                        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+                        project: this.projectContext.activeContext()?.slug ?? null,
+                        mode: null,
+                        type: null,
+                        questions: token,
+                      },
+                    });
+                    return EMPTY;
+                  }
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);
@@ -635,14 +676,19 @@ export class MktgDocumentViewComponent {
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
-              const metadata$ = defer(() => this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
+              const selectedRunId = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
+              const metadata$ = defer(() =>
+                selectedRunId
+                  ? this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, selectedRunId)
+                  : this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)
+              ).pipe(
                 switchMap((detail) => {
                   const id = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
                   const selected = id ? detail.runs?.find((run) => run.runId === id) : detail.runs?.[0];
                   if (poll || this.localProgress() || selected?.state !== 'failed' || this.refreshedFailures.has(selected.runId)) return of(detail);
                   this.refreshedFailures.add(selected.runId);
                   return this.documentStore
-                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId)
+                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId, false, selectedRunId || undefined)
                     .pipe(
                       catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error)))
                     );
@@ -668,6 +714,10 @@ export class MktgDocumentViewComponent {
                       .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                   : metadata$.pipe(
                       switchMap((detail) => {
+                        const selected = detail.runs?.find((run) => run.runId === (request.runId || this.handoffRunId()));
+                        if (selected?.state === 'discarded' || selected?.state === 'superseded') {
+                          return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
+                        }
                         const revisionId =
                           request.revisionId ||
                           detail.current?.revisionId ||
@@ -691,6 +741,12 @@ export class MktgDocumentViewComponent {
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
+                  if (this.closedRun()) {
+                    closedAttempt$.next();
+                    this.localProgress.set(null);
+                    this.runFailed.set(false);
+                    this.errorText.set('');
+                  }
                   if (request.agentKey === 'member-360' && failure?.state === 'failed') {
                     this.runFailed.set(true);
                     this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason ?? 'agent_stopped']);
@@ -719,6 +775,12 @@ export class MktgDocumentViewComponent {
                     ),
                     tap((cycle) => {
                       this.runDetail.set(cycle.detail);
+                      if (this.closedRun()) {
+                        closedAttempt$.next();
+                        this.localProgress.set(null);
+                        this.runFailed.set(false);
+                        this.errorText.set('');
+                      }
                       this.activityContext.set([request.subject, this.selectedRun()?.activity]);
                       const selected = cycle.detail.runs?.find((run) => run.runId === this.handoffRunId());
                       if (selected) observedRun = true;
@@ -733,7 +795,7 @@ export class MktgDocumentViewComponent {
                         return EMPTY;
                       }
                       const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                      if (this.selectedRun()?.state === 'questions' && unavailableSince === null) return EMPTY;
+                      if (this.closedRun() || (this.selectedRun()?.state === 'questions' && unavailableSince === null)) return EMPTY;
                       const local = this.localProgress();
                       if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
                       let delay: number = MKTG_RUN_POLL.intervalMs;
@@ -804,7 +866,16 @@ export class MktgDocumentViewComponent {
     this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
-    if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
+    if (
+      !this.publicProgressPolling() ||
+      cycle.detail.progressUnavailable ||
+      !run ||
+      run.state === 'failed' ||
+      run.state === 'discarded' ||
+      run.state === 'superseded' ||
+      !commands ||
+      this.redirectedRun === run.runId
+    )
       return;
     this.redirectedRun = run.runId;
     const failedNavigation = () => {
@@ -1218,7 +1289,7 @@ export class MktgDocumentViewComponent {
 
   private initLiveState(): Signal<string> {
     return computed(() => {
-      if (this.loading()) return '';
+      if (this.loading() || this.closedRun()) return '';
       const state = this.runState();
       if (state) {
         // Living documents observe active runs headlessly; only failure belongs here.

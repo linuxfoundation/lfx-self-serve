@@ -221,21 +221,6 @@ export interface HealthMetricsOverviewEmptyStateCopy {
   past?: HealthMetricsOverviewEmptyPeriodCopy;
 }
 
-/** The single card that replaces the Overview when the foundation has no data for the period. */
-export interface HealthMetricsOverviewBlankCopy {
-  title: string;
-  lead: string;
-  reasons: readonly string[];
-}
-
-/** One tile in the whole-foundation empty state's curved row of icons. */
-export interface HealthMetricsOverviewBlankTile {
-  icon: string;
-  /** The tile's drop and tilt, which lay the row out as a gentle upward curve. */
-  transform: string;
-  iconSizePx: number;
-}
-
 /** A change against the year before: the arrow follows the figure, the colour whether that is good. */
 export interface HealthMetricsOverviewDelta {
   label: string;
@@ -553,3 +538,6 @@ export interface HealthMetricsOverviewTrendDialogData {
   event: HealthMetricsOverviewEvent;
   isPast: boolean;
 }
+
+/** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */
+export type HealthMetricsOverviewKpiStripLayout = 'row' | 'stack' | 'grid';

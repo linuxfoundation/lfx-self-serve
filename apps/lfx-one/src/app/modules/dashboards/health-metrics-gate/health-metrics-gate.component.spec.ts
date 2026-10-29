@@ -238,6 +238,31 @@ describe('HealthMetricsGateComponent', () => {
     });
   });
 
+  describe('tab dropdown', () => {
+    function tabForm(): FormGroup<{ tab: FormControl<string> }> {
+      return (fixture.componentInstance as unknown as { tabForm: FormGroup<{ tab: FormControl<string> }> }).tabForm;
+    }
+
+    it('offers every tab as the narrowest header’s dropdown, on the routed tab', async () => {
+      await render(signal(true), '/foundation/health-metrics/events?project=acme');
+
+      expect(query('health-metrics-tabs-select')).not.toBeNull();
+      expect(tabForm().controls.tab.value).toBe('events');
+    });
+
+    it('opens the picked tab, keeping the query, and follows later navigations', async () => {
+      await render(signal(true), '/foundation/health-metrics?project=acme');
+
+      tabForm().controls.tab.setValue('training');
+      await settle();
+      expect(currentUrl()).toBe('/foundation/health-metrics/training?project=acme');
+
+      await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/members?project=acme');
+      await settle();
+      expect(tabForm().controls.tab.value).toBe('members');
+    });
+  });
+
   it('carries no project selector or export, and leaves the URL alone', async () => {
     await render(signal(true), '/foundation/health-metrics/engagement?project=acme-foundation');
 

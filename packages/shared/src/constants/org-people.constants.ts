@@ -12,6 +12,8 @@ import type {
   OrgAllEmployeeStats,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
   OrgEventAttendeesResponse,
   OrgTraineesResponse,
   PeopleTabConfig,
@@ -74,11 +76,24 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
 export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploymentOption[] = [
   { label: 'Current employees', value: 'current' },
   { label: 'Former employees', value: 'former' },
-  { label: 'All', value: 'all' },
+  { label: 'All employees', value: 'all' },
 ] as const;
 
 /** Default employment filter — the URL drops `?employment=` when it is active. */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
+
+/** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
+export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
+
+/** Accessible label of a People tab's employment filter. */
+export const ORG_EMPLOYMENT_LABEL = 'Employment';
+
+/**
+ * Default employment filter on People → Contributors and Org Lens Access (lfx-self-serve#4627) — the URL drops
+ * `?employment=` when it is active. Everyone, former employees included: Contributors keeps matching the Overview's
+ * Active Contributors card, and Access lists every principal. All Employees has its own default.
+ */
+export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
@@ -116,7 +131,7 @@ export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
-  maintainers: 0,
+  maintainerRoles: 0,
   contributors: 0,
   projects: 0,
   foundations: 0,

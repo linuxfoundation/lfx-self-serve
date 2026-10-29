@@ -12,21 +12,7 @@
       data-testid="events-speakers-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-speakers-loading" aria-hidden="true" />
-  } @else if (!view().foundationMeasured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="No speaker proposals yet"
-      subtitle="Once this foundation's events open a call for proposals, submissions and speakers appear here."
-      data-testid="events-speakers-foundation-unmeasured" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="Speakers and proposals unavailable for this period"
-      subtitle="Proposals for the selected period have not been measured yet. Pick another period to see them."
-      data-testid="events-speakers-unmeasured" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-speakers-controls">
       <lfx-filter-pills
         variant="track"
