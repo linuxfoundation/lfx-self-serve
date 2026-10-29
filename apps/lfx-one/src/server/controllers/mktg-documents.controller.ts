@@ -126,7 +126,7 @@ export class MktgDocumentsController {
       const ownRuns = req.query['ownRuns'] === '1';
       const selected = ownRuns ? await this.documentRuns.ownProgress(req, project, progress) : progress;
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ ...documents, ...selected, ...(ownRuns && { creatorScoped: true }) });
+      res.json({ ...documents, ...selected, ...(ownRuns ? { creatorScoped: true } : {}) });
     } catch (error) {
       next(error);
     }

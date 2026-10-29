@@ -13,6 +13,7 @@ import {
   MEMBER_360_DEFINITE_SEND_HTTP_STATUSES,
   MEMBER_360_DEFINITE_CONNECT_CODES,
   MEMBER_360_ACTIVITY_TOOLS,
+  MEMBER_360_ACTIVITY_LABELS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SHA256_REGEX,
@@ -75,7 +76,7 @@ export class Member360Service {
     return {
       status: result.status === 'needs_input' ? 'questions' : result.status,
       activity: result.activity,
-      ...(result.questions && { questions: result.questions, questionsId: result.questionsId }),
+      ...(result.questions ? { questions: result.questions, questionsId: result.questionsId } : {}),
       persistence: result.persistence,
       failureText: result.status === 'needs_input' ? undefined : result.message,
       failureReason: result.reason,
@@ -144,11 +145,13 @@ export class Member360Service {
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
     const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
-    const redactActivity = createMember360Redactor(contacts);
-    const activity = buildMktgRunActivity(payloads, MEMBER_360_ACTIVITY_TOOLS).map((step) => ({
-      ...step,
-      label: redactActivity(step.label),
-      ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),
+    const activity = buildMktgRunActivity(payloads, MEMBER_360_ACTIVITY_TOOLS).map(({ id, kind, status, startedAt, endedAt }) => ({
+      id,
+      kind,
+      status,
+      startedAt,
+      ...(endedAt !== undefined ? { endedAt } : {}),
+      label: MEMBER_360_ACTIVITY_LABELS[kind],
     }));
     const finalizeResults = payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL));
     for (const payload of finalizeResults) {
@@ -241,7 +244,7 @@ export class Member360Service {
       const questionsResult: Member360Result = {
         status: 'needs_input',
         activity,
-        ...(questions && questionsText && { questions, questionsId: member360QuestionsId(questionsText) }),
+        ...(questions && questionsText ? { questions, questionsId: member360QuestionsId(questionsText) } : {}),
       };
       if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
         return questionsResult;
@@ -271,7 +274,7 @@ export class Member360Service {
         ...storedEnvelope,
         inputs: {
           ...storedEnvelope.inputs,
-          ...(storedEnvelope.inputs.research && { research: redactMember360Research(storedEnvelope.inputs.research, redact) }),
+          ...(storedEnvelope.inputs.research ? { research: redactMember360Research(storedEnvelope.inputs.research, redact) } : {}),
         },
         project_uid: project.uid,
         ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),

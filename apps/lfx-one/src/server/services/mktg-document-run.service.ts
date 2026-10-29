@@ -602,7 +602,7 @@ export class MktgDocumentRunService {
       );
       runs.push(...batch.filter((row): row is MktgDocumentRunProgress => row !== null));
     }
-    return { runs, ...(memberLookupFailed && runs.length === 0 && { progressUnavailable: true }) };
+    return { runs, ...(memberLookupFailed && runs.length === 0 ? { progressUnavailable: true } : {}) };
   }
 
   /** Creator-only public selector; the private Guild session never leaves the BFF. */
@@ -965,8 +965,8 @@ export class MktgDocumentRunService {
         ...(revisionId && { 'revision-id': revisionId }),
         ...(run.priorRevisionId && { 'prior-revision-id': run.priorRevisionId }),
         ...(questionsId && { 'answered-questions-id': questionsId }),
-        ...(run.answeredBySubject && { 'answered-by': run.answeredBySubject }),
-        ...(run.answeredAt && { 'answered-at': run.answeredAt }),
+        ...(run.answeredBySubject ? { 'answered-by': run.answeredBySubject } : {}),
+        ...(run.answeredAt ? { 'answered-at': run.answeredAt } : {}),
         ...(persistRetries !== undefined && { 'persist-retries': String(persistRetries) }),
         ...(failureText !== undefined && { 'failure-text': this.snapshot(failureText) }),
         ...(isMktgRunFailureReason(failureReason) && { 'failure-reason': failureReason }),

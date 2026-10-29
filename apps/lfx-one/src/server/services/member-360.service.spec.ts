@@ -635,6 +635,28 @@ describe('Member 360 entitlement and generation', () => {
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
+  it('whitelists structural activity fields and fixed labels, never URL labels/search details/tool inputs', async () => {
+    const search = JSON.stringify({
+      type: 'runtime_start',
+      created_at: '2026-10-29T10:00:06Z',
+      task: { id: 'private-query', entity_type: 'EntTaskTool', tool_name: 'web_search_web_search', status: 'DONE' },
+      content: { query: 'PRIVATE-QUERY-SENTINEL' },
+    });
+    const payloads = member360ActivityReplay().slice(0, -1);
+    payloads.splice(6, 0, search);
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    const fixed = new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS));
+    expect(result.activity?.map((step) => step.kind)).toEqual(expect.arrayContaining(['reading', 'lfx', 'search', 'writing', 'checking']));
+    for (const step of result.activity ?? []) {
+      expect(fixed.has(step.label)).toBe(true);
+      expect(Object.keys(step).every((key) => ['id', 'kind', 'status', 'startedAt', 'endedAt', 'label'].includes(key))).toBe(true);
+      expect(step).not.toHaveProperty('detail');
+    }
+    expect(JSON.stringify(result.activity)).not.toMatch(
+      /PRIVATE-QUERY|synthetic\.example|never-render|record_member_actions|score_member_360|finalize_member_360/
+    );
+  });
   it('projects Member-specific Writing and Checking labels from its recorded tool sequence', async () => {
     mocks.getRawEventPayloads.mockResolvedValue(member360ActivityReplay().slice(0, -1));
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
@@ -659,7 +681,7 @@ describe('Member 360 entitlement and generation', () => {
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
     expect(result.status).toBe('pending');
     expect(result.activity).toEqual([
-      expect.objectContaining({ kind: 'search', label: 'Searching the web', detail: '“Sample Foundation speaking”', status: 'running' }),
+      expect.objectContaining({ kind: 'search', label: 'Searching the web', status: 'running' }),
       expect.objectContaining({ kind: 'lfx', label: 'Checking LFX', status: 'running' }),
     ]);
     expect(JSON.stringify(result)).not.toContain('private-tool-output');
@@ -681,7 +703,8 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue(payloads);
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
     expect(result.status).toBe(questions ? 'needs_input' : 'pending');
-    expect(JSON.stringify(result.activity)).toContain('[contact redacted]');
+    expect(result.activity?.every((step) => new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS)).has(step.label))).toBe(true);
+    expect(result.activity?.some((step) => Object.hasOwn(step, 'detail'))).toBe(false);
     expect(JSON.stringify(result.activity)).not.toContain('opaque-contact-3');
     expect(JSON.stringify(result.activity)).not.toContain('owner@example.test');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();

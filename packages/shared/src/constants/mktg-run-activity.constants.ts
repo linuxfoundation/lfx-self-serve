@@ -101,6 +101,9 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
 
 /** Fixed Member report copy; header phase labels stay shared. */
 export const MEMBER_360_ACTIVITY_LABELS = {
+  reading: 'Reading sources',
+  search: 'Searching the web',
+  lfx: 'Checking LFX',
   writing: 'Writing the report',
   checking: 'Checking the report',
   questions: MKTG_RUN_ACTIVITY_LABELS.questions,

@@ -26,7 +26,7 @@ function mockEventsResponse(items: unknown[], pagination?: GuildRawEventsPage['p
   return {
     ok: true,
     status: 200,
-    json: () => Promise.resolve({ items, ...(pagination && { pagination }) }),
+    json: () => Promise.resolve({ items, ...(pagination ? { pagination } : {}) }),
   } as unknown as Response;
 }
 

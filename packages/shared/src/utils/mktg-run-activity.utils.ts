@@ -272,7 +272,7 @@ export function buildMktgRunActivity(payloads: string[], agentTools?: Readonly<R
       label: definition.label,
       status,
       startedAt,
-      ...(status !== 'running' && endedAt && { endedAt }),
+      ...(status !== 'running' && endedAt ? { endedAt } : {}),
     };
     steps.push(step);
     if (local && status === 'running') openLocal.push(step);
@@ -292,7 +292,7 @@ export function buildMktgRunActivity(payloads: string[], agentTools?: Readonly<R
         label: MKTG_RUN_ACTIVITY_LABELS.checkingGeneric,
         status,
         startedAt,
-        ...(status !== 'running' && endedAt && { endedAt }),
+        ...(status !== 'running' && endedAt ? { endedAt } : {}),
       };
       steps.push(step);
       if (local && status === 'running') openLocal.push(step);
