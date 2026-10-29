@@ -461,9 +461,8 @@ export class MeetingComposerFormService {
 
   /**
    * Replaces the guest list and re-derives the pending registrant changes from it.
-   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` is
-   * always empty today — the composer has no guest-edit affordance, so nothing produces a `'modified'`
-   * guest; it stays wired so adding that affordance is a change to the Guests section alone.
+   * @description Single write path, so `registrantUpdates` can never drift from `guests`. `toUpdate` holds
+   * the saved guests flagged `'modified'`, which today is only a Meeting Host toggle from the Guests section.
    */
   public setGuests(next: MeetingRegistrantWithState[]): void {
     this.guests.set(next);
@@ -1086,10 +1085,15 @@ export class MeetingComposerFormService {
           // attribution locally would only make the "via <group>" chip claim a move that never reaches
           // the API and disappears on the next load. Re-attributing a saved guest means removing and
           // re-adding them.
+          // A restored guest keeps a host change made before they were queued for deletion, so it has to
+          // stay `modified` for `setGuests` to queue the update; `originalData` is the saved copy.
+          const hostChanged = !!guest.originalData && !!guest.host !== !!guest.originalData.host;
+          const restoredState = hostChanged ? ('modified' as const) : ('existing' as const);
+
           kept.push({
             ...guest,
             ...(guest.state === 'new' ? this.groupAttribution(member) : {}),
-            ...(restore ? { state: 'existing' as const } : {}),
+            ...(restore ? { state: restoredState } : {}),
           });
           return kept;
         }
