@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Server-internal shapes for reads of ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES and
-// ORG_MAINTAINER_ROLES_MONTHLY (lfx-self-serve#4482). A role is one (person, Insights project) pair.
+// Server-internal shapes for reads of the ANALYTICS.PLATINUM_LFX_ONE maintainer roles tables (lfx-self-serve#4482,
+// lfx-self-serve#4605). A role is one (person, Insights project) pair.
 // They live in the shared package because AGENTS.md prohibits module-level interfaces inside
 // apps/lfx-one/; they are NOT part of the wire contract consumed by the frontend.
 
@@ -12,8 +12,16 @@ export interface OrgMaintainerRoleOverlap {
   binds: number[];
 }
 
-/** The two maintainer roles tables; a read names the one it may find missing. */
-export type OrgMaintainerRolesTable = 'ORG_MAINTAINER_ROLES' | 'ORG_MAINTAINER_ROLES_MONTHLY';
+/**
+ * The maintainer roles tables; a read names the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role,
+ * with or without an account; the ORG_LENS_PROJECT_* series are Project Detail's sparkline per account and project.
+ */
+export type OrgMaintainerRolesTable =
+  | 'ORG_MAINTAINER_ROLES'
+  | 'ORG_MAINTAINER_ROLES_MONTHLY'
+  | 'PROJECT_MAINTAINER_ROLES'
+  | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY'
+  | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME';
 
 /** A count of distinct maintainer roles. */
 export interface OrgMaintainerRolesCountRow {
@@ -51,4 +59,26 @@ export interface OrgProjectMaintainerRoleRow {
 export interface OrgMaintainerRolesMonthlyRow {
   METRIC_MONTH: Date;
   ACTIVE_ROLES: number | null;
+}
+
+/** One sparkline point of Project Detail's Maintainer roles card: the account's and every company's roles in that period. */
+export interface OrgProjectMaintainerRolesSeriesRow {
+  ACCOUNT_ROLES: number | null;
+  PROJECT_ROLES: number | null;
+}
+
+/** A calendar month of the 1y/2y sparkline (ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY). */
+export interface OrgProjectMaintainerRolesMonthlyRow extends OrgProjectMaintainerRolesSeriesRow {
+  SPAN_MONTH: Date | string | null;
+}
+
+/** A lifetime bucket of the all-time sparkline (ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME). */
+export interface OrgProjectMaintainerRolesLifetimeRow extends OrgProjectMaintainerRolesSeriesRow {
+  BUCKET_INDEX: number | null;
+}
+
+/** A leaderboard organization's roles on a project and every company's roles there, overlapping one range. */
+export interface OrgOrganizationMaintainerRolesRow {
+  ORGANIZATION_ROLES: number | null;
+  PROJECT_ROLES: number | null;
 }

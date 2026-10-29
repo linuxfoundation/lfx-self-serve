@@ -6,6 +6,7 @@ import {
   ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES,
   ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
 } from '@lfx-one/shared/constants';
+import type { OrgLensInfluenceBlock, OrgLensProjectInfluenceCard } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
@@ -297,6 +298,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   // Every warehouse column the service's category map reads, spelled out here independently of that
   // map. A column named on only one side resolves to no column on the other and surfaces as a zeroed
   // figure rather than an error, so the assertions below check the mapped values, not just the keys.
+  // The maintainer category's count and total are maintainer roles, read from the roles table instead.
   // Per-category points are chosen so they sum exactly to each dimension's score at two decimals but
   // NOT at one, which is what pins the drawer's total to its own column of points.
   const populatedBreakdownRow = {
@@ -308,8 +310,6 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     ECOSYSTEM_INFLUENCE_LEVEL: 'Participating',
 
     MAINTAINERS_POINTS: 3.5,
-    MAINTAINERS_COUNT: 2,
-    MAINTAINERS_PROJECT_TOTAL: 20,
     CONTRIBUTORS_POINTS: 7.25,
     CONTRIBUTORS_COUNT: 3,
     CONTRIBUTORS_PROJECT_TOTAL: 30,
@@ -359,8 +359,16 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     MEMBERSHIP_TIER_POINTS: 0.66,
   };
 
-  function mockWarehouse(overrides: { hero?: unknown; breakdown?: unknown } = {}): void {
+  const maintainerRoles = { ORGANIZATION_ROLES: 2, PROJECT_ROLES: 20 };
+
+  function mockWarehouse(overrides: { hero?: unknown; breakdown?: unknown; rolesMissing?: boolean } = {}): void {
     execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_MAINTAINER_ROLES')) {
+        if (overrides.rolesMissing) {
+          throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.PROJECT_MAINTAINER_ROLES' does not exist or not authorized.");
+        }
+        return { rows: [maintainerRoles] };
+      }
       if (sql.includes('LEADERBOARD_BREAKDOWN')) {
         return { rows: 'breakdown' in overrides && overrides.breakdown === null ? [] : [overrides.breakdown ?? breakdownRow] };
       }
@@ -377,6 +385,9 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
 
   beforeEach(() => {
     execute.mockReset();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    setJson.mockClear();
   });
 
   // The drawer renders the shared category lists while the server projects its own column map, so a
@@ -475,6 +486,56 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     const summed = breakdown!.categories.reduce((total, figure) => total + figure.points, 0);
     expect(summed).toBeCloseTo(breakdown!.totalScore, 2);
   });
+
+  it.each([
+    ['1y', 365],
+    ['2y', 730],
+    ['all', null],
+  ] as const)(
+    'counts the maintainer category for toggle %s as the organization roles against every company roles, keeping the score points',
+    async (range, days) => {
+      mockWarehouse({ breakdown: populatedBreakdownRow });
+
+      const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, range);
+
+      expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5, count: 2, projectTotal: 20 });
+      const rolesCalls = (execute.mock.calls as [string, unknown[]][]).filter(([sql]) => sql.includes('PROJECT_MAINTAINER_ROLES'));
+      expect(rolesCalls).toHaveLength(1);
+      // The clicked row's organization, the project, then the toggle's overlap window.
+      expect(rolesCalls[0][1]).toEqual(days === null ? [SUBJECT, SUBJECT, SLUG] : [SUBJECT, SUBJECT, SLUG, days]);
+    }
+  );
+
+  it('does not read maintainer roles for the ecosystem dimension', async () => {
+    mockWarehouse();
+
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y');
+
+    expect((execute.mock.calls as [string][]).some(([sql]) => sql.includes('PROJECT_MAINTAINER_ROLES'))).toBe(false);
+  });
+
+  it('keeps the maintainer points but leaves the count out, and does not store the breakdown, when the roles table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('breakdown-key');
+    getJson.mockResolvedValue(null);
+    mockWarehouse({ breakdown: populatedBreakdownRow, rolesMissing: true });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5 });
+    expect(breakdown!.totalScore).toBe(42.5);
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('stores the breakdown under a versioned key when the roles were read', async () => {
+    buildOrgCacheKey.mockReturnValue('breakdown-key');
+    getJson.mockResolvedValue(null);
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-technical:v2:/));
+    expect(setJson).toHaveBeenCalledWith('breakdown-key', expect.objectContaining({ organizationId: SUBJECT }), expect.anything());
+  });
 });
 
 describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
@@ -497,7 +558,7 @@ describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
     const commits = block!.technical.find((card) => card.key === 'commits');
     expect(commits?.label).toBe('Commits');
     expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v3:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v4:/));
   });
 });
 
@@ -716,6 +777,185 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     execute.mockRejectedValue(new Error('Warehouse timeout'));
 
     await expect(service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).rejects.toThrow('Warehouse timeout');
+  });
+});
+
+describe('OrgLensProjectDetailService maintainer roles sparkline and drawer total (lfx-self-serve#4605)', () => {
+  const service = new OrgLensProjectDetailService();
+
+  function yearMonth(monthsAgo: number): string {
+    const now = new Date();
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsAgo, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  // The sparkline tables still carry an older people-based maintainers series, which the card must never show.
+  const peopleSeriesValue = 99;
+
+  function mockWarehouse(overrides: { missingTable?: string; monthly?: unknown[]; projectRoles?: number } = {}): void {
+    execute.mockImplementation(async (sql: string) => {
+      if (overrides.missingTable && sql.includes(`.${overrides.missingTable}`)) {
+        throw new Error(`SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.${overrides.missingTable}' does not exist or not authorized.`);
+      }
+      if (sql.includes('ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY')) {
+        return {
+          rows: overrides.monthly ?? [
+            { SPAN_MONTH: yearMonth(1), ACCOUNT_ROLES: 2, PROJECT_ROLES: 8 },
+            { SPAN_MONTH: yearMonth(0), ACCOUNT_ROLES: 3, PROJECT_ROLES: 10 },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME')) {
+        return {
+          rows: [
+            { BUCKET_INDEX: 0, ACCOUNT_ROLES: 1, PROJECT_ROLES: 5 },
+            { BUCKET_INDEX: 1, ACCOUNT_ROLES: 4, PROJECT_ROLES: 9 },
+          ],
+        };
+      }
+      if (sql.includes('.PROJECT_MAINTAINER_ROLES')) return { rows: [{ MAINTAINER_ROLES: overrides.projectRoles ?? 1234 }] };
+      if (sql.includes('AS MAINTAINER_ROLES')) return { rows: [{ MAINTAINER_ROLES: 3 }] };
+      if (sql.includes('ORG_LENS_PROJECT_DETAIL_SPARKLINES_LIFETIME')) {
+        return {
+          rows: [
+            { METRIC_KEY: 'maintainers', BUCKET_INDEX: 1, ORG_VALUE: peopleSeriesValue, PROJECT_VALUE: peopleSeriesValue },
+            { METRIC_KEY: 'contributors', BUCKET_INDEX: 1, ORG_VALUE: 6, PROJECT_VALUE: 60 },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECT_DETAIL_SPARKLINES')) {
+        return {
+          rows: [
+            { METRIC_KEY: 'maintainers', SPAN_MONTH: yearMonth(0), ORG_VALUE: peopleSeriesValue, PROJECT_VALUE: peopleSeriesValue },
+            { METRIC_KEY: 'contributors', SPAN_MONTH: yearMonth(0), ORG_VALUE: 6, PROJECT_VALUE: 60 },
+          ],
+        };
+      }
+      if (sql.includes('BUCKET_SPINE')) {
+        return {
+          rows: [
+            { BUCKET_INDEX: 0, BUCKET_GRANULARITY: 'yearly', BUCKET_START: '2024-01-01', BUCKET_END: '2024-12-01' },
+            { BUCKET_INDEX: 1, BUCKET_GRANULARITY: 'yearly', BUCKET_START: '2025-01-01', BUCKET_END: '2025-12-01' },
+          ],
+        };
+      }
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return { rows: [] };
+    });
+  }
+
+  function card(block: OrgLensInfluenceBlock | null, key: string): OrgLensProjectInfluenceCard {
+    return block!.technical.find((entry) => entry.key === key)!;
+  }
+
+  function callsOn(table: string): [string, unknown[]][] {
+    return (execute.mock.calls as [string, unknown[]][]).filter(([sql]) => sql.includes(`.${table}`));
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    getJson.mockReset();
+    getJson.mockResolvedValue(null);
+    setJson.mockClear();
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+  });
+
+  it.each(['1y', '2y'] as const)('draws the %s sparkline from the account and every company roles per month', async (range) => {
+    mockWarehouse();
+
+    const maintainers = card(await service.getInfluenceBlock(ORG, SLUG, range), 'maintainers');
+
+    expect(maintainers.sparkline).toHaveLength(36);
+    expect(maintainers.sparkline.slice(-3)).toEqual([0, 2, 3]);
+    expect(maintainers.projectSparkline.slice(-3)).toEqual([0, 8, 10]);
+    expect(maintainers.sparkline).not.toContain(peopleSeriesValue);
+    expect(callsOn('ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY')[0][1]).toEqual([ORG, SLUG]);
+  });
+
+  it('draws the all-time sparkline from the roles per lifetime bucket, on the shared bucket axis', async () => {
+    mockWarehouse();
+
+    const block = await service.getInfluenceBlock(ORG, SLUG, 'all');
+
+    expect(block!.periods).toEqual(['2024', '2025']);
+    expect(card(block, 'maintainers')).toMatchObject({ sparkline: [1, 4], projectSparkline: [5, 9] });
+    expect(card(block, 'contributors')).toMatchObject({ sparkline: [0, 6], projectSparkline: [0, 60] });
+    expect(callsOn('ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME')[0][1]).toEqual([ORG, SLUG]);
+  });
+
+  it('shows no maintainers sparkline when the account holds no roles on the project', async () => {
+    mockWarehouse({ monthly: [] });
+
+    expect(card(await service.getInfluenceBlock(ORG, SLUG, '1y'), 'maintainers')).toMatchObject({ sparkline: [], projectSparkline: [] });
+  });
+
+  it.each([
+    ['1y', 'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY'],
+    ['all', 'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME'],
+  ] as const)('leaves the %s maintainers sparkline empty, and does not store the block, when %s is missing', async (range, table) => {
+    buildOrgCacheKey.mockReturnValue('influence-key');
+    mockWarehouse({ missingTable: table });
+
+    const block = await service.getInfluenceBlock(ORG, SLUG, range);
+
+    expect(card(block, 'maintainers')).toMatchObject({ sparkline: [], projectSparkline: [] });
+    expect(card(block, 'maintainers').caption.emphasis).toBe('3');
+    expect(card(block, 'contributors').sparkline).toContain(6);
+    expect(setJson).not.toHaveBeenCalledWith('influence-key', expect.anything(), expect.anything());
+  });
+
+  it('stores the influence block under a versioned key when every roles read succeeded', async () => {
+    buildOrgCacheKey.mockReturnValue('influence-key');
+    mockWarehouse();
+
+    await service.getInfluenceBlock(ORG, SLUG, '1y');
+
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v4:/));
+    expect(setJson).toHaveBeenCalledWith('influence-key', expect.objectContaining({ technical: expect.anything() }), expect.anything());
+  });
+
+  it.each([
+    ['1y', [SLUG, 365]],
+    ['2y', [SLUG, 730]],
+    ['all', [SLUG]],
+  ] as const)('totals every company roles overlapping toggle %s in the maintainers drawer', async (range, binds) => {
+    mockWarehouse();
+
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', range);
+
+    expect(drawer!.definition.total).toBe('1,234');
+    const [[, bound]] = callsOn('PROJECT_MAINTAINER_ROLES');
+    expect(bound).toEqual(binds);
+  });
+
+  it('does not read maintainer roles for another card drawer', async () => {
+    mockWarehouse();
+
+    await service.getCardDrawer(ORG, SLUG, 'contributors', '1y');
+
+    expect(callsOn('PROJECT_MAINTAINER_ROLES')).toEqual([]);
+  });
+
+  it('shows the maintainers drawer total as unavailable, and does not store the drawer, when the roles table is missing', async () => {
+    buildOrgCacheKey.mockReturnValue('drawer-key');
+    mockWarehouse({ missingTable: 'PROJECT_MAINTAINER_ROLES' });
+
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+
+    expect(drawer!.definition.total).toBe('—');
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('stores the maintainers drawer under a versioned key when the total was read', async () => {
+    buildOrgCacheKey.mockReturnValue('drawer-key');
+    mockWarehouse({ projectRoles: 0 });
+
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+
+    expect(drawer!.definition.total).toBe('0');
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:/));
+    expect(setJson).toHaveBeenCalledWith('drawer-key', drawer, expect.anything());
   });
 });
 
