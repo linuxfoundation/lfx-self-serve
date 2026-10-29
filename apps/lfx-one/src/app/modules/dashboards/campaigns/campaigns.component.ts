@@ -4212,11 +4212,15 @@ export class CampaignsComponent {
           // mapped back — and it can never be restored, so replacing it is the only way forward.
           // `none` means the row went away since the refusal; the save below then simply creates.
           if (result.briefId !== null) {
+            // Normalised first, as `onRestoreSavedBrief` does: an older pod mid-rolling-deploy omits
+            // the field, JSON yields `undefined`, and treating that as a validator would withhold
+            // the overwrite licence and refuse this very save as `unverified-validator`.
+            const validator = result.etag ?? null;
             this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
             this.rememberBriefId(key, {
               id: result.briefId,
-              etag: result.etag,
-              ...(result.etag === null ? { absence: 'overwrite' as const } : {}),
+              etag: validator,
+              ...(validator === null ? { absence: 'overwrite' as const } : {}),
             });
           }
           this.persistBrief(brief);

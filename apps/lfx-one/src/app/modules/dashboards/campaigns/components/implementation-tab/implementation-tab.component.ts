@@ -639,17 +639,6 @@ export class ImplementationTabComponent implements OnInit {
   public readonly replaceSavedBriefRequested = output<void>();
 
   /**
-   * Whether the save banner offers "Replace saved brief".
-   *
-   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
-   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
-   * a second replace behind the first.
-   */
-  protected readonly canReplaceSavedBrief = computed(
-    () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
-  );
-
-  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -659,6 +648,17 @@ export class ImplementationTabComponent implements OnInit {
    * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
    */
   public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
+   * Whether the save banner offers "Replace saved brief".
+   *
+   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
+   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
+   * a second replace behind the first.
+   */
+  protected readonly canReplaceSavedBrief = computed(
+    () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
+  );
 
   /**
    * Text for the always-present live region in the template.

@@ -1557,19 +1557,6 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
-     * A superseded save still created a row, and the next save of that event must be able to
-     * name it.
-     *
-     * Saves are serialized, so a second Proceed while the first is in flight queues behind it.
-     * When the record sat AFTER the generation check, the first response — discarded for display
-     * because the user had moved on — never filed its id, so the queued save captured null, found
-     * the row the first one had just created, and was deterministically refused as
-     * `unowned-brief-exists`. The user is told their own brief belongs to someone else.
-     *
-     * Recording before the check is safe because the KEY is `(project, event)`: a late response
-     * files its id under the event it actually saved, and cannot reach another event's brief.
-     */
-    /**
      * #4731. A regenerated brief for an event that already has a saved one is refused as
      * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
      * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
@@ -1682,8 +1669,45 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
+
+      it('returns to idle when brief persistence turns out to be off', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'off', briefId: null });
+      });
+
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+        // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
+        // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
+        // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
+        loadBrief.mockReturnValue(of({ status: 'loaded', briefId: 'stored-1', brief: null, approved: false } as unknown as CampaignBriefLoadResult));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
     });
 
+    /**
+     * A superseded save still created a row, and the next save of that event must be able to
+     * name it.
+     *
+     * Saves are serialized, so a second Proceed while the first is in flight queues behind it.
+     * When the record sat AFTER the generation check, the first response — discarded for display
+     * because the user had moved on — never filed its id, so the queued save captured null, found
+     * the row the first one had just created, and was deterministically refused as
+     * `unowned-brief-exists`. The user is told their own brief belongs to someone else.
+     *
+     * Recording before the check is safe because the KEY is `(project, event)`: a late response
+     * files its id under the event it actually saved, and cannot reach another event's brief.
+     */
     it('reports a stale-brief conflict distinctly from an unowned one', async () => {
       // The two conflicts are different situations. `unowned-brief-exists` means this session may
       // not replace that brief at all; `stale-brief` means it may — another writer just got there

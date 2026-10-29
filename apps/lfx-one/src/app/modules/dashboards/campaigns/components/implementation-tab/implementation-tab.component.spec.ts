@@ -13849,7 +13849,8 @@ describe('ImplementationTabComponent replace saved brief', () => {
     const emitted = vi.fn();
     fixture.componentInstance.replaceSavedBriefRequested.subscribe(emitted);
 
-    replaceButton()?.click();
+    // The inner native button: `(onClick)` is the wrapper's gated output, which a host click skips.
+    replaceButton()?.querySelector('button')?.click();
 
     expect(emitted).toHaveBeenCalledTimes(1);
   });
