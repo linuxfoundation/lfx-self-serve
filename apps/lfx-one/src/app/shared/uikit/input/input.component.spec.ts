@@ -116,6 +116,59 @@ describe('UiInputComponent', () => {
     expect(field().className).not.toContain('pr-0');
   });
 
+  it('forwards inputmode to the native input only when set', async () => {
+    expect(field().hasAttribute('inputmode')).toBe(false);
+
+    await set('inputmode', 'numeric');
+
+    expect(field().getAttribute('inputmode')).toBe('numeric');
+  });
+
+  it('reads the affix text with the field, before the hint', async () => {
+    await set('prefixText', 'https://');
+    await set('suffixText', '.org');
+    await set('hint', 'Your site');
+    const prefix = host.querySelector('[data-testid="ui-input-prefix"]') as HTMLElement;
+    const suffix = host.querySelector('[data-testid="ui-input-suffix"]') as HTMLElement;
+    const hint = host.querySelector('[data-testid="ui-input-hint"]') as HTMLElement;
+
+    expect(field().getAttribute('aria-describedby')).toBe(`${prefix.id} ${suffix.id} ${hint.id}`);
+  });
+
+  it('does not describe an icon-only affix', async () => {
+    await set('prefixIcon', 'fa-light fa-link');
+
+    expect(field().getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('holds back IME composition text until composition ends', async () => {
+    const seen: string[] = [];
+    fixture.componentInstance.registerOnChange((v) => seen.push(v));
+
+    field().dispatchEvent(new CompositionEvent('compositionstart'));
+    field().value = 'に';
+    field().dispatchEvent(new Event('input'));
+    field().value = '日本';
+    field().dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(seen).toEqual([]);
+    expect(fixture.componentInstance.value()).toBe('');
+
+    field().dispatchEvent(new CompositionEvent('compositionend'));
+    await fixture.whenStable();
+
+    expect(seen).toEqual(['日本']);
+    expect(fixture.componentInstance.value()).toBe('日本');
+  });
+
+  it('gives each instance its own ids', () => {
+    const other = TestBed.createComponent(UiInputComponent);
+    other.detectChanges();
+
+    expect((other.nativeElement as HTMLElement).querySelector('input')?.id).not.toBe(field().id);
+  });
+
   it('disables the field', async () => {
     await set('disabled', true);
 

@@ -8,7 +8,7 @@
   }
   <div [class]="wrapperClasses()" data-testid="ui-input-wrapper">
     @if (hasPrefix()) {
-      <span [class]="prefixClasses()" data-testid="ui-input-prefix">
+      <span [id]="prefixId" [class]="prefixClasses()" data-testid="ui-input-prefix">
         @if (prefixIcon()) {
           <i [class]="prefixIcon()" aria-hidden="true"></i>
         }
@@ -24,14 +24,17 @@
       [disabled]="isDisabled()"
       [required]="required()"
       [attr.autocomplete]="autocomplete() || null"
+      [attr.inputmode]="inputmode() || null"
       [attr.aria-label]="label() ? null : ariaLabel() || null"
       [attr.aria-invalid]="error() ? 'true' : null"
       [attr.aria-describedby]="describedBy()"
       (input)="onInput($event)"
+      (compositionstart)="onCompositionStart()"
+      (compositionend)="onCompositionEnd($event)"
       (blur)="onBlur()"
       data-testid="ui-input" />
     @if (hasSuffix()) {
-      <span [class]="suffixClasses()" data-testid="ui-input-suffix">
+      <span [id]="suffixId" [class]="suffixClasses()" data-testid="ui-input-suffix">
         {{ suffixText() }}
         @if (suffixIcon()) {
           <i [class]="suffixIcon()" aria-hidden="true"></i>

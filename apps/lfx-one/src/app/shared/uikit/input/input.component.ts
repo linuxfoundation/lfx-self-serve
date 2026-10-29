@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, Signal, signal } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
-import { UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
+import { UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
 
 import { UiErrorComponent } from '../error/error.component';
 
@@ -20,8 +21,7 @@ import { UiErrorComponent } from '../error/error.component';
   host: { class: 'block min-w-0' },
 })
 export class UiInputComponent implements ControlValueAccessor {
-  private static nextId = 0;
-
+  private readonly baseId = inject(_IdGenerator).getId('lfx-ui-input-');
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
 
   /** Visible label above the field. Without one, set `ariaLabel`. */
@@ -36,6 +36,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly placeholder = input<string>('');
   /** Native input type. */
   public readonly type = input<UiInputType>('text');
+  /** Virtual keyboard hint for a `text` field, for example `numeric` or `decimal`. Empty leaves the browser default. */
+  public readonly inputmode = input<UiInputMode | ''>('');
   /** `tiny` 24px, `small` 32px, `medium` 40px. Pair with a button of the same size. */
   public readonly size = input<UiInputSize>('medium');
   /** Pill-shaped corners and 16px side padding. */
@@ -59,9 +61,11 @@ export class UiInputComponent implements ControlValueAccessor {
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
 
-  protected readonly inputId = `lfx-ui-input-${UiInputComponent.nextId++}`;
+  protected readonly inputId = this.baseId;
   protected readonly hintId = `${this.inputId}-hint`;
   protected readonly errorId = `${this.inputId}-error`;
+  protected readonly prefixId = `${this.inputId}-prefix`;
+  protected readonly suffixId = `${this.inputId}-suffix`;
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
   protected readonly hasPrefix: Signal<boolean> = computed(() => !!(this.prefixIcon() || this.prefixText()));
@@ -74,6 +78,7 @@ export class UiInputComponent implements ControlValueAccessor {
 
   private onChange: ((value: string) => void) | null = null;
   private onTouched: (() => void) | null = null;
+  private composing = false;
 
   public constructor() {
     if (this.ngControl) this.ngControl.valueAccessor = this;
@@ -96,19 +101,36 @@ export class UiInputComponent implements ControlValueAccessor {
   }
 
   protected onInput(event: Event): void {
-    const next = (event.target as HTMLInputElement).value;
-    this.value.set(next);
-    this.onChange?.(next);
+    // Hold back uncommitted IME text; compositionend emits the final value.
+    if (this.composing) return;
+    this.emit((event.target as HTMLInputElement).value);
+  }
+
+  protected onCompositionStart(): void {
+    this.composing = true;
+  }
+
+  protected onCompositionEnd(event: Event): void {
+    this.composing = false;
+    this.emit((event.target as HTMLInputElement).value);
   }
 
   protected onBlur(): void {
     this.onTouched?.();
   }
 
+  private emit(next: string): void {
+    this.value.set(next);
+    this.onChange?.(next);
+  }
+
   private initDescribedBy(): Signal<string | null> {
     return computed(() => {
-      if (this.error()) return this.errorId;
-      return this.hint() ? this.hintId : null;
+      // Affix text is part of what the value means (https://, USD), so it is read with the message.
+      const hintId = this.hint() ? this.hintId : '';
+      const message = this.error() ? this.errorId : hintId;
+      const ids = [this.prefixText() ? this.prefixId : '', this.suffixText() ? this.suffixId : '', message].filter(Boolean);
+      return ids.length ? ids.join(' ') : null;
     });
   }
 

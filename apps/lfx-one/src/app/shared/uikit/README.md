@@ -38,7 +38,6 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-menu-group`     | `UiMenuGroupComponent`     | Labelled `role="group"` of menu items with a 12px heading                                                                                                              |
 | `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                |
 | `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset band and actions footer slots; 540px or 420px, sticky title, single-action footer                                           |
-| `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                                                      |
 | `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus return, scroll lock, `ui-overlay` backdrop, split Escape and backdrop close                             |
 | `lfxUiTooltip`          | `UiTooltipDirective`       | Attribute directive: hover and keyboard-focus tooltip in a CDK overlay, plain or rich, flips sides, hoverable, Escape closes, spoken description; SSR-safe             |
 | `lfx-ui-checkbox`       | `UiCheckboxComponent`      | Native 16px checkbox: checked, indeterminate, disabled, label; `[(checked)]` and reactive forms                                                                        |
@@ -46,6 +45,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-toggle`         | `UiToggleComponent`        | On/off switch (`role="switch"`): three sizes, accent, warning or danger; `[(checked)]` and reactive forms                                                              |
 | `lfx-ui-loading-dots`   | `UiLoadingDotsComponent`   | Three pulsing dots, 4, 5 or 7px, current colour; hidden beside visible text, `role="status"` when given a `label`                                                      |
 | `lfx-ui-show-more`      | `UiShowMoreComponent`      | Small button between two rules: "Show 12 More" then "Show Less"; `[(expanded)]`, `aria-expanded`, `aria-controls`; `noBorder`                                          |
+| `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                                                      |
 
 ## Design tokens
 
