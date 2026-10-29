@@ -27,7 +27,11 @@ describe('MeetingsRedesignComponent', () => {
     impersonating = signal(false);
     vi.stubGlobal(
       'ResizeObserver',
-      vi.fn().mockImplementation(() => ({ observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() }))
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
     );
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: desktop, media: q }));
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(HEADER_HEIGHT);
