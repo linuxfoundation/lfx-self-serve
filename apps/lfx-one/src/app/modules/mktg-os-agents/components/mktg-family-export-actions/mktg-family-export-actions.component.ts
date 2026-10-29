@@ -110,7 +110,8 @@ export class MktgFamilyExportActionsComponent {
           if (this.canPrint()) {
             afterNextRender(
               () => {
-                if (this.canPrint()) this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus();
+                if (this.canPrint())
+                  this.host.nativeElement.querySelector<HTMLButtonElement>('[data-testid="family-export-pdf"] button')?.focus({ preventScroll: true });
               },
               { injector: this.injector }
             );

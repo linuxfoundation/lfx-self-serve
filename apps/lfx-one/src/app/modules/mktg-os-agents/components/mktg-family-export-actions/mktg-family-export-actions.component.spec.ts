@@ -171,6 +171,7 @@ describe('Family export slot', () => {
     pending.next(lookup());
     await fixture.whenStable();
     expect(focus).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(api.run).not.toHaveBeenCalled();
     expect(api.printView).toHaveBeenCalledOnce();
     expect(print.printNow).not.toHaveBeenCalled();
