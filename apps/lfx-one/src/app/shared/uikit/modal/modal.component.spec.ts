@@ -140,6 +140,24 @@ describe('UiModalComponent and UiModalService', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it('ignores an Escape that something else already handled', async () => {
+    await open();
+    const event = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true });
+    event.preventDefault();
+    document.body.dispatchEvent(event);
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('ignores Escape pressed with a modifier key', async () => {
+    await open();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, shiftKey: true, bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
   it('closes on a backdrop click', async () => {
     await open();
     (container.querySelector('.cdk-overlay-backdrop') as HTMLElement).click();
@@ -191,8 +209,10 @@ describe('UiModalComponent and UiModalService', () => {
 
     expect(el.querySelector('[data-testid="ui-modal-inset"]')?.matches(':empty')).toBe(true);
     expect(el.querySelector('[data-testid="ui-modal-actions"]')?.matches(':empty')).toBe(true);
-    expect(el.getAttribute('role')).toBe('dialog');
-    expect(el.getAttribute('aria-labelledby')).toBe(el.querySelector('[data-testid="ui-modal-title"]')?.id);
+    // Without a dialog nothing traps focus, so the layout claims no dialog or modal semantics.
+    expect(el.getAttribute('role')).toBeNull();
+    expect(el.getAttribute('aria-modal')).toBeNull();
+    expect(el.getAttribute('aria-labelledby')).toBeNull();
   });
 
   it('sticky keeps the title outside the scrolling body', async () => {

@@ -28,13 +28,12 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } f
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'hostClasses()',
-    '[attr.role]': 'dialogRef ? null : "dialog"',
-    '[attr.aria-modal]': 'dialogRef ? null : "true"',
-    '[attr.aria-labelledby]': 'dialogRef ? null : titleId',
     'data-testid': 'ui-modal',
   },
 })
 export class UiModalComponent {
+  private readonly dialogRef = inject(DialogRef, { optional: true });
+
   /** Title, such as "Delete Project". Title Case, naming the action. */
   public readonly heading = input.required<string>();
   /** One sentence under the title that states the consequence. */
@@ -45,8 +44,6 @@ export class UiModalComponent {
   public readonly sticky = input<boolean>(false);
   /** Stretches the one button in the actions footer to the full width. */
   public readonly singleAction = input<boolean>(false);
-
-  private readonly dialogRef = inject(DialogRef, { optional: true });
 
   /** Id of the title; `UiModalService` points `aria-labelledby` at it. Inside a service-opened modal it derives from the dialog id. */
   protected readonly titleId: string = this.dialogRef ? `${this.dialogRef.id}-title` : inject(_IdGenerator).getId('lfx-ui-modal-title-');

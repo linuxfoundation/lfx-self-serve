@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
+import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ComponentType } from '@angular/cdk/overlay';
 import { Dialog, DialogRef } from '@angular/cdk/dialog';
 import { inject, Injectable, TemplateRef } from '@angular/core';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
-import { filter } from 'rxjs';
+import { filter, takeUntil } from 'rxjs';
 
 /**
  * Opens content in a modal on top of the page. Pass a component or an `<ng-template>` whose root is a `lfx-ui-modal`.
@@ -41,13 +42,18 @@ export class UiModalService {
     });
 
     if (closeOnEscape) {
-      ref.keydownEvents.pipe(filter((event) => event.key === 'Escape' && !event.defaultPrevented)).subscribe((event) => {
-        event.preventDefault();
-        ref.close();
-      });
+      ref.keydownEvents
+        .pipe(
+          filter((event) => event.key === 'Escape' && !event.defaultPrevented && !hasModifierKey(event)),
+          takeUntil(ref.closed)
+        )
+        .subscribe((event) => {
+          event.preventDefault();
+          ref.close();
+        });
     }
     if (closeOnBackdropClick) {
-      ref.backdropClick.subscribe(() => ref.close());
+      ref.backdropClick.pipe(takeUntil(ref.closed)).subscribe(() => ref.close());
     }
     return ref;
   }

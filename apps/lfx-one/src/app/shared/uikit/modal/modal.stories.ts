@@ -114,7 +114,7 @@ export const RequiresAnAnswer: Story = {
   }),
 };
 
-/** The layout on its own, on the scrim colour, as in the library preview. */
+/** The layout on its own, on the scrim colour, as in the library preview. It is plain layout: the dialog role and focus trap come from `UiModalService`. */
 export const Layout: Story = {
   render: () => ({
     template: `

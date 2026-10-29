@@ -204,6 +204,11 @@
   @tailwind components;
   @tailwind utilities;
 }
+/* shortcut: CDK overlays above PrimeNG's 1100 modal layer. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
+.cdk-overlay-container {
+  z-index: 1200;
+}
+
 /* PrimeNG component overrides */
 .p-toggleswitch .p-toggleswitch-handle {
   border-radius: 9999px;
