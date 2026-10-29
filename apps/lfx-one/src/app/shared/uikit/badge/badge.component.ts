@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
 /** Small pill for a count or short label, such as the number of active filters. */
 @Component({
   selector: 'lfx-ui-badge',
-  template: '{{ value() }}',
+  templateUrl: './badge.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
