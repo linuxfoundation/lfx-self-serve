@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Directive, inject, input, TemplateRef } from '@angular/core';
-import { UiTableColumn } from '@lfx-one/shared/interfaces';
-
-/** What a custom cell template receives: the row as the implicit value and the column as `column`. */
-export interface UiTableCellContext {
-  $implicit: Record<string, unknown>;
-  column: UiTableColumn;
-}
+import { UiTableCellContext } from '@lfx-one/shared/interfaces';
 
 /**
  * Marks an `<ng-template>` inside `lfx-ui-table` as the body cell for one column, for content such as a badge or a link.

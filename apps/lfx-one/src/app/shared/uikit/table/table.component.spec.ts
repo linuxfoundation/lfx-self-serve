@@ -16,19 +16,20 @@ const columns: UiTableColumn[] = [
 ];
 
 const rows = [
-  { id: 1, name: 'Maria Santos', project: 'Kubernetes', contributions: '1,204' },
-  { id: 2, name: 'Marco Klein', project: 'Envoy', contributions: '318' },
-  { id: 3, name: 'Ama Mensah', project: 'OpenSSF', contributions: '57' },
+  { id: 1, name: 'Alex Example', project: 'Kubernetes', contributions: '1,204' },
+  { id: 2, name: 'Sam Sample', project: 'Envoy', contributions: '318' },
+  { id: 3, name: 'Jo Placeholder', project: 'OpenSSF', contributions: '57' },
 ];
 
 @Component({
   selector: 'lfx-ui-table-test-host',
   imports: [UiTableComponent, UiTableCellDirective],
-  template: `<!-- prettier-ignore --><lfx-ui-table label="T" [columns]="columns" [rows]="rows" rowKey="id"><ng-template lfxUiTableCell="project" let-row let-column="column"><i>{{ row.project }}/{{ column.key }}</i></ng-template></lfx-ui-table>`,
+  template: `<!-- prettier-ignore --><lfx-ui-table label="T" [columns]="columns" [rows]="rows" rowKey="id" interactive (rowActivate)="activated.push($event)"><ng-template lfxUiTableCell="project" let-row let-column="column"><button type="button">{{ row.project }}/{{ column.key }}</button></ng-template></lfx-ui-table>`,
 })
 class HostComponent {
   public readonly columns = columns;
   public readonly rows = rows;
+  public readonly activated: unknown[] = [];
 }
 
 describe('UiTableComponent', () => {
@@ -74,7 +75,7 @@ describe('UiTableComponent', () => {
   it('renders one 48px row per item with cell text', () => {
     expect(bodyRows().length).toBe(3);
     const cells = Array.from(bodyRows()[0].querySelectorAll('td'));
-    expect(cells.map((td) => td.textContent?.trim())).toEqual(['Maria Santos', 'Kubernetes', '1,204']);
+    expect(cells.map((td) => td.textContent?.trim())).toEqual(['Alex Example', 'Kubernetes', '1,204']);
     expect(cells[0].className).toContain('h-ui-row');
   });
 
@@ -193,10 +194,22 @@ describe('UiTableComponent', () => {
     expect(fixture.componentInstance.sort()).toEqual({ key: 'contributions', direction: 'asc' });
   });
 
+  it('does not activate an interactive row for a click on a control inside a cell template', async () => {
+    const withTemplate = TestBed.createComponent(HostComponent);
+    await withTemplate.whenStable();
+    const el = withTemplate.nativeElement as HTMLElement;
+
+    (el.querySelector('tbody button') as HTMLButtonElement).click();
+    expect(withTemplate.componentInstance.activated).toEqual([]);
+
+    (el.querySelector('tbody td') as HTMLElement).click();
+    expect(withTemplate.componentInstance.activated).toEqual([rows[0]]);
+  });
+
   it('renders a projected cell template for its column with the row and column', async () => {
     const withTemplate = TestBed.createComponent(HostComponent);
     await withTemplate.whenStable();
-    const cells = Array.from((withTemplate.nativeElement as HTMLElement).querySelectorAll('tbody i'));
+    const cells = Array.from((withTemplate.nativeElement as HTMLElement).querySelectorAll('tbody button'));
 
     expect(cells.map((cell) => cell.textContent)).toEqual(['Kubernetes/project', 'Envoy/project', 'OpenSSF/project']);
   });

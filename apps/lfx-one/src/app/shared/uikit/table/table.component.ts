@@ -3,16 +3,16 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, contentChildren, input, model, output, Signal } from '@angular/core';
-import { UiTableColumn, UiTableSort } from '@lfx-one/shared/interfaces';
+import { UiTableColumn, UiTableColumnView, UiTableSort } from '@lfx-one/shared/interfaces';
 
-import { UiTableCellContext, UiTableCellDirective } from './table-cell.directive';
+import { UiTableCellDirective } from './table-cell.directive';
 
 /**
  * Rows and columns of comparable data: a 40px header, 48px rows with hairline dividers, optional footer totals.
  * Describe the columns with `columns`, pass plain objects as `rows` and put numbers pre-formatted in them. Use
- * `<ng-template lfxUiTableCell="key" let-row>` for a cell that needs markup. The table does not sort or paginate:
- * it shows the `sort` it is given and reports header clicks, and the page reorders `rows`. For long tables, page
- * the data and pair the table with `lfx-ui-show-more`.
+ * `<ng-template lfxUiTableCell="key" let-row>` for a cell that needs markup, such as a badge or a link; clicks on
+ * such inner controls do not activate an interactive row. The table does not sort or paginate: it shows the `sort`
+ * it is given and reports header clicks, and the page reorders and pages `rows`.
  *
  * The root scrolls horizontally and is a focusable named region so keyboard users can reach the overflow.
  */
@@ -25,7 +25,7 @@ import { UiTableCellContext, UiTableCellDirective } from './table-cell.directive
     '[class]': 'hostClasses()',
     '[attr.aria-label]': 'label()',
     role: 'region',
-    // shortcut: always a tab stop, even when nothing overflows. revisit: make tabindex conditional on overflow, once overflow detection is shared with lfx-ui-scroller
+    // shortcut: always a tab stop, even when nothing overflows. revisit: make tabindex conditional on overflow, once overflow detection is shared
     tabindex: '0',
     'data-testid': 'ui-table',
   },
@@ -35,7 +35,7 @@ export class UiTableComponent {
   public readonly label = input.required<string>();
   /** Column definitions, in display order. */
   public readonly columns = input.required<UiTableColumn[]>();
-  /** One object per body row. Cells show `String(row[column.key])`; a missing value shows nothing. */
+  /** One object per body row. Cells show `row[column.key]`; a missing value shows nothing. */
   public readonly rows = input.required<Record<string, unknown>[]>();
   /** Name of the row field that is unique per row, used to track rows between updates. */
   public readonly rowKey = input.required<string>();
@@ -56,28 +56,9 @@ export class UiTableComponent {
 
   protected readonly cellDirectives = contentChildren(UiTableCellDirective);
   protected readonly cellTemplates: Signal<Map<string, UiTableCellDirective['template']>> = this.initCellTemplates();
+  protected readonly columnViews: Signal<UiTableColumnView[]> = this.initColumnViews();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly rowClasses: Signal<string> = this.initRowClasses();
-
-  protected cellContext(row: Record<string, unknown>, column: UiTableColumn): UiTableCellContext {
-    return { $implicit: row, column };
-  }
-
-  protected text(row: Record<string, unknown>, key: string): string {
-    return String(row[key] ?? '');
-  }
-
-  protected ariaSort(column: UiTableColumn): 'ascending' | 'descending' | null {
-    const sort = this.sort();
-    if (!sort || sort.key !== column.key) return null;
-    return sort.direction === 'asc' ? 'ascending' : 'descending';
-  }
-
-  protected sortIcon(column: UiTableColumn): string {
-    const sort = this.sort();
-    if (!sort || sort.key !== column.key) return 'fa-light fa-arrow-up-arrow-down text-ui-neutral-500';
-    return sort.direction === 'asc' ? 'fa-light fa-arrow-up' : 'fa-light fa-arrow-down';
-  }
 
   protected toggleSort(column: UiTableColumn): void {
     const sort = this.sort();
@@ -89,6 +70,13 @@ export class UiTableComponent {
     if (this.interactive()) this.rowActivate.emit(row);
   }
 
+  protected onRowClick(event: Event, row: Record<string, unknown>): void {
+    // A click on a link, button or field inside the row belongs to that control, not to the row.
+    const inner = (event.target as Element).closest('a, button, input, select, textarea, [role="button"], [tabindex]');
+    if (inner && inner !== event.currentTarget) return;
+    this.activate(row);
+  }
+
   protected onRowKey(event: Event, row: Record<string, unknown>): void {
     // Keys pressed on a control inside the row belong to that control.
     if (event.target !== event.currentTarget) return;
@@ -96,20 +84,32 @@ export class UiTableComponent {
     this.activate(row);
   }
 
-  protected cellClasses(column: UiTableColumn, kind: 'head' | 'body' | 'foot'): string {
-    // Exact px: 12px cell padding with 16px on the outer columns, and 13px header type, are library steps below the ui spacing scale.
-    const align = column.align === 'end' ? 'text-right tabular-nums' : 'text-left';
-    const pad = 'px-[12px] first:pl-[16px] last:pr-[16px]';
-    const rule = 'border-b border-ui-neutral-alpha-200';
-    if (kind === 'head') return `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 font-medium text-ui-neutral-600`;
-    if (kind === 'foot') return `h-ui-row ${pad} ${align} align-middle bg-ui-background-200 font-medium text-ui-neutral-900`;
-    const hover = this.interactive() ? 'group-hover:bg-ui-neutral-alpha-50' : '';
-    const tone = column.muted ? 'text-ui-neutral-600' : 'text-ui-neutral-900';
-    return `h-ui-row ${pad} ${align} ${rule} align-middle ${tone} ${hover}`;
-  }
-
   private initCellTemplates(): Signal<Map<string, UiTableCellDirective['template']>> {
     return computed(() => new Map(this.cellDirectives().map((cell) => [cell.key(), cell.template])));
+  }
+
+  private initColumnViews(): Signal<UiTableColumnView[]> {
+    return computed(() => {
+      // Exact px: 12px cell padding with 16px on the outer columns, and 13px header type, are library steps below the ui spacing scale.
+      const pad = 'px-[12px] first:pl-[16px] last:pr-[16px]';
+      const rule = 'border-b border-ui-neutral-alpha-200';
+      const hover = this.interactive() ? 'group-hover:bg-ui-neutral-alpha-50' : '';
+      const sort = this.sort();
+      return this.columns().map((column) => {
+        const align = column.align === 'end' ? 'text-right tabular-nums' : 'text-left';
+        const sorted = sort?.key === column.key ? sort.direction : null;
+        const sortIcons = { asc: 'fa-light fa-arrow-up', desc: 'fa-light fa-arrow-down' };
+        const ariaSorts = { asc: 'ascending', desc: 'descending' } as const;
+        return {
+          column,
+          headClasses: `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 font-medium text-ui-neutral-600`,
+          bodyClasses: `h-ui-row ${pad} ${align} ${rule} align-middle ${column.muted ? 'text-ui-neutral-600' : 'text-ui-neutral-900'} ${hover}`,
+          footClasses: `h-ui-row ${pad} ${align} align-middle bg-ui-background-200 font-medium text-ui-neutral-900`,
+          ariaSort: sorted ? ariaSorts[sorted] : null,
+          sortIcon: sorted ? sortIcons[sorted] : 'fa-light fa-arrow-up-arrow-down text-ui-neutral-500',
+        };
+      });
+    });
   }
 
   private initHostClasses(): Signal<string> {

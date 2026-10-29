@@ -8,10 +8,10 @@ import { UiTableCellDirective } from './table-cell.directive';
 import { UiTableComponent } from './table.component';
 
 const rows = [
-  { id: 1, name: 'Maria Santos', project: 'Kubernetes', role: 'Maintainer', contributions: '1,204' },
-  { id: 2, name: 'Marco Klein', project: 'Envoy', role: 'Contributor', contributions: '318' },
-  { id: 3, name: 'Ama Mensah', project: 'OpenSSF', role: 'Board member', contributions: '57' },
-  { id: 4, name: 'Nuno Eufrasio', project: 'LFX', role: 'Staff', contributions: '2,931' },
+  { id: 1, name: 'Alex Example', project: 'Kubernetes', role: 'Maintainer', contributions: '1,204' },
+  { id: 2, name: 'Sam Sample', project: 'Envoy', role: 'Contributor', contributions: '318' },
+  { id: 3, name: 'Jo Placeholder', project: 'OpenSSF', role: 'Board member', contributions: '57' },
+  { id: 4, name: 'Pat Testperson', project: 'LFX', role: 'Staff', contributions: '2,931' },
 ];
 
 const meta: Meta<UiTableComponent> = {

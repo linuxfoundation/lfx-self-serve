@@ -9,19 +9,20 @@
   </caption>
   <thead>
     <tr>
-      @for (column of columns(); track column.key) {
-        <th scope="col" [class]="cellClasses(column, 'head')" [attr.aria-sort]="ariaSort(column)" data-testid="ui-table-header">
-          @if (column.sortable) {
+      @for (view of columnViews(); track view.column.key) {
+        <th scope="col" [class]="view.headClasses" [attr.aria-sort]="view.ariaSort" data-testid="ui-table-header">
+          @if (view.column.sortable) {
+            <!-- Exact px: 6px gap and 12px arrow are library steps below the ui spacing and type scale. -->
             <button
               type="button"
               class="inline-flex cursor-pointer items-center gap-[6px] rounded-ui-xs label-13 font-medium text-inherit focus-visible:shadow-focus focus-visible:outline-none"
-              (click)="toggleSort(column)"
+              (click)="toggleSort(view.column)"
               data-testid="ui-table-sort">
-              {{ column.header }}
-              <i [class]="sortIcon(column)" class="text-[12px]" aria-hidden="true"></i>
+              {{ view.column.header }}
+              <i [class]="view.sortIcon" class="text-[12px]" aria-hidden="true"></i>
             </button>
           } @else {
-            {{ column.header }}
+            {{ view.column.header }}
           }
         </th>
       }
@@ -32,16 +33,16 @@
       <tr
         [class]="rowClasses()"
         [attr.tabindex]="interactive() ? 0 : null"
-        (click)="activate(row)"
+        (click)="onRowClick($event, row)"
         (keydown.enter)="onRowKey($event, row)"
         (keydown.space)="onRowKey($event, row)"
         data-testid="ui-table-row">
-        @for (column of columns(); track column.key) {
-          <td [class]="cellClasses(column, 'body')" [class.border-b-0]="last" data-testid="ui-table-cell">
-            @if (cellTemplates().get(column.key); as template) {
-              <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="cellContext(row, column)" />
+        @for (view of columnViews(); track view.column.key) {
+          <td [class]="view.bodyClasses" [class.border-b-0]="last" data-testid="ui-table-cell">
+            @if (cellTemplates().get(view.column.key); as template) {
+              <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="{ $implicit: row, column: view.column }" />
             } @else {
-              {{ text(row, column.key) }}
+              {{ row[view.column.key] ?? '' }}
             }
           </td>
         }
@@ -57,8 +58,8 @@
   @if (footer(); as totals) {
     <tfoot>
       <tr>
-        @for (column of columns(); track column.key) {
-          <td [class]="cellClasses(column, 'foot')" data-testid="ui-table-footer-cell">{{ text(totals, column.key) }}</td>
+        @for (view of columnViews(); track view.column.key) {
+          <td [class]="view.footClasses" data-testid="ui-table-footer-cell">{{ totals[view.column.key] ?? '' }}</td>
         }
       </tr>
     </tfoot>
