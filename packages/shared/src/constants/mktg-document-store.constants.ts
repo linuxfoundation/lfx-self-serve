@@ -15,6 +15,9 @@ import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
 /** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
+/** A human selection moved since the writer's read; refresh metadata, never replay the write. */
+export const MKTG_APPROVED_CURRENT_CHANGED = 'MKTG_APPROVED_CURRENT_CHANGED';
+
 /** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
 export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
 /** Only automatic timer reads skip older entries; not a discovery or retention limit. */

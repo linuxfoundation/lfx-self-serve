@@ -306,9 +306,48 @@ describe('MktgDocumentsController', () => {
       'resolved-uid',
       expect.objectContaining({ agentKey: 'faq' }),
       'living',
-      REVISION_ID
+      REVISION_ID,
+      undefined
     );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ approval: expect.any(Object) }));
+  });
+
+  it.each(['approve', 'restore'] as const)('passes a validated expectedCurrentId on %s under the canonical writer project', async (action) => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-uid', writer: true });
+    const expectedCurrentId = `000001-${'b'.repeat(64)}`;
+    storeMocks.approveRevision.mockResolvedValue({ revision: { number: 2 } });
+    storeMocks.restoreRevision.mockResolvedValue({ detail: {}, revision: { number: 2 } });
+    const request = buildReq(
+      { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+      { project: PROJECT },
+      { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId }
+    );
+    await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+    expect(storeMocks[action === 'approve' ? 'approveRevision' : 'restoreRevision']).toHaveBeenCalledWith(
+      request,
+      'resolved-uid',
+      expect.objectContaining({ agentKey: 'faq' }),
+      'living',
+      REVISION_ID,
+      expectedCurrentId
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['approve', 'restore'] as const)('rejects malformed expectedCurrentId on %s before authorization/storage', async (action) => {
+    for (const expectedCurrentId of [null, 4, '', '../invalid', [], {}, 'x'.repeat(200)]) {
+      next.mockClear();
+      const request = buildReq(
+        { agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID },
+        { project: PROJECT },
+        { project: PROJECT, revisionId: REVISION_ID, expectedCurrentId }
+      );
+      await controller[action === 'approve' ? 'approveRevision' : 'restoreRevision'](request, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'expectedCurrentId' })] }));
+      expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+      expect(storeMocks.approveRevision).not.toHaveBeenCalled();
+      expect(storeMocks.restoreRevision).not.toHaveBeenCalled();
+    }
   });
 
   it('refuses approval without writer rights and rejects invalid revision/project params', async () => {
@@ -406,7 +445,14 @@ describe('MktgDocumentsController', () => {
 
     await controller.restoreRevision(buildReq({ agentKey: 'icp', documentId: 'living' }, {}, { project: PROJECT, revisionId: REVISION_ID }), res, next);
 
-    expect(storeMocks.restoreRevision).toHaveBeenCalledWith(expect.anything(), PROJECT, expect.objectContaining({ agentKey: 'icp' }), 'living', REVISION_ID);
+    expect(storeMocks.restoreRevision).toHaveBeenCalledWith(
+      expect.anything(),
+      PROJECT,
+      expect.objectContaining({ agentKey: 'icp' }),
+      'living',
+      REVISION_ID,
+      undefined
+    );
     expect(res.json).toHaveBeenCalledWith({ project: PROJECT, documentId: 'living', revisions: [], revision: { number: 3 } });
   });
 

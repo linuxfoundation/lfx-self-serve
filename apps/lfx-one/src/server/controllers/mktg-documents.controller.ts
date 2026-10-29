@@ -225,10 +225,15 @@ export class MktgDocumentsController {
       next(this.invalidField(req, operation, 'revisionId', 'revisionId is required and must be a revision id'));
       return;
     }
+    const expectedCurrentId = req.body?.expectedCurrentId;
+    if (expectedCurrentId !== undefined && !this.readRevisionId(expectedCurrentId)) {
+      next(this.invalidField(req, operation, 'expectedCurrentId', 'expectedCurrentId must be a revision id'));
+      return;
+    }
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId);
+      const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId, expectedCurrentId);
       if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
@@ -257,10 +262,15 @@ export class MktgDocumentsController {
       return;
     }
 
+    const expectedCurrentId = body.expectedCurrentId;
+    if (expectedCurrentId !== undefined && !this.readRevisionId(expectedCurrentId)) {
+      next(this.invalidField(req, operation, 'expectedCurrentId', 'expectedCurrentId must be a revision id'));
+      return;
+    }
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const restored = await this.documentStore.restoreRevision(req, project, params.type, params.documentId, revisionId);
+      const restored = await this.documentStore.restoreRevision(req, project, params.type, params.documentId, revisionId, expectedCurrentId);
       if (!restored) {
         await this.requireDocument(req, project, params.type, params.documentId, operation);
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });

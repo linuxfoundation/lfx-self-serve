@@ -169,7 +169,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request, Response } from 'express';
 
-import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
@@ -552,6 +552,72 @@ describe('MktgDocumentStoreService', () => {
       return { first, second };
     }
 
+    it.each(['approve', 'restore'] as const)('rejects stale expected current before %s writes and returns only safe current attribution', async (action) => {
+      const { first, second } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', second.id);
+      const before = storedObject(key).body;
+      const current = JSON.parse(before);
+      store.conditionalWrites = [];
+      const failure = await service[action === 'approve' ? 'approveRevision' : 'restoreRevision'](req, PROJECT, BRAND_KIT, 'living', first.id, first.id).catch(
+        (error: unknown) => error
+      );
+      expect(failure).toBeInstanceOf(ConflictError);
+      if (!(failure instanceof ConflictError)) throw new Error('Expected safe selection conflict');
+      const response = failure.toResponse();
+      expect(response).toMatchObject({
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+        current: {
+          revisionId: second.id,
+          number: 2,
+          approvedBy: 'The writer',
+          approvedAt: current.approvals[second.id].approvedAt,
+        },
+      });
+      expect(Object.keys(response['current']).sort()).toEqual(['approvedAt', 'approvedBy', 'number', 'revisionId']);
+      expect(JSON.stringify(response)).not.toMatch(/auth0|username|email|revisionIds|changedBy/);
+      expect(store.conditionalWrites).toEqual([]);
+      expect(storedObject(key).body).toBe(before);
+    });
+
+    it.each(['approve', 'restore'] as const)('allows %s with matching expected current', async (action) => {
+      const { first, second } = await twoRevisions();
+      const result = await service[action === 'approve' ? 'approveRevision' : 'restoreRevision'](req, PROJECT, BRAND_KIT, 'living', first.id, second.id);
+      expect(result?.revision.id).toBe(first.id);
+      expect(JSON.parse(storedObject(key).body).revisionId).toBe(first.id);
+    });
+
+    it.each(['approve', 'restore'] as const)('still allows an older %s client with no expectation', async (action) => {
+      const { first } = await twoRevisions();
+      const result = await service[action === 'approve' ? 'approveRevision' : 'restoreRevision'](req, PROJECT, BRAND_KIT, 'living', first.id);
+      expect(result?.revision.id).toBe(first.id);
+    });
+
+    it.each(['approve', 'restore'] as const)('checks the expectation even when %s would otherwise be a no-op', async (action) => {
+      const { first, second } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', second.id);
+      await expect(
+        service[action === 'approve' ? 'approveRevision' : 'restoreRevision'](req, PROJECT, BRAND_KIT, 'living', second.id, first.id)
+      ).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_APPROVED_CURRENT_CHANGED' });
+    });
+
+    it('re-reads the winner after ETag contention rather than returning the losing snapshot', async () => {
+      const { first, second } = await twoRevisions();
+      store.rejectComparisons = true;
+      store.onRejectedComparison = async () => {
+        const record = JSON.parse(storedObject(key).body);
+        storedObject(key).body = JSON.stringify({
+          ...record,
+          revisionId: second.id,
+          approvals: {
+            [second.id]: { approvedAt: '2026-10-29T12:50:00Z', approvedBy: 'auth0|selector' },
+          },
+        });
+      };
+      const failure = await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id, second.id).catch((error: unknown) => error);
+      if (!(failure instanceof ConflictError)) throw new Error('Expected CAS conflict');
+      expect(failure.toResponse()['current']).toEqual({ revisionId: second.id, number: 2, approvedBy: 'The selector', approvedAt: '2026-10-29T12:50:00Z' });
+    });
+
     it('commits a generated draft while preserving the approved pointer and its selection attribution', async () => {
       const { first } = await twoRevisions();
       await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
@@ -694,15 +760,14 @@ describe('MktgDocumentStoreService', () => {
       expect(JSON.parse(storedObject(key).body).revisionIds).toEqual(ids);
     });
 
-    it('fails once on CAS contention with the exact Make current 412 and no annotation write', async () => {
+    it('fails once on CAS contention with safe current info and no annotation write', async () => {
       const { first } = await twoRevisions();
       const before = storedObject(key).body;
       store.rejectComparisons = true;
       store.conditionalWrites = [];
       await expect(service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id)).rejects.toMatchObject({
-        statusCode: 412,
-        code: 'PRECONDITION_FAILED',
-        message: 'The document changed while making a revision current. Reload and try again.',
+        statusCode: 409,
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
       });
       expect(store.conditionalWrites).toEqual([key]);
       expect(storedObject(key).body).toBe(before);
@@ -1480,7 +1545,10 @@ describe('MktgDocumentStoreService', () => {
     const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# First'), 'first');
     await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Second'), 'second');
     store.rejectComparisons = true;
-    await expect(service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', first.id)).rejects.toMatchObject({ statusCode: 412 });
+    await expect(service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', first.id)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_APPROVED_CURRENT_CHANGED',
+    });
     expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].latest).toBe(true);
   });
 

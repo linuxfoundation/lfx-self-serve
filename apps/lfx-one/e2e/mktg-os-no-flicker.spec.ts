@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@playwright/test';
+import type { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, kitDocuments, kitRevision, kitJson, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 import { DOCUMENTS_URL, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
@@ -371,4 +372,131 @@ test('Family reserves its header action until the kit answers', async ({ page })
   await expect(page.getByTestId('mktg-family-run')).toContainText('Review 4 drafts');
   await expect(page.getByTestId('mktg-family-assets')).toBeVisible();
   await expect(page.getByTestId('mktg-family-action-loading')).toHaveCount(0);
+});
+
+test('a stale approval after another context wins refreshes metadata and explains the conflict without reload', async ({
+  page,
+  browser,
+  kitRequestCheck,
+}, info) => {
+  const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
+  if (!type) throw new Error('Missing synthetic framework type');
+  const original = kitRevision(type);
+  const newer = { ...original.revision, id: `000004-${'b'.repeat(64)}`, number: 4, latest: false };
+  const stale: MktgRevisionResponse = {
+    ...original,
+    revisions: [newer, original.revision],
+    current: {
+      revisionId: original.revision.id,
+      changedAt: '2026-10-29T12:00:00Z',
+      changedBy: null,
+    },
+  };
+  let response = stale;
+  let rejected = false;
+  let staleWrites = 0;
+  const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
+  const approval = { approvedAt: '2026-10-29T12:50:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+  await setupKit(page, { loaded: true });
+  // Hold A's discovery at the snapshot it actually reviewed, including when LIVE-001 is composed.
+  await page.route(
+    (url) => url.pathname === path,
+    (route) => kitJson(route, rejected ? response : stale)
+  );
+  await page.route(
+    (url) => url.pathname === `${path}/revisions/${original.revision.id}`,
+    (route) => kitJson(route, stale)
+  );
+  await page.route(
+    (url) => url.pathname === `${path}/revisions/${newer.id}`,
+    (route) => kitJson(route, response)
+  );
+  await page.route(
+    (url) => url.pathname === `${path}/revisions/${original.revision.id}/approve`,
+    async (route) => {
+      expect(route.request().method()).toBe('POST');
+      expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id });
+      staleWrites++;
+      rejected = true;
+      await kitJson(
+        route,
+        {
+          code: 'MKTG_APPROVED_CURRENT_CHANGED',
+          current: {
+            revisionId: newer.id,
+            number: 4,
+            approvedBy: 'Synthetic reviewer',
+            approvedAt: approval.approvedAt,
+          },
+        },
+        409
+      );
+    }
+  );
+  await openKit(page, `/documents/${type.agentKey}/living`);
+  const tab = page.getByTestId('mktg-framework-view-tab-numbers');
+  await tab.click();
+  const content = page.getByTestId('mktg-document-view-content');
+  await expect(content).toBeVisible();
+  await content.evaluate((node) => (node.dataset['casIdentity'] = 'kept'));
+  const before = await content.textContent();
+  const url = page.url();
+  const fresh = await browser.newContext({ storageState: info.project.use.storageState, proxy: info.project.use.proxy, baseURL: info.project.use.baseURL });
+  try {
+    const other = await fresh.newPage();
+    kitRequestCheck(other);
+    await setupKit(other, { loaded: true });
+    await other.route(
+      (url) => url.pathname === path,
+      (route) => kitJson(route, response)
+    );
+    await other.route(
+      (url) => url.pathname === `${path}/revisions/${original.revision.id}`,
+      (route) => kitJson(route, stale)
+    );
+    await other.route(
+      (url) => url.pathname === `${path}/revisions/${newer.id}`,
+      (route) => kitJson(route, { ...response, revision: newer })
+    );
+    await other.route(
+      (url) => url.pathname === `${path}/comments`,
+      (route) => kitJson(route, { revisionId: new URL(route.request().url()).searchParams.get('revision'), threads: [] })
+    );
+    await other.route(
+      (url) => url.pathname === `${path}/revisions/${newer.id}/approve`,
+      async (route) => {
+        expect(route.request().postDataJSON()).toEqual({ expectedCurrentId: original.revision.id });
+        const winner = { ...newer, latest: true, approval };
+        response = {
+          ...stale,
+          revision: winner,
+          approval,
+          revisions: [winner, { ...original.revision, latest: false }],
+          current: { revisionId: winner.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+          approvedCurrent: { revisionId: winner.id, number: 4 },
+        };
+        await kitJson(route, response);
+      }
+    );
+    await openKit(other, `/documents/${type.agentKey}/living`);
+    await other.getByTestId('mktg-document-view-open-4').click();
+    await other.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    await other.getByRole('button', { name: 'Approve anyway', exact: true }).click();
+    await expect(other.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
+    await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    await page.getByRole('button', { name: 'Approve anyway', exact: true }).click();
+    await expect(page.getByTestId('mktg-document-view-current-conflict')).toHaveText(
+      'Synthetic reviewer approved v4 at 12:50 — review it before approving another version'
+    );
+    await expect(page.getByTestId('mktg-document-view-current-4')).toBeVisible();
+    await expect(content).toHaveAttribute('data-cas-identity', 'kept');
+    await expect(content).toHaveText(before ?? '');
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(url);
+    await expect(page.getByTestId('mktg-document-view-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveCount(0);
+    expect(staleWrites).toBe(1);
+  } finally {
+    await fresh.close();
+  }
 });

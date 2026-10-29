@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import { LINKEDIN_API, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import {
   LinkedinShareLinkResponse,
+  MktgApproveRevisionRequest,
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
   MktgRestoreRevisionRequest,
@@ -94,19 +95,30 @@ export class MktgDocumentStoreService {
   }
 
   /** Approve an existing revision; the response includes the approved current selection. */
-  public approveRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
+  public approveRevision(
+    projectUid: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    expectedCurrentId?: string
+  ): Observable<MktgRevisionResponse> {
+    const body: MktgApproveRevisionRequest = expectedCurrentId === undefined ? {} : { expectedCurrentId };
     return this.http
-      .post<MktgRevisionResponse>(
-        `${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
-        {},
-        { params: this.projectParams(projectUid) }
-      )
+      .post<MktgRevisionResponse>(`${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`, body, {
+        params: this.projectParams(projectUid),
+      })
       .pipe(take(1));
   }
 
   /** Make a revision current without adding history; `/restore` is the compatibility URL. */
-  public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
-    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
+  public restoreRevision(
+    projectUid: string,
+    agentKey: string,
+    documentId: string,
+    revisionId: string,
+    expectedCurrentId?: string
+  ): Observable<MktgRestoreRevisionResponse> {
+    const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId, ...(expectedCurrentId === undefined ? {} : { expectedCurrentId }) };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
   }
 
