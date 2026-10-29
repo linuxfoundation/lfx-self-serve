@@ -23,7 +23,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
-import { parseOrgCommitFilters } from '../helpers/org-commit-filters.helper';
+import { parseOptionalOrgCommitFilters, parseOrgCommitFilters } from '../helpers/org-commit-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
@@ -128,7 +128,12 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all] — `range` is the window the Maintainer pills follow (default `365d`). */
+  /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric] —
+   * `range` is the window the Maintainer pills follow (default `365d`). The commit filters are the calling page's (the
+   * drawer's opener or the All Employees expanded row; lfx-self-serve#4404): with any of them the Code projects and total count that page's row in `range`; with none,
+   * every commit of the trailing 12 months. An unknown value is a 400.
+   */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const personKey = req.params['personKey'];
@@ -141,8 +146,9 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, 'get_org_lens_people_detail');
       this.assertPersonKey(personKey, 'get_org_lens_people_detail');
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', 'get_org_lens_people_detail') ?? ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE;
+      const codeFilters = parseOptionalOrgCommitFilters(req, 'get_org_lens_people_detail');
 
-      const response = await this.service.getEmployeeDetail(req, orgUid, personKey, range);
+      const response = await this.service.getEmployeeDetail(req, orgUid, personKey, range, codeFilters);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
@@ -150,6 +156,7 @@ export class OrgLensPeopleController {
         board_seats: response.boardSeats.length,
         committee_seats: response.committeeSeats.length,
         code_rows: response.code.length,
+        code_view: codeFilters !== null,
         event_rows: response.events.length,
         training_rows: response.training.length,
       });
@@ -226,8 +233,8 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail[?range=] — activity for openers that carry only an LF
-   * username; `range` as for the person-key detail. A username with no single roster person is answered `null` (200),
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail[?range=][&projectScope][&commitScope][&metric] — activity for
+   * openers that carry only an LF username; `range` and the commit filters as for the person-key detail. A username with no single roster person is answered `null` (200),
    * not 404: the miss is routine, and the error handler would log the username-bearing path at WARN on every such drawer open.
    */
   public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -239,9 +246,10 @@ export class OrgLensPeopleController {
       assertOrgUid(orgUid, operation);
       this.assertUsername(username, operation);
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE;
+      const codeFilters = parseOptionalOrgCommitFilters(req, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username, range);
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username, range, codeFilters);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -249,6 +257,7 @@ export class OrgLensPeopleController {
         board_seats: response?.boardSeats.length ?? 0,
         committee_seats: response?.committeeSeats.length ?? 0,
         code_rows: response?.code.length ?? 0,
+        code_view: codeFilters !== null,
         event_rows: response?.events.length ?? 0,
         training_rows: response?.training.length ?? 0,
       });

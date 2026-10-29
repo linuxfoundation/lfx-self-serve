@@ -55,6 +55,8 @@ export class VoteBallotFormComponent {
   // Reactive dependency for derived state: control mutations here use { emitEvent: false }.
   private readonly formVersion = signal<number>(0);
   private prefilledComments = false;
+  /** Comment prompts the voter has opened (or that arrived with text); the rest stay collapsed behind "Add a comment". */
+  protected readonly openedComments = signal<ReadonlySet<string>>(new Set());
 
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
   protected readonly questions: Signal<PollQuestion[]> = computed(() => this.ballot().poll_questions ?? []);
@@ -70,6 +72,26 @@ export class VoteBallotFormComponent {
     this.formVersion();
     if (this.submitting() || !this.commentForm.valid) return true;
     return this.abstain() ? false : !this.form.valid;
+  });
+  /** Choice ids currently selected per question, so a card can show its selected state beyond the radio/checkbox itself. */
+  protected readonly selectedByQuestion: Signal<Map<string, ReadonlySet<string>>> = computed(() => {
+    this.formVersion();
+    const result = new Map<string, ReadonlySet<string>>();
+    for (const question of this.questions()) {
+      const raw = this.form.get(question.question_id)?.value as string | string[] | null | undefined;
+      const single: string[] = typeof raw === 'string' && raw ? [raw] : [];
+      const picked = Array.isArray(raw) ? raw : single;
+      result.set(question.question_id, new Set(picked));
+    }
+    return result;
+  });
+  /** Why Submit is disabled, or '' when it is not waiting on a choice. Abstaining needs no choice. */
+  protected readonly selectionHelper: Signal<string> = computed(() => {
+    this.formVersion();
+    if (this.abstain() || this.form.valid) return '';
+    const questions = this.questions();
+    if (questions.length !== 1) return 'Answer every question to submit';
+    return questions[0].type === 'multiple_choice' ? 'Select at least one answer' : 'Select one answer';
   });
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = computed(() => {
     this.formVersion();
@@ -104,6 +126,10 @@ export class VoteBallotFormComponent {
       else this.form.enable({ emitEvent: false });
       this.bump();
     });
+  }
+
+  protected openComment(promptId: string): void {
+    this.openedComments.update((opened) => new Set(opened).add(promptId));
   }
 
   protected onRankedDrop(questionId: string, event: CdkDragDrop<string[]>): void {
@@ -178,9 +204,11 @@ export class VoteBallotFormComponent {
     reconcileCommentFormControls(this.commentForm, ballot.poll_comment_prompts ?? []);
     for (const control of Object.values(this.commentForm.controls) as FormControl<string>[]) control.reset('', { emitEvent: false });
     this.prefilledComments = applyPrefill;
+    this.openedComments.set(new Set());
     if (applyPrefill) {
       for (const response of prefill?.comment_responses ?? []) {
         this.commentForm.get(response.prompt_id)?.setValue(response.comment_text, { emitEvent: false });
+        if (response.comment_text) this.openComment(response.prompt_id);
       }
     }
 

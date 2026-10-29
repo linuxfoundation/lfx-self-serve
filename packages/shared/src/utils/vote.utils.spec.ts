@@ -69,6 +69,7 @@ import {
   votePermalinkPath,
   truncateVoteTitle,
   votePresenterPath,
+  buildVoteAnswerSummary,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -1882,5 +1883,64 @@ describe('truncateVoteTitle', () => {
 describe('votePresenterPath', () => {
   it('appends /present to the encoded permalink path', () => {
     expect(votePresenterPath('abc/123')).toBe('/votes/abc%2F123/present');
+  });
+});
+
+describe('buildVoteAnswerSummary', () => {
+  const questions = [
+    {
+      question_id: 'q1',
+      prompt: 'Who?',
+      type: 'single_choice',
+      choices: [
+        { choice_id: 'a', choice_text: 'Alice' },
+        { choice_id: 'b', choice_text: 'Bob' },
+      ],
+    },
+    {
+      question_id: 'q2',
+      prompt: 'Which topics?',
+      type: 'multiple_choice',
+      choices: [
+        { choice_id: 'x', choice_text: 'Budget' },
+        { choice_id: 'y', choice_text: 'Roadmap' },
+      ],
+    },
+  ];
+
+  it('returns one line per question with the chosen text', () => {
+    const lines = buildVoteAnswerSummary(questions, {
+      abstain: false,
+      userVoteContent: [
+        { question_id: 'q1', choice_ids: ['b'] },
+        { question_id: 'q2', choice_ids: ['x', 'y'] },
+      ],
+    });
+
+    expect(lines).toEqual([
+      { question_id: 'q1', prompt: 'Who?', answer: 'Bob' },
+      { question_id: 'q2', prompt: 'Which topics?', answer: 'Budget, Roadmap' },
+    ]);
+  });
+
+  it('lists ranked choices in rank order', () => {
+    const lines = buildVoteAnswerSummary([questions[0]], {
+      abstain: false,
+      userVoteContent: [
+        {
+          question_id: 'q1',
+          ranked_choices: [
+            { choice_id: 'b', choice_rank: 2 },
+            { choice_id: 'a', choice_rank: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(lines[0].answer).toBe('1. Alice, 2. Bob');
+  });
+
+  it('returns no lines for an abstention', () => {
+    expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
   });
 });

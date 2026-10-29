@@ -50,7 +50,9 @@ import type {
   UpdateVoteRequest,
   UserChoice,
   Vote,
+  VoteAnswerSummaryLine,
   VoteBallotQuestionView,
+  VoteBallotSubmission,
   VoteCastFormPrefill,
   VoteFormValue,
   VoteParticipationStats,
@@ -1289,4 +1291,22 @@ export function truncateVoteTitle(title: string, max: number = VOTE_PRESENTER_TI
   const lastSpace = head.lastIndexOf(' ');
   const wordSafe = lastSpace > 0 && trimmed.charAt(head.length) !== ' ' ? head.slice(0, lastSpace) : head;
   return `${wordSafe.trimEnd()}…`;
+}
+
+/**
+ * One recap line per question for the vote link thank-you screen. Ranked ballots read in rank order
+ * ("1. Alice, 2. Bob"); an abstention has no per-question answers, so it returns no lines.
+ */
+export function buildVoteAnswerSummary(questions: PollQuestion[], submission: VoteBallotSubmission): VoteAnswerSummaryLine[] {
+  if (submission.abstain) return [];
+  return questions.map((question) => {
+    const textById = new Map(question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
+    const answer = submission.userVoteContent?.find((entry) => entry.question_id === question.question_id);
+    const ranked = [...(answer?.ranked_choices ?? [])].sort((a, b) => a.choice_rank - b.choice_rank);
+    const text =
+      ranked.length > 0
+        ? ranked.map((choice, index) => `${index + 1}. ${textById.get(choice.choice_id) ?? choice.choice_id}`).join(', ')
+        : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
+    return { question_id: question.question_id, prompt: question.prompt, answer: text };
+  });
 }

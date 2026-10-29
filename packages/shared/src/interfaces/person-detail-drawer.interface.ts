@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
 import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
@@ -36,6 +37,12 @@ export interface PersonDrawerContext {
   directoryView?: OrgPeopleDirectoryView;
   /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (past 365 days when omitted). */
   range?: OrgLensTimeRange;
+  /**
+   * The opener's project type and code count (Code Contributions, People → Contributors, People → All Employees;
+   * lfx-self-serve#4404). With it, the Code tab counts in `range` exactly what the opener's row counts; without it,
+   * the Code tab shows every commit of the trailing 12 months.
+   */
+  codeFilters?: OrgCommitFilters;
 }
 
 /** One rendered address line in the drawer header. */
