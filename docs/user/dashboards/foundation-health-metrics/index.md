@@ -18,12 +18,14 @@ The Foundation overview shows a row of health metric cards — including total v
 
 Cards load independently. A missing or failed metric does not hide other available Foundation Health cards.
 
-- **Data not available yet** means analytics data for that metric is not available for the selected foundation. It is not shown as a measured zero, and this state does not offer Retry.
+- **Data not available yet** means the analytics response explicitly identifies a missing measurement for the selected foundation. That missing value is not replaced with a measured zero, and this state does not offer Retry.
 - **This metric could not be loaded** means the request failed. Select **Retry** on that card to retry its failed request without reloading successful metrics.
 - **You do not have access to this metric** is an access restriction. Contact your administrator if you need access.
 - **Access could not be verified** means access could not be checked temporarily. Select **Retry** to check again.
 
-If a headline metric is available but its supporting data fails, the measured value remains visible with **Additional details are unavailable**. The drawer stays unavailable until its required data loads successfully; Retry only reloads the failed supporting requests.
+Some analytics responses fill missing periods with zeros without identifying whether measurements exist. **Active Members**, **Events**, monthly maintainer trends, and **Project Health Scores** can still show zero or flat results in that case; this view cannot confirm analytics coverage from those results alone.
+
+If a headline metric is available but its supporting data is missing, fails to load, or cannot be accessed, the measured value remains visible with **Additional details are unavailable**. The drawer stays unavailable until its required data loads successfully. Retry is offered only for failed requests or temporarily unverifiable access, and only reloads those supporting requests.
 
 ### Organization Dependency
 

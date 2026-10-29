@@ -118,6 +118,8 @@ describe('FoundationHealthComponent metric availability', () => {
     expect(card('total-value').querySelector('[role="status"]')).toBeNull();
   });
 
+  // Empty-array fixtures exercise defensive client handling, not warehouse row detection.
+  // Members/events and monthly maintainer history can be zero-filled by the server even without source rows.
   describe.each([
     {
       name: 'total-projects',
@@ -150,8 +152,8 @@ describe('FoundationHealthComponent metric availability', () => {
       configure: (measured: boolean) =>
         analytics.getFoundationEventsQuarterly.mockReturnValue(of({ quarterlyData: measured ? [0] : [], quarterlyLabels: measured ? ['Q3'] : [] })),
     },
-  ])('$name measurement presence', ({ name, configure }) => {
-    it.each([false, true])('distinguishes an empty HTTP-200 response from a measured zero (measured=%s)', async (measured) => {
+  ])('$name successful payload handling', ({ name, configure }) => {
+    it.each([false, true])('distinguishes an explicitly empty payload from a zero-valued payload (hasData=%s)', async (measured) => {
       configure(measured);
       analytics.getFoundationValueConcentration.mockReturnValue(failure(404, 'NOT_FOUND'));
       await render();
@@ -192,8 +194,8 @@ describe('FoundationHealthComponent metric availability', () => {
       headline: '5',
       configure: (measured: boolean) => analytics.getUniqueContributorsDaily.mockReturnValue(of({ data: [], avgContributors: 0, totalDays: measured ? 1 : 0 })),
     },
-  ])('$name supporting measurement presence', ({ name, headline, configure }) => {
-    it.each([false, true])('preserves the headline and only enables measured supporting data (measured=%s)', async (measured) => {
+  ])('$name supporting payload handling', ({ name, headline, configure }) => {
+    it.each([false, true])('preserves the headline and only enables explicitly present supporting data (hasData=%s)', async (measured) => {
       configure(measured);
       await render();
       const element = card(name);
@@ -208,6 +210,20 @@ describe('FoundationHealthComponent metric availability', () => {
       element.click();
       expect(fixture.componentInstance.activeDrawer() !== null).toBe(measured);
     });
+  });
+
+  it('preserves zero-filled server responses without claiming to detect their underlying measurement presence', async () => {
+    analytics.getFoundationTotalMembers.mockReturnValue(of({ totalMembers: 0, monthlyData: Array(12).fill(0), monthlyLabels: Array(12).fill('Oct') }));
+    analytics.getFoundationEventsQuarterly.mockReturnValue(of({ quarterlyData: Array(8).fill(0), quarterlyLabels: Array(8).fill('Q3') }));
+    analytics.getFoundationMaintainersMonthly.mockReturnValue(of({ monthlyData: Array(12).fill(0), monthlyLabels: Array(12).fill('Oct') }));
+    analytics.getFoundationHealthScoreDistribution.mockReturnValue(of({ excellent: 0, healthy: 0, fair: 0, concerning: 0, critical: 0, unscored: 0 }));
+    await render();
+    for (const name of ['total-members', 'events', 'maintainers', 'project-health-scores']) {
+      expect(card(name).querySelector('[role="status"]')).toBeNull();
+      expect(card(name).textContent).not.toContain('Additional details are unavailable');
+    }
+    expect(card('total-members').querySelector('.text-xl')?.textContent?.trim()).toBe('0');
+    expect(card('events').querySelector('.text-xl')?.textContent?.trim()).toBe('0');
   });
 
   it('updates snapshot availability when switching from measured to empty and back to measured foundations', async () => {
