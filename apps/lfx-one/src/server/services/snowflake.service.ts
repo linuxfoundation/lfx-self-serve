@@ -507,6 +507,9 @@ export class SnowflakeService {
       database: requiredEnvVars.SNOWFLAKE_DATABASE!,
       warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE!,
       timeout: SNOWFLAKE_CONFIG.CONNECTION_TIMEOUT,
+      // snowflake-sdk 3.4 turned OCSP off by default; CRL validation replaces it. ADVISORY rejects
+      // a revoked certificate but not a CRL fetch or parse error, the same fail-open stance OCSP had.
+      certRevocationCheckMode: 'ADVISORY',
     };
 
     const poolOptions: PoolOptions = {
