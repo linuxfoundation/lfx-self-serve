@@ -5,6 +5,9 @@ import type { FilterPillOption } from '../interfaces/dashboard-metric.interface'
 import type { MktgDocumentAgentKey } from '../interfaces/mktg-document-store.interface';
 import type { MktgKitFamily, MktgKitFilter } from '../interfaces/mktg-kit.interface';
 
+/** Flip to true to show unbuilt families, assets, agents and tabs again. */
+export const MKTG_KIT_SHOW_COMING_SOON = false;
+
 export const MKTG_KIT_POSITIONING_FAMILY_ID = 'positioning-brand';
 export const MKTG_KIT_FRAMEWORK_AGENT_ID = 'foundation-setup';
 export const MKTG_KIT_FRAMEWORK_KEY = 'foundation-message';

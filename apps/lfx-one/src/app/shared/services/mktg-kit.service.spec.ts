@@ -50,7 +50,7 @@ describe('MktgKitService project-scoped reads', () => {
     reads[1].next(empty('two'));
     expect(kit.documents()?.project).toBe('two');
     expect(kit.loading()).toBe(false);
-    expect(kit.families()).toHaveLength(9);
+    expect(kit.families()).toHaveLength(4);
     context.set(null);
     TestBed.tick();
     expect(kit.documents()).toBeNull();

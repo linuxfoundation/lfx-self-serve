@@ -288,12 +288,12 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('hides coming-soon primary actions and names the available one-off Create step', async ({ page }) => {
+  test('shows available Create steps without unbuilt rows or pending coming-soon copy', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
-    await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Coming soon');
-    await expect(page.getByTestId('mktg-family-run-aeo-geo')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create AEO/GEO scorecard');
+    await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-family-run-aeo-geo').getByRole('link')).toHaveAccessibleName('Create AEO/GEO scorecard');
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
     await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create Member 360');
@@ -301,6 +301,9 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-coming-soon')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-asset-member-360')).toBeVisible();
+    await expect(page.getByTestId('mktg-family-asset-pitch-deck')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-page')).not.toContainText('Coming soon');
+    await page.screenshot({ path: test.info().outputPath('family-live-only.png'), fullPage: true });
   });
   for (const [familyId, agentId, label] of [
     ['social-community', 'linkedin-post', 'LinkedIn post'],

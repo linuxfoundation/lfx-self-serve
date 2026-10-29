@@ -70,6 +70,12 @@
       </div>
       <!-- Keep the named export slot available when the document listing is denied or fails. -->
       <lfx-mktg-family-export-actions [familyId]="definition.id" />
+    } @else if (!live()) {
+      <!-- Unbuilt families are hidden from the kit but remain honest on a direct link. -->
+      <section class="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 p-6" data-testid="mktg-family-coming-soon">
+        <h2 class="text-lg font-semibold">Coming soon</h2>
+        <p class="text-sm text-gray-500">This family has no assets on the store yet.</p>
+      </section>
     } @else if (family(); as family) {
       @if (family.live) {
         <!-- Family board: 1280px leaves ~876px host; 800px side-column threshold reserves ~60px headroom; 600px stacks the mobile rows. -->
@@ -180,11 +186,6 @@
             <lfx-mktg-family-details [family]="family" [projectUid]="kit.documents()?.project ?? ''" />
           </aside>
         </div>
-      } @else {
-        <section class="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 p-6" data-testid="mktg-family-coming-soon">
-          <h2 class="text-lg font-semibold">Coming soon</h2>
-          <p class="text-sm text-gray-500">This family has no assets on the store yet.</p>
-        </section>
       }
     } @else {
       <!-- Defensive only: NavigationService normally selects a project or redirects an empty lens to Me. -->
