@@ -287,6 +287,11 @@ export class MktgDocumentViewComponent {
     { initialValue: { agentKey: '', documentId: '' } }
   );
   protected readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
+  /** Route intent (including Back to no selector) gets one body read; polls never set this latch. */
+  private readonly selectionReadPending = linkedSignal<string, boolean>({
+    source: this.revisionParam,
+    computation: (selection, previous) => previous !== undefined && previous.source !== selection,
+  });
   private readonly routeProject = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('project'))), { initialValue: null });
 
   // === Computed ===
@@ -469,6 +474,7 @@ export class MktgDocumentViewComponent {
       this.publicProgressPolling() &&
       (!this.view() ||
         opening ||
+        this.selectionReadPending() ||
         following ||
         !!this.generationParam() ||
         this.submittingGeneration() ||
@@ -992,6 +998,7 @@ export class MktgDocumentViewComponent {
         )
         .subscribe((view) => {
           this.view.set(view);
+          if (view) this.selectionReadPending.set(false);
           if (!this.editingLink() && !this.savingLink())
             this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
@@ -1444,7 +1451,8 @@ export class MktgDocumentViewComponent {
       const view = this.view();
       const approved = view?.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
       const produced = this.remoteRevisionId() ? view?.revisions.find((row) => row.number > view.revision.number) : null;
-      const newer = produced ?? approved;
+      const approvedIsNewer = !!view && !!approved && approved.number > view.revision.number;
+      const newer = approvedIsNewer ? approved : produced;
       if (!view || !newer || newer.number <= view.revision.number) return null;
       const author = newer.approval ? newer.approval.approvedBy : newer.author;
       return { ...newer, authorLabel: describeMktgRevisionAuthor(author) };

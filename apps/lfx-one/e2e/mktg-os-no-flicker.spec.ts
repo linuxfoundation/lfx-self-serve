@@ -127,15 +127,19 @@ test('two document progress polls keep the selected tab, expanded history, compo
   };
   const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
   let polls = 0;
+  let bodyReads = 0;
   await page.route(
     (url) => url.pathname === path,
-    (route) => kitJson(route, response)
+    async (route) => {
+      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
+      await kitJson(route, response);
+    }
   );
   await page.route(
     (url) => url.pathname.startsWith(`${path}/revisions/`),
     async (route) => {
+      bodyReads++;
       await kitJson(route, response);
-      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
     }
   );
   await openKit(page, `/documents/${type.agentKey}/living`);
@@ -152,7 +156,9 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await composer.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
   const scroll = await page.evaluate(() => window.scrollY);
   const before = polls;
+  const bodyReadsBefore = bodyReads;
   await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+  expect(bodyReads).toBe(bodyReadsBefore);
   await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page).toHaveURL(/tab=numbers/);
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
