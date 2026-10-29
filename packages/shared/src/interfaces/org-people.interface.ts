@@ -136,6 +136,12 @@ export interface OrgAllEmployeeRow {
    * the former row can take their access badge. Absent on current rows.
    */
   isFormer?: boolean;
+  /**
+   * `true` on a former-employees read row for someone with code credited to this account but no employment row there
+   * (lfx-self-serve#4730): neither current nor former, so All Employees lists them only under "All employees". Absent
+   * on every other row.
+   */
+  isUnclassified?: boolean;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */

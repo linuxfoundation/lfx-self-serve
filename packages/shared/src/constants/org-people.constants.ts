@@ -87,6 +87,13 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
  */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
 
+/**
+ * Hint on an All Employees row for someone with code credited to the company but no employment record there
+ * (lfx-self-serve#4730): neither current nor former, so listed only under "All employees".
+ */
+export const ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE =
+  'No employment record at this company: listed for code credited to it, only under "All employees", not as a current or former employee.';
+
 /** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
 export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
 

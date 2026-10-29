@@ -99,7 +99,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default: the Org Lens default range). Never merged into the live directory. */
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude] — the people off the current roster active at the account in the range and project scope (default: the Org Lens default range): former employees (`isFormer`, lfx-self-serve#4311) and people with code credited to the account but no employment row (`isUnclassified`, lfx-self-serve#4730). Never merged into the live directory. */
   public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_former';

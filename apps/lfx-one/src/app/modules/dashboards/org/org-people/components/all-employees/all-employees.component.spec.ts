@@ -9,7 +9,7 @@ import { provideRouter, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEE_STATS,
-  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
+  ORG_ALL_EMPLOYEE_CODE_NOTE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
@@ -88,7 +88,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   const rowKeys = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('[data-testid^="org-people-all-employees-row-"]')]
       .map((r) => r.dataset['testid'] ?? '')
-      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former'));
+      .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former') && !id.endsWith('-unclassified'));
   const formerTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-former"]')].map((tag) => tag.dataset['testid'] ?? '');
   const activeStat = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-active"]')?.textContent ?? '';
 
@@ -359,7 +359,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('1');
     });
 
-    it('notes on the code tile that former employees are left out, only under "Current employees"', async () => {
+    it('notes on the code tile who it counts under "Current employees" and "All employees", and nothing under "Former"', async () => {
       await mount('browser', '/?employment=current');
       await answerCurrent();
       await answerFormer();
@@ -369,15 +369,49 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(info()).not.toBeNull();
       // The note opens on keyboard focus as well as hover, with the current-only explanation.
       const tooltip = fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip);
-      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE);
+      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_CODE_NOTE.current);
       expect(tooltip.tooltipEvent).toBe('both');
 
       const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
-      for (const view of ['all', 'former'] as const) {
-        component.filterForm.controls.employment.setValue(view);
-        await settle();
-        expect(info()).toBeNull();
-      }
+      component.filterForm.controls.employment.setValue('all');
+      await settle();
+      expect(fixture.debugElement.query(By.css(infoSelector)).injector.get(Tooltip).content).toBe(ORG_ALL_EMPLOYEE_CODE_NOTE.all);
+
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(info()).toBeNull();
+    });
+
+    // lfx-self-serve#4730 — people with code but no employment row ride on the off-roster read, tagged `isUnclassified`.
+    it('lists people with code but no employment record only under "All employees", with a hint, in the code tile', async () => {
+      const unclassifiedTags = (): string[] =>
+        [...el().querySelectorAll<HTMLElement>('[data-testid$="-unclassified"]')].map((tag) => tag.dataset['testid'] ?? '');
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      former$.next(
+        response(
+          [row('p-9', 'Grace Hopper', { isFormer: true, commitsCount: 4 }), row('cdp:p-7', 'Ada Lovelace', { isUnclassified: true, commitsCount: 3 })],
+          2
+        )
+      );
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(unclassifiedTags()).toEqual(['org-people-all-employees-row-cdp:p-7-unclassified']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('3');
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
+      expect(unclassifiedTags()).toEqual([]);
+
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(unclassifiedTags()).toEqual([]);
     });
 
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {

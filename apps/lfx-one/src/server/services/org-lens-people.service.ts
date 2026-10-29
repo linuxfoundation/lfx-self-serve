@@ -51,6 +51,7 @@ import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper'
 import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
@@ -116,6 +117,32 @@ const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmai
 /** The lookup ran and errored. The rest of the detail response still renders. */
 const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
+/**
+ * The two populations off the current roster that the former-employees read lists: former employees (lfx-self-serve#4311)
+ * and the people with code credited to the account but no employment row (lfx-self-serve#4730). The unclassified table
+ * carries code only — nothing ties their seats, events or courses to the account — and ships from lf-dbt, so it may
+ * not exist yet.
+ */
+const OFF_ROSTER_SOURCES = {
+  former: {
+    table: 'ORG_PEOPLE_ALL_RANGES',
+    filter: (prefix: string) => `AND ${prefix}IS_FORMER = TRUE`,
+    counts: 'SEATS_COUNT, BOARD_SEATS_COUNT, COMMITTEE_SEATS_COUNT, COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT, EVENTS_COUNT, COURSES_COUNT',
+    queryOptions: undefined,
+    operation: 'get_org_lens_people_former',
+    labelsWarning: 'former employee foundation labels failed; serving rows without labels',
+  },
+  unclassified: {
+    table: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS',
+    filter: () => '',
+    counts:
+      '0 AS SEATS_COUNT, 0 AS BOARD_SEATS_COUNT, 0 AS COMMITTEE_SEATS_COUNT, COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT, 0 AS EVENTS_COUNT, 0 AS COURSES_COUNT',
+    queryOptions: { expectMissingObject: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' },
+    operation: 'get_org_lens_people_unclassified',
+    labelsWarning: 'unclassified contributor foundation labels failed; serving rows without labels',
+  },
+} as const;
+
 /** Org Lens "People → All Employees" analytics — backed by the PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
   private snowflakeService: SnowflakeService;
@@ -180,12 +207,14 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Former employees at the account active in the time range and project scope (lfx-self-serve#4311), the
-   * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
-   * directory — and the reassign pickers that read it — never sees a former employee. Stats are
-   * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
-   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name. `exclude`
-   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`).
+   * The people off the current roster at the account in the time range and project scope: former employees
+   * (lfx-self-serve#4311), the `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES tagged `isFormer`, and the people with code
+   * credited to the account but no employment row (lfx-self-serve#4730), ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS tagged
+   * `isUnclassified`, which the page lists only under "All employees". Only this read opts in to them, so the shared
+   * people directory — and the reassign pickers that read it — never sees either. Stats are computed over these rows
+   * for the request's commit filters. No address is sent for them, and none stands in for a blank name. `exclude`
+   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`). Until lf-dbt builds the unclassified
+   * table the response carries former employees only.
    */
   public async getFormerEmployees(
     req: Request,
@@ -194,13 +223,23 @@ export class OrgLensPeopleService {
     filters: OrgCommitFilters,
     teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
   ): Promise<OrgAllEmployeesResponse> {
-    const [raw, teamMemberKeys] = await Promise.all([
+    const [former, unclassified, teamMemberKeys] = await Promise.all([
       this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope),
+      this.getUnclassifiedContributorsRaw(req, accountId, range, filters.projectScope),
       this.getTeamMemberPersonKeys(accountId, teamMembers),
     ]);
-    const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
+    const offRosterRow = (row: OrgPeopleAllRowRaw): OrgAllEmployeeRowInternal =>
+      this.mapEmployeeRow({ ...row, NAME: offRosterDisplayName(row), TITLE: null, EMAIL: null });
+    const rows = [
+      ...former.rowsRaw.map((row) => ({ ...offRosterRow(row), isFormer: true })),
+      ...(unclassified?.rowsRaw ?? []).map((row) => ({ ...offRosterRow(row), isUnclassified: true })),
+    ];
+    const foundations = new Map<string, string>();
+    for (const row of [...former.foundationRaw, ...(unclassified?.foundationRaw ?? [])]) {
+      foundations.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
+    }
     return toWireResponse(
-      { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
+      { accountId, rows, foundations: [...foundations].map(([foundationId, foundationName]) => ({ foundationId, foundationName })) },
       filters,
       teamMemberKeys
     );
@@ -468,27 +507,60 @@ export class OrgLensPeopleService {
       `people-former:v3:${range}:${projectScope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const result = await this.fetchFormerEmployeesRaw(req, accountId, range, projectScope);
+        const result = await this.fetchOffRosterRaw(req, accountId, range, projectScope, 'former');
         labelsFailed = result.labelsFailed;
         return result.raw;
       },
-      isFormerEmployeesRaw,
+      isOffRosterRaw,
       () => !labelsFailed
     );
   }
 
   /**
-   * Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations
-   * of their code in that scope. The labels read the full-history daily code rows, the source of the rows'
-   * ENGAGED_FOUNDATION_IDS, so a foundation they only contributed to years ago still has one for `all`. A failed
-   * roster read fails the request; a failed label read only empties the dropdown (`labelsFailed`).
+   * The people with code credited to the account but no employment row (lfx-self-serve#4730), or `null` while lf-dbt
+   * has not built ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS: the page then lists former employees only, as before. Neither
+   * `null` nor a read whose foundation labels failed is stored.
    */
-  private async fetchFormerEmployeesRaw(
+  private getUnclassifiedContributorsRaw(
     req: Request,
     accountId: string,
     range: OrgLensTimeRange,
     projectScope: OrgProjectScope
+  ): Promise<OrgAllEmployeesRaw | null> {
+    let labelsFailed = false;
+    return withOrgCache<OrgAllEmployeesRaw | null>(
+      accountId,
+      `people-unclassified:v1:${range}:${projectScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        try {
+          const result = await this.fetchOffRosterRaw(req, accountId, range, projectScope, 'unclassified');
+          labelsFailed = result.labelsFailed;
+          return result.raw;
+        } catch (error) {
+          if (isMissingObjectError(error, OFF_ROSTER_SOURCES.unclassified.table)) return null;
+          throw error;
+        }
+      },
+      isOffRosterRaw,
+      (raw) => raw !== null && !labelsFailed
+    );
+  }
+
+  /**
+   * One off-roster population's rows for the range and project scope (the EMAIL column is never selected) and the
+   * foundations of their code in that scope. The labels read the full-history daily code rows, the source of the rows'
+   * ENGAGED_FOUNDATION_IDS, so a foundation they only contributed to years ago still has one for `all`. A failed
+   * roster read rejects; a failed label read only empties the dropdown (`labelsFailed`).
+   */
+  private async fetchOffRosterRaw(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    population: keyof typeof OFF_ROSTER_SOURCES
   ): Promise<{ raw: OrgAllEmployeesRaw; labelsFailed: boolean }> {
+    const source = OFF_ROSTER_SOURCES[population];
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -500,40 +572,33 @@ export class OrgLensPeopleService {
         NULL AS TITLE,
         NULL AS EMAIL,
         PHOTO,
-        SEATS_COUNT,
-        BOARD_SEATS_COUNT,
-        COMMITTEE_SEATS_COUNT,
-        COMMITS_COUNT,
-        MERGED_COMMITS_COUNT,
-        CODE_ACTIVITIES_COUNT,
-        EVENTS_COUNT,
-        COURSES_COUNT,
+        ${source.counts},
         ENGAGED_FOUNDATION_IDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = TRUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.${source.table}
+      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? ${source.filter('')}
       ORDER BY NAME ASC NULLS LAST
     `;
 
     const foundationQuery = `
       SELECT DISTINCT c.FOUNDATION_ID, c.FOUNDATION_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY c
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES f
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.${source.table} f
         ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
-      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
+      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? ${source.filter('f.')}
         AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
         ${orgProjectScopePredicate(projectScope, 'c.IS_LF_PROJECT')}
       ORDER BY c.FOUNDATION_NAME ASC
     `;
 
     const [rowsResult, foundationResult] = await Promise.allSettled([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, projectScope]),
-      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, projectScope]),
+      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, projectScope], source.queryOptions),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, projectScope], source.queryOptions),
     ]);
     if (rowsResult.status === 'rejected') {
       throw rowsResult.reason;
     }
     if (foundationResult.status === 'rejected') {
-      logger.warning(req, 'get_org_lens_people_former', 'former employee foundation labels failed; serving rows without labels', {
+      logger.warning(req, source.operation, source.labelsWarning, {
         err: foundationResult.reason,
       });
       return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: [] }, labelsFailed: true };
@@ -1063,8 +1128,8 @@ export class OrgLensPeopleService {
   }
 }
 
-/** A former employee's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
-function formerDisplayName(row: OrgPeopleAllRowRaw): string | null {
+/** An off-roster person's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
+function offRosterDisplayName(row: OrgPeopleAllRowRaw): string | null {
   if (!row.NAME?.includes('@')) {
     return row.NAME;
   }
@@ -1170,7 +1235,7 @@ function toCodeProjectCount(
   };
 }
 
-function isFormerEmployeesRaw(value: unknown): boolean {
+function isOffRosterRaw(value: unknown): boolean {
   const v = value as { rowsRaw?: unknown; foundationRaw?: unknown } | null;
   return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.foundationRaw);
 }

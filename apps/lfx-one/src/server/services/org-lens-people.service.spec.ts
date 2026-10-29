@@ -182,6 +182,18 @@ function addRangeRow(
     );
 }
 
+/** One ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row (lfx-self-serve#4730): code credited to `account`, no employment row there. */
+function addUnclassifiedRow(account: string, key: string, range: string, username: string, name: string, commits: number, teamMember = false): void {
+  database
+    .prepare(
+      `INSERT INTO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS (
+        ACCOUNT_ID, PERSON_KEY, TIME_RANGE, PROJECT_SCOPE, LFID, LF_USERNAME, CDP_MEMBER_ID, NAME, PHOTO,
+        COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT, ENGAGED_FOUNDATION_IDS, IS_CDP_TEAM_MEMBER
+      ) VALUES (?, ?, ?, 'all', NULL, ?, NULL, ?, NULL, ?, ?, ?, '["foundation-three"]', ?)`
+    )
+    .run(account, key, range, username, name, commits, commits, commits, teamMember ? 1 : 0);
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
@@ -213,6 +225,14 @@ beforeEach(() => {
       LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
       DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER,
       IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
+  // People with code but no employment row (lfx-self-serve#4730); empty unless a test adds someone.
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, TIME_RANGE TEXT, PROJECT_SCOPE TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT,
+      NAME TEXT, PHOTO TEXT, COMMITS_COUNT INTEGER, MERGED_COMMITS_COUNT INTEGER, CODE_ACTIVITIES_COUNT INTEGER,
+      ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
     )
   `);
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
@@ -920,6 +940,79 @@ describe('OrgLensPeopleService person-key company emails', () => {
       await expect(service.getFormerUsernames(ACCOUNT)).rejects.toThrow();
       database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
     });
+
+    describe('with people who have code but no employment row (lfx-self-serve#4730)', () => {
+      const unclassifiedKey = 'cdp:member-seven';
+
+      beforeEach(() => {
+        addUnclassifiedRow(ACCOUNT, unclassifiedKey, '365d', 'noroster', 'nobody@personal.example', 3);
+        addDailyCode(ACCOUNT, unclassifiedKey, '2026-05-01', 'foundation-three', 'Foundation Three');
+      });
+
+      it('lists them after the former employees, tagged unclassified, code only, in the tiles and the foundation labels', async () => {
+        const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows).toEqual([
+          expect.objectContaining({ personKey: formerKey, isFormer: true }),
+          expect.objectContaining({ personKey: unclassifiedKey, isUnclassified: true, commitsCount: 3, seatsCount: 0, eventsCount: 0, coursesCount: 0 }),
+        ]);
+        expect(response.rows[1]).not.toHaveProperty('isFormer');
+        // An address-shaped name is never sent; the LF username stands in, as for a former employee.
+        expect(response.rows[1]?.name).toBe('noroster');
+        expect(response.rows[1]?.email).toBeNull();
+        expect(response.stats.codeContributors).toBe(2);
+        expect(response.foundations).toEqual([
+          { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+          { foundationId: 'foundation-three', foundationName: 'Foundation Three' },
+        ]);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all')!)).toBe(true);
+      });
+
+      it('drops a CDP team member among them under Exclude team members, as their code is all they have', async () => {
+        addUnclassifiedRow(ACCOUNT, 'cdp:team-member', '365d', 'teamer', 'Team Member', 5, true);
+        // The team-member keys come from the contributor rows' person-level flag (lfx-self-serve#4685).
+        database
+          .prepare('INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (ACCOUNT_ID, PERSON_KEY, IS_CDP_TEAM_MEMBER) VALUES (?, ?, 1)')
+          .run(ACCOUNT, 'cdp:team-member');
+
+        const excluded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'exclude');
+
+        expect(excluded.rows.map((row) => row.personKey)).toEqual([formerKey, unclassifiedKey]);
+      });
+
+      it('lists former employees only while the table is not built, and does not remember that answer', async () => {
+        database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
+        const missing = new Error(
+          "SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' does not exist or not authorized."
+        );
+        const sqlite = execute.getMockImplementation()!;
+        execute.mockImplementation(async (query: string, binds: string[]) => {
+          if (query.includes('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS')) throw missing;
+          return sqlite(query, binds);
+        });
+
+        const before = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(before.rows.map((row) => row.personKey)).toEqual([formerKey]);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all')!)).toBe(false);
+        const unclassifiedRead = (execute.mock.calls as [string, unknown[], unknown][]).find(([query]) =>
+          query.includes('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS')
+        );
+        expect(unclassifiedRead?.[2]).toEqual({ expectMissingObject: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' });
+
+        database.exec('ALTER TABLE SAVED_UNCLASSIFIED RENAME TO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+        execute.mockImplementation(sqlite);
+        const after = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+        expect(after.rows.map((row) => row.personKey)).toEqual([formerKey, unclassifiedKey]);
+      });
+
+      it('fails the read on any other warehouse error', async () => {
+        database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
+
+        await expect(service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include')).rejects.toThrow();
+        database.exec('ALTER TABLE SAVED_UNCLASSIFIED RENAME TO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+      });
+    });
   });
 
   describe('current employees by time range (lfx-self-serve#4163)', () => {
@@ -1004,7 +1097,15 @@ describe('OrgLensPeopleService person-key company emails', () => {
       await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, projectScope: 'lf' });
 
       expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
-        ['people-all:v4:30d:all', 'people-all:v4:all:all', 'people-all:v4:all:lf', 'people-former:v3:30d:all', 'people-former:v3:all:all']
+        [
+          'people-all:v4:30d:all',
+          'people-all:v4:all:all',
+          'people-all:v4:all:lf',
+          'people-former:v3:30d:all',
+          'people-former:v3:all:all',
+          'people-unclassified:v1:30d:all',
+          'people-unclassified:v1:all:all',
+        ]
           .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
           .sort()
       );

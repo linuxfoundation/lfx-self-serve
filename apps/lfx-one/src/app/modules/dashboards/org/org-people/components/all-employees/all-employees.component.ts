@@ -42,9 +42,10 @@ import {
   DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE,
   ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS,
+  ORG_ALL_EMPLOYEE_CODE_NOTE,
   ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
-  ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
+  ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
@@ -148,6 +149,7 @@ export class AllEmployeesComponent {
   protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
   // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
   protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
+  protected readonly unclassifiedRowNote = ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE;
   protected readonly statSkeletonLabels: readonly string[] = [
     'Employees Active in Open Source',
     'In Governance',
@@ -222,13 +224,15 @@ export class AllEmployeesComponent {
   // Seeded true: toSignal seeds EMPTY_ORG_ALL_EMPLOYEES_RESPONSE and a real fetch fires synchronously on mount.
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
-  // The former roster is read in every view (lfx-self-serve#4311): it is listed under "Former" and "All", and under
-  // "Current" it supplies the stored activity of someone who is current again. Seeded true like `loadingState`.
+  // The off-roster read runs in every view (lfx-self-serve#4311, #4730): former employees are listed under "Former" and
+  // "All", and under "Current" supply the stored activity of someone who is current again; people with code but no
+  // employment row are listed only under "All". Seeded true like `loadingState`.
   private readonly formerLoadingState = signal<boolean>(true);
   private readonly formerErrorState = signal<boolean>(false);
 
   private readonly showCurrent = computed(() => this.selectedEmployment() !== 'former');
   private readonly showFormer = computed(() => this.selectedEmployment() !== 'current');
+  private readonly showUnclassified = computed(() => this.selectedEmployment() === 'all');
   protected readonly selectedCodeFilters: Signal<OrgCodeFilterValues> = computed(() => orgCodeFilterValues(this.selectedFilters()));
   // Range, commit filters and team members as one value, so a change to several (Clear filters, a URL step) starts a single read.
   private readonly rosterQuery = computed(() => ({ range: this.selectedRange(), filters: this.selectedFilters(), teamMembers: this.selectedTeamMembers() }));
@@ -248,8 +252,9 @@ export class AllEmployeesComponent {
   protected readonly codeColumnLabel = computed(() => ORG_CODE_METRIC_LABEL[this.selectedFilters().metric]);
   protected readonly codeColumnTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[this.selectedCodeFilters().metric]);
   protected readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.selectedFilters().metric]);
-  // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; say so.
-  protected readonly codeStatNote = computed(() => (this.selectedEmployment() === 'current' ? ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE : null));
+  // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; under "All
+  // employees" it matches them, people with code but no employment record included. Say which.
+  protected readonly codeStatNote = computed(() => ORG_ALL_EMPLOYEE_CODE_NOTE[this.selectedEmployment()]);
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
@@ -583,7 +588,9 @@ export class AllEmployeesComponent {
   }
 
   /**
-   * Current and former rows for the selected view, reconciled by LF username in every view. Someone in the former roster can
+   * Current and off-roster rows for the selected view, reconciled by LF username in every view. The off-roster read
+   * carries former employees and, only joined under "All", people with code but no employment row (`isUnclassified`,
+   * lfx-self-serve#4730), who are reconciled like former employees. Someone in the former roster can
    * also arrive from the live roster before the next warehouse build. A live row's username is only verified when
    * the row was created by a seat or an Org Lens access principal. The server merges seats, then key contacts,
    * then access, so the first source is the creating one. A row created by a key contact carries member-service's
@@ -604,7 +611,8 @@ export class AllEmployeesComponent {
   private initRosterRows(): OrgAllEmployeeRow[] {
     const accountId = this.currentAccountId();
     const current = this.response();
-    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
+    const showUnclassified = this.showUnclassified();
+    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows.filter((row) => showUnclassified || !row.isUnclassified) : [];
     const liveRows = current.accountId === accountId ? current.rows : [];
     // Usernames are matched case-insensitively, as the server merge does.
     const formerUsernames = new Set(formerRows.map((row) => AllEmployeesComponent.usernameKey(row.lfUsername)).filter((username) => !!username));
@@ -644,6 +652,7 @@ export class AllEmployeesComponent {
         ...row,
         ...AllEmployeesComponent.liveDisplayFields(row, role),
         isFormer: false,
+        isUnclassified: false,
         sources: [...new Set([...row.sources, ...role.sources])],
         seatsCount: role.seatsCount,
         boardSeatsCount: role.boardSeatsCount,
