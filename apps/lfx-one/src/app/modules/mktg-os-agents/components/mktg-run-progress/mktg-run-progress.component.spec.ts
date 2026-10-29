@@ -94,8 +94,27 @@ describe('MktgRunProgressComponent', () => {
     finished.revisions = [{ id: 'synthetic-stored', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
     read.mockReturnValue(of(finished));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true);
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true, undefined, false, runId);
     expect(landed).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it.each(['discarded', 'superseded'] as const)('reads and renders the selected %s run instead of landing on an older document', async (state) => {
+    await setup();
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    await fixture.whenStable();
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, undefined, false, runId);
+    read.mockReturnValue(of({ ...detail([{ ...run, state }]), revisions: [{ id: 'synthetic-older', number: 1 }] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true, undefined, false, runId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-closed"]')).not.toBeNull();
+    expect(text()).toContain(state === 'discarded' ? 'This run was discarded.' : 'A newer run replaced this one.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-live"]')).toBeNull();
+    expect(landed).not.toHaveBeenCalled();
+    const reads = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(read).toHaveBeenCalledTimes(reads);
   });
 
   it('does not land when progress is unavailable or no stored document exists', async () => {

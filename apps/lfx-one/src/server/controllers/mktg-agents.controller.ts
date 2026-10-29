@@ -234,6 +234,7 @@ export class MktgAgentsController {
       if (await this.redrafts.forSession(req, validSessionId)) {
         throw new AuthorizationError('Generic chat follow-ups are refused on comments-only redraft sessions.');
       }
+      if (project) await this.documentRuns.assertRunOpen(req, project, agent.id, validSessionId);
       const turnId = randomUUID();
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       if (project) {

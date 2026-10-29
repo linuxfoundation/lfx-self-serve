@@ -95,6 +95,32 @@ describe('LinkedIn profile and post surface', () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     return render();
   }
+  it.each(['destroy', 'scope'] as const)(
+    'lets an accepted LinkedIn write finish after %s without retaining its capability or navigating',
+    async (departure) => {
+      const fixture = await fresh();
+      const pending = new Subject<{ documentId: string; runId: string; sessionId: string; ownerToken: string }>();
+      api.startForDocument.mockReturnValue(pending);
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const prepare = vi.spyOn(attempts, 'prepareAccepted');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic source for an accepted start.');
+      await fixture.componentInstance['onDraft']();
+      expect(pending.observed).toBe(true);
+      if (departure === 'destroy') fixture.destroy();
+      else {
+        context.set({ uid: 'project-two', slug: 'synthetic-two', name: 'Synthetic second project' });
+        await fixture.whenStable();
+      }
+      expect(pending.observed).toBe(true);
+      pending.next({ documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-start', ownerToken: 'synthetic-proof' });
+      expect(pending.observed).toBe(false);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      pending.complete();
+    }
+  );
+
   it.each(['open', 'discard', 'finished'] as const)('handles a LinkedIn active-run conflict and the %s choice with the exact source', async (choice) => {
     const fixture = await fresh();
     const conflict = {
@@ -116,7 +142,14 @@ describe('LinkedIn profile and post surface', () => {
     fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic original source');
     await fixture.componentInstance['onDraft']();
     const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
-    expect(prompt).toMatchObject({ header: 'Your LinkedIn post run is in progress', acceptLabel: 'Discard and start over', rejectLabel: 'Open it' });
+    expect(prompt).toMatchObject({
+      key: 'mktg-active-linkedin',
+      header: 'Your LinkedIn post run is in progress',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Open it',
+    });
+    expect(fixture.debugElement.injector.get(ConfirmationService)).toBe(confirmation);
+    expect(fixture.nativeElement.querySelectorAll('p-confirmdialog')).toHaveLength(1);
     const original = api.startForDocument.mock.calls[0];
     const freshConflict = { ...conflict, activeRunId: 'c'.repeat(64), startedAt: '2026-10-19T13:00:00Z' };
     if (choice !== 'finished') api.startForDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: freshConflict })));

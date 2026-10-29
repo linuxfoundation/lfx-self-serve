@@ -48,7 +48,7 @@ import {
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants/mktg-run.constants';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
@@ -129,6 +129,19 @@ export class MktgDocumentRunService {
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
+  /** Owner proof and project authorization precede this pre-send check; no private session facts are returned. */
+  public async assertRunOpen(req: Request, project: string, agentId: string, sessionId: string): Promise<void> {
+    const type = this.catalogDocumentType(agentId);
+    if (!type) return;
+    const runId = this.hash(sessionId);
+    const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
+    if (stored && (stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId)) {
+      throw ServiceValidationError.forField('run', 'Stored session does not match this run.');
+    }
+    this.assertNotRetired(stored?.record.state);
+    await this.assertSingleActiveRun(req, project, type.agentKey, { continuingRunId: runId });
+  }
+
   /** Controllers call this before creating any Guild session, not after its accepted ACK. */
   public async assertSingleActiveCatalogRun(req: Request, project: string, agentId: string, discard?: unknown): Promise<void> {
     const type = this.catalogDocumentType(agentId);
@@ -167,7 +180,7 @@ export class MktgDocumentRunService {
           }
         })
       );
-      active.push(...batch.filter((stored): stored is MktgStoredStartedRun => stored !== null));
+      active.push(...batch.filter((stored): stored is MktgStoredStartedRun => stored !== null && stored.record.runId !== options.continuingRunId));
     }
     for (const stored of active.filter((entry) => entry.record.runId === options.discard)) {
       await this.settleRedraft(
@@ -277,6 +290,7 @@ export class MktgDocumentRunService {
     if (existing && (existing.record.agentKey !== agentKey || existing.record.sessionId !== sessionId)) {
       throw ServiceValidationError.forField('run', 'Stored session does not match this run.');
     }
+    this.assertNotRetired(existing?.record.state);
     const accepted = existing?.record.acceptedAttemptIds ?? [];
     if (accepted.includes(attemptId)) return runId;
     const history = [...accepted, attemptId].join(',');
@@ -315,11 +329,17 @@ export class MktgDocumentRunService {
       },
       (metadata) => {
         const current = this.acceptedAttempts(metadata, metadata['attempt-id'] ?? 'initial');
-        return !current.includes(attemptId) && [...current, attemptId].join(',').length <= MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES;
+        return (
+          metadata['state'] !== 'discarded' &&
+          metadata['state'] !== 'superseded' &&
+          !current.includes(attemptId) &&
+          [...current, attemptId].join(',').length <= MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES
+        );
       }
     );
     if (!written) {
       const winner = await this.read(req, project, key);
+      this.assertNotRetired(winner?.record.state);
       if (
         !winner ||
         winner.record.agentKey !== agentKey ||
@@ -1050,10 +1070,19 @@ export class MktgDocumentRunService {
     });
   }
 
+  private assertNotRetired(state?: MktgStoredDocumentRunState): void {
+    if (state === 'discarded' || state === 'superseded') {
+      throw new ConflictError('This run was closed. Open Documents to choose the current run.', MKTG_RUN_CLOSED, {
+        operation: 'mktg_run_start',
+        service: 'object_store',
+      });
+    }
+  }
+
   private inSlot(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType, options: MktgActiveRunStartOptions): boolean {
     if (record.agentKey !== type.agentKey) return false;
     return type.kind === 'run'
-      ? record.creatorSubject === (options.creatorSubject ?? getEffectiveSub(req))
+      ? record.creatorSubject === (options.creatorSubject !== undefined ? options.creatorSubject : getEffectiveSub(req))
       : record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
   }
 

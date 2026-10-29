@@ -65,6 +65,8 @@ export interface MktgActiveRunStartOptions {
   discard?: unknown;
   /** Slot owner for one-offs when the caller acts on another creator's record; defaults to the caller. */
   creatorSubject?: string | null;
+  /** Server-verified continuing session; exempt only its own record from the active-slot check. */
+  continuingRunId?: string;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */

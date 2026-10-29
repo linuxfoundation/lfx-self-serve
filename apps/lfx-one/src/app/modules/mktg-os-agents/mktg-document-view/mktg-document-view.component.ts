@@ -114,6 +114,7 @@ import {
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -174,6 +175,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     Member360ResultComponent,
     MktgRunActivityComponent,
     MktgRunProgressComponent,
+    MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',

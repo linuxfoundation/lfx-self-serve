@@ -27,6 +27,7 @@ import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 import { catchError, defer, distinctUntilChanged, EMPTY, expand, map, of, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
+import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
 
 /**
  * One public progress reader/presentation for the run and document pages.
@@ -39,7 +40,7 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
  */
 @Component({
   selector: 'lfx-mktg-run-progress',
-  imports: [DatePipe, ButtonComponent, MessageComponent, MktgRunActivityComponent],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgRunActivityComponent, MktgClosedRunMessageComponent],
   templateUrl: './mktg-run-progress.component.html',
 })
 export class MktgRunProgressComponent {
@@ -95,6 +96,10 @@ export class MktgRunProgressComponent {
     return detail;
   });
   public readonly selectedRun = this.initSelectedRun();
+  protected readonly closedRun = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'discarded' || run?.state === 'superseded' ? run : null;
+  });
   public readonly runState = this.initRunState();
   protected readonly visibleRunActivity = this.initVisibleActivity();
   protected readonly activityStartedAt = computed(() => Date.parse(this.selectedRun()?.startedAt ?? '') || 0);
@@ -169,7 +174,7 @@ export class MktgRunProgressComponent {
             // not the long-lived polling scope, before exposing creator-only activity.
             const readerSubject = this.user.user()?.sub ?? '';
             // A document handoff updates its selector without replacing the accepted observer.
-            const selectedRunId = this.runPage() ? '' : this.runId();
+            const selectedRunId = this.runId();
             const metadata$ = defer(() =>
               selectedRunId
                 ? this.store.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, selectedRunId)

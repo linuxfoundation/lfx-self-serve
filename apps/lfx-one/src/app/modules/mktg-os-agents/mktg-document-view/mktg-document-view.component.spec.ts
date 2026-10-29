@@ -1491,10 +1491,10 @@ describe('MktgDocumentViewComponent', () => {
     if (state === 'discarded') {
       expect(message).toContain('This run was discarded at');
       expect(message).toContain('19 Oct 2026');
-      expect(message).toContain('; a newer run was started.');
+      expect(message).not.toContain('a newer run was started');
     } else expect(message).toBe('A newer run replaced this one.');
     const link = query('mktg-document-view-newer-run');
-    expect(link?.textContent?.trim()).toBe('Open the newer run');
+    expect(link?.textContent?.trim()).toBe('View started runs');
     expect(link?.getAttribute('href')).toContain('/documents?project=');
     for (const id of [
       'mktg-document-view-run',
@@ -1528,9 +1528,9 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it.each([
-    { closedBy: null, closedAt: '2026-10-19T13:00:00Z', message: 'This run was discarded at 19 Oct 2026, 13:00; a newer run was started.' },
-    { closedBy: 'Synthetic writer', closedAt: undefined, message: 'This run was discarded by Synthetic writer; a newer run was started.' },
-    { closedBy: null, closedAt: undefined, message: 'This run was discarded; a newer run was started.' },
+    { closedBy: null, closedAt: '2026-10-19T13:00:00Z', message: 'This run was discarded at 19 Oct 2026, 13:00.' },
+    { closedBy: 'Synthetic writer', closedAt: undefined, message: 'This run was discarded by Synthetic writer.' },
+    { closedBy: null, closedAt: undefined, message: 'This run was discarded.' },
   ])('omits unknown closure facts: $message', async ({ closedBy, closedAt, message }) => {
     store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [{ ...started('discarded'), closedBy, closedAt }] }));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
@@ -1557,7 +1557,7 @@ describe('MktgDocumentViewComponent', () => {
   it('does not invent a closure time or person for a legacy discarded run', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [started('discarded')] }));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));
-    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded; a newer run was started.');
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded.');
   });
 
   it.each(['cancelled', 'rejected'])('retries the same public run redirect after navigation is %s', async (outcome) => {
