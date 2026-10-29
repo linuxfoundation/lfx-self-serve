@@ -380,7 +380,6 @@ export function buildHealthMetricsOverviewCodeView(code: HealthMetricsOverviewCo
   };
 }
 
-/** The board's meetings and average attendance, and every member invited in the period. */
 /**
  * The newsletter card: the period's summary, the open and click rate of every newsletter sent in it, and the subscriber
  * engagement split. Click rate is open rate × click-to-open rate, as both are shares of the same recipients.
@@ -416,6 +415,7 @@ export function buildHealthMetricsOverviewNewsletterView(
   };
 }
 
+/** The board's meetings and average attendance, and every member invited in the period. */
 export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverviewBoard, range: HealthMetricsRange): HealthMetricsOverviewBoardView {
   const l2 = toHealthMetricsOverviewRange(range);
   const period = l2 ? board.periods[l2] : null;
@@ -626,7 +626,9 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
     .sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
   if (!sends.length) return null;
 
-  const top = Math.min(1, Math.max(0.1, Math.ceil(Math.max(...sends.map((send) => send.openRate as number)) * 10) / 10));
+  // Rounded to a tenth of a point first, so a peak of exactly 70% tops out at 70% rather than 80%.
+  const peak = Math.round(Math.max(...sends.map((send) => send.openRate as number)) * 1000) / 1000;
+  const top = Math.min(1, Math.max(0.1, Math.ceil(peak * 10) / 10));
   const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
   const points = sends.map((send, index) => {

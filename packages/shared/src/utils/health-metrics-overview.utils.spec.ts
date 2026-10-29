@@ -801,6 +801,11 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
   });
 
+  it('tops the scale out at an exact tenth rather than the next one', () => {
+    const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.1), send('n2', `${year}-04-02`, 0.35, 0.1)] };
+    expect(buildHealthMetricsOverviewNewsletterView(exact, 'YTD').chart?.points.map((point) => point.openYPct)).toEqual(['0.00', '50.00']);
+  });
+
   it('centres a lone newsletter and has no chart when none in the period carries engagement data', () => {
     const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.2)] };
     expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
