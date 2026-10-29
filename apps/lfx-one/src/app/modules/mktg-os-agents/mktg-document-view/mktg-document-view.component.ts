@@ -505,6 +505,11 @@ export class MktgDocumentViewComponent {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
+      toObservable(computed(() => this.view()?.aeoGeoReport))
+        .pipe(takeUntilDestroyed())
+        .subscribe((report) => {
+          if (report) void this.printService.prepare('Inter');
+        });
       let observedSubject = this.userService.user()?.sub ?? '';
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
@@ -1057,7 +1062,7 @@ export class MktgDocumentViewComponent {
   protected onDownload(): void {
     if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   }
 
   protected onToggleAllRevisions(): void {
