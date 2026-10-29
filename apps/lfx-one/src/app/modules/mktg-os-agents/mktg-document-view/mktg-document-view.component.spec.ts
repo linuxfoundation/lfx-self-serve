@@ -2843,7 +2843,8 @@ describe('MktgDocumentViewComponent', () => {
       '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit&mode=new'
     );
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
-    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
+    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('Adoption');
+    expect(query('mktg-framework-view-goals')?.tagName).toBe('TABLE');
     expectContentColumn('mktg-framework-view');
     expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
     expect(query('mktg-comments-panel')).not.toBeNull();

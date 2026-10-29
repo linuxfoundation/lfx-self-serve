@@ -269,15 +269,15 @@ test.describe('Marketing OS fixed-parent navigation', () => {
   test('framework tabs push shareable URLs and Back restores each previous panel', async ({ page }) => {
     await openUnapprovedAssetDocument(page, 'foundation-message');
     await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
-    await page.getByTestId('mktg-framework-view-tab-icps').click();
-    await expect(page).toHaveURL(/tab=icps/);
-    await expect(page.getByTestId('mktg-framework-view-panel-icps')).toBeFocused();
+    await page.getByTestId('mktg-framework-view-tab-numbers').click();
+    await expect(page).toHaveURL(/tab=numbers/);
+    await expect(page.getByTestId('mktg-framework-view-panel-numbers')).toBeFocused();
     await page.getByTestId('mktg-framework-view-tab-sources').click();
     await expect(page).toHaveURL(/tab=sources/);
     await expect(page).toHaveURL(new RegExp(`project=${ASSET_PROJECT.slug}`));
     await page.goBack();
-    await expect(page).toHaveURL(/tab=icps/);
-    await expect(page.getByTestId('mktg-framework-view-tab-icps')).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/tab=numbers/);
+    await expect(page.getByTestId('mktg-framework-view-tab-numbers')).toHaveAttribute('aria-selected', 'true');
     await page.goBack();
     await expect(page).not.toHaveURL(/[?&]tab=/);
     await expect(page.getByTestId('mktg-framework-view-tab-framework')).toHaveAttribute('aria-selected', 'true');
