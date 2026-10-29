@@ -235,5 +235,25 @@ describe('UiAvatarComponent', () => {
       expect(el.querySelector('img')).toBeNull();
       expect(el.querySelector('[data-testid="ui-avatar-initials"]')?.textContent?.trim()).toBe('MS');
     });
+
+    it('ignores a decode that the src changed under, so the first photo can still load later', async () => {
+      let reject: (reason: Error) => void = () => undefined;
+      stubImage(() => new Promise<void>((_, rej) => (reject = rej)));
+      const hydrated = TestBed.createComponent(UiAvatarComponent);
+      const el = hydrated.nativeElement as HTMLElement;
+      hydrated.componentRef.setInput('name', 'Maria Santos');
+      hydrated.componentRef.setInput('src', 'https://example.com/a.png');
+      await hydrated.whenStable();
+
+      hydrated.componentRef.setInput('src', 'https://example.com/b.png');
+      await hydrated.whenStable();
+      reject(new Error('superseded'));
+      await Promise.resolve();
+      await hydrated.whenStable();
+
+      hydrated.componentRef.setInput('src', 'https://example.com/a.png');
+      await hydrated.whenStable();
+      expect(el.querySelector('img')?.getAttribute('src')).toBe('https://example.com/a.png');
+    });
   });
 });

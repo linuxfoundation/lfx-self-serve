@@ -64,7 +64,12 @@ export class UiAvatarComponent {
       const img = this.photoEl()?.nativeElement;
       const src = this.src();
       if (img?.complete) {
-        img.decode().catch(() => this.failedSrc.set(src));
+        // A src change mid-decode rejects the old decode; only a decode of the current src counts as a failure.
+        img.decode().catch(() => {
+          if (this.src() === src) {
+            this.failedSrc.set(src);
+          }
+        });
       }
     });
   }
