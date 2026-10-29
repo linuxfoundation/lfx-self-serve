@@ -193,31 +193,27 @@ describe('VoteVotersComponent', () => {
     expect(statusLabels(component)).toEqual(['All (2)', 'Voted (1)', 'Abstained (0)', 'Not voted yet (1)']);
   });
 
-  it('filters by role and by choice', async () => {
+  it('offers choice filtering without a role filter', async () => {
     const { fixture, component } = await mount();
     current = fixture;
 
-    component['filterForm'].controls.role.setValue('Alternate');
-    fixture.detectChanges();
-    expect(rowUids(fixture)).toEqual(['b-blake']);
+    expect(byTestId(fixture, 'vote-voters-role-filter')).toBeNull();
+    expect(rowUids(fixture)).toEqual(['b-blake', 'b-avery', 'b-casey', 'b-drew']);
 
-    component['filterForm'].controls.role.setValue(null);
     component['filterForm'].controls.choice.setValue('q-1:c-no');
     fixture.detectChanges();
     expect(rowUids(fixture)).toEqual(['b-drew']);
-    expect(component['roleOptions']().map((option) => option.value)).toEqual(['Alternate', 'Voting Rep']);
   });
 
-  it('keeps accessible filter labels after a value is selected', async () => {
+  it('keeps the accessible choice filter label after a value is selected', async () => {
     const { fixture, component } = await mount();
     current = fixture;
 
     for (const selected of [false, true]) {
       if (selected) {
-        component['filterForm'].patchValue({ role: 'Voting Rep', choice: 'q-1:c-yes' });
+        component['filterForm'].controls.choice.setValue('q-1:c-yes');
         fixture.detectChanges();
       }
-      expect(byTestId(fixture, 'vote-voters-role-filter')!.querySelector('[role="combobox"]')!.getAttribute('aria-label')).toBe('Filter by role');
       expect(byTestId(fixture, 'vote-voters-choice-filter')!.querySelector('[role="combobox"]')!.getAttribute('aria-label')).toBe('Filter by choice');
     }
   });
@@ -587,13 +583,15 @@ describe('VoteVotersComponent', () => {
 
       expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (3)', 'Responded (2)', 'Not responded (1)']);
       expect(byTestId(fixture, 'vote-voters-choice-filter')).toBeNull();
+      expect(byTestId(fixture, 'vote-voters-role-filter')).toBeNull();
       expect(byTestId(fixture, 'vote-voters-manager-notice')).toBeNull();
       expect(byTestId(fixture, 'vote-voters-anonymous-notice')!.textContent).toContain(
         'Pseudo-anonymous vote. You can see who has responded, but not how anyone voted.'
       );
     });
 
-    it('filters by status pill and by role', async () => {
+    it('filters by status pill and by name or organization search', async () => {
+      vi.useFakeTimers();
       const { fixture, component } = await mountPseudo();
       current = fixture;
 
@@ -603,27 +601,37 @@ describe('VoteVotersComponent', () => {
       expect(byTestId(fixture, 'vote-voters-name-0')!.textContent!.trim()).toBe('Blake Example');
 
       component['onStatusFilterChange']('all');
-      component['filterForm'].controls.role.setValue('Voting Rep');
+      component['filterForm'].controls.search.setValue('acme');
+      vi.advanceTimersByTime(300);
       fixture.detectChanges();
       expect(rowUids(fixture)).toEqual(['0', '1']);
       expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (2)', 'Responded (2)', 'Not responded (0)']);
+
+      component['filterForm'].controls.search.setValue('casey');
+      vi.advanceTimersByTime(300);
+      fixture.detectChanges();
+      expect(rowUids(fixture)).toEqual(['0']);
+      expect(byTestId(fixture, 'vote-voters-name-0')!.textContent!.trim()).toBe('Casey Example');
     });
 
-    it('clears the participation status and role filters back to all voters', async () => {
+    it('clears the participation status and search filters back to all voters', async () => {
+      vi.useFakeTimers();
       const { fixture, component } = await mountPseudo();
       current = fixture;
 
       expect(component['participationStatusFilter']()).toBe('all');
       component['onStatusFilterChange']('responded');
-      component['filterForm'].controls.role.setValue('Voting Rep');
+      component['filterForm'].controls.search.setValue('casey');
+      vi.advanceTimersByTime(300);
       await settle(fixture);
-      expect(rowUids(fixture)).toEqual(['0', '1']);
+      expect(rowUids(fixture)).toEqual(['0']);
 
       component['clearFilters']();
+      vi.advanceTimersByTime(300);
       await settle(fixture);
 
       expect(component['participationStatusFilter']()).toBe('all');
-      expect(component['filterForm'].controls.role.value).toBeNull();
+      expect(component['filterForm'].controls.search.value).toBe('');
       expect(rowUids(fixture)).toEqual(['0', '1', '2']);
       expect(component['participationStatusOptions']().map((option) => option.label)).toEqual(['All (3)', 'Responded (2)', 'Not responded (1)']);
     });
