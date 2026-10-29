@@ -165,6 +165,7 @@ describe('LinkedIn profile and post surface', () => {
   });
 
   it.each(['writing', 'questions'] as const)('lands directly on a server-owned %s run with empty browser storage', async (state) => {
+    const resume = vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume');
     const row = {
       project: 'project-one',
       agentKey: documentType.agentKey,
@@ -184,7 +185,7 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('form')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"]')).not.toBeNull();
     expect(api.startForDocument).not.toHaveBeenCalled();
-    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
   });
 
   it('discovers this writer’s new run on focus without resetting inputs during a transient read failure', async () => {
@@ -480,7 +481,15 @@ describe('LinkedIn profile and post surface', () => {
       state === 'lastIntakeDenied'
         ? 'Your last run inputs could not be read; paste text, a link or a file to draft.'
         : 'Your draft is already started — use Open draft above.';
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"] [data-testid="mktg-linkedin-error"]')?.textContent).toContain(message);
+    if (state === 'acceptedRequest') {
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-accepted"]')?.textContent).toContain('Your draft was started');
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"] button')).not.toBeNull();
+      expect(component['error']()).toBe(message);
+    } else
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"] [data-testid="mktg-linkedin-error"]')?.textContent).toContain(
+        message
+      );
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
   it('uses the board profile copy and a rightmost always-available primary with Cancel to its left', async () => {
@@ -765,8 +774,10 @@ describe('LinkedIn profile and post surface', () => {
       expect(accepted.querySelector('p')?.getAttribute('role')).toBe('status');
       expect(accepted.querySelector('[role="status"] button')).toBeNull();
       expect(fixture.componentInstance['error']()).toBe('');
-      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.classList.contains('p-button-outlined')).toBe(true);
-      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
+      // The durable ACK forbids another start; the visible, keyboard-accessible Open action is recovery, not a second Draft.
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-post-form"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"] button')?.disabled).toBe(false);
       expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-open-accepted"] button')?.classList.contains('p-button-outlined')).toBe(false);
       await fixture.componentInstance['onDraft']();
       navigate.mockReturnValueOnce(firstValueFrom(opening));
@@ -974,9 +985,12 @@ describe('LinkedIn profile and post surface', () => {
     else identity.set(null);
     const fixture = await render();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-no-access"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]').textContent).toContain(
-      missing === 'project' ? 'Select a project' : 'Sign in'
-    );
+    if (missing === 'project') expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')?.textContent).toContain('Select a project');
+    else {
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-error"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-loading"]')?.textContent).toContain('Checking the run…');
+      expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    }
     expect(projects.getProject).not.toHaveBeenCalled();
   });
   it('reads writer access without changing the current project even if loading fails', async () => {

@@ -741,6 +741,7 @@ export class LinkedinPostRunComponent {
       if (this.freshMode()) await this.consumeFreshMode();
       if (this.destroyRef.destroyed || version !== this.scopeVersion) return;
       await this.router.navigate([mktgKitRootPath(this.router.url), 'documents', request.agentId, request.documentId], {
+        ...(generation === null && this.serverRun() && { replaceUrl: true }),
         queryParams: {
           project: this.context.activeContext()?.slug ?? null,
           ...MKTG_RUN_RESUME_QUERY_CLEAR,
