@@ -5,9 +5,8 @@ import { expect } from '@playwright/test';
 import { MKTG_KIT_FAMILIES, MKTG_DOCUMENT_TYPES, MKTG_AGENTS, MKTG_AGENT_INTAKES } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { linkedinProfileFromSetup } from '../../../packages/shared/src/utils/linkedin-post.utils';
-import { kitTest as test, kitDocuments, kitJson, kitRevision, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { kitTest as test, kitDocuments, kitJson, kitRevision, kitPrintMembers, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 import { linkedinEnvelope } from './helpers/mktg-linkedin.helper';
-import { familyExportMember } from '../src/app/shared/testing/mktg-family-export-test-data';
 
 test.describe('Marketing family content', () => {
   test.beforeEach(async ({ page }) => {
@@ -132,24 +131,50 @@ test.describe('Marketing family content', () => {
   for (const stale of [false, true]) {
     test(`approved living assets have ${stale ? 'an Update primary' : 'Export the kit without starting an export'}`, async ({ page }) => {
       const listing = kitDocuments(true);
-      const ref = { agentKey: 'foundation-message' as const, revisionId: '000003-' + 'a'.repeat(64), revisionNumber: 3, contentSha256: 'a'.repeat(64) };
+      const members = kitPrintMembers();
+      const requests: string[] = [];
+      page.on('request', (request) => {
+        const path = new URL(request.url()).pathname;
+        if (path.startsWith('/api/mktg-')) requests.push(`${request.method()} ${path}`);
+      });
+      const framework = members.find((member) => member.agentKey === 'foundation-message');
+      if (!framework) throw new Error('Missing synthetic approved framework');
+      const ref = {
+        agentKey: 'foundation-message' as const,
+        revisionId: framework.revisionId,
+        revisionNumber: framework.revisionNumber,
+        contentSha256: framework.contentSha256,
+      };
       for (const group of listing.groups)
         for (const document of group.documents) {
-          document.approvedCurrent = { revisionId: document.latestRevisionId, number: 3 };
-          if (stale && group.type.agentKey === 'boilerplates') document.needsRebuild = { builtFrom: ref, rebuildFrom: { ...ref, revisionNumber: 4 } };
+          const member = members.find((candidate) => candidate.agentKey === group.type.agentKey && candidate.documentId === document.documentId);
+          if (member) document.latestRevisionId = member.revisionId;
+          document.approvedCurrent = { revisionId: document.latestRevisionId, number: member?.revisionNumber ?? 3 };
+          if (stale && group.type.agentKey === 'boilerplates')
+            document.needsRebuild = { builtFrom: ref, rebuildFrom: { ...ref, revisionNumber: ref.revisionNumber + 1 } };
         }
-      await setupKit(page, { listing, approvedFramework: true });
-      await page.route('**/api/mktg-agents/slides-export/family/last?*', (route) =>
-        route.fulfill({ json: { last: null, currentMembers: [familyExportMember()], skippedMembers: [], stale: false } })
-      );
+      await setupKit(page, { listing, approvedFramework: true, approvedPrintMembers: members });
+      await page.route('**/api/mktg-agents/slides-export/family/last?*', (route) => {
+        const params = new URL(route.request().url()).searchParams;
+        if (route.request().method() !== 'GET' || params.get('project') !== KIT_PROJECT.uid || params.get('familyId') !== 'positioning-brand') {
+          return route.fallback();
+        }
+        return route.fulfill({ json: { last: null, currentMembers: members, skippedMembers: [], stale: false } });
+      });
       await openKit(page, '/families/positioning-brand');
+      // All approved immutable reads happen before either export action is chosen.
+      await expect(page.getByTestId('family-export-pdf').getByRole('button')).toBeEnabled();
+      expect(requests).toEqual(
+        expect.arrayContaining(members.map((member) => `GET /api/mktg-agents/documents/${member.agentKey}/${member.documentId}/revisions/${member.revisionId}`))
+      );
       if (stale) await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toHaveText('Update boilerplates');
       else {
         const primary = page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the kit' });
-        await expect(page.getByTestId('family-export-pdf').getByRole('button')).toBeEnabled();
         await primary.click();
         await expect(page.getByTestId('family-export-pdf').getByRole('button')).toBeFocused();
       }
+      // Revealing the export card prepares reads only: no export, rebuild or other write.
+      expect(requests.filter((request) => !request.startsWith('GET '))).toEqual([]);
       await page.screenshot({ path: test.info().outputPath(`family-approved-${stale}.png`), fullPage: true });
     });
   }
