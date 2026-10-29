@@ -831,9 +831,11 @@ export class MeetingService {
       // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
       // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
       occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
-      // `user_id`, `username` and `avatar_url` are not sent: all three are derived from the linked user, the
-      // Edit Guest form never carried any of them, and upstream rejects an update that names one with
-      // "user_id cannot be changed" — even when it is the guest's own value.
+      // `user_id` has to go back exactly as stored: upstream treats it as immutable, and an update that leaves
+      // it out reads as a change and fails with "user_id cannot be changed". The index record carries it.
+      ...(registrant.user_id ? { user_id: registrant.user_id } : {}),
+      // `username` and `avatar_url` are not sent: both are derived from the linked user, and the Edit Guest
+      // form never carried either.
       linkedin_profile: registrant.linkedin_profile || null,
     };
   }
