@@ -611,7 +611,7 @@ describe('the questions turn', () => {
       'answers[0].key must be the question’s kebab-case id',
     ]);
     expect(validateFoundationMessageAnswers([{ key: 'a', text: 'TBD', origin: 'requester' }]).errors).toEqual([
-      'answers[0].text must be an answer — not empty, not a skip, not a TBD',
+      'Every question needs an answer before the agent can continue.: a',
     ]);
     expect(validateFoundationMessageAnswers([{ key: 'a', text: 'x'.repeat(4001), origin: 'requester' }]).valid).toBe(false);
     expect(validateFoundationMessageAnswers([{ key: 'a', text: 'Yes.', origin: 'guessed' }]).valid).toBe(false);

@@ -39,7 +39,8 @@ export function mktgLinkWarnings(values: Record<string, string>, earlierUrls: st
       const warnings = value.split(/\r?\n/).flatMap((line) => {
         const normalized = normalizeMktgLink(line);
         const messages: string[] = [];
-        if (describeMktgLinkAdvice(line)) messages.push(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+        const advice = describeMktgLinkAdvice(line);
+        if (advice) messages.push(advice === 'drive-folder' ? MKTG_INTAKE_LINK_ADVICE.driveFolder : MKTG_INTAKE_LINK_ADVICE.drivePrivate);
         if (normalized && seen.has(normalized)) messages.push(MKTG_INTAKE_LINK_ADVICE.duplicate);
         if (normalized) seen.add(normalized);
         return messages;

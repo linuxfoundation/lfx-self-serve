@@ -4,10 +4,11 @@
 import { Component, input } from '@angular/core';
 import { BoilerplatesPrintView } from '@lfx-one/shared/interfaces';
 import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
+import { MktgPrintChapterHeaderComponent } from '../components/mktg-print-chapter-header/mktg-print-chapter-header.component';
 
 @Component({
   selector: 'lfx-mktg-boilerplates-print',
-  imports: [MktgPrintRunningHeadComponent],
+  imports: [MktgPrintRunningHeadComponent, MktgPrintChapterHeaderComponent],
   templateUrl: './mktg-boilerplates-print.component.html',
   // Shared brand typography and exact print colour handling, not a second style path.
   styleUrl: '../mktg-framework-print/mktg-framework-print.component.scss',

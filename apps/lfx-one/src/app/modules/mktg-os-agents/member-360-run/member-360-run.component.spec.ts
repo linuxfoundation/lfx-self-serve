@@ -14,7 +14,8 @@ import { Member360Service } from '@services/member-360.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Member360RunComponent } from './member-360-run.component';
@@ -32,9 +33,12 @@ describe('Member360RunComponent', () => {
     getRevision: vi.fn(() => of(member360Revision())),
   };
   const run = {
-    generate: vi.fn(() => of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })),
+    generate: vi.fn<Member360Service['generate']>(() =>
+      of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })
+    ),
     parseTracker: vi.fn(() => of({ filename: 'repeat.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] })),
   };
+  const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   async function render(): Promise<void> {
     fixture = TestBed.createComponent(Member360RunComponent);
     fixture.detectChanges();
@@ -45,7 +49,11 @@ describe('Member360RunComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="member-360-run"] button');
   }
   beforeEach(async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     context.canWrite.set(true);
+    context.activeContextUid.set('sample-project');
+    context.activeContext.set({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation' });
+    confirmation.confirm.mockClear();
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
     run.generate.mockReturnValue(of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' }));
     run.generate.mockClear();
@@ -55,6 +63,8 @@ describe('Member360RunComponent', () => {
         provideNoopAnimations(),
         provideHttpClient(),
         provideHttpClientTesting(),
+        { provide: ConfirmationService, useValue: confirmation },
+        MessageService,
         { provide: Member360Service, useValue: run },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: context },
@@ -63,6 +73,65 @@ describe('Member360RunComponent', () => {
     }).compileComponents();
   });
   afterEach(() => TestBed.inject(HttpTestingController).verify());
+  it.each(['open', 'discard', 'finished'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
+    await render();
+    const conflict = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your Member 360 run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'member-360',
+      documentId: 'run-' + 'a'.repeat(24),
+      startedBy: 'Synthetic writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    };
+    run.generate
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    expect(prompt).toMatchObject({
+      key: 'mktg-active-member360',
+      header: 'Your Member 360 run is in progress',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Open it',
+    });
+    const original = run.generate.mock.calls[0][0];
+    const fresh = { ...conflict, activeRunId: 'c'.repeat(64), startedAt: '2026-10-19T13:00:00Z' };
+    if (choice !== 'finished') run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: fresh })));
+    const notice = vi.spyOn(TestBed.inject(MessageService), 'add');
+    window.dispatchEvent(new Event('focus'));
+    expect(run.generate).toHaveBeenNthCalledWith(3, original);
+    expect(confirmation.confirm.mock.calls.at(-1)?.[0]).toBe(prompt);
+    if (choice === 'finished') {
+      expect(confirmation.close).toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(expect.objectContaining({ detail: 'The earlier run has finished — yours started.' }));
+      expect(navigate).toHaveBeenCalled();
+      window.dispatchEvent(new Event('focus'));
+      expect(run.generate).toHaveBeenCalledTimes(3);
+      return;
+    }
+    expect(prompt?.message).toContain('19 Oct 2026');
+    if (choice === 'discard') {
+      fixture.componentInstance.form.controls.window.setValue('6');
+      prompt?.accept?.();
+      prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
+      expect(run.generate).toHaveBeenCalledTimes(4);
+      expect(run.generate).toHaveBeenNthCalledWith(2, original);
+      expect(run.generate).toHaveBeenNthCalledWith(4, { ...original, discard: fresh.activeRunId });
+    } else {
+      prompt?.reject?.(ConfirmEventType.REJECT);
+      expect(run.generate).toHaveBeenCalledTimes(3);
+      expect(navigate).toHaveBeenCalledWith(
+        expect.arrayContaining(['documents', 'member-360', conflict.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: fresh.activeRunId }) })
+      );
+    }
+  });
+
   it('fixes the project and defaults to a twelve-month window with empty run history', async () => {
     await render();
     const project = fixture.nativeElement.querySelector('[data-testid="member-360-project"]');
@@ -300,6 +369,46 @@ describe('Member360RunComponent', () => {
       expect.objectContaining({ queryParams: { revision: null, generation: null, run: null }, queryParamsHandling: 'merge' })
     );
   });
+  it.each(['ack', 'guard'] as const)('does not revive a stale %s after an A to B to A scope switch', async (kind) => {
+    await render();
+    const pending = new Subject<{ sessionId: string; ownerToken: string; documentId: string }>();
+    const conflict = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your Member 360 run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'member-360',
+      documentId: 'run-' + 'a'.repeat(24),
+      startedBy: 'Synthetic writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T12:00:00Z',
+    };
+    if (kind === 'ack') run.generate.mockReturnValue(pending);
+    else run.generate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance.form.controls.compare.setValue(false);
+    button().click();
+    const starts = run.generate.mock.calls.length;
+    const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    if (kind === 'guard') {
+      expect(prompt).toBeDefined();
+      expect(prompt).toMatchObject({ key: 'mktg-active-member360', header: 'Your Member 360 run is in progress' });
+      expect(starts).toBe(2); // The initial start and the guard's immediate server recheck both ran.
+    }
+    context.activeContextUid.set('other-project');
+    await fixture.whenStable();
+    context.activeContextUid.set('sample-project');
+    await fixture.whenStable();
+    if (kind === 'ack') pending.next({ sessionId: 'stale-session', ownerToken: 'synthetic-proof', documentId: 'run-' + 'a'.repeat(24) });
+    else {
+      window.dispatchEvent(new Event('focus'));
+      prompt?.accept?.();
+    }
+    expect(run.generate).toHaveBeenCalledTimes(starts);
+    expect(navigate).not.toHaveBeenCalled();
+    pending.complete();
+  });
+
   it('keeps Generate alive after navigation without retaining a browser capability or navigating again', async () => {
     TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
     const http = TestBed.inject(HttpTestingController);

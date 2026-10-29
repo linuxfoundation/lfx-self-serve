@@ -8,6 +8,8 @@
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
 @use 'styles/mktg-family-print';
+/* LFX UI Library tokens (generated); see shared/uikit/README.md */
+@use 'styles/ui-tokens.css';
 
 @layer tailwind-base, primeng, tailwind-utilities;
 
