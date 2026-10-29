@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-template #content>
+  @if (icon()) {
+    <i [class]="icon()" aria-hidden="true"></i>
+  }
+  <ng-content />
+  @if (trailingIcon() && !iconOnly()) {
+    <i [class]="trailingIcon()" aria-hidden="true" data-testid="ui-button-trailing-icon"></i>
+  }
+</ng-template>
+
+@if (link() !== null) {
+  <a
+    [routerLink]="disabled() ? null : link()"
+    [class]="classes()"
+    [attr.aria-label]="ariaLabel() || null"
+    [attr.aria-disabled]="disabled() || null"
+    [attr.tabindex]="disabled() ? -1 : null"
+    data-testid="ui-button">
+    <ng-container [ngTemplateOutlet]="content" />
+  </a>
+} @else {
+  <button [type]="type()" [class]="classes()" [disabled]="disabled()" [attr.aria-label]="ariaLabel() || null" data-testid="ui-button">
+    <ng-container [ngTemplateOutlet]="content" />
+  </button>
+}

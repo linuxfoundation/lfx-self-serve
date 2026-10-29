@@ -800,14 +800,14 @@
 
   <!-- Footer: what Download PDF and the Google Slides export give you -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in
-    Google Drive, in the kit’s colours, typeface and logo.
+    PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours,
+    typeface and logo.
   </p>
 
-  <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->
+  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-brand-kit-view [view]="approvedPrint" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
     </div>
   }
 </section>

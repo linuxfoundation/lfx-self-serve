@@ -132,7 +132,7 @@ test.describe('Marketing family content', () => {
     await page.screenshot({ path: test.info().outputPath('family-approve-next.png'), fullPage: true });
   });
   for (const stale of [false, true]) {
-    test(`approved living assets have ${stale ? 'an Update primary' : 'Export the kit without starting an export'}`, async ({ page }) => {
+    test(`approved living assets have ${stale ? 'an Update primary' : 'Export the family without starting an export'}`, async ({ page }) => {
       const listing = kitDocuments(true);
       const members = kitPrintMembers();
       const requests: string[] = [];
@@ -172,7 +172,7 @@ test.describe('Marketing family content', () => {
       );
       if (stale) await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toHaveText('Update boilerplates');
       else {
-        const primary = page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the kit' });
+        const primary = page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the family' });
         await primary.click();
         await expect(page.getByTestId('family-export-pdf').getByRole('button')).toBeFocused();
       }

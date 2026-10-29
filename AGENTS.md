@@ -48,6 +48,8 @@ All commands run from the repo root via Turborepo:
 | `yarn check-types`                                | TypeScript type-check only (no emit)                                           |
 | `yarn format`                                     | Prettier write across the repo                                                 |
 | `yarn format:check`                               | Prettier check (CI mode)                                                       |
+| `yarn storybook`                                  | Storybook for `shared/uikit` on :6006 (via Turbo)                              |
+| `yarn build-storybook`                            | Static Storybook build (not run in CI)                                         |
 | `yarn e2e`                                        | Playwright E2E suite (headless)                                                |
 | `yarn e2e:ui`                                     | Playwright in interactive UI mode                                              |
 | `yarn e2e:headed`                                 | Playwright headed, visible browser                                             |
@@ -77,6 +79,7 @@ lfx-self-serve/
 │       │   ├── modules/      # Feature modules (see Feature Modules section)
 │       │   └── shared/       # Shared application code
 │       │       ├── components/   # UI components (PrimeNG wrappers + LFX primitives)
+│       │       ├── uikit/        # PrimeNG-free lfx-ui-* components (Storybook stories + specs)
 │       │       ├── directives/   # Custom directives (on-render, scroll-shadow)
 │       │       ├── guards/       # Route guards (auth, writer, executive-director)
 │       │       ├── interceptors/ # HTTP interceptors (authentication)
@@ -85,6 +88,7 @@ lfx-self-serve/
 │       │       ├── services/     # Frontend services
 │       │       ├── strategies/   # Routing strategies (custom-preloading)
 │       │       └── utils/        # App utilities (console-override, download-card, http-error, etc.)
+│       ├── .storybook/       # Storybook config (uikit stories only)
 │       ├── src/server/       # Express.js SSR server
 │       │   ├── constants/    # Server-only constants
 │       │   ├── controllers/  # Route controllers

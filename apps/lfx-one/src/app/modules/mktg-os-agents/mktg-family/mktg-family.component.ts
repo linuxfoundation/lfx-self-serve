@@ -1,13 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, Location } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser, Location } from '@angular/common';
 import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
+import {
+  MKTG_KIT_FAMILIES,
+  MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_REBUILD_NAVIGATION_STATE_KEY,
+  MKTG_RUN_NEW_MODE,
+  MKTG_RUN_POLL,
+} from '@lfx-one/shared/constants';
 import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
 import {
   isMktgKitFamilyLive,
@@ -17,10 +23,11 @@ import {
   resolveMktgFamilyRun,
 } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
-import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
@@ -48,6 +55,7 @@ import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-brea
 export class MktgFamilyComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly platform = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly location = inject(Location);
   private readonly exports = inject(MktgFamilyExportService);
   private readonly context = inject(ProjectContextService);
@@ -101,6 +109,22 @@ export class MktgFamilyComponent {
     });
     // Start the last-export read even while the unrelated kit/document listing is loading or failed.
     if (isPlatformBrowser(this.platform)) {
+      toObservable(computed(() => ({ project: this.kit.projectUid(), familyId: this.familyId(), denied: this.kit.accessDenied() || this.kit.refreshDenied() })))
+        .pipe(
+          distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+          switchMap(({ denied }) =>
+            denied
+              ? EMPTY
+              : createVisibilityPoll(this.document, (poll) => this.kit.refresh(poll), {
+                  intervalMs: MKTG_RUN_POLL.intervalMs,
+                  backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                  backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+                  shouldContinue: () => !this.kit.accessDenied() && !this.kit.refreshDenied(),
+                })
+          ),
+          takeUntilDestroyed()
+        )
+        .subscribe();
       toObservable(computed(() => ({ project: this.context.activeContext()?.uid, familyId: this.familyId(), writer: this.context.canWrite() })))
         .pipe(
           distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
