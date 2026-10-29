@@ -395,6 +395,8 @@ export interface HealthMetricsEventsRevenueView {
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
+  /** `false` when the period has no event and no revenue figure other than zero, so the section reads as empty. */
+  hasRevenue: boolean;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */

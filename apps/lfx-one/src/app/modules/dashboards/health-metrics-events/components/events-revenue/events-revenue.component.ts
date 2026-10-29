@@ -114,7 +114,7 @@ export class EventsRevenueComponent {
   }
 }
 
-/** Whether the period has nothing to show: the foundation or the period was never measured. */
+/** Whether the period has nothing to show: never measured, or $0 with no event listed for it. */
 function isEmptyView(view: HealthMetricsEventsRevenueView): boolean {
-  return !view.foundationMeasured || !view.measured;
+  return !view.foundationMeasured || !view.measured || !view.hasRevenue;
 }

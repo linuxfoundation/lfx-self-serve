@@ -524,6 +524,22 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     ]);
   });
 
+  it('reports revenue only when the period has an event or a non-zero figure', () => {
+    const zero = revenuePeriod({
+      range: 'COMPLETED_YEAR',
+      totalUsd: 0,
+      registrationUsd: 0,
+      sponsorshipUsd: 0,
+      registrationShare: null,
+      sponsorshipShare: null,
+    });
+
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ registrationUsd: -500 })], events: [] }), 'YTD').hasRevenue).toBe(true);
+  });
+
   it('lists only the events in the period, with each goal only where one is set', () => {
     const { rows } = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
 
