@@ -47,6 +47,7 @@ export function resolveMktgFamilyRun(
     typeof approved.revisionId === 'string' &&
     approved.revisionId.trim().length > 0;
   let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
+  if (type.kind !== 'living') caption = 'In progress…';
   if (run.state === 'questions') caption = 'Waiting for your answers';
   return {
     label: run.state === 'questions' ? 'Answer the questions' : 'Open',

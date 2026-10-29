@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@playwright/test';
-import { MKTG_KIT_FAMILIES, MKTG_DOCUMENT_TYPES, MKTG_AGENTS, MKTG_AGENT_INTAKES } from '../../../packages/shared/src/constants';
+import { MKTG_KIT_FAMILIES } from '../../../packages/shared/src/constants/mktg-kit.constants';
+import { MKTG_DOCUMENT_TYPES } from '../../../packages/shared/src/constants/mktg-document-store.constants';
+import { MKTG_AGENTS } from '../../../packages/shared/src/constants/mktg-os-agents.constants';
+import { MKTG_AGENT_INTAKES } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { linkedinProfileFromSetup } from '../../../packages/shared/src/utils/linkedin-post.utils';
 import { kitTest as test, kitDocuments, kitJson, kitRevision, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
@@ -288,12 +291,12 @@ test.describe('Marketing family content', () => {
     await expect(page.getByTestId('mktg-family-current-linkedin-post')).not.toContainText('v1');
     await expect(page.getByTestId('mktg-family-asset-linkedin-post')).toContainText('1 this month');
   });
-  test('hides coming-soon primary actions and names the available one-off Create step', async ({ page }) => {
+  test('names the available one-off Create steps without offering a rebuild', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/website-web');
-    await expect(page.getByTestId('mktg-family-actions')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Coming soon');
-    await expect(page.getByTestId('mktg-family-run-aeo-geo')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-family-state-aeo-geo')).toContainText('Not run yet');
+    await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create AEO/GEO scorecard');
+    await expect(page.getByTestId('mktg-family-run-aeo-geo').getByRole('link')).toHaveText('Create AEO/GEO scorecard');
     await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
     await openKit(page, '/families/member-sponsor');
     await expect(page.getByTestId('mktg-family-run').getByRole('link')).toHaveAccessibleName('Create Member 360');
@@ -378,7 +381,7 @@ test.describe('Marketing family content', () => {
       await openKit(page, '/families/social-community');
       await page.getByTestId('mktg-family-open-linkedin-post').click();
       await page.getByTestId('mktg-linkedin-draft-another').getByRole('button').click();
-      await expect(page).toHaveURL(/linkedin-post\?project=kit-synthetic-project&mode=new$/);
+      await expect(page).toHaveURL(/linkedin-post\?project=kit-synthetic-project&mode=new(?:&source=text)?$/);
       await expect(page.getByTestId(`mktg-linkedin-source-${entry.source}`)).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByRole('textbox', { name: 'The content to post about', exact: true })).toHaveValue(entry.value);
       await expect(page.getByRole('textbox', { name: /Link to share/ })).toHaveValue(entry.share);

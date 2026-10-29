@@ -1148,7 +1148,9 @@ describe('MktgDocumentViewComponent', () => {
     sessionStorage.clear();
     store.getDocument.mockReturnValue(of(memberProgress('writing')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
-    expect(query('mktg-run-activity-title')?.textContent?.trim()).toBe('Working on Member 360');
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe('Member 360 Agent is working on your report.');
     expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
     expect(query('mktg-run-activity-phase-questions')).toBeNull();
     expect(query('member-360-result')).toBeNull();
@@ -1242,7 +1244,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
     expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toContain('The agent is waiting for input.');
     expect(query('mktg-document-view-live-state')?.textContent).toBe('The agent is waiting for input.');
-    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-intake-link')).toBeNull();
     store.getDocument.mockClear();
@@ -1453,23 +1457,25 @@ describe('MktgDocumentViewComponent', () => {
         MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.tracksDocumentRun &&
         MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
     )
-  )('uses shared-receiver one-off writing and saving wording for $itemLabel', async (type) => {
+  )('keeps one heading and leave line with writing/saving fallback when no feed exists for $itemLabel', async (type) => {
     const documentId = 'run-' + 'a'.repeat(24);
     const progress = { ...started('writing'), agentKey: type.agentKey, documentId };
     const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [progress] };
     store.getDocument.mockReturnValue(of(response));
     await render(`/documents/${type.agentKey}/${documentId}`);
-    expect(query('mktg-document-view-live-state')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
-    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
+    const noun = type.agentKey === 'linkedin-post' ? 'post' : 'report';
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing…');
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('It will appear here when it is ready.');
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent).toContain('It will appear here when it is ready.');
     store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...progress, state: 'storing' }] }));
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['onRefreshProgress']();
     await settle();
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Written');
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving…');
-    expect(query('mktg-document-view-run-steps')?.textContent).not.toContain('revision');
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
   });
 
   it.each(['writing', 'questions', 'storing'] as const)('redirects living %s progress and renders no live document blocks', async (state) => {
