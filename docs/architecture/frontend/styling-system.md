@@ -152,9 +152,21 @@ export default {
 };
 ```
 
+The snippet is abridged; the uikit token mapping is described under [LFX UI Library tokens](#lfx-ui-library-tokens).
+
 > **Note**: Colors and font sizes are imported from `@lfx-one/shared` package, not local config files. The Tailwind config uses ESM syntax (`export default`).
 >
 > **Note**: While Open Sans is the declared `sans` font, `Inter` is explicitly applied to body text elements (h1-h6, p, label, button, input) in `styles.scss` and is the primary visible font. The `inter` font family utility class is available via Tailwind.
+
+### LFX UI Library tokens
+
+The uikit (`app/shared/uikit/`) styles with the LFX UI Library's design tokens, separate from `lfxColors`, which feature code keeps using.
+
+- **Source and generation:** `apps/lfx-one/scripts/ui-tokens/tokens.json` is the library's canonical token file. `yarn ui:tokens` (`scripts/build-ui-tokens.mjs`) generates `src/styles/ui-tokens.css`, which `styles.scss` loads with `@use`. A unit spec (`scripts/build-ui-tokens.spec.mjs`) fails when the committed CSS drifts from the JSON.
+- **CSS variables:** every variable carries a `--ui-` prefix (`--ui-neutral-900`, `--ui-azure-500`, `--ui-shadow-menu`, `--ui-radius-md`, `--ui-height-tiny`, `--ui-font-display`, `--ui-spacing-6`; role colours already start with `ui-`), one more than the library's `bundle.css`, so they cannot collide with app CSS such as `--spacing-6` fallbacks or the `--font-*` overrides in `styles.scss`. Light values sit on `:root` and `[data-theme='light']`, dark overrides on `[data-theme='dark']`. The app sets no `data-theme` yet, so it renders light; the dark values are generated for the planned switch, and PrimeNG's `.dark-mode` selector is unrelated.
+- **Tailwind v3 mapping:** `tailwind.config.js` derives the utilities from the same JSON and points them at the variables, so they follow the theme. Colours live under the `ui` key (`bg-ui-neutral-50`, `text-ui-accent-700`, `border-ui-danger-200`, `bg-ui-overlay`) so they cannot collide with Tailwind's `neutral`/`red`/`amber` palettes or `lfxColors`. Shadows are `shadow-border|small|medium|large|tooltip|menu|modal|fullscreen|focus`, radii `rounded-ui-xs|sm|md|lg|full`, heights `h-ui-tiny|small|medium|large|menu-item|row`, type roles `text-label-14` (size and line height) plus full-role classes `label-14`, `copy-14`, `button-14`, `heading-24` (family, weight and tracking too). A plugin adds `edge` and `edge-hover`, the 1px translucent ring.
+- **Exact px:** the root font is 14px, so rem scales; every library size is a literal px value. Colours are variables, so the `/50` opacity modifier is unavailable.
+- Existing utilities (`bg-blue-500`, `rounded-md`, `shadow-md`, `text-sm`) are untouched. The usage table is in `app/shared/uikit/README.md`; the visual reference is Storybook's Foundations/Tokens.
 
 ### PrimeUI Plugin Integration
 

@@ -9,7 +9,7 @@ import { MKTG_KIT_FRAMEWORK_KEY, MKTG_KIT_SHOW_COMING_SOON } from '@lfx-one/shar
 import { MktgKitFamilyView, MktgKitSourcesView } from '@lfx-one/shared/interfaces';
 import { mktgKitSources } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
-import { catchError, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, switchMap } from 'rxjs';
 
 /** Reads only the framework revision used by the source block, on its Family page. */
 @Component({
@@ -31,17 +31,29 @@ export class MktgFamilyDetailsComponent {
   private readonly reload = signal(0);
 
   public constructor() {
-    const request$ = toObservable(computed(() => ({ family: this.family(), project: this.projectUid(), reload: this.reload() })));
+    const request$ = toObservable(
+      computed(() => {
+        const family = this.family();
+        const document = family.rows.find((row) => row.asset.agentKey === MKTG_KIT_FRAMEWORK_KEY)?.document;
+        return { project: this.projectUid(), familyId: family.family.id, revisionId: document?.latestRevisionId, reload: this.reload(), document };
+      })
+    );
     if (isPlatformBrowser(this.platformId)) {
       request$
         .pipe(
-          switchMap(({ family, project }) => {
+          distinctUntilChanged(
+            (previous, next) =>
+              previous.project === next.project &&
+              previous.familyId === next.familyId &&
+              previous.revisionId === next.revisionId &&
+              previous.reload === next.reload
+          ),
+          switchMap(({ document, project }) => {
             this.sources.set(null);
             this.sourcesExpanded.set(false);
             this.signOffExpanded.set(false);
             this.failed.set(false);
             this.loading.set(false);
-            const document = family.rows.find((row) => row.asset.agentKey === MKTG_KIT_FRAMEWORK_KEY)?.document;
             if (!project || !document) return of(null);
             this.loading.set(true);
             return this.store.getRevision(project, document.agentKey, document.documentId, document.latestRevisionId).pipe(

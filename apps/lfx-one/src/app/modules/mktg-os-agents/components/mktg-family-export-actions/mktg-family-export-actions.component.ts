@@ -34,7 +34,7 @@ import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, distinctUntilChanged, from, map, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
-import { BrandKitViewComponent } from '../../brand-kit-view/brand-kit-view.component';
+import { MktgBrandKitPrintComponent } from '../../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
 import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
@@ -46,7 +46,7 @@ import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-fra
     DatePipe,
     ButtonComponent,
     MessageComponent,
-    BrandKitViewComponent,
+    MktgBrandKitPrintComponent,
     MktgFrameworkPrintComponent,
     MktgBoilerplatesPrintComponent,
     MktgFaqPrintComponent,

@@ -27,6 +27,7 @@ it('prints all four labelled lengths intact, with the title kept beside the firs
     expect(block.textContent).toContain(envelope.content.bp[index].t);
   });
   expect(blocks[0].querySelector('h2')?.textContent).toContain('07');
+  expect(blocks[0].querySelector('lfx-mktg-print-chapter-header h2')?.className).toBe('lfx-print-chapter-title');
   const head = blocks[0].querySelector('[data-testid="mktg-print-running-head"]');
   expect(head?.textContent).toContain('Synthetic project Boilerplates');
   expect(head?.querySelector('img')?.getAttribute('src')).toBe(brand.logoOnLight?.src);

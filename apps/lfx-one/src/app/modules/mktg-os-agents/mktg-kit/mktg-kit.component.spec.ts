@@ -2,27 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { computed, signal } from '@angular/core';
+import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { of } from 'rxjs';
+import { MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitComponent } from './mktg-kit.component';
 
 describe('Marketing kit home', () => {
   const families = signal<MktgKitFamilyView[]>([]);
   const loading = signal(false);
   const error = signal('');
+  const accessDenied = signal(false);
+  const refreshDenied = signal(false);
   const documents = signal<MktgDocumentsResponse | null>(null);
+  const refresh = vi.fn(() => of(documents()));
   const context = signal({ uid: 'synthetic', slug: 'synthetic' });
   beforeEach(() => {
     context.set({ uid: 'synthetic', slug: 'synthetic' });
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
     error.set('');
+    accessDenied.set(false);
+    refreshDenied.set(false);
+    refresh.mockReset().mockImplementation(() => of(documents()));
     documents.set({ project: 'synthetic', groups: [] });
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
@@ -37,6 +45,10 @@ describe('Marketing kit home', () => {
               families,
               loading,
               error,
+              accessDenied,
+              refreshDenied,
+              projectUid: computed(() => context().uid),
+              refresh,
               documents,
               projectName: signal('Synthetic Project'),
               projectQueryParams: computed(() => ({ project: context().slug })),
@@ -48,6 +60,75 @@ describe('Marketing kit home', () => {
       },
     });
   });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('re-reads immediately and on visible/focus, updates in place, and stops on destroy', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    refresh.mockImplementation(() => {
+      families.set([...families()]);
+      return of(documents());
+    });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(false);
+    const card = fixture.nativeElement.querySelector('article');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(true);
+    expect(fixture.nativeElement.querySelector('article')).toBe(card);
+    expect(loading()).toBe(false);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(refresh).toHaveBeenLastCalledWith(false);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(4);
+    expect(refresh).toHaveBeenLastCalledWith(false);
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not poll after a 403 listing', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    accessDenied.set(true);
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    accessDenied.set(false);
+    refreshDenied.set(true);
+    await fixture.whenStable();
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    refreshDenied.set(false);
+    await fixture.whenStable();
+    expect(refresh).toHaveBeenCalledOnce();
+    fixture.destroy();
+  });
+
+  it('does not create browser polling during SSR', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    expect(refresh).not.toHaveBeenCalled();
+    fixture.destroy();
+  });
+
   it('keeps ctrl/meta clicks native on the Next step link', async () => {
     const fixture = TestBed.createComponent(MktgKitComponent);
     await fixture.whenStable();
@@ -226,9 +307,9 @@ describe('Marketing kit home', () => {
       expect(action?.getAttribute('href')).toContain('mode=new');
       expect(step?.textContent).toContain('Nothing in the kit yet');
     } else if (kind === 'export') {
-      expect(action?.textContent).toContain('Export the kit');
-      expect(step?.textContent).toContain('The kit is complete; export it.');
-      expect(step?.textContent).toContain('Opens Positioning & brand, where the kit can be exported.');
+      expect(action?.textContent).toContain('Export the family');
+      expect(step?.textContent).toContain('Positioning & brand is complete; export it.');
+      expect(step?.textContent).toContain('Opens Positioning & brand for export.');
       expect(action?.getAttribute('href')).toContain('families/positioning-brand');
     } else if (kind === 'rebuild') {
       expect(step?.textContent).toContain('1 asset is stale');

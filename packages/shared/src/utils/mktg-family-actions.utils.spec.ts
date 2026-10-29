@@ -241,7 +241,7 @@ describe('One rule for every family action', () => {
     view.rows[1] = built(view).rows[1];
     expect(resolveMktgFamilyActions(view, context).header?.caption).toBe('Then: FAQ and the brand kit');
   });
-  it('nothing to create means Review drafts, then Export the kit only for approved fresh exportable families', () => {
+  it('nothing to create means Review drafts, then Export the family only for approved fresh exportable families', () => {
     const view = built(family());
     view.rows[0].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header).toMatchObject({
@@ -252,7 +252,7 @@ describe('One rule for every family action', () => {
     view.rows[1].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Review 2 drafts');
     view.rows.forEach((row) => (row.state = 'approved'));
-    expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the kit', agentId: null, mode: null, link: null });
+    expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the family', agentId: null, mode: null, link: null });
     const unsupported = { ...view, family: { ...view.family, id: 'synthetic-no-exporter' } };
     expect(resolveMktgFamilyActions(unsupported, context).header).toBeNull();
     view.rows[0].state = 'needs-rebuild';
@@ -383,9 +383,9 @@ describe('One rule for every family action', () => {
     const step = resolveMktgFamilyNextStep(view, context);
     expect(step?.header).toEqual(resolveMktgFamilyActions(view, context).header);
     expect(step).toMatchObject({
-      header: { kind: 'export', label: 'Export the kit' },
-      sentence: 'The kit is complete; export it.',
-      hint: 'Opens Positioning & brand, where the kit can be exported.',
+      header: { kind: 'export', label: 'Export the family' },
+      sentence: 'Positioning & brand is complete; export it.',
+      hint: 'Opens Positioning & brand for export.',
       commands: ['families', view.family.id],
       queryParams: {},
     });
