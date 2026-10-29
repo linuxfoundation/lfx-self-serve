@@ -284,7 +284,7 @@
                         [rows]="field.rows ?? 2"
                         [placeholder]="field.placeholder ?? ''"
                         styleClass="w-full min-h-20 resize-y"
-                        [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                        [describedBy]="fieldDescribedBy(field)"
                         [invalid]="!!fieldFormatErrors()[field.key]"
                         [dataTest]="'mktg-intake-' + field.key" />
                     } @else if (field.kind === 'url-list') {
@@ -300,7 +300,7 @@
                                 [control]="rowId"
                                 type="url"
                                 [placeholder]="field.placeholder ?? ''"
-                                [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                                [describedBy]="fieldDescribedBy(field)"
                                 [invalid]="!!fieldFormatErrors()[field.key]"
                                 [dataTest]="'mktg-intake-' + rowId" />
                             </div>
@@ -332,7 +332,7 @@
                             [form]="intakeForm"
                             [control]="field.key"
                             [placeholder]="field.placeholder ?? ''"
-                            [describedBy]="fieldFormatErrors()[field.key] ? 'mktg-intake-' + field.key + '-error' : ''"
+                            [describedBy]="fieldDescribedBy(field)"
                             [invalid]="!!fieldFormatErrors()[field.key]"
                             [required]="!field.optional"
                             [dataTest]="'mktg-intake-' + field.key" />
@@ -362,8 +362,13 @@
                         warning
                       }}</span>
                     }
-                    @if (field.hint) {
-                      <span class="text-xs text-gray-400">{{ field.hint }}</span>
+                    @if (field.hint || isLinkField(field)) {
+                      <span class="text-xs text-gray-400" [id]="'mktg-intake-' + field.key + '-hint'">
+                        {{ field.hint }}
+                        @if (isLinkField(field)) {
+                          {{ driveSharingHint }}
+                        }
+                      </span>
                     }
                     @if (field.missingPrefillHint && missingPrefillHintKeys()[field.key]) {
                       <span class="text-xs text-gray-400">{{ field.missingPrefillHint }}</span>

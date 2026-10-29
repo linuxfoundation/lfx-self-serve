@@ -3513,7 +3513,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
     expect(harness.routeDebugElement?.query(By.directive(MktgSlidesExportComponent)).componentInstance.viewingDraft()).toBe(true);
     expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v1, approved by Project writer');
-    expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+    expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
     expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
     expect(query('brand-kit-web-view-export-slides')).toBeNull();
     expect(query('brand-kit-web-view-download-pdf')).toBeNull();
