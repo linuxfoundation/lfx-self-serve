@@ -6,7 +6,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { provideRouter, Router } from '@angular/router';
-import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_CONTENT_LIMITS, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -355,6 +355,22 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-report-notes')?.textContent).toContain('Check the dates.');
     expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
     expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('widens the goal table with the goal count, so the schema’s eight goals scroll sideways instead of squeezing', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const { rowHeader, goal } = FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM;
+    expect((query('mktg-framework-view-goals') as HTMLTableElement).style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+
+    const [adoption] = ASSET.content.mf.goals;
+    const eight = Array.from({ length: FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max }, (_, index) => ({ ...adoption, id: `goal-${index}`, n: index + 1 }));
+    host.asset.set({ ...ASSET, content: { ...ASSET.content, mf: { ...ASSET.content.mf, goals: eight } } });
+    await fixture.whenStable();
+    const goals = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(goals.querySelectorAll('thead th[data-testid]').length).toBe(8);
+    expect(goals.style.minWidth).toBe(`${rowHeader + goal * 8}rem`);
   });
 
   it('moves between the tabs with the arrow keys, Home and End, wrapping round, and focuses the tab it lands on', async () => {

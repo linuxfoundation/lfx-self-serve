@@ -130,6 +130,11 @@ describe('MktgFrameworkPrintComponent', () => {
     ]);
     // Segments belong to the hidden ICPs: the table does not name them.
     expect(goals?.textContent).not.toContain('End users');
+    // A proof point stacks its source under the fact: the goal columns are too narrow for the two side by side.
+    const proof = goals?.querySelector('tbody li');
+    expect(proof?.className).toContain('flex-col');
+    expect(proof?.querySelector('span:last-child')?.textContent?.trim()).toBe('Website');
+    expect(proof?.querySelector('span:last-child')?.className).not.toContain('shrink-0');
     expect(query('mktg-framework-print-icp-users')).toBeNull();
     expect(query('mktg-framework-print-pillars')).toBeNull();
   });

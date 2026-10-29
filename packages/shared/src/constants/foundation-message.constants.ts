@@ -317,6 +317,15 @@ export const FOUNDATION_MESSAGE_VIEW_TABS = [
   { id: 'sources', label: 'Sources and gaps' },
 ] as const;
 
+/**
+ * The framework table's least widths on screen, in rem: the row-header column
+ * and what each goal column gets before the table scrolls sideways. The
+ * table's minimum width grows with the goal count (up to
+ * `FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max` columns), so eight goals
+ * scroll instead of squeezing into the width four read well at.
+ */
+export const FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM = { rowHeader: 8, goal: 8 } as const;
+
 /** How the view names a run's mode. */
 export const FOUNDATION_MESSAGE_MODE_LABELS = {
   draft: 'Draft',

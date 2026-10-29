@@ -19,8 +19,9 @@
 @let card = 'flex flex-col gap-[6pt] rounded-[6pt] border border-black/10 p-[10pt] break-inside-avoid';
 @let tinted = 'flex flex-col gap-[4pt] rounded-[6pt] bg-[color:var(--mfp-tint)] p-[10pt] break-inside-avoid';
 @let proofList = 'flex flex-col gap-[3pt]';
-@let proofRow = 'flex items-start justify-between gap-[8pt] text-[8.5pt]';
-@let proofSource = 'shrink-0 text-[7pt] uppercase tracking-[0.08em] opacity-60';
+<!-- A proof point stacks its source under the fact: a goal column is narrow (the page shared by up to eight goals), so side by side the source would push the fact into a sliver or run into the next column. -->
+@let proofRow = 'flex flex-col gap-[1pt] text-[8.5pt]';
+@let proofSource = 'text-[7pt] uppercase tracking-[0.08em] opacity-60';
 @let chip = 'rounded-full border border-black/15 px-[6pt] py-[1pt] text-[7.5pt]';
 @let accentBar = 'h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]';
 

@@ -147,9 +147,9 @@
               </div>
             </div>
 
-            <!-- Goal columns: a scrolling table below the @lg container width, so four columns never squeeze below reading width -->
+            <!-- Goal columns: a scrolling table below its least width (one reading width per goal, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM), so the columns never squeeze below reading width however many goals the plan has -->
             <div class="overflow-x-auto">
-              <table class="w-full min-w-[40rem] table-fixed border-collapse text-sm" data-testid="mktg-framework-view-goals">
+              <table class="w-full table-fixed border-collapse text-sm" [style.min-width.rem]="goalsTableMinWidthRem()" data-testid="mktg-framework-view-goals">
                 <thead>
                   <tr class="bg-gray-50 text-left">
                     <th scope="col" class="w-28 px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-gray-500"><span class="sr-only">Row</span></th>

@@ -24,6 +24,7 @@ import {
   FOUNDATION_MESSAGE_MODE_LABELS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
+  FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -157,6 +158,10 @@ export class MktgFrameworkViewComponent {
     const content = this.content();
     return content ? foundationMessageGoalViews(content) : [];
   });
+  /** The goal table's least width in rem: the row header plus one reading width per goal, so more goals scroll sideways instead of squeezing. */
+  protected readonly goalsTableMinWidthRem: Signal<number> = computed(
+    () => FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM.rowHeader + FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM.goal * this.goals().length
+  );
   protected readonly avoidRows: Signal<FoundationMessageAvoidRow[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageAvoidRows(content) : [];
