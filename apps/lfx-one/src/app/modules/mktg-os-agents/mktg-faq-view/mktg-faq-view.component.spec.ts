@@ -6,7 +6,7 @@ import { Component, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
+import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +22,7 @@ class HostComponent {
   public readonly version = signal<number | null>(3);
   public readonly showMetadata = signal(true);
   public readonly commentsEnabled = signal(false);
+  public readonly revisions = signal<MktgRevisionSummary[]>([]);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -124,6 +125,10 @@ describe('MktgFaqViewComponent', () => {
     await fixture.whenStable();
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
     expect(text('mktg-faq-view-unanswered-callout')).toContain('1 question needs an answer');
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(query('mktg-faq-view-needs-answer-1-0')).not.toBeNull();
+    expect(element().querySelector('[data-mktg-comment-field="faq[0][1][1][1]"] button')?.textContent?.trim()).toBe('Comment');
+    expect(element().querySelector('[data-mktg-comment-field="faq[1][1][0][1]"] button')?.textContent?.trim()).toBe('Answer');
     query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     expect(text('mktg-faq-view-unanswered-list')).toContain('How do I contribute?');
@@ -138,7 +143,63 @@ describe('MktgFaqViewComponent', () => {
     query('mktg-faq-view-tab-faq')?.click();
     await fixture.whenStable();
     expect(query('mktg-faq-view-unanswered-callout')).toBeNull();
+    expect(element().querySelectorAll('[data-testid^="mktg-faq-view-needs-answer-"]')).toHaveLength(0);
+    expect(element().querySelector('[data-mktg-comment-field="faq[0][1][1][1]"] button')?.textContent?.trim()).toBe('Comment');
     expect(ASSET.checks.unanswered).toHaveLength(1);
+  });
+
+  it('links a resolved historical gap to its server-listed later revision, preserving the document query', async () => {
+    await TestBed.inject(Router).navigateByUrl('/?project=synthetic&tab=faq');
+    host.commentsEnabled.set(true);
+    host.revisions.set([
+      {
+        id: 'synthetic-result',
+        number: 7,
+        createdAt: null,
+        origin: 'revised',
+        restoredFromNumber: null,
+        intakeMode: null,
+        status: '',
+        contentSha256: 'b'.repeat(64),
+        format: 'json',
+        commentCount: 1,
+        latest: true,
+        approval: null,
+      },
+    ]);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' }, resultRevisionId: 'synthetic-result' })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-answered-revision-0-1')).toBe('Answered in v7 · Open it');
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-callout')).toBeNull();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
+    const link = query('mktg-faq-view-answered-revision-0-1');
+    expect(link?.getAttribute('href')).toContain('revision=synthetic-result');
+    expect(link?.getAttribute('href')).toContain('project=synthetic');
+    expect(link?.getAttribute('href')).toContain('tab=faq');
+    link?.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toContain('revision=synthetic-result');
+    expect(ASSET.content.faq[0][1][1][1]).toBeNull();
+  });
+
+  it('uses the existing resolved status without inventing a version when the result is not listed', async () => {
+    host.commentsEnabled.set(true);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' }, resultRevisionId: `000999-${'b'.repeat(64)}` })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-resolved-0-1')).toBe('Resolved by the agent');
+    expect(query('mktg-faq-view-answered-revision-0-1')).toBeNull();
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(element().textContent).not.toContain('v999');
+  });
+
+  it('keeps the viewed revision answer instead of replacing it with a resolved marker', async () => {
+    host.commentsEnabled.set(true);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][0][1]' } })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-question-0-0')).toContain('TestOrbit is an open release toolkit.');
+    expect(query('mktg-faq-view-resolved-0-0')).toBeNull();
+    expect(query('mktg-faq-view-answered-revision-0-0')).toBeNull();
   });
 
   it('does not apply resolved comments from another agent scope or to a non-comment view', async () => {

@@ -23,6 +23,8 @@ test('FAQ: server-resolved answer comments clear the team callout and unanswered
   await fixture.open();
   await expect(page.getByTestId('mktg-comments-panel')).toContainText('Resolved by the agent');
   await expect(page.getByTestId('mktg-faq-view-unanswered-callout')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="mktg-faq-view-needs-answer-"]')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-faq-view-question-0-2').getByTestId('mktg-field-comment-open')).toHaveText('Comment');
   await expect(page.getByTestId('mktg-faq-view-tab-unanswered')).toHaveText('Needs an answer');
   await page.getByTestId('mktg-faq-view-tab-unanswered').click();
   await expect(page.getByTestId('mktg-faq-view-unanswered-list')).toHaveCount(0);

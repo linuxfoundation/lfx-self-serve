@@ -86,15 +86,34 @@
                           >
                         }
                       </dd>
-                    } @else {
+                    }
+                    @if (unansweredPaths().has(row.path)) {
                       <dd class="flex items-center gap-1.5 text-sm text-amber-800" [attr.data-testid]="'mktg-faq-view-needs-answer-' + g + '-' + q">
                         <i class="fa-light fa-circle-question" aria-hidden="true"></i>
                         {{ needsAnswerLabel }}
                       </dd>
+                    } @else if (!row.answered) {
+                      @if (answeredRevisions().get(row.path + '[1]'); as revision) {
+                        <dd class="text-sm">
+                          <a
+                            [routerLink]="[]"
+                            [queryParams]="{ revision: revision.id }"
+                            queryParamsHandling="merge"
+                            class="text-blue-600 hover:text-blue-800"
+                            [attr.data-testid]="'mktg-faq-view-answered-revision-' + g + '-' + q"
+                            >{{ answeredRevisionLabel(revision.number) }}</a
+                          >
+                        </dd>
+                      } @else if (resolvedFields().has(row.path + '[1]')) {
+                        <dd class="text-sm text-gray-600" [attr.data-testid]="'mktg-faq-view-resolved-' + g + '-' + q">{{ resolvedLabel }}</dd>
+                      }
                     }
                     @if (commentsEnabled()) {
                       <dd>
-                        <lfx-mktg-field-comments [field]="row.path + '[1]'" [openLabel]="row.answered ? 'Comment' : 'Answer'" [alwaysVisible]="!row.answered" />
+                        <lfx-mktg-field-comments
+                          [field]="row.path + '[1]'"
+                          [openLabel]="unansweredPaths().has(row.path) ? 'Answer' : 'Comment'"
+                          [alwaysVisible]="unansweredPaths().has(row.path)" />
                       </dd>
                     }
                   </div>
