@@ -106,6 +106,33 @@ describe('Family-only source details', () => {
     expect(root.textContent).not.toContain('October');
     expect(root.textContent).not.toContain('November');
   });
+  it('restores the whole roadmap and its accessible toggle when the shared flag projection is true', async () => {
+    const fixture = create();
+    // The Angular runner bundles shared constants: override only their component
+    // projection before first render, without adding a product override API.
+    Object.defineProperty(fixture.componentInstance, 'showComingSoon', { value: true });
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const section = root.querySelector('[data-testid="mktg-family-approve"]');
+    const toggle = section?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sign-off-toggle"] button');
+    const text = section?.querySelector('#mktg-family-sign-off-text');
+    expect(section?.querySelector('h2')?.textContent).toContain('Sign-off');
+    expect(section?.textContent).toContain('two-role sign-off arrives in November');
+    expect(text?.textContent).toContain('Any project writer approves an asset in October.');
+    expect(toggle?.getAttribute('aria-controls')).toBe(text?.id);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(text?.classList.contains('hidden')).toBe(true);
+    toggle?.click();
+    await fixture.whenStable();
+    expect(toggle?.textContent).toContain('Hide');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(text?.classList.contains('hidden')).toBe(false);
+    toggle?.click();
+    await fixture.whenStable();
+    expect(toggle?.textContent).toContain('Show');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(text?.classList.contains('hidden')).toBe(true);
+  });
   it('omits sources with no document or no report, never faking a source list', async () => {
     getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));
     const fixture = create();
