@@ -71,15 +71,19 @@ describe('UiProgressComponent', () => {
     expect(fill().style.width).toBe('0%');
   });
 
-  it('treats a non-finite value or max as 0', async () => {
+  it('treats a non-finite value or an invalid max as 0, including the ARIA range', async () => {
     await set('value', undefined);
     expect(fill().style.width).toBe('0%');
     expect(bar().getAttribute('aria-valuenow')).toBe('0');
 
     await set('value', 10);
-    await set('max', NaN);
-    expect(fill().style.width).toBe('0%');
-    expect(bar().getAttribute('aria-valuenow')).toBe('0');
+    for (const max of [NaN, Infinity, -10]) {
+      await set('max', max);
+      expect(fill().style.width).toBe('0%');
+      expect(bar().getAttribute('aria-valuenow')).toBe('0');
+      expect(bar().getAttribute('aria-valuemin')).toBe('0');
+      expect(bar().getAttribute('aria-valuemax')).toBe('0');
+    }
   });
 
   it('shows an empty bar when max is not positive', async () => {

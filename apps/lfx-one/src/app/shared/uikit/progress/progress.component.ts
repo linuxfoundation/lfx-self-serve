@@ -28,17 +28,22 @@ export class UiProgressComponent {
   /** Fill colour. The product picks it at its own thresholds (for example warning at 80%, error at 95%). */
   public readonly tone = input<'accent' | 'success' | 'warning' | 'error' | 'secondary'>('accent');
 
+  protected readonly safeMax: Signal<number> = this.initSafeMax();
   protected readonly clampedValue: Signal<number> = this.initClampedValue();
   protected readonly percent: Signal<number> = this.initPercent();
   protected readonly displayValue: Signal<string> = this.initDisplayValue();
   protected readonly fillClasses: Signal<string> = this.initFillClasses();
 
+  private initSafeMax(): Signal<number> {
+    return computed(() => (Number.isFinite(this.max()) && this.max() > 0 ? this.max() : 0));
+  }
+
   private initClampedValue(): Signal<number> {
-    return computed(() => (Number.isFinite(this.value()) && Number.isFinite(this.max()) ? Math.min(Math.max(this.value(), 0), this.max()) : 0));
+    return computed(() => (Number.isFinite(this.value()) ? Math.min(Math.max(this.value(), 0), this.safeMax()) : 0));
   }
 
   private initPercent(): Signal<number> {
-    return computed(() => (Number.isFinite(this.max()) && this.max() > 0 ? (this.clampedValue() / this.max()) * 100 : 0));
+    return computed(() => (this.safeMax() > 0 ? (this.clampedValue() / this.safeMax()) * 100 : 0));
   }
 
   private initDisplayValue(): Signal<string> {

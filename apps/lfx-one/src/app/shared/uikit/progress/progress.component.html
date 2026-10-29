@@ -14,7 +14,7 @@
   [attr.aria-label]="label()"
   [attr.aria-valuenow]="clampedValue()"
   aria-valuemin="0"
-  [attr.aria-valuemax]="max()"
+  [attr.aria-valuemax]="safeMax()"
   [attr.aria-valuetext]="valueText() || null"
   data-testid="ui-progress-bar">
   <span [class]="fillClasses()" [style.width.%]="percent()" data-testid="ui-progress-fill"></span>
