@@ -4323,7 +4323,11 @@ describe('OrgClaService.getClaGroupCatalogue', () => {
     const option = await new OrgClaService().getClaGroupCatalogue(req(), spelling);
 
     expect(option).toMatchObject({ claGroupId: CLA_GROUP_ID, projectSfid: PROJECT_SFID });
-    expect(gatewayFetch).toHaveBeenCalledWith(expect.anything(), `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`, expect.anything());
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`,
+      expect.anything()
+    );
   });
 
   it('accepts an echo in another spelling of the requested group', async () => {
