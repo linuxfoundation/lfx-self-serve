@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
+import { DATE_PIPE_DEFAULT_OPTIONS, formatDate } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, linkedSignal, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -2694,7 +2694,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-history-bar-back')).toBeNull();
     query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id, current.revisionId);
     expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
@@ -3317,7 +3317,113 @@ describe('MktgDocumentViewComponent', () => {
     approve?.click();
     expect(dialog.open).toHaveBeenCalledTimes(2);
     closed.next(true);
-    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'faq', 'living', LATEST.id, LATEST.id);
+  });
+
+  it.each(['approve', 'restore'] as const)('re-reads after a stale %s without replaying the write or replacing the viewed content', async (action) => {
+    useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    await render('/documents/foundation-message/living?tab=numbers');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic framework draft');
+    expect(component['railReady']()).toBe(true);
+    const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-framework-view-tab-numbers', 'mktg-document-view-revisions'];
+    const nodes = ids.map(query);
+    const approval = { approvedAt: '2026-10-29T12:50:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const winner = revision(3, { latest: true, approval });
+    const refreshed = {
+      ...loaded,
+      revisions: [winner, { ...loaded.revision, latest: false }, OLDER],
+      current: { revisionId: winner.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: winner.id, number: 3 },
+    };
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(pending);
+    const failure = new HttpErrorResponse({
+      status: 409,
+      error: {
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+        current: {
+          revisionId: winner.id,
+          number: 3,
+          approvedBy: 'Synthetic reviewer',
+          approvedAt: approval.approvedAt,
+        },
+      },
+    });
+    const write = action === 'approve' ? store.approveRevision : store.restoreRevision;
+    write.mockReturnValue(throwError(() => failure));
+    const reads = store.getDocument.mock.calls.length;
+    if (action === 'approve') component['onApprove']();
+    else component['onRestore'](OLDER);
+    await settle();
+    expect(write).toHaveBeenCalledExactlyOnceWith(
+      PROJECT.uid,
+      'foundation-message',
+      'living',
+      action === 'approve' ? loaded.revision.id : OLDER.id,
+      loaded.revision.id
+    );
+    expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+    const expected = `Synthetic reviewer approved v3 at ${formatDate(approval.approvedAt, 'HH:mm', 'en-US')} — review it before approving another version`;
+    expect(query('mktg-document-view-current-conflict')?.textContent?.trim()).toBe(expected);
+    pending.next(refreshed);
+    pending.complete();
+    await settle();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    expect(query('mktg-document-view-current-3')).not.toBeNull();
+    expect(query('mktg-document-view-current-conflict')?.textContent?.trim()).toBe(expected);
+    ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+    expect(component['railReady']()).toBe(true);
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-approval-error')).toBeNull();
+    progressReader().observed.emit({ detail: refreshed, view: { ...loaded, revisions: refreshed.revisions } });
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+  });
+
+  it('clears the conflict on revision navigation and ignores a late conflict detail response', async () => {
+    const response = faqResponse();
+    store.getDocument.mockReturnValue(of(response));
+    store.getRevision.mockReturnValue(of(response));
+    await render('/documents/faq/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['view']()?.type.agentKey).toBe('faq');
+    const pending = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(pending);
+    store.approveRevision.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: 'MKTG_APPROVED_CURRENT_CHANGED',
+              current: { revisionId: OLDER.id, number: 1, approvedBy: null, approvedAt: null },
+            },
+          })
+      )
+    );
+    component['onApprove']();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).not.toBeNull();
+    store.getRevision.mockReturnValue(of({ ...response, revision: OLDER }));
+    await harness.navigateByUrl(`/documents/faq/living?revision=${OLDER.id}`, MktgDocumentViewComponent);
+    await settle();
+    pending.next(response);
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-current-conflict')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(OLDER.id);
   });
 
   it('approves directly without confirmation and updates saving/state metadata', async () => {
@@ -3335,7 +3441,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-saving-status')).toBe(status);
     expect(dialog.open).not.toHaveBeenCalled();
     expect(status?.textContent).toBe('Approving revision 2…');
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id, LATEST.id);
     expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
     pending.next({
@@ -3478,7 +3584,7 @@ describe('MktgDocumentViewComponent', () => {
     store.approveRevision.mockReturnValue(of(approved));
     component['onApprove']();
     await settle();
-    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id);
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'foundation-message', 'living', loaded.revision.id, loaded.revision.id);
     expect(listing.observed).toBe(true);
     store.getDocument.mockReturnValue(of(approved));
     store.getRevision.mockReturnValue(of(approved));
@@ -3713,7 +3819,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     query('mktg-document-view-restore-1')?.click();
     await settle();
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, LATEST.id);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain(status);
     expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
   });
@@ -3750,7 +3856,7 @@ describe('MktgDocumentViewComponent', () => {
     query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
 
-    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id, LATEST.id);
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');

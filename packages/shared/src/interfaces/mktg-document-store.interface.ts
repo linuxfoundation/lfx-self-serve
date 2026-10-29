@@ -13,6 +13,7 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { MKTG_APPROVED_CURRENT_CHANGED } from '../constants/mktg-document-store.constants';
 import type { AeoGeoReportSummary } from './aeo-geo.interface';
 import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.interface';
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
@@ -309,10 +310,26 @@ export interface MktgDocumentReadCycle {
   view: MktgRevisionResponse | null;
 }
 
+/** Optional for older clients; the current selection the writer actually reviewed. */
+export interface MktgApproveRevisionRequest {
+  expectedCurrentId?: string;
+}
+
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
-export interface MktgRestoreRevisionRequest {
+export interface MktgRestoreRevisionRequest extends MktgApproveRevisionRequest {
   project: string;
   revisionId: string;
+}
+
+/** Safe conflict projection: no stored subject, email, username or manifest. */
+export interface MktgDocumentCurrentConflictResponse {
+  code: typeof MKTG_APPROVED_CURRENT_CHANGED;
+  current: {
+    revisionId: string;
+    number: number;
+    approvedBy: string | null;
+    approvedAt: string | null;
+  } | null;
 }
 
 /** Response of Make current (the compatibility route remains `/restore`): no new revision. */

@@ -7,6 +7,7 @@ import {
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SPECS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_APPROVED_CURRENT_CHANGED,
   MKTG_DOCUMENT_CURRENT_KEY,
   MKTG_DOCUMENT_READ_CONCURRENCY,
   MKTG_DOCUMENT_TYPES,
@@ -36,6 +37,7 @@ import {
   MktgDocumentCurrentRecord,
   MktgDocumentCurrentSelection,
   MktgDocumentCurrentSnapshot,
+  MktgDocumentCurrentConflictResponse,
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
   MktgDocumentsResponse,
@@ -491,13 +493,15 @@ export class MktgDocumentStoreService {
     project: string,
     type: MktgDocumentType,
     documentId: string,
-    revisionId: string
+    revisionId: string,
+    expectedCurrentId?: string
   ): Promise<{ detail: MktgDocumentDetailResponse; revision: MktgRevisionSummary } | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Make current is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
     const detail = await this.readDocument(req, project, type, documentId, snapshot);
     const view = detail ? await this.readRevision(req, detail, revisionId) : null;
     if (!view) return null;
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId);
     let record = snapshot.record;
     let current = await this.currentSelection(req, record);
     if (!view.revision.latest) {
@@ -510,7 +514,7 @@ export class MktgDocumentStoreService {
         view.revision.id,
         view.revisions.map((entry) => entry.id)
       );
-      if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+      if (!committed) throw this.currentChanged(await this.getDocument(req, project, type, documentId));
       record = committed;
       current = await this.currentSelection(req, committed);
     }
@@ -525,7 +529,8 @@ export class MktgDocumentStoreService {
     project: string,
     type: MktgDocumentType,
     documentId: string,
-    revisionId: string
+    revisionId: string,
+    expectedCurrentId?: string
   ): Promise<MktgRevisionResponse | null> {
     if (type.kind === 'run') throw ServiceValidationError.forField('documentId', 'Approve is not available for one-off run documents.');
     const snapshot = await this.readCurrent(req, project, type, documentId);
@@ -535,6 +540,7 @@ export class MktgDocumentStoreService {
     if (parseMktgLegacyRevisionId(view.revision.id)) {
       throw ServiceValidationError.forField('revisionId', 'A revision must be stored before it can be approved.');
     }
+    this.requireExpectedCurrent(snapshot, view, expectedCurrentId);
     if (view.revision.latest && view.approval) return view;
     const committed = await this.writeCurrent(
       req,
@@ -546,7 +552,7 @@ export class MktgDocumentStoreService {
       view.revisions.map((entry) => entry.id),
       true
     );
-    if (!committed) throw new PreconditionFailedError('The document changed while making a revision current. Reload and try again.');
+    if (!committed) throw this.currentChanged(await this.getDocument(req, project, type, documentId));
     const updated = await this.withApprovals(
       req,
       {
@@ -913,6 +919,31 @@ export class MktgDocumentStoreService {
     }
     const current = revisions.find((revision) => revision.latest && revision.approval);
     return { ...detail, revisions, approvedCurrent: current ? { revisionId: current.id, number: current.number } : null };
+  }
+
+  /**
+   * Compare the human's observed selection before the snapshot/ETag CAS publishes anything.
+   * This two-part precondition can also guard a future redraft-queue claim; no queue is created here.
+   */
+  private requireExpectedCurrent(snapshot: MktgDocumentCurrentSnapshot, detail: MktgDocumentDetailResponse, expectedCurrentId?: string): void {
+    const selected = snapshot.record?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id;
+    if (expectedCurrentId !== undefined && expectedCurrentId !== selected) throw this.currentChanged(detail);
+  }
+
+  /** Only the existing public name projection crosses the error boundary, never stored identities. */
+  private currentChanged(detail: MktgDocumentDetailResponse | null): ConflictError {
+    const selected = detail?.revisions.find((revision) => revision.id === detail.current?.revisionId) ?? detail?.revisions.find((revision) => revision.latest);
+    const current: MktgDocumentCurrentConflictResponse['current'] = selected
+      ? {
+          revisionId: selected.id,
+          number: selected.number,
+          approvedBy: selected.approval ? (selected.approval.approvedBy?.name ?? null) : (detail?.current?.changedBy?.name ?? null),
+          approvedAt: selected.approval?.approvedAt ?? detail?.current?.changedAt ?? null,
+        }
+      : null;
+    return new ConflictError('The current revision changed. Review it before changing the current selection.', MKTG_APPROVED_CURRENT_CHANGED, {
+      details: { current },
+    });
   }
 
   /** Publish the full manifest via CAS, optionally preserving the caller's observed selection and attribution. */
