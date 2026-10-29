@@ -29,6 +29,12 @@ export interface MktgRunAnsweredConflict {
   answeredAt: string;
 }
 
+/** BFF-only Member claim; release is fenced to the exact winning object version. */
+export interface MktgMember360QuestionsClaim {
+  (): Promise<void>;
+  release(): Promise<boolean>;
+}
+
 /** Same-visit guard callbacks; no new transport fields or persisted request bytes. */
 export interface MktgActiveRunGuardOptions<T> {
   conflict: MktgActiveRunConflict;

@@ -10,6 +10,8 @@ import {
   MEMBER_360_COMPARISON_UNAVAILABLE,
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
+  MEMBER_360_DEFINITE_SEND_HTTP_STATUSES,
+  MEMBER_360_DEFINITE_CONNECT_CODES,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SHA256_REGEX,
@@ -23,6 +25,7 @@ import {
   Member360Result,
   Member360AnswersBody,
   MktgGenerationAttribution,
+  MktgMember360QuestionsClaim,
   MktgRunResultResponse,
   Project,
 } from '@lfx-one/shared/interfaces';
@@ -104,7 +107,7 @@ export class Member360Service {
   }
 
   /** Only a validated, creator-authorized controller call reaches this transport. */
-  public async sendAnswers(req: Request, body: Member360AnswersBody, beforeSend: () => Promise<void>): Promise<void> {
+  public async sendAnswers(req: Request, body: Member360AnswersBody, beforeSend: MktgMember360QuestionsClaim): Promise<void> {
     const payloads = await this.guild.getRawEventPayloads(req, body.sessionId);
     const text = findMember360Questions(payloads);
     const turn = text ? parseMember360Questions(text) : null;
@@ -117,15 +120,46 @@ export class Member360Service {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
     if (agent?.status !== 'active' || !agent.guildAgentHandle) throw ServiceValidationError.forField('agentId', 'Member 360 is unavailable.');
     await beforeSend(); // Only the server-side CAS winner may create the next user turn.
-    await this.guild.sendFollowUp(req, body.sessionId, {
-      message: renderMember360Answers(body.answers.map(({ id, ...answer }) => ({ ...answer, key: id }))),
-      handle: agent.guildAgentHandle, // sendFollowUp routes on its own line by default.
-    });
+    try {
+      await this.guild.sendFollowUp(req, body.sessionId, {
+        message: renderMember360Answers(body.answers.map(({ id, ...answer }) => ({ ...answer, key: id }))),
+        handle: agent.guildAgentHandle, // sendFollowUp routes on its own line by default.
+      });
+    } catch (error) {
+      if (Member360Service.definitelyNotDelivered(error)) await beforeSend.release();
+      throw error; // Preserve the transport error and the existing retry UI.
+    }
     logger.info(req, 'member_360_answers', 'Sent the requester answers', {
       session_id: body.sessionId,
       questions_id: body.questionsId,
       count: body.answers.length,
     });
+  }
+
+  /** Only positive non-delivery evidence may reopen a claimed questions turn. */
+  private static definitelyNotDelivered(error: unknown): boolean {
+    if (!(error instanceof MicroserviceError) || error.service !== 'guild' || error.operation !== 'guild_send_follow_up') return false;
+    if (error.code === 'guild_unreachable') return this.preconnectFailure(error.originalError);
+    return (
+      !error.originalError &&
+      MEMBER_360_DEFINITE_SEND_HTTP_STATUSES.includes(error.statusCode) &&
+      error.originalMessage?.startsWith(`HTTP ${error.statusCode}:`) === true
+    );
+  }
+
+  private static preconnectFailure(error: unknown, depth = 0): boolean {
+    if (!error || typeof error !== 'object' || depth > 3) return false;
+    if (error instanceof AggregateError && error.errors.length > 0) return error.errors.every((cause: unknown) => this.preconnectFailure(cause, depth + 1));
+    const code = 'code' in error ? error.code : undefined;
+    if (typeof code === 'string' && MEMBER_360_DEFINITE_CONNECT_CODES.includes(code)) return true;
+    if (code === 'ECONNRESET' || code === 'UND_ERR_SOCKET') {
+      if ('syscall' in error && error.syscall === 'connect') return true;
+      const socket = 'socket' in error ? error.socket : undefined;
+      if (socket && typeof socket === 'object' && 'bytesWritten' in socket && socket.bytesWritten === 0) return true;
+      return false;
+    }
+    if (code !== undefined) return false;
+    return 'cause' in error && this.preconnectFailure(error.cause, depth + 1);
   }
 
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {

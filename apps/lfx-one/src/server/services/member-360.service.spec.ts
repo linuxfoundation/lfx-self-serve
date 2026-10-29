@@ -22,6 +22,7 @@ import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.moc
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { logger } from './logger.service';
+import { MicroserviceError } from '../errors';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -152,6 +153,73 @@ describe('Member 360 entitlement and generation', () => {
     questionsId,
     answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }],
   });
+  const preparedClaim = (commit: () => Promise<void> = async () => undefined) => Object.assign(vi.fn(commit), { release: vi.fn(async () => true) });
+  const networkFailure = (cause: unknown) =>
+    new MicroserviceError('Synthetic send failed', 502, 'guild_unreachable', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: Object.assign(new TypeError('fetch failed'), { cause }),
+    });
+  it.each([
+    { code: 'ENOTFOUND' },
+    { code: 'EAI_AGAIN' },
+    { code: 'ECONNREFUSED' },
+    { code: 'ECONNRESET', syscall: 'connect' },
+    { code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 0 } },
+    { code: 'UND_ERR_SOCKET', socket: { bytesWritten: 0 } },
+  ])('releases only proven pre-delivery transport failures %j and accepts a retry', async (cause) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(cause);
+    const claim = preparedClaim();
+    mocks.sendFollowUp.mockRejectedValueOnce(error).mockResolvedValueOnce(undefined);
+    const service = new Member360Service();
+    await expect(service.sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+    await service.sendAnswers(req, answersBody(), preparedClaim());
+    expect(mocks.sendFollowUp).toHaveBeenCalledTimes(2);
+  });
+  it('releases aggregate connection failures only when every attempted connection was undelivered', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ENOTFOUND' }], 'Synthetic connect attempts failed'));
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([400, 401, 403, 404, 405, 413, 415, 422, 429])('releases a confirmed pre-accept HTTP %i rejection', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([408, 409, 500, 502, 503, 504])('keeps an ambiguous HTTP %i send claimed', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic ambiguity', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
+  it.each([
+    networkFailure({ code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 12 } }),
+    networkFailure({ code: 'ECONNRESET', syscall: 'read' }),
+    networkFailure({ code: 'EPIPE' }),
+    networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ECONNRESET', syscall: 'read' }], 'mixed')),
+    new MicroserviceError('Timeout', 504, 'guild_timeout', { service: 'guild', operation: 'guild_send_follow_up' }),
+    new MicroserviceError('Unparseable acknowledgement', 502, 'guild_invalid_response', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: new SyntaxError('Synthetic invalid JSON'),
+    }),
+  ])('never releases an ambiguous send %s', async (error) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
   it('projects parsed questions and their exact-text hash without exposing internal basis', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
@@ -165,7 +233,7 @@ describe('Member 360 entitlement and generation', () => {
   });
   it('sends byte-exact answers with the catalog mention on its own line', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
-    const claim = vi.fn(async () => undefined);
+    const claim = preparedClaim();
     await new Member360Service().sendAnswers(req, answersBody(), claim);
     expect(claim).toHaveBeenCalledOnce();
     expect(claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendFollowUp.mock.invocationCallOrder[0]);
@@ -180,26 +248,30 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
     const conflict = Object.assign(new Error('Already answered'), { code: 'MKTG_RUN_ANSWERED', statusCode: 409 });
     await expect(
-      new Member360Service().sendAnswers(req, answersBody(), async () => {
-        throw conflict;
-      })
+      new Member360Service().sendAnswers(
+        req,
+        answersBody(),
+        preparedClaim(async () => {
+          throw conflict;
+        })
+      )
     ).rejects.toBe(conflict);
     expect(mocks.sendFollowUp).not.toHaveBeenCalled();
   });
   it('rejects stale hashes and mismatched question ids before sending', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
-    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) }, async () => undefined)).rejects.toMatchObject({
+    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) }, preparedClaim())).rejects.toMatchObject({
       statusCode: 409,
     });
     await expect(
-      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] }, async () => undefined)
+      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] }, preparedClaim())
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(mocks.sendFollowUp).not.toHaveBeenCalled();
   });
   it('rejects repeats once the next turn is queued, without replaying questions or old root completion', async () => {
     const done = JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } });
     mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done, JSON.stringify({ type: 'mktg_session_turn_started' })]);
-    await expect(new Member360Service().sendAnswers(req, answersBody(), async () => undefined)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(new Member360Service().sendAnswers(req, answersBody(), preparedClaim())).rejects.toMatchObject({ statusCode: 409 });
     expect(mocks.sendFollowUp).not.toHaveBeenCalled();
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
   });

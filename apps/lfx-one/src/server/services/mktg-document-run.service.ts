@@ -47,6 +47,7 @@ import {
   MktgRunActivity,
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
+  MktgMember360QuestionsClaim,
 } from '@lfx-one/shared/interfaces';
 import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants/mktg-run.constants';
 import { createMember360Redactor } from '@lfx-one/shared/server';
@@ -631,7 +632,7 @@ export class MktgDocumentRunService {
   }
 
   /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
-  public async prepareMember360QuestionsClaim(req: Request, project: string, sessionId: string, questionsId: string): Promise<() => Promise<void>> {
+  public async prepareMember360QuestionsClaim(req: Request, project: string, sessionId: string, questionsId: string): Promise<MktgMember360QuestionsClaim> {
     if (!/^[a-f0-9]{64}$/.test(questionsId)) throw ServiceValidationError.forField('questionsId', 'Select the current questions.');
     const stored = await this.read(req, project, `${this.prefix(project)}${this.hash(sessionId)}.json`);
     if (!stored) throw new ResourceNotFoundError('Marketing OS run', this.hash(sessionId));
@@ -643,7 +644,8 @@ export class MktgDocumentRunService {
       throw await this.memberAnswersConflict(req, stored.record, questionsId);
     }
     // Prepare before the Guild read, but mutate only after that read validates the current turn.
-    return async () => {
+    let claimedWriteId: string | null = null;
+    const commit = async () => {
       const answeredAt = new Date().toISOString();
       const metadata = {
         ...stored.metadata,
@@ -654,11 +656,49 @@ export class MktgDocumentRunService {
         'answered-at': answeredAt,
         'persist-retries': '0',
       };
-      if (await this.putMemberState(req, stored, metadata)) return;
+      const writeId = randomUUID();
+      if (await this.putMemberState(req, stored, metadata, writeId)) {
+        claimedWriteId = writeId;
+        return;
+      }
       const winner = await this.read(req, project, stored.key);
       if (!winner) throw new ResourceNotFoundError('Marketing OS run', stored.record.runId);
       throw await this.memberAnswersConflict(req, winner.record, questionsId);
     };
+    return Object.assign(commit, {
+      release: async (): Promise<boolean> => {
+        if (!claimedWriteId) return false;
+        try {
+          const current = await this.read(req, project, stored.key);
+          if (
+            !current ||
+            current.record.storageWriteId !== claimedWriteId ||
+            current.record.agentKey !== 'member-360' ||
+            current.record.creatorSubject !== subject ||
+            current.record.state !== 'writing' ||
+            current.record.answeredQuestionsId !== questionsId ||
+            current.record.answeredBySubject !== subject
+          )
+            return false;
+          const metadata: Record<string, string> = { ...stored.metadata, state: 'questions' };
+          delete metadata['answered-questions-id'];
+          delete metadata['answered-by'];
+          delete metadata['answered-at'];
+          // Both the nonce check and If-Match are required: a stale release must never reopen a newer claim.
+          const released = await this.putMemberState(req, current, metadata);
+          if (released) claimedWriteId = null;
+          logger.debug(req, 'member_360_claim_release', 'Conditional non-delivery release checked', { project, run: stored.record.runId, released });
+          return released;
+        } catch (err) {
+          logger.warning(req, 'member_360_claim_release', 'Claim release unavailable; keeping the run claimed to prevent duplicate delivery', {
+            project,
+            run: stored.record.runId,
+            err,
+          });
+          return false;
+        }
+      },
+    });
   }
 
   /** Caller validates before sending answers; invalid internal input is DEBUG, never a storage WARN. */
@@ -926,11 +966,11 @@ export class MktgDocumentRunService {
     });
   }
   /** Mutating the body makes even metadata-only transitions advance S3's content ETag. */
-  private putMemberState(req: Request, stored: MktgStoredStartedRun, metadata: Record<string, string>): Promise<boolean> {
+  private putMemberState(req: Request, stored: MktgStoredStartedRun, metadata: Record<string, string>, writeId: string = randomUUID()): Promise<boolean> {
     if (!stored.etag) throw new PreconditionFailedError('The run has no version token. Refresh before answering.');
     MktgDocumentRunService.terminalCache.delete(stored.key);
     const record = JSON.parse(stored.body) as MktgStartedRunRecord;
-    const body = Buffer.from(JSON.stringify({ ...record, storageWriteId: randomUUID() }));
+    const body = Buffer.from(JSON.stringify({ ...record, storageWriteId: writeId }));
     return this.store.putConditionalObject(
       req,
       'marketing-os-artifacts',

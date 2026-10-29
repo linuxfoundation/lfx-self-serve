@@ -142,3 +142,8 @@ export const MEMBER_360_RANKING_COLUMNS = [
   ['Priority', 'priority'],
 ] as const;
 export const MEMBER_360_INTRO = 'Choose a window and add any trackers you have; it reads LFX, searches the web and ranks every member with one next action.';
+
+/** Confirmed pre-accept HTTP rejections; 408/409 and all 5xx remain ambiguous. */
+export const MEMBER_360_DEFINITE_SEND_HTTP_STATUSES: readonly number[] = [400, 401, 403, 404, 405, 413, 415, 422, 429];
+/** These transport failures occur before a connection can deliver a user turn. */
+export const MEMBER_360_DEFINITE_CONNECT_CODES: readonly string[] = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'];

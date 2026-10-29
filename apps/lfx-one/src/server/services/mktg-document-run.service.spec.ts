@@ -262,6 +262,70 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.ownedMember360Session(memberOwner, project, hash(session))).rejects.toMatchObject({ statusCode: 403 });
     expect(flows.get).not.toHaveBeenCalled();
   });
+  it('releases only its won Member claim back to questions and accepts a fresh retry', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    expect(await claim.release()).toBe(false);
+    await claim();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(await claim.release()).toBe(true);
+    const restored = await service.readProgress(memberOwner, project, 'member-360');
+    expect(restored.runs[0]?.state).toBe('questions');
+    for (const field of ['answered-questions-id', 'answered-by', 'answered-at']) expect(stored().metadata[field]).toBeUndefined();
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+    expect(await claim.release()).toBe(false); // An old release cannot erase the retry's new claim.
+  });
+  it('makes a competing pre-prepared claim lose its CAS while rollback is in flight', async () => {
+    await waitingMember();
+    const winner = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    const competitor = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await winner();
+    let unblock: () => void = () => undefined;
+    let entered: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      entered();
+      await blocked;
+    });
+    const rollback = winner.release();
+    await started;
+    await expect(competitor()).rejects.toMatchObject({ statusCode: 409 });
+    unblock();
+    expect(await rollback).toBe(true);
+    expect(stored().metadata['state']).toBe('questions');
+  });
+  it('never rolls a newer object version back or loses the claim when release storage is unavailable', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockRejectedValueOnce(new Error('Synthetic store unavailable'));
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('writing');
+    stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'newer-private-version' });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
+  it('loses the release CAS if a newer transition lands after the nonce read', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockImplementationOnce(() => {
+      stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'concurrent-transition' });
+      stored().metadata['state'] = 'storing';
+    });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('storing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
   it('lets exactly one concurrent Member answer claim win a body-version CAS', async () => {
     await waitingMember();
     flows.author.mockResolvedValue({ name: 'Synthetic writer' });
