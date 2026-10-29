@@ -1,10 +1,10 @@
 ---
 title: Manage Votes
-description: How to find, edit, delete, vote on, and send reminders for votes in LFX Self Serve.
+description: How to find, edit, delete, vote on, send reminders, and send ballot links for votes in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link]
-last_updated: 2026-10-28
+tags: [votes, manage, drafts, cast, reminders, mailing-list, copy-link, ballot-link]
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -68,6 +68,18 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 
 After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens a confirmation that your vote was recorded. You can't change a ballot after submitting it, and results stay hidden until the vote closes.
 
+### Vote from an emailed ballot link
+
+If a vote manager uses [Send ballots now](#send-ballots-now), you get an email with a personal link to your ballot. Opening it shows the ballot on its own page, without signing in to LFX.
+
+1. Open the link from the email. If the page says **This link is invalid or has expired**, check that you opened the full link from your email.
+2. Answer the questions, add optional comments, or select **Abstain from this vote**, the same way as in the drawer above.
+3. Select **Submit Vote**. The page confirms **Thank you. Your ballot has been recorded**.
+
+You can reopen the same link to change your ballot while the vote is open. The page says **You've already voted. Update your ballot?**. Select **Update my ballot**, make your changes, and select **Update Vote**.
+
+The link is personal: anyone who has it can vote as you, so don't forward it. Instead of the ballot, the page may say **This vote has ended**, **This vote isn't open yet**, or **You're no longer a voter on this vote**.
+
 ## Share a link
 
 Select **⋮ → Copy link** to copy a direct link to the vote. See [Sharing a link to a vote](../#sharing-a-link-to-a-vote) for who can open it.
@@ -89,6 +101,18 @@ The voter list is checked again before sending. If a selected voter is no longer
 If the access or voter-list checks fail before sending starts, the dialog confirms that no reminders were sent and asks you to try again.
 
 While sending, the dialog's close button, Escape, and Cancel are disabled. If the connection is lost or the request times out, the outcome may be unconfirmed: reminders might already have been queued. Retrying may send duplicate emails.
+
+## Send ballots now
+
+Email every eligible voter who hasn't voted yet a personal ballot link they can use without signing in. Only users who can manage the vote see this button, and only on active votes. It is in the vote's [Results drawer](../vote-results/) from the Project and Foundation dashboards or a group's **Votes** tab, and on the [presenter screen](../present-extend-clone/#present-a-vote).
+
+1. Select **Send ballots now**.
+2. The dialog asks whether to email a personal ballot link to the members who haven't voted, with their count. Select **Send**.
+3. Under the button, LFX shows how many members the ballots were sent to and the time.
+
+Unlike **Send reminder**, you don't pick recipients: everyone who hasn't voted gets a link. If everyone has voted, LFX says **Nobody to email**. If some members are skipped, LFX says how many. The button is unavailable for two minutes after a send.
+
+If LFX can't confirm the ballots were sent (**Ballot delivery unconfirmed**), they might already be on their way. Check with the members before trying again, since retrying may send duplicate emails.
 
 ## Send a reminder to the mailing list
 
