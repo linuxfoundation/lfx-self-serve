@@ -56,3 +56,9 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 
 /** Size of the uikit loading dots: 4, 5 or 7px dots. */
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
+
+/** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
+export type UiInputSize = 'tiny' | 'small' | 'medium';
+
+/** Native `type` of a uikit text input. */
+export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'number' | 'search';
