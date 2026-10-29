@@ -56,7 +56,7 @@ export class EventsRevenueComponent {
   protected readonly view: Signal<HealthMetricsEventsRevenueView> = computed(() =>
     buildHealthMetricsEventsRevenueView(this.response(), this.chrome.selectedRange())
   );
-  /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
+  /** Nothing to show for the period (unmeasured, or $0 with no event and no unconverted revenue); the shell shows the empty state. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   public constructor() {
