@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { UiProjectBannerVariant } from '@lfx-one/shared/interfaces';
 
 /**
@@ -18,13 +18,15 @@ import { UiProjectBannerVariant } from '@lfx-one/shared/interfaces';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
-    '[attr.role]': 'variant() === "error" ? "alert" : "status"',
+    '[attr.role]': 'announce() && variant() === "error" ? "alert" : "status"',
     'data-testid': 'ui-project-banner',
   },
 })
 export class UiProjectBannerComponent {
-  /** Colour and default icon. `error` is for urgent states such as downtime or a failed payment and uses `role="alert"`. */
+  /** Colour and default icon. `error` is for urgent states such as downtime or a failed payment. */
   public readonly variant = input<UiProjectBannerVariant>('default');
+  /** Announces an `error` banner to screen readers right away (`role="alert"`). Set it only when the banner appears after an action, because the banner is persistent and would re-announce each time it is re-created. */
+  public readonly announce = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Font Awesome icon classes that replace the variant's default icon, such as `fa-light fa-credit-card`. */
   public readonly icon = input<string>('');
 

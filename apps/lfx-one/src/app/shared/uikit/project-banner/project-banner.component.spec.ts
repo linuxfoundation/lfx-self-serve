@@ -55,8 +55,12 @@ describe('UiProjectBannerComponent', () => {
     expect(host.querySelector('i')?.className).toContain(icon);
   });
 
-  it('announces only the error variant as an alert', async () => {
+  it('stays a status region for every variant unless announce is set', async () => {
     fixture.componentRef.setInput('variant', 'error');
+    await fixture.whenStable();
+    expect(host.getAttribute('role')).toBe('status');
+
+    fixture.componentRef.setInput('announce', '');
     await fixture.whenStable();
     expect(host.getAttribute('role')).toBe('alert');
 
