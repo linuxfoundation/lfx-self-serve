@@ -1596,6 +1596,29 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
+    it('stops private result polling and retires its hint when the server confirms failure', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-active', ownerToken: 'synthetic-proof' } };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      attempts.save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        attempt,
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+      });
+      const privateResult = new Subject<MktgGenerateProgress>();
+      vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(privateResult);
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('writing')));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(privateResult.observed).toBe(true);
+      component['onPublicObserved']({ detail: record('failed'), view: null });
+      expect(privateResult.observed).toBe(false);
+      expect(attempts.load(PROJECT_1.uid, intake.agentId)?.state).toBe('failed');
+      expect(component['questionsPending']()).toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
     it('does not paint a private result questions event before the canonical record confirms it', async () => {
       await configure('browser', type.catalogAgentId);
       activeContext.set(PROJECT_1);

@@ -366,7 +366,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     poll.flush({ status: 'pending' });
     await settle();
     expect(resume).toHaveBeenCalledTimes(2);
-    expect(query('mktg-agent-run-status')?.textContent).toContain('You can leave this page');
+    expect(query('mktg-run-progress-status')?.textContent).toContain('You can leave this page');
     http.expectNone(intake.endpoints.generate);
   });
 
@@ -457,41 +457,47 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
         },
       ],
     };
-    const view = await harness.navigateByUrl(
-      `/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?run=${'b'.repeat(64)}`,
-      MktgDocumentViewComponent
-    );
-    await settle();
-    http.expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`)).flush(failedDetail);
-    await settle();
     const navigate = vi.spyOn(router, 'navigate');
-    const landed = navigation();
-    // Drive the real action; the old anchor becomes an LFX button in D2a.
-    Reflect.apply(view['onOpenIntake'], view, [new MouseEvent('click')]);
-    await landed;
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/${req.agentId}?run=${'b'.repeat(64)}`, MktgAgentRunComponent);
     await settle();
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(attempts.load(project.uid, req.agentId)?.state).toBe('writing');
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
-    const activity = buildMktgRunActivity(noQuestionsActivityPayloads('checked'));
-    expect(activity.some((step) => step.kind === 'checking')).toBe(true);
-    http.expectOne(req.intake.endpoints.result).flush({ status: 'failed', failureText: failure, activity });
+    // Each receiver reads canonical metadata, then refreshes this failed record exactly once.
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`) && !candidate.params.has('refreshRun'))
+      .flush(failedDetail);
+    await settle();
+    const landed = navigation();
+    http
+      .expectOne(
+        (candidate) =>
+          candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`) &&
+          candidate.params.get('refreshRun') === 'b'.repeat(64) &&
+          candidate.params.get('run') === 'b'.repeat(64)
+      )
+      .flush(failedDetail);
+    await landed;
     await settle();
     expect(attempts.load(project.uid, req.agentId)?.state).toBe('failed');
     expect(router.url).toContain(`/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?`);
     expect(router.url).toContain(`run=${'b'.repeat(64)}`);
     expect(query('mktg-agent-run-form')).toBeNull();
-    // A metadata refresh may already be in flight when the document route is left.
-    for (const read of http.match((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))) {
-      if (!read.cancelled) read.flush(failedDetail);
-    }
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`) && !candidate.params.has('refreshRun'))
+      .flush(failedDetail);
     await settle();
-    // The failed card refreshes this exact recorded run once before presenting it.
-    http.expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`)).flush(failedDetail);
+    http
+      .expectOne(
+        (candidate) =>
+          candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`) &&
+          candidate.params.get('refreshRun') === 'b'.repeat(64) &&
+          candidate.params.get('run') === 'b'.repeat(64)
+      )
+      .flush(failedDetail);
     await settle();
     expect(query('mktg-document-view-run')).not.toBeNull();
     expect(query('mktg-document-view-failure-details')?.textContent).toContain(failure);
-    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalledTimes(1); // Canonical failure lands directly, never via a stale private-result detour.
+    http.expectNone(req.intake.endpoints.result);
+    http.expectNone(req.intake.endpoints.generate);
     http.expectNone((candidate) => candidate.method === 'POST');
   });
 
@@ -515,9 +521,11 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
         ],
       });
     await settle();
-    // A legacy generation token keeps only its headless receipt observer here.
+    // A recorded accepted token transfers to its run receiver, which confirms the exact run before result polling.
     expect(query('mktg-document-view-run')).toBeNull();
-    expect(router.url.split('?')[0]).toBe(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living`);
+    expect(router.url.split('?')[0]).toBe(`/${lens}/mktg-os-agents/${intake.agentId}`);
+    flushRecordedRead(type.agentKey);
+    await settle();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     const landed = navigation();
     http.expectOne(intake.endpoints.result).flush({

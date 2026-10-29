@@ -120,13 +120,13 @@
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
-    @if (!loading() && (view() || runState()) && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
+    @if (!loading() && (view() || runState() || restoreNotice()) && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"
         class="w-fit text-sm font-semibold text-blue-600 hover:text-blue-800"
         data-testid="mktg-document-view-run-again"
-        >Run again</a
+        >{{ restoreNotice() && !view() && !runState() ? 'Open intake' : 'Run again' }}</a
       >
     }
 

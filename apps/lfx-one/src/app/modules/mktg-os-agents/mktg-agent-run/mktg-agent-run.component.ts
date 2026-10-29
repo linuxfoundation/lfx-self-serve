@@ -731,6 +731,15 @@ export class MktgAgentRunComponent {
       if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
       return;
     }
+    if (run?.state === 'failed') {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
     if (owned?.pendingQuestions && !this.answersSending()) {
       if (!run) {
         this.runAttempts.clear(this.publicProject(), this.agent?.id ?? '');
