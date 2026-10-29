@@ -45,8 +45,8 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
 /**
  * Query parameters an organization switch nulls (a `queryParamsHandling: 'merge'` navigation) on every Org Lens
  * page: an Employees selection came from the previous organization's roster, so it would match nothing, or the
- * wrong people, under the next one. Back returns to the pre-switch URL: Code Contributions, which follows
- * `?employees=`, restores that org's selection there; Projects clears it whenever the org changes.
+ * wrong people, under the next one. Back does not restore it: the pages that filter by Employees (Projects, Code
+ * Contributions) clear the selection whenever the organization changes between two resolved organizations.
  */
 export const ORG_LENS_SWITCH_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
   employees: null,

@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, NavigationCancel, NavigationEnd, NavigationError, Params, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -53,7 +53,7 @@ import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -74,6 +74,7 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
 type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
@@ -306,9 +307,9 @@ export class OrgProjectsComponent {
       this.editingWorkspace.set(null);
     });
 
-    // The selection came from the previous org's roster, so a switch to another org clears it (the switch navigation
-    // strips `?employees=` too). Only a switch between resolved orgs counts: the first org resolving (null → uid)
-    // must keep a deep-linked selection.
+    // The selection came from the previous org's roster, so a change between two resolved orgs (a switch, or Back /
+    // Forward across one) clears it; the switch navigation strips `?employees=` too. The first org resolving
+    // (null → uid) must keep a deep-linked selection.
     this.orgUid$
       .pipe(
         filter((uid) => uid !== null),
@@ -1215,27 +1216,10 @@ export class OrgProjectsComponent {
     return raw ? raw.split(',').filter(Boolean) : [];
   }
 
-  /**
-   * Merges `queryParams` into the URL. While another navigation is in flight (an org switch swapping the path),
-   * the write waits for it to settle, so it merges into the new address instead of cancelling it. A wait still
-   * pending when the page is destroyed (that navigation left Projects) is dropped.
-   */
+  /** Merges `queryParams` into the URL once no other navigation (an org switch swapping the path) is in flight. */
   private writeQueryParams(queryParams: Params): void {
-    if (this.router.getCurrentNavigation()) {
-      this.router.events
-        .pipe(
-          filter((e) => e instanceof NavigationEnd || e instanceof NavigationCancel || e instanceof NavigationError),
-          take(1),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        // currentNavigation clears only after the end event's subscribers run, so retry on a microtask.
-        .subscribe(() =>
-          queueMicrotask(() => {
-            if (!this.destroyRef.destroyed) this.writeQueryParams(queryParams);
-          })
-        );
-      return;
-    }
-    void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+    runWhenRouterIdle(this.router, this.destroyRef, () => {
+      void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+    });
   }
 }

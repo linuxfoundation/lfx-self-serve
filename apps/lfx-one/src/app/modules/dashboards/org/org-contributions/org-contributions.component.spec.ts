@@ -84,7 +84,7 @@ async function render(
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, getContributions, queryParamMap };
+  return { fixture, navigate, getContributions, queryParamMap, selectedAccount };
 }
 
 /** Advances virtual time past the filter form's 250ms debounce, then renders and settles. */
@@ -628,21 +628,39 @@ describe('OrgContributionsComponent', () => {
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ foundation: '' }));
   });
 
-  // An org switch strips `?employees=` in its own navigation (the selection came from the previous org's roster), and
-  // the page is reused across it, so the selection must follow the URL, its removal included.
-  it('follows ?employees= on a query-only navigation, its removal included, ignoring the echo of its own URL write', async () => {
-    const { fixture, getContributions, queryParamMap } = await render(null, { queryParams: { employees: 'e-1,e-2' } });
-    const { employees } = fixture.componentInstance['filterForm'].controls;
-    expect(employees.value).toEqual(['e-1', 'e-2']);
+  // The Employees selection came from the previous org's roster, so a change between two resolved orgs clears it.
+  describe('organization change', () => {
+    const ORG_B: Account = { accountId: 'acc-2', accountName: 'Org B', membershipTier: '', uid: 'org-uid-2', slug: 'org-b' };
 
-    const patchValue = vi.spyOn(fixture.componentInstance['filterForm'], 'patchValue');
-    queryParamMap.next(convertToParamMap({ employees: 'e-1,e-2', page: '1' }));
-    expect(patchValue).not.toHaveBeenCalled();
+    it('clears the Employees selection, in the request and the URL', async () => {
+      const { fixture, navigate, getContributions, selectedAccount } = await render(null, { queryParams: { employees: 'e-1' } });
+      const { employees } = fixture.componentInstance['filterForm'].controls;
+      expect(employees.value).toEqual(['e-1']);
 
-    queryParamMap.next(convertToParamMap({}));
-    await pastDebounce(fixture);
-    expect(employees.value).toEqual([]);
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ employees: [] }));
+      selectedAccount.set(ORG_B);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await pastDebounce(fixture);
+
+      expect(employees.value).toEqual([]);
+      expect(getContributions).toHaveBeenLastCalledWith('org-uid-2', expect.objectContaining({ employees: [] }));
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ employees: null }) }));
+    });
+
+    it('drops a pick still inside the debounce when the organization changes', async () => {
+      const { fixture, navigate, getContributions, selectedAccount } = await render(null);
+      const { employees } = fixture.componentInstance['filterForm'].controls;
+
+      employees.setValue(['e-1']);
+      selectedAccount.set(ORG_B);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await pastDebounce(fixture);
+
+      expect(employees.value).toEqual([]);
+      expect(getContributions).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ employees: ['e-1'] }));
+      expect(navigate).not.toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ employees: 'e-1' }) }));
+    });
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {

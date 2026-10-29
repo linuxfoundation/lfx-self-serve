@@ -512,6 +512,21 @@ describe('OrgProjectsComponent — Employees filter', () => {
     expect(rowNames()).toEqual(expect.arrayContaining(['Delta', 'Echo']));
   });
 
+  it('does not restore the selection on Back across an organization switch', async () => {
+    await open('/?employees=p-known');
+    selectedAccount.set(ORG_B);
+    await settle();
+
+    // Back: the router returns to org A's pre-switch entry, still carrying its `?employees=`.
+    await router.navigateByUrl('/?employees=p-known');
+    selectedAccount.set(ORG_A);
+    await settle();
+
+    expect(component['filterForm'].controls.employees.value).toEqual([]);
+    expect(queryParams()['employees']).toBeUndefined();
+    expect(rowNames()).toEqual(expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']));
+  });
+
   it('keeps a deep-linked selection when the organization resolves after the page starts', async () => {
     selectedAccount.set(null);
     await open('/?employees=p-known');
