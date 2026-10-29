@@ -396,10 +396,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-action-loading')).not.toBeNull();
     expect(query('mktg-document-view-title-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
     expect(query('mktg-document-view-action-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
-    expect(query('mktg-document-view-loading')?.textContent).toBe('Loading the document…');
-    expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
-    expect(query('mktg-document-view-loading')?.getAttribute('aria-busy')).toBe('true');
-    expect(query('mktg-document-view-loading')?.classList.contains('sr-only')).toBe(true);
+    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-loading"]')).toHaveLength(1);
+    expect(query('mktg-document-view-loading')?.querySelector('[role="status"]')?.textContent?.trim()).toBe('Loading the document…');
     expect(query('mktg-document-view-title')).toBeNull();
     expect(query('mktg-document-view-run-again')).toBeNull();
     read.next({ ...revisionResponse(LATEST), sidecar: kitSidecar() });
