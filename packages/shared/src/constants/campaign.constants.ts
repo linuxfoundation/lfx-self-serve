@@ -160,7 +160,8 @@ export const DEFAULT_REDDIT_BUDGET_USD = 500;
 
 /**
  * The Meta, LinkedIn and Microsoft budgets the Implementation tab starts from, on the Reddit budget's
- * terms: a brief switch on a live mount resets each to this unless the new brief sets it (#4624).
+ * terms: a brief switch on a live mount resets each to this (#4624). Only the LinkedIn budget is then
+ * overwritten from the brief, when it carries a lifetime budget.
  */
 export const DEFAULT_META_BUDGET_USD = 500;
 export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
