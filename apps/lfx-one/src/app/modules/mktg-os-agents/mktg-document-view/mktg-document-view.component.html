@@ -583,8 +583,9 @@
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
               @for (revision of visibleRevisionRows(); track revision.id) {
+                <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->
                 <li
-                  class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
+                  class="flex min-h-16 items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
                   [ngClass]="revision.id === current.revision.id && !isAeoDocument() ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
                   [class.bg-gray-50]="isAeoDocument()"
                   [attr.data-testid]="'mktg-document-view-revision-' + revision.number">

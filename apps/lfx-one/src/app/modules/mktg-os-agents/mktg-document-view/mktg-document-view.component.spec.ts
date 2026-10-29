@@ -2708,7 +2708,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(select).toHaveBeenLastCalledWith(null);
   });
 
-  it('reserves the comments and downstream rail slots through loading and settled answers', async () => {
+  it('reserves two-line revision rows and rail slots from first content through settled answers', async () => {
     useFrameworkRevision();
     const loading = signal(true);
     vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'loading').mockImplementation(loading);
@@ -2717,6 +2717,10 @@ describe('MktgDocumentViewComponent', () => {
     await render('/documents/foundation-message/living');
     const comments = query('mktg-comments-panel')?.parentElement;
     const downstream = harness.routeNativeElement?.querySelector('lfx-mktg-downstream');
+    const revision = query('mktg-document-view-revision-2');
+    const about = query('mktg-document-view-about');
+    expect(revision?.classList.contains('min-h-16')).toBe(true);
+    expect(revision?.querySelector('[data-testid="mktg-document-view-current-2"]')?.textContent).toBe('Current');
     expect(query('mktg-comments-loading')).not.toBeNull();
     expect(query('mktg-downstream-loading')).not.toBeNull();
     expect(comments?.classList.contains('min-h-40')).toBe(true);
@@ -2727,6 +2731,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-comments-loading')).toBeNull();
     expect(query('mktg-downstream-error')).not.toBeNull();
     expect(query('mktg-comments-panel')?.parentElement).toBe(comments);
+    expect(query('mktg-document-view-revision-2')).toBe(revision);
+    expect(revision?.classList.contains('min-h-16')).toBe(true);
+    expect(query('mktg-document-view-about')).toBe(about);
     expect(comments?.classList.contains('min-h-40')).toBe(true);
     expect(downstream?.classList.contains('min-h-48')).toBe(true);
   });
