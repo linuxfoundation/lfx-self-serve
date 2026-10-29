@@ -26,6 +26,7 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
  * - `both`: a free two-axis pane for wide logs and grids, with native scrollbars and no fade or buttons.
  *
  * The viewport is a focusable region named by `label`; arrow keys scroll it and focused children scroll into view.
+ * Scroll buttons stay focusable at the ends (`aria-disabled`); if the content stops overflowing, focus moves to the viewport.
  */
 @Component({
   selector: 'lfx-ui-scroller',
@@ -39,6 +40,7 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
 })
 export class UiScrollerComponent {
   private readonly destroyRef = inject(DestroyRef);
+  private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** Accessible name of the scrollable region, such as "Projects". Also names the scroll buttons: "Previous Projects". */
   public readonly label = input.required<string>();
@@ -89,15 +91,26 @@ export class UiScrollerComponent {
     // 1px tolerance for fractional scroll positions.
     this.canScrollStart.set(position > 1);
     this.canScrollEnd.set(position + visible < total - 1);
+    this.keepFocusOnViewport();
   }
 
   protected scrollByItem(sign: 1 | -1): void {
+    // The buttons use aria-disabled so they keep focus at the ends; the click is ignored instead.
+    if (sign === 1 ? !this.canScrollEnd() : !this.canScrollStart()) return;
     const el = this.viewport().nativeElement;
     const [first, second] = Array.from(el.children) as HTMLElement[];
     // Distance between the first two items covers item width plus gap; a lone item scrolls a page.
     const step = first && second ? second.offsetLeft - first.offsetLeft : el.clientWidth;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     el.scrollBy({ left: sign * step, behavior: reduced ? 'auto' : 'smooth' });
+  }
+
+  /** When the buttons are about to be removed because nothing overflows any more, a focused button hands focus to the viewport. */
+  private keepFocusOnViewport(): void {
+    const active = document.activeElement;
+    if (!this.showButtons() && active instanceof HTMLButtonElement && this.hostEl.nativeElement.contains(active)) {
+      this.viewport().nativeElement.focus();
+    }
   }
 
   private initViewportClasses(): Signal<string> {
@@ -109,8 +122,8 @@ export class UiScrollerComponent {
         vertical: 'scroller-y flex flex-col gap-[12px] overflow-auto p-[2px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0',
         both: 'overflow-auto',
       };
-      // The mask clips an outer ring, so the focus ring is drawn inside the viewport.
-      return `${modes[this.direction()]} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`;
+      // The mask would clip a ring on this element, so the wrapper in the template draws the focus ring.
+      return `${modes[this.direction()]} focus-visible:outline-none`;
     });
   }
 
@@ -131,9 +144,10 @@ export class UiScrollerComponent {
 
   private initButtonClasses(): Signal<string> {
     // Library: small secondary circle with shadow, centred on the edge (14px out).
+    // shortcut: native button styled like the library's circle button. revisit: when lfx-ui-button realigns to the library, swap to it.
     return computed(
       () =>
-        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-ui-neutral-50 disabled:text-ui-neutral-500 disabled:shadow-border motion-reduce:transition-none'
+        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-border motion-reduce:transition-none'
     );
   }
 }

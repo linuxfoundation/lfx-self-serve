@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
+import { Component, input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,11 +30,13 @@ class ResizeObserverStub {
 @Component({
   selector: 'lfx-ui-scroller-test-host',
   imports: [UiScrollerComponent],
-  template: `<lfx-ui-scroller label="Projects" [direction]="direction()" [buttons]="buttons()"><span>A</span><span>B</span><span>C</span></lfx-ui-scroller>`,
+  // prettier-ignore
+  template: `<lfx-ui-scroller label="Projects" [direction]="direction()" [buttons]="buttons()">@for (item of items(); track item) {<span>{{ item }}</span>}</lfx-ui-scroller>`,
 })
 class HostComponent {
   public readonly direction = input<UiScrollerDirection>('horizontal');
   public readonly buttons = input<boolean>(true);
+  public readonly items = signal(['A', 'B', 'C']);
 }
 
 describe('UiScrollerComponent', () => {
@@ -72,13 +74,14 @@ describe('UiScrollerComponent', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('names a focusable scroll region', () => {
     expect(viewport().getAttribute('role')).toBe('region');
     expect(viewport().getAttribute('aria-label')).toBe('Projects');
     expect(viewport().tabIndex).toBe(0);
-    expect(viewport().className).toContain('focus-visible:ring-inset');
+    expect(host.querySelector('[data-testid="ui-scroller-frame"]')?.className).toContain('focus-visible');
   });
 
   it('observes the viewport and each item after the first render', () => {
@@ -87,10 +90,28 @@ describe('UiScrollerComponent', () => {
     expect(observer.observed[0]).toBe(viewport());
   });
 
-  it('disconnects its observer on destroy', () => {
+  it('disconnects both observers on destroy', () => {
+    const mutationDisconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
     fixture.destroy();
 
     expect(ResizeObserverStub.instances[0].disconnected).toBe(true);
+    expect(mutationDisconnect).toHaveBeenCalled();
+  });
+
+  it('observes and measures an item added after the first render', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('0px');
+
+    fixture.componentInstance.items.update((items) => [...items, 'D']);
+    await fixture.whenStable();
+    // The mutation callback runs as a microtask after the new item renders.
+    await Promise.resolve();
+    await fixture.whenStable();
+
+    const observed = ResizeObserverStub.instances[0].observed;
+    expect(observed).toContain(viewport().children[3]);
+    expect(observed.length).toBe(5);
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('48px');
   });
 
   it('snaps horizontally by default with a fixed gap and hidden scrollbar', () => {
@@ -131,8 +152,41 @@ describe('UiScrollerComponent', () => {
 
     expect(prev()?.getAttribute('aria-label')).toBe('Previous Projects');
     expect(next()?.getAttribute('aria-label')).toBe('Next Projects');
-    expect(prev()?.disabled).toBe(true);
-    expect(next()?.disabled).toBe(false);
+    expect(prev()?.getAttribute('aria-disabled')).toBe('true');
+    expect(prev()?.disabled).toBe(false);
+    expect(next()?.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('keeps focus on a button that reaches its end and ignores clicks on it', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
+    const scrollBy = vi.fn();
+    viewport().scrollBy = scrollBy;
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    (next() as HTMLButtonElement).focus();
+
+    setMetrics({ scrollLeft: 500 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    next()?.click();
+
+    expect(next()?.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(next());
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the viewport when a focused button disappears because nothing overflows', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    (next() as HTMLButtonElement).focus();
+
+    setMetrics({ scrollWidth: 300 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+
+    expect(next()).toBeNull();
+    expect(document.activeElement).toBe(viewport());
   });
 
   it('moves one item per click, using the spacing between the first two items', async () => {
