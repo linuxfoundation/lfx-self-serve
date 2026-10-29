@@ -634,7 +634,7 @@ export class OrgClaService {
     const requestedId = hyphenatedClaGroupId(claGroupId);
     let result: EasyClaSearchResult | null;
     try {
-      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(requestedId)}`, {
+      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(requestedId)}/catalogue`, {
         operation: 'org_cla_group_catalogue',
         service: SERVICE,
         errorMessage: 'Failed to fetch CLA group',
