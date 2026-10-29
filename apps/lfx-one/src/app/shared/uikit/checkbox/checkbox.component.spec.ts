@@ -157,6 +157,16 @@ describe('UiCheckboxComponent', () => {
       expect(hostFixture.componentInstance.control.value).toBe(true);
     });
 
+    it('leaves indeterminate alone when the control writes a value', async () => {
+      const checkbox = hostFixture.debugElement.children[0].componentInstance as UiCheckboxComponent;
+      checkbox.indeterminate.set(true);
+      hostFixture.componentInstance.control.setValue(true);
+      await hostFixture.whenStable();
+
+      expect(checkbox.indeterminate()).toBe(true);
+      expect(checkbox.checked()).toBe(true);
+    });
+
     it('marks the control touched on blur', async () => {
       inputOf(hostFixture.nativeElement).dispatchEvent(new Event('blur'));
       await hostFixture.whenStable();

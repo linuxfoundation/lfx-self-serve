@@ -7,7 +7,8 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 /**
  * 16px checkbox for independent options applied on save. A native checkbox sits under the visual, so Space,
  * focus and form behaviour are the browser's. Use `[(checked)]` or a reactive-forms control (`formControlName`, `[formControl]`).
- * Clicking an indeterminate checkbox clears `indeterminate` and toggles `checked`.
+ * Clicking an indeterminate checkbox clears `indeterminate` and toggles `checked`. Only the user and `[(indeterminate)]` change `indeterminate`;
+ * a form control writing a value leaves it alone, so a select-all parent keeps its mixed state.
  */
 @Component({
   selector: 'lfx-ui-checkbox',
@@ -22,11 +23,11 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 export class UiCheckboxComponent implements ControlValueAccessor {
   /** Visible label, shown after the box. Leave empty for a box with no text and set `ariaLabel`. */
   public readonly label = input<string>('');
-  /** Accessible name when there is no visible `label`. Ignored when `label` is set. */
+  /** Accessible name. Required when `label` is empty, or the checkbox is announced without a name. Ignored when `label` is set. */
   public readonly ariaLabel = input<string>('');
   /** Native `name`, used when the checkbox is inside a plain HTML form. */
   public readonly name = input<string>('');
-  /** Disables the checkbox. A form control's disabled state is applied as well. */
+  /** Disables the checkbox. With reactive forms, disable the control instead (Angular warns when `[disabled]` sits next to `formControl`). */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Whether the box is checked. Supports two-way binding with `[(checked)]`. */
   public readonly checked = model<boolean>(false);
