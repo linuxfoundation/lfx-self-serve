@@ -306,11 +306,13 @@ export const FOUNDATION_MESSAGE_NONE_ANSWER = 'none';
 // The framework view: what the asset page calls each part of the bundle
 // ---------------------------------------------------------------------------
 
-/** The tabs of the framework view, in order. */
+/**
+ * The tabs of the framework view, in order. The ICPs and the message house
+ * stay in the stored bundle but are not shown (Paul, 29 Oct 2026: the ICPs
+ * move to a coming Audience section; the message house is out for now).
+ */
 export const FOUNDATION_MESSAGE_VIEW_TABS = [
   { id: 'framework', label: 'Framework' },
-  { id: 'icps', label: 'ICPs' },
-  { id: 'message-house', label: 'Message house' },
   { id: 'numbers', label: 'Key numbers' },
   { id: 'sources', label: 'Sources and gaps' },
 ] as const;

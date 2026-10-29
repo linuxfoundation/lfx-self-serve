@@ -118,12 +118,20 @@ describe('MktgFrameworkPrintComponent', () => {
     fontLinks().forEach((link) => link.remove());
   });
 
-  it('sets each list it prints as one line: a column’s segments, a segment’s goals and its channels', async () => {
+  it('prints the goals as one table and leaves the hidden ICPs and message house off the page', async () => {
     await configure('browser', printView(null));
-    expect(query('mktg-framework-print-goals')?.textContent).toContain('For End users, Maintainers');
-    const users = query('mktg-framework-print-icp-users');
-    expect(users?.textContent).toContain('Goals: Adoption');
-    expect(users?.textContent).toContain('Docs · Slack');
+    const goals = query('mktg-framework-print-goals');
+    expect(goals?.tagName).toBe('TABLE');
+    expect(Array.from(goals?.querySelectorAll('tbody th') ?? []).map((th) => th.textContent?.trim())).toEqual([
+      'Value proposition',
+      'Key message',
+      'Proof',
+      'Sound bite',
+    ]);
+    // Segments belong to the hidden ICPs: the table does not name them.
+    expect(goals?.textContent).not.toContain('End users');
+    expect(query('mktg-framework-print-icp-users')).toBeNull();
+    expect(query('mktg-framework-print-pillars')).toBeNull();
   });
 
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {
@@ -140,12 +148,12 @@ describe('MktgFrameworkPrintComponent', () => {
   it('prefixes family section numbers without changing standalone numbering and shares the running head', async () => {
     await configure('browser', printView(null));
     const numbers = () => Array.from(host().querySelectorAll('h2 > span')).map((span) => span.textContent?.trim());
-    expect(numbers()).toEqual(['01', '02', '03', '04']);
+    expect(numbers()).toEqual(['01', '02']);
     fixture.componentRef.setInput('number', '01');
     await fixture.whenStable();
-    expect(numbers()).toEqual(['01.1', '01.2', '01.3', '01.4']);
+    expect(numbers()).toEqual(['01.1', '01.2']);
     const heads = host().querySelectorAll('[data-testid="mktg-print-running-head"]');
-    expect(heads).toHaveLength(4);
+    expect(heads).toHaveLength(2);
     heads.forEach((head) => expect(head.textContent).toContain('TestOrbit Messaging Framework'));
   });
 

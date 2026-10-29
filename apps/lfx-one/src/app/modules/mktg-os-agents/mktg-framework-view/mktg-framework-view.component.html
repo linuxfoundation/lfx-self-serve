@@ -120,82 +120,98 @@
           id="mktg-framework-panel-framework"
           aria-labelledby="mktg-framework-tab-framework"
           data-testid="mktg-framework-view-panel-framework">
-          <div class="grid grid-cols-1 @lg/asset:grid-cols-2 gap-3">
-            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
-              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Vision</span>
-              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-vision">{{ framework.mf.vision }}</p>
-              <lfx-mktg-field-comments field="mf.vision" />
+          <!-- The framework as one table (Jim's definitions, Paul 29 Oct 2026): the four statements across the top, then one column per goal, in the plan's rank order -->
+          <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-framework-view-table">
+            <div
+              class="grid grid-cols-1 @lg/asset:grid-cols-4 divide-y divide-gray-200 @lg/asset:divide-y-0 @lg/asset:divide-x border-b border-gray-200"
+              data-testid="mktg-framework-view-statements">
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Vision</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-vision">{{ framework.mf.vision }}</p>
+                <lfx-mktg-field-comments field="mf.vision" />
+              </div>
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Mission</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-mission">{{ framework.mf.mission }}</p>
+                <lfx-mktg-field-comments field="mf.mission" />
+              </div>
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Positioning statement</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-positioning">{{ framework.mf.positioning }}</p>
+                <lfx-mktg-field-comments field="mf.positioning" />
+              </div>
+              <div class="group/commentfield bg-blue-50 p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Tagline</span>
+                <p class="font-display text-xl text-blue-900" data-testid="mktg-framework-view-tagline">{{ framework.mf.tagline }}</p>
+                <lfx-mktg-field-comments field="mf.tagline" />
+              </div>
             </div>
-            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
-              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Mission</span>
-              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-mission">{{ framework.mf.mission }}</p>
-              <lfx-mktg-field-comments field="mf.mission" />
-            </div>
-            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
-              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Positioning</span>
-              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-positioning">{{ framework.mf.positioning }}</p>
-              <lfx-mktg-field-comments field="mf.positioning" />
-            </div>
-            <div class="group/commentfield bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-1">
-              <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Tagline</span>
-              <p class="font-display text-xl text-blue-900" data-testid="mktg-framework-view-tagline">{{ framework.mf.tagline }}</p>
-              <lfx-mktg-field-comments field="mf.tagline" />
-            </div>
-          </div>
 
-          <!-- Goal columns, one card each, side by side on wide screens -->
-          <div class="flex flex-col gap-2">
-            <h3 class="text-sm font-semibold text-gray-900">Goal columns</h3>
-            <!-- auto-fit: as many columns as fit at 18rem each, so two to five goals share the width (arbitrary value, see styling.md). -->
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3" data-testid="mktg-framework-view-goals">
-              @for (goal of goals(); track goal.id) {
-                <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [attr.data-testid]="'mktg-framework-view-goal-' + goal.id">
-                  <div class="group/commentfield flex items-baseline justify-between gap-2" [class.flex-wrap]="comments.loaded()">
-                    <h4 class="text-base font-semibold text-gray-900">{{ goal.t }}</h4>
-                    <span class="text-xs text-gray-400">Goal {{ goal.n }}</span>
-                    <lfx-mktg-field-comments class="w-full" [field]="'mf.goals[' + $index + ']'" />
-                  </div>
-                  <div class="group/commentfield flex flex-col gap-0.5">
-                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Value proposition</span>
-                    <p class="text-sm text-gray-800">{{ goal.vp }}</p>
-                    <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].vp'" />
-                  </div>
-                  <div class="group/commentfield flex flex-col gap-0.5">
-                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Key message</span>
-                    <p class="text-sm text-gray-800">{{ goal.key }}</p>
-                    <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].key'" />
-                  </div>
-                  <div class="group/commentfield flex flex-col gap-1">
-                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Proof</span>
-                    <ul class="flex flex-col gap-1">
-                      @for (proof of goal.proofRows; track $index) {
-                        <li class="flex items-start gap-2 text-sm text-gray-800">
-                          <span class="grow">{{ proof.fact }}</span>
-                          <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
-                        </li>
-                      }
-                    </ul>
-                    <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].proof'" />
-                  </div>
-                  <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-                    <blockquote class="rounded-lg bg-gray-50 px-3 py-2 text-sm italic text-gray-700" [attr.data-testid]="'mktg-framework-view-bite-' + goal.id">
-                      “{{ goal.bite }}”
-                    </blockquote>
-                    <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].bite'" />
-                  </div>
-                  @if (goal.segmentNames.length > 0) {
-                    <div class="group/commentfield flex flex-wrap items-center gap-1">
-                      <span class="text-2xs text-gray-400">For</span>
-                      @for (name of goal.segmentNames; track name) {
-                        <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-2xs text-blue-700">{{ name }}</span>
-                      }
-                      <lfx-mktg-field-comments class="w-full" [field]="'mf.goals[' + $index + '].icps'" />
-                    </div>
-                  }
-                </article>
-              }
+            <!-- Goal columns: a scrolling table below the @lg container width, so four columns never squeeze below reading width -->
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[40rem] table-fixed border-collapse text-sm" data-testid="mktg-framework-view-goals">
+                <thead>
+                  <tr class="bg-gray-50 text-left">
+                    <th scope="col" class="w-28 px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-gray-500"><span class="sr-only">Row</span></th>
+                    @for (goal of goals(); track goal.id) {
+                      <th scope="col" class="group/commentfield px-4 py-3 align-bottom" [attr.data-testid]="'mktg-framework-view-goal-' + goal.id">
+                        <span class="block text-2xs font-normal uppercase tracking-wider text-gray-400">Goal {{ goal.n }}</span>
+                        <span class="block text-base font-semibold text-gray-900">{{ goal.t }}</span>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + ']'" />
+                      </th>
+                    }
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Value proposition</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3 text-gray-800">
+                        {{ goal.vp }}
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].vp'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Key message</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3 font-medium text-gray-900">
+                        {{ goal.key }}
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].key'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Proof</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3">
+                        <ul class="flex flex-col gap-1">
+                          @for (proof of goal.proofRows; track $index) {
+                            <li class="flex items-start gap-2 text-gray-800">
+                              <span class="grow">{{ proof.fact }}</span>
+                              <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
+                            </li>
+                          }
+                        </ul>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].proof'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Sound bite</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3">
+                        <blockquote class="rounded-lg bg-gray-50 px-3 py-2 italic text-gray-700" [attr.data-testid]="'mktg-framework-view-bite-' + goal.id">
+                          “{{ goal.bite }}”
+                        </blockquote>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].bite'" />
+                      </td>
+                    }
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
+            <div class="group/commentfield border-t border-gray-200 px-4 py-3">
               <p class="text-xs text-gray-500" data-testid="mktg-framework-view-crosscut">{{ framework.mf.crosscut }}</p>
               <lfx-mktg-field-comments field="mf.crosscut" />
             </div>
@@ -259,152 +275,6 @@
                 <lfx-mktg-field-comments field="mf.notes" />
               </div>
             }
-          </div>
-        </div>
-      }
-
-      <!-- ICPs: one card per segment -->
-      @case ('icps') {
-        <div
-          class="grid min-w-0 grid-cols-1 @4xl/asset:grid-cols-2 gap-3 [overflow-wrap:anywhere]"
-          role="tabpanel"
-          id="mktg-framework-panel-icps"
-          aria-labelledby="mktg-framework-tab-icps"
-          data-testid="mktg-framework-view-panel-icps">
-          @for (icp of icps(); track icp.id) {
-            <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [attr.data-testid]="'mktg-framework-view-icp-' + icp.id">
-              <div class="group/commentfield flex flex-wrap items-center gap-2">
-                <h3 class="text-base font-semibold text-gray-900">{{ icp.name }}</h3>
-                <span class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-2xs text-gray-600">{{ icp.kind }}</span>
-                <span class="text-2xs text-gray-400">Basis: {{ icp.basis }}</span>
-                <lfx-mktg-field-comments class="w-full" [field]="'icp[' + $index + ']'" />
-              </div>
-              <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-                <p class="text-sm text-gray-800">{{ icp.who }}</p>
-                <lfx-mktg-field-comments [field]="'icp[' + $index + '].who'" />
-              </div>
-              @if (icp.goalTitles.length > 0) {
-                <div class="group/commentfield flex flex-wrap items-center gap-1">
-                  <span class="text-2xs text-gray-400">Goals</span>
-                  @for (title of icp.goalTitles; track title) {
-                    <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-2xs text-blue-700">{{ title }}</span>
-                  }
-                  <lfx-mktg-field-comments class="w-full" [field]="'icp[' + $index + '].goals'" />
-                </div>
-              }
-              <dl class="grid gap-x-3 gap-y-1.5 text-sm" [ngClass]="comments.loaded() ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[auto_1fr]'">
-                <dt class="text-gray-500">Need</dt>
-                <dd class="group/commentfield text-gray-800">{{ icp.need }}<lfx-mktg-field-comments [field]="'icp[' + $index + '].need'" /></dd>
-                <dt class="text-gray-500">Value</dt>
-                <dd class="group/commentfield text-gray-800">{{ icp.value }}<lfx-mktg-field-comments [field]="'icp[' + $index + '].value'" /></dd>
-                <dt class="text-gray-500">Lead</dt>
-                <dd class="group/commentfield font-medium text-gray-900" [attr.data-testid]="'mktg-framework-view-icp-lead-' + icp.id">
-                  {{ icp.lead }}<lfx-mktg-field-comments [field]="'icp[' + $index + '].lead'" />
-                </dd>
-                <dt class="text-gray-500">Proof</dt>
-                <dd class="group/commentfield">
-                  <ul class="flex flex-col gap-1">
-                    @for (proof of icp.proofRows; track $index) {
-                      <li class="flex items-start gap-2 text-gray-800">
-                        <span class="grow">{{ proof.fact }}</span>
-                        <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
-                      </li>
-                    }
-                  </ul>
-                  <lfx-mktg-field-comments [field]="'icp[' + $index + '].proof'" />
-                </dd>
-                <dt class="text-gray-500">Call to action</dt>
-                <dd class="group/commentfield text-gray-800">{{ icp.cta }}<lfx-mktg-field-comments [field]="'icp[' + $index + '].cta'" /></dd>
-                <dt class="text-gray-500">Channels</dt>
-                <dd class="group/commentfield flex flex-wrap gap-1">
-                  @for (channel of icp.channels; track channel) {
-                    <span class="rounded-full border border-gray-200 px-2 py-0.5 text-2xs text-gray-600">{{ channel }}</span>
-                  }
-                  <lfx-mktg-field-comments class="w-full" [field]="'icp[' + $index + '].channels'" />
-                </dd>
-                <dt class="text-gray-500">Objection</dt>
-                <dd class="group/commentfield flex flex-col gap-0.5">
-                  <span class="text-gray-800">{{ icp.objectionText }}</span>
-                  @if (icp.objectionResponse) {
-                    <span class="text-gray-600">→ {{ icp.objectionResponse }}</span>
-                  }
-                  <lfx-mktg-field-comments [field]="'icp[' + $index + '].objection'" />
-                </dd>
-                <dt class="text-gray-500">Personas</dt>
-                <dd class="group/commentfield">
-                  <ul class="flex flex-col gap-0.5">
-                    @for (persona of icp.personaRows; track persona.role) {
-                      <li class="text-gray-800">
-                        <span class="font-medium">{{ persona.role }}</span> — {{ persona.cares }}
-                      </li>
-                    }
-                  </ul>
-                  <lfx-mktg-field-comments [field]="'icp[' + $index + '].personas'" />
-                </dd>
-              </dl>
-            </article>
-          }
-        </div>
-      }
-
-      <!-- MESSAGE HOUSE: umbrella, the line, three pillars, the foundation, the audiences -->
-      @case ('message-house') {
-        <div
-          class="flex min-w-0 flex-col gap-3 [overflow-wrap:anywhere]"
-          role="tabpanel"
-          id="mktg-framework-panel-message-house"
-          aria-labelledby="mktg-framework-tab-message-house"
-          data-testid="mktg-framework-view-panel-message-house">
-          <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 flex flex-col gap-1 text-center">
-            <span class="text-2xs font-semibold uppercase tracking-wider text-blue-700">Umbrella</span>
-            <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-              <p class="text-base font-medium text-blue-900" data-testid="mktg-framework-view-umbrella">{{ framework.mh.umbrella }}</p>
-              <lfx-mktg-field-comments field="mh.umbrella" />
-            </div>
-            <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-              <p class="font-display text-lg text-blue-900" data-testid="mktg-framework-view-line">{{ framework.mh.line }}</p>
-              <lfx-mktg-field-comments field="mh.line" />
-            </div>
-          </div>
-          <div class="grid grid-cols-1 @2xl/asset:grid-cols-3 gap-3" data-testid="mktg-framework-view-pillars">
-            @for (pillar of pillars(); track pillar.t) {
-              <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
-                <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-                  <h3 class="text-sm font-semibold text-gray-900">{{ pillar.t }}</h3>
-                  <lfx-mktg-field-comments [field]="'mh.pillars[' + $index + ']'" />
-                </div>
-                <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-                  <p class="text-sm text-gray-800">{{ pillar.m }}</p>
-                  <lfx-mktg-field-comments [field]="'mh.pillars[' + $index + '].m'" />
-                </div>
-                <div class="group/commentfield" [ngClass]="comments.loaded() ? '' : 'contents'">
-                  <ul class="flex flex-col gap-1 border-t border-gray-100 pt-2">
-                    @for (proof of pillar.proofRows; track $index) {
-                      <li class="flex items-start gap-2 text-xs text-gray-700">
-                        <span class="grow">{{ proof.fact }}</span>
-                        <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
-                      </li>
-                    }
-                  </ul>
-                  <lfx-mktg-field-comments [field]="'mh.pillars[' + $index + '].p'" />
-                </div>
-              </article>
-            }
-          </div>
-          <div class="group/commentfield bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-col gap-1 text-center">
-            <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Foundation</span>
-            <p class="text-sm text-gray-800" data-testid="mktg-framework-view-found">{{ framework.mh.found }}</p>
-            <lfx-mktg-field-comments field="mh.found" />
-          </div>
-          <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
-            <h3 class="text-sm font-semibold text-gray-900">Audiences</h3>
-            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm" data-testid="mktg-framework-view-audiences">
-              @for (row of audiences(); track row.name) {
-                <dt class="font-medium text-gray-900">{{ row.name }}</dt>
-                <dd class="text-gray-800">{{ row.lead }}</dd>
-              }
-            </dl>
-            <lfx-mktg-field-comments field="mh.aud" />
           </div>
         </div>
       }

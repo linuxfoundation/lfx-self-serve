@@ -29,12 +29,9 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
-  FoundationMessageAudienceRow,
   FoundationMessageAvoidRow,
   FoundationMessageGoalView,
-  FoundationMessageIcpView,
   FoundationMessageNumberRow,
-  FoundationMessagePillarView,
   FoundationMessagePrintView,
   FoundationMessageViewTab,
   MktgFrameworkAsset,
@@ -47,12 +44,9 @@ import {
 import {
   buildFoundationMessagePrintView,
   mktgAssetHeaderFallback,
-  foundationMessageAudienceRows,
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
-  foundationMessageIcpViews,
   foundationMessageNumberRows,
-  foundationMessagePillarViews,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
@@ -65,9 +59,10 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
 
 // The Messaging Framework asset view (design: Agent run, Asset view): the
 // framework's own page inside the mktg-os-agents module, with one tab per
-// part of the bundle — the framework (vision, mission, positioning, tagline,
-// the goal columns, say and avoid), the ICPs, the message house, the key
-// numbers, and the sources and gaps of the run's report. While a run is live
+// part of the bundle — the framework (the four statements and the goal
+// columns as one table, then say and avoid), the key numbers, and the sources
+// and gaps of the run's report; the stored ICPs and message house are not
+// shown (FOUNDATION_MESSAGE_VIEW_TABS). While a run is live
 // the same shell shows the generating state and projects the feed or the
 // questions where the framework will be, so the run lands here and stays
 // here. Once the framework exists the header carries what you can do with
@@ -162,14 +157,6 @@ export class MktgFrameworkViewComponent {
     const content = this.content();
     return content ? foundationMessageGoalViews(content) : [];
   });
-  protected readonly icps: Signal<FoundationMessageIcpView[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessageIcpViews(content) : [];
-  });
-  protected readonly pillars: Signal<FoundationMessagePillarView[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessagePillarViews(content) : [];
-  });
   protected readonly avoidRows: Signal<FoundationMessageAvoidRow[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageAvoidRows(content) : [];
@@ -177,10 +164,6 @@ export class MktgFrameworkViewComponent {
   protected readonly numbers: Signal<FoundationMessageNumberRow[]> = computed(() => {
     const content = this.content();
     return content ? foundationMessageNumberRows(content) : [];
-  });
-  protected readonly audiences: Signal<FoundationMessageAudienceRow[]> = computed(() => {
-    const content = this.content();
-    return content ? foundationMessageAudienceRows(content) : [];
   });
   /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
@@ -260,8 +243,8 @@ export class MktgFrameworkViewComponent {
   }
 
   /**
-   * Prints the framework as one document — the cover, the framework, the
-   * ICPs, the message house and the key numbers — through the browser's
+   * Prints the framework as one document — the cover, the framework and
+   * the key numbers — through the browser's
    * print dialog ("Save as PDF"), once the brand's typeface has loaded.
    */
   protected onDownloadPdf(): void {
