@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, effect, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
 import { UiAvatarTone } from '@lfx-one/shared/interfaces';
 
 /**
@@ -52,9 +52,6 @@ export class UiAvatarComponent {
 
   private readonly failedSrc = signal<string>('');
   private readonly photoEl = viewChild<ElementRef<HTMLImageElement>>('photo');
-  // Non-reactive: only read in the error handler.
-  private srcSeen = false;
-  private srcChangedAt = 0;
 
   protected readonly photoSrc: Signal<string> = this.initPhotoSrc();
   protected readonly text: Signal<string> = this.initText();
@@ -62,14 +59,6 @@ export class UiAvatarComponent {
   protected readonly classes: Signal<string> = this.initClasses();
 
   public constructor() {
-    // Stamp src swaps, not the first value, so a late error from the previous URL can be ignored.
-    effect(() => {
-      this.src();
-      if (this.srcSeen) {
-        this.srcChangedAt = performance.now();
-      }
-      this.srcSeen = true;
-    });
     // An image that failed before hydration never fires `error`; decode it once after the first render. Never runs on the server.
     afterNextRender(() => {
       const img = this.photoEl()?.nativeElement;
@@ -80,12 +69,7 @@ export class UiAvatarComponent {
     });
   }
 
-  protected onPhotoError(event: Event, src: string): void {
-    // A replayed error, or one from a URL swapped away mid-load, must not hide the new photo.
-    const img = event.target as HTMLImageElement | null;
-    if ((img?.complete && img.naturalWidth > 0) || event.timeStamp < this.srcChangedAt) {
-      return;
-    }
+  protected onPhotoError(src: string): void {
     this.failedSrc.set(src);
   }
 

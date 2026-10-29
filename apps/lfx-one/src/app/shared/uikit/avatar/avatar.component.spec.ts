@@ -128,30 +128,21 @@ describe('UiAvatarComponent', () => {
     expect(host.querySelector('img')?.getAttribute('src')).toBe('https://example.com/fixed.png');
   });
 
-  it('ignores a late error from a photo URL that was swapped away', async () => {
-    // Pin both clocks: jsdom's Event.timeStamp is not guaranteed to share performance.now()'s origin.
-    let now = 1000;
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const fireError = async (timeStamp: number) => {
-      const event = new Event('error');
-      Object.defineProperty(event, 'timeStamp', { value: timeStamp });
-      host.querySelector('img')?.dispatchEvent(event);
-      await fixture.whenStable();
-    };
-
-    fixture.componentRef.setInput('src', 'https://example.com/old.png');
+  it('keys the failure to the URL, so a new photo gets its own load and the failed one stays hidden', async () => {
+    fixture.componentRef.setInput('src', 'https://example.com/broken.png');
     await fixture.whenStable();
-    now = 2000;
-    fixture.componentRef.setInput('src', 'https://example.com/new.png');
+    host.querySelector('img')?.dispatchEvent(new Event('error'));
     await fixture.whenStable();
+    expect(initials()).toBe('MS');
 
-    await fireError(1500);
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('https://example.com/new.png');
+    fixture.componentRef.setInput('src', 'https://example.com/fixed.png');
+    await fixture.whenStable();
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('https://example.com/fixed.png');
 
-    await fireError(2500);
+    fixture.componentRef.setInput('src', 'https://example.com/broken.png');
+    await fixture.whenStable();
     expect(host.querySelector('img')).toBeNull();
     expect(initials()).toBe('MS');
-    vi.restoreAllMocks();
   });
 
   it('shows the icon instead of the initials when there is no photo', async () => {

@@ -9,7 +9,7 @@
       [src]="url"
       alt=""
       aria-hidden="true"
-      (error)="onPhotoError($event, url)"
+      (error)="onPhotoError(url)"
       data-testid="ui-avatar-image" />
   } @else if (icon()) {
     <i [class]="icon()" aria-hidden="true" data-testid="ui-avatar-icon"></i>
