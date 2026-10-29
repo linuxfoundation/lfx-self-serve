@@ -108,9 +108,11 @@ export class VoteDetailHeaderComponent {
   private initCloseDateText(): Signal<string> {
     return computed(() => {
       const vote = this.vote();
-      if (!vote.end_time) return '';
-      const deadline = formatVoteDeadline(vote.end_time, this.viewerTimezone);
-      return normalizePollStatus(vote.status) === PollStatus.ENDED ? `Closed ${deadline}` : `Closes ${deadline}`;
+      const ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
+      const endTime = ended ? vote.early_end_time || vote.end_time : vote.end_time;
+      if (!endTime) return '';
+      const deadline = formatVoteDeadline(endTime, this.viewerTimezone);
+      return ended ? `Closed ${deadline}` : `Closes ${deadline}`;
     });
   }
 

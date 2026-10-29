@@ -143,6 +143,32 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
   });
 
+  it.each([
+    [PollStatus.ENDED, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closed Oct 20, 2026 12:00 PM UTC'],
+    ['Ended' as PollStatus, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closed Oct 20, 2026 12:00 PM UTC'],
+    [PollStatus.ENDED, undefined, '2026-10-30T16:00:00Z', 'Closed Oct 30, 2026 4:00 PM UTC'],
+    [PollStatus.ENDED, '', '2026-10-30T16:00:00Z', 'Closed Oct 30, 2026 4:00 PM UTC'],
+    [PollStatus.ENDED, '2026-10-20T12:00:00Z', '', 'Closed Oct 20, 2026 12:00 PM UTC'],
+    [PollStatus.ACTIVE, '2026-10-20T12:00:00Z', '2026-10-30T16:00:00Z', 'Closes Oct 30, 2026 4:00 PM UTC'],
+    [PollStatus.ENDED, undefined, '', ''],
+    [PollStatus.ACTIVE, '2026-10-20T12:00:00Z', '', ''],
+  ] as const)('formats the %s close date with early time %s and deadline %s', (status, earlyEndTime, endTime, expected) => {
+    render({ vote: makeVote({ status, early_end_time: earlyEndTime, end_time: endTime }) });
+
+    expect(text('vote-detail-header-close-date')).toBe(expected);
+  });
+
+  it('updates the close date when the vote ends early', () => {
+    render();
+    expect(text('vote-detail-header-close-date')).toBe('Closes Oct 30, 2026 4:00 PM UTC');
+
+    fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
+    fixture.detectChanges();
+
+    expect(text('vote-detail-header-close-date')).toBe('Closed Oct 20, 2026 12:00 PM UTC');
+    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
+  });
+
   describe('actions', () => {
     // Managers reach results from the Results tab, so only voters get View results (#4447).
     it.each([
