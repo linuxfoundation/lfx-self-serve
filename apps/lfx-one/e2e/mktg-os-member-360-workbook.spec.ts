@@ -15,7 +15,7 @@ test('document header Download fetches its stored workbook and saves the filenam
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   const header = page.getByTestId('mktg-document-view-header');
   const action = header.getByTestId('member-360-download').getByRole('button');
-  await expect(action).toHaveText('Download Member360_sample-foundation_2026-Q3.xlsx');
+  await expect(action).toHaveText('Download workbook');
   await expect(page.getByTestId('member-360-download')).toHaveCount(1);
   const request = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith(`/member-360/documents/${MEMBER_360_DOCUMENT_ID}/workbook`));
   const download = page.waitForEvent('download');
@@ -116,13 +116,14 @@ test('a non-writer sees the document access message and cannot request a workboo
   await page.screenshot({ path: info.outputPath('workbook-no-access.png'), fullPage: true });
 });
 
-test('at 390px the filename-labelled header action wraps without page overflow and stays usable', async ({ page }, info) => {
+test('at 390px the workbook header action wraps without page overflow and stays usable', async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 1000 });
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   const header = page.getByTestId('mktg-document-view-header');
   const action = header.getByTestId('member-360-download').getByRole('button');
   await expect(action).toBeVisible();
+  await expect(action).toHaveText('Download workbook');
   expect(await action.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const title = page.getByTestId('mktg-document-view-title');
