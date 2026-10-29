@@ -10,7 +10,7 @@ import { VoteService } from '@services/vote.service';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 
 /**
  * "Send ballots now" (#4363): emails each member who hasn't voted a personal, login-free ballot link. Writer-only and
@@ -32,6 +32,8 @@ export class VoteSendBallotsComponent {
   private readonly doc = inject(DOCUMENT);
 
   public readonly voteUid = input.required<string>();
+  /** True while the parent has another dialog open: a late voter-list answer must not open this one on top of it. */
+  public readonly blocked = input<boolean>(false);
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
@@ -43,6 +45,7 @@ export class VoteSendBallotsComponent {
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   private returnFocusTo: HTMLElement | null = null;
+  private pendingRecipients: Subscription | null = null;
   private focusTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -54,9 +57,20 @@ export class VoteSendBallotsComponent {
     });
   }
 
+  /**
+   * Drops a voter-list request that is still loading (the parent opened its own dialog): no answer will open the Send
+   * confirmation, and the button is usable again. A Send already past its confirmation is not touched.
+   */
+  public abandon(): void {
+    if (!this.checking()) return;
+    this.pendingRecipients?.unsubscribe();
+    this.pendingRecipients = null;
+    this.returnFocusTo = null;
+  }
+
   /** Counts the members who haven't voted, then asks for confirmation naming that count before anything is sent. */
   protected onClick(): void {
-    if (this.busy() || this.cooling()) return;
+    if (this.busy() || this.cooling() || this.blocked()) return;
 
     // The uid is captured now: if the parent switches to another vote while a request or the dialog is pending, the
     // answer is dropped so a send can never go to a different vote than the one clicked.
@@ -66,12 +80,12 @@ export class VoteSendBallotsComponent {
     const active = this.doc.activeElement;
     this.returnFocusTo = active instanceof HTMLElement ? active : null;
     this.checking.set(true);
-    this.voteService
+    this.pendingRecipients = this.voteService
       .getReminderRecipients(uid)
       .pipe(finalize(() => this.checking.set(false)))
       .subscribe({
         next: (recipients) => {
-          if (uid !== this.voteUid()) return;
+          if (uid !== this.voteUid() || this.blocked()) return;
           const count = recipients.length;
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });

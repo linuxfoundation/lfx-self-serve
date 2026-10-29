@@ -106,7 +106,7 @@ export class VotePresenterComponent {
   /** True from the confirmed Close until the request fails or the next poll lands, so the button cannot be double-fired. */
   protected readonly closing = signal(false);
   /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
-  private readonly confirmOpen = signal(false);
+  protected readonly confirmOpen = signal(false);
   /** The Send ballots child owns its own dialog; its `confirming` flag tells Esc to stay out of the way (undefined once the child is destroyed). */
   private readonly sendBallots = viewChild(VoteSendBallotsComponent);
   /** The poll generation (`retryTick`) the end request's forced restart started; only a result from that generation or later clears `closing`. */
@@ -400,6 +400,8 @@ export class VotePresenterComponent {
   private openConfirm(options: Confirmation): void {
     const active = this.doc.activeElement;
     this.returnFocusTo = active instanceof HTMLElement ? active : null;
+    // A voter-list request still loading in Send ballots must not open its dialog over this one.
+    this.sendBallots()?.abandon();
     this.confirmOpen.set(true);
     this.confirmationService.confirm(options);
   }

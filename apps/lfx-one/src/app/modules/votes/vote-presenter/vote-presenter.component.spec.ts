@@ -45,6 +45,7 @@ describe('VotePresenterComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let endVote: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+  let getReminderRecipients: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<VotePresenterComponent>;
 
   const text = (testId: string): string => (fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -79,9 +80,10 @@ describe('VotePresenterComponent', () => {
     navigateByUrl = vi.fn();
     endVote = vi.fn(() => of(baseVote({ status: PollStatus.ENDED })));
     messageAdd = vi.fn();
+    getReminderRecipients = vi.fn(() => of([]));
     TestBed.configureTestingModule({
       providers: [
-        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote, getReminderRecipients } },
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: 'v1' })) } },
         { provide: Router, useValue: { navigateByUrl } },
         { provide: MessageService, useValue: { add: messageAdd } },
@@ -446,6 +448,29 @@ describe('VotePresenterComponent', () => {
 
       expect(has('vote-presenter-result')).toBe(true);
       expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+    });
+
+    it('opens one dialog only when Exit is pressed while the Send ballots voter list is still loading', async () => {
+      const voters = new Subject<{ uid: string }[]>();
+      getReminderRecipients.mockReturnValue(voters);
+      await mount();
+      const exitConfirm = captureConfirm();
+      const sendButton = fixture.nativeElement.querySelector('[data-testid="vote-send-ballots-button"] button') as HTMLButtonElement;
+      const send = fixture.debugElement.query(By.directive(VoteSendBallotsComponent));
+      const sendConfirmSpy = vi.spyOn(send.injector.get(ConfirmationService), 'confirm');
+
+      sendButton.click();
+      fixture.detectChanges();
+      expect(sendButton.disabled).toBe(true);
+
+      exitButton()!.click();
+      fixture.detectChanges();
+      voters.next([{ uid: 'r-1' }, { uid: 'r-2' }]);
+      await tick(0);
+
+      expect(exitConfirm.options?.header).toBe('Leave presenter');
+      expect(sendConfirmSpy).not.toHaveBeenCalled();
+      expect(sendButton.disabled).toBe(false);
     });
 
     it('leaves immediately, with no dialog, once the vote has ended', async () => {

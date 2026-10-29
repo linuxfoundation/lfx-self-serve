@@ -138,6 +138,35 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(document.activeElement).toBe(button());
   });
 
+  it('abandons a pending voter-list request: no dialog opens when the answer arrives and the button is usable again (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+
+    fixture.componentInstance.abandon();
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(button().disabled).toBe(false);
+  });
+
+  it('opens no dialog when the parent has another one open by the time the answer arrives (#4691)', () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
+    button().click();
+
+    fixture.componentRef.setInput('blocked', true);
+    fixture.detectChanges();
+    answer.next(recipients(3));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
   it('skips the dialog and tells the writer when everyone has voted', () => {
     getReminderRecipients.mockReturnValue(of([]));
     const confirmSpy = vi.spyOn(confirmation, 'confirm');
