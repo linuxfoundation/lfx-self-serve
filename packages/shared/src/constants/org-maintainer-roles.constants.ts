@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from '../interfaces/org-lens-time-range.interface';
+import { ORG_DEFAULT_PROJECT_SCOPE_LABEL } from './org-commit-filters.constants';
+import { ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_DEFAULT_TIME_RANGE_LABEL } from './org-lens-time-range.constants';
 
 // Maintainer roles, on LFX Insights' rule (lfx-self-serve#4482): one role per (person, project), counted when it
 // overlaps the range, whether or not the person contributed code, credited to the person's current employer.
@@ -15,30 +17,32 @@ export const ORG_LF_MAINTAINER_ROLES_LABEL = 'LF maintainer roles';
 /** Hint on the "—" shown in place of a Maintainer/Contributor role when the maintainer roles cannot be read. */
 export const ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT = 'Maintainer data is currently unavailable';
 
-/** The counting rule for People → Contributors' tile, which follows the range but not the Employment filter (lfx-self-serve#4627). */
+/** The counting rule for People → Contributors' tile: it follows the range and the Team members filter, not the Employment filter (lfx-self-serve#4627, #4685). */
 export const ORG_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment filter.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. Team members are left out unless included. It does not follow the Employment filter.";
 
-/** The counting rule for the Overview card: LF projects, past 365 days. */
+/** The counting rule for the Overview card: the Org Lens default view (lfx-self-serve#4694). */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days. The chart shows the roles held in each month.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, " +
+  `in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, team members left out. The chart shows the roles held in each month.`;
 
-/** The counting rule per project on the Overview and in the Memberships projects drawer: LF projects, past 365 days. */
+/** The counting rule per project on the Overview and in the Memberships projects drawer: LF projects, the Org Lens default range. */
 export const ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, " +
+  `in LF projects over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, team members left out.`;
 
-/** The window of the Overview's maintainer counts (card headline, Foundations & Projects, Memberships drawer). */
-export const ORG_OVERVIEW_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = '365d';
+/** The window of the Overview's maintainer counts (card headline, Foundations & Projects, Memberships drawer): the Org Lens default range. */
+export const ORG_OVERVIEW_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = ORG_LENS_DEFAULT_TIME_RANGE;
 
-/** The window the person drawer's Maintainer pill follows when it is opened without a range. */
-export const ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE: OrgLensTimeRange = '365d';
+/** The window the person drawer's Maintainer pill follows when it is opened without a range: the Org Lens default range. */
+export const ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE: OrgLensTimeRange = ORG_LENS_DEFAULT_TIME_RANGE;
 
 /** The window of the Projects page's maintainer lists — past 2 years, the window of its contributors (it has no range picker). */
 export const ORG_PROJECTS_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = '730d';
 
 /** The counting rule on Project Detail's Maintainer roles card and drawer, which follow the page toggle. */
 export const ORG_PROJECT_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in this project's governance files, counted once per project, credited to their current employer, in the selected range.";
+  "Maintainer roles: people named as maintainers in this project's governance files, counted once per project, credited to their current employer, in the selected range, team members left out.";
 
 /** ROLE_START_DATE the warehouse stores when a role's start is unknown; shown as unknown, never as a date. */
 export const ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE = '2000-01-01';

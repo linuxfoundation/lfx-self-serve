@@ -85,11 +85,12 @@ export class PersonDetailDrawerService {
         if (!path) {
           return of({ request, detail: null, error: false });
         }
-        // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the past 365 days.
+        // The Maintainer pills follow the range the opener listed the person in; without one the BFF uses the Org Lens default range.
         // An opener with code filters gets its own row's Code counts in that range; without them, the trailing 12 months' commits.
         const range = request.context?.range;
         const codeFilters = request.context?.codeFilters;
-        const params = { ...(range ? { range } : {}), ...(codeFilters ?? {}) };
+        const teamMembers = request.context?.teamMembers;
+        const params = { ...(range ? { range } : {}), ...(codeFilters ?? {}), ...(codeFilters && teamMembers ? { teamMembers } : {}) };
         return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params }).pipe(
           map((detail) => ({ request, detail, error: false })),
           catchError((err: unknown) => {

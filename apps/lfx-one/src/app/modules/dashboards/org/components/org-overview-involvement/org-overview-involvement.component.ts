@@ -11,6 +11,8 @@ import {
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
   ORG_MAINTAINER_ROLES_LABEL,
+  ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
 } from '@lfx-one/shared/constants';
@@ -224,9 +226,11 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.contributorsLoading(),
       value: data.totalActiveContributors.toString(),
-      subtitle: 'Current and former employees contributing code',
+      // Everyone credited to the org at the time of the work, with or without an employment record.
+      subtitle: `${ORG_LENS_DEFAULT_VIEW_PHRASE}, credited to ${this.accountName()} at the time of their work`,
       tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
       chartOptions: this.createBarChartOptions('Active contributors'),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -251,9 +255,10 @@ export class OrgOverviewInvolvementComponent {
       loading: this.maintainersLoading(),
       // `null` means the roles are unavailable (roles table missing or the read failed): a dash, never zero.
       value: data.maintainerRoles === null ? '—' : String(data.maintainerRoles),
-      subtitle: 'In LF projects over the past 365 days',
+      subtitle: ORG_LENS_DEFAULT_VIEW_PHRASE,
       tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
       chartOptions: this.createBarChartOptions(ORG_MAINTAINER_ROLES_LABEL),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -386,6 +391,17 @@ export class OrgOverviewInvolvementComponent {
       throw new Error(`ORG_INVOLVEMENT_METRICS is missing card titled '${title}'`);
     }
     return config;
+  }
+
+  /**
+   * The window a monthly trend covers, stated under its chart: "Per month, Nov 2025 – Oct 2026 to date, LF and non-LF projects".
+   * The BFF sends the 12 calendar months ending with this one, which is counted to date.
+   */
+  private static monthlyWindowCaption(labels: string[]): string | undefined {
+    if (labels.length === 0) {
+      return undefined;
+    }
+    return `Per month, ${labels[0]} – ${labels[labels.length - 1]} to date, ${ORG_DEFAULT_PROJECT_SCOPE_LABEL}`;
   }
 
   private createBarChartOptions(label: string): ChartOptions<ChartType> {
