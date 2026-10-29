@@ -307,6 +307,16 @@ describe('MktgAgentRunComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
   });
 
+  it('keeps one page h1 when the intake form is shown and titles the form as a section', async () => {
+    await configure('browser', 'foundation-setup');
+    const page = query('mktg-agent-run-page');
+    expect(page?.querySelectorAll('h1')).toHaveLength(1);
+    expect(query('mktg-agent-run-name')?.tagName).toBe('H1');
+    expect(query('mktg-agent-run-form-title')?.tagName).toBe('H2');
+    expect(query('mktg-agent-run-form')?.classList.contains('hidden')).toBe(false);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it('uses the catalog asset title and keeps the first-create action enabled with its explanation', async () => {
     await configure('browser', 'foundation-setup');
     activeContext.set(PROJECT_1);

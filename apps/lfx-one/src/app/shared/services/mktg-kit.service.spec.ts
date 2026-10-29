@@ -12,15 +12,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectContextService } from './project-context.service';
 import { MktgKitService } from './mktg-kit.service';
+import { UserService } from './user.service';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 describe('MktgKitService project-scoped reads', () => {
   const context = signal<ProjectContext | null>(null);
+  const user = signal({ sub: 'synthetic-writer' });
   let reads: Subject<MktgDocumentsResponse>[];
   let listDocuments: ReturnType<typeof vi.fn>;
   const empty = (project: string): MktgDocumentsResponse => ({ project, groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })) });
   beforeEach(() => {
     context.set(null);
+    user.set({ sub: 'synthetic-writer' });
     reads = [];
     listDocuments = vi.fn(() => {
       const read = new Subject<MktgDocumentsResponse>();
@@ -30,6 +33,7 @@ describe('MktgKitService project-scoped reads', () => {
     TestBed.configureTestingModule({
       providers: [
         MktgKitService,
+        { provide: UserService, useValue: { user } },
         { provide: ProjectContextService, useValue: { activeContext: context } },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
       ],
@@ -103,6 +107,34 @@ describe('MktgKitService project-scoped reads', () => {
     expect(kit.families()[0].rows[0].state).toBe('approved');
     expect(kit.summary()).toEqual({ level: null, coreFloor: 1, inKit: 1 });
   });
+  it('keeps same-scope documents during retry and transient failure, but clears them on denied access or subject change', () => {
+    const kit = TestBed.inject(MktgKitService);
+    context.set({ uid: 'one', slug: 'one', name: 'Synthetic One' });
+    TestBed.tick();
+    const known = empty('one');
+    reads[0].next(known);
+    kit.retry();
+    TestBed.tick();
+    expect(kit.loading()).toBe(true);
+    expect(kit.documents()).toBe(known);
+    reads[1].error(new HttpErrorResponse({ status: 503 }));
+    expect(kit.documents()).toBe(known);
+    expect(kit.error()).toContain('could not be loaded');
+    kit.retry();
+    TestBed.tick();
+    reads[2].error(new HttpErrorResponse({ status: 403 }));
+    expect(kit.documents()).toBeNull();
+    kit.retry();
+    TestBed.tick();
+    reads[3].next(known);
+    user.set({ sub: 'other-synthetic-writer' });
+    TestBed.tick();
+    expect(kit.documents()).toBeNull();
+    expect(kit.loading()).toBe(true);
+    reads[3].next(known);
+    expect(kit.documents()).toBeNull();
+  });
+
   function loadedKit() {
     const kit = TestBed.inject(MktgKitService);
     context.set({ uid: 'one', slug: 'one', name: 'Synthetic One' });

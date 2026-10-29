@@ -176,7 +176,10 @@ test.describe('Native FAQ document approval and header', () => {
   });
   test('keeps a loading state while the read is pending', async ({ page }, info) => {
     await openAssetDocument(page, 'faq', 0);
-    await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
+    await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByTestId('mktg-document-view-loading').getByRole('status')).toHaveText('Loading the document…');
     await expect(page.getByTestId('mktg-faq-view')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('loading.png'), fullPage: true });
   });
@@ -303,12 +306,19 @@ for (const immediateReceipt of [true, false]) {
       await expect(page).not.toHaveURL(/\/documents\//);
       await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing');
       await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
       fixture.persist();
     }
     await expect(page).toHaveURL(new RegExp(`/documents/foundation-message/living.*revision=${fixture.revisionId}`), { timeout: 20_000 });
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
     await expect(page.getByTestId('mktg-document-view-title-card')).not.toContainText('approved by');
+    await expect(page.getByTestId('mktg-document-view-title-card')).not.toContainText('the kit still shows');
+    await expect(page.getByTestId('mktg-framework-view-approval-required')).toHaveText('Export is available once this version is approved');
+    await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get('revision')).toBe(fixture.revisionId);
