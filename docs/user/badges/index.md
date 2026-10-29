@@ -21,7 +21,7 @@ The Badges page shows the digital credentials you have earned through your parti
 
 ## Who this applies to
 
-All authenticated users can view their own badges. The badges displayed reflect the credentials Credly holds for the email addresses on your LFX account.
+All authenticated users can view their own badges. The badges displayed reflect the credentials Credly holds for the verified email addresses on your LFX account.
 
 ## Getting started
 

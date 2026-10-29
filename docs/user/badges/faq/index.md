@@ -20,7 +20,7 @@ In the **Me** lens of [app.lfx.dev](https://app.lfx.dev), select **Badges** unde
 
 First check whether the badge is waiting for you to accept it in Credly. Until you accept it, the badge shows a **Pending** chip, and you can use the filter's **Status** option to show only **Pending** badges. If you have not accepted it, select **Accept Badge** on the card to open it in Credly.
 
-If the badge is not listed at all, check Credly first. LFX One caches badge results for 30 minutes by default, or five minutes when the cached results include Pending badges. After waiting, reload the Badges page to fetch the latest results. These cache durations do not guarantee when Credly will issue a badge. If it is still missing, contact LFX support with the badge name.
+If the badge is not listed at all, check Credly first. Make sure the email address the badge was issued to is added and verified on your LFX account (see [Settings](../../account/settings/)). LFX One caches badge results for 30 minutes by default, or five minutes when the cached results include Pending badges. After waiting, reload the Badges page to fetch the latest results. These cache durations do not guarantee when Credly will issue a badge. If it is still missing, contact LFX support with the badge name.
 
 ## Are my badges visible to others?
 
@@ -32,7 +32,7 @@ Only Public badges that are not Pending can be shared. These cards have a **Shar
 
 ## Do badges expire?
 
-Some badges have an expiry date. Cards for these badges show **Expires on** with the date, or **Expired on** and an **Expired** chip once the date has passed. Use the **Status** filter to show only **Expired** badges.
+Some badges have an expiry date. Cards for these badges show **Expires on** with the date, or **Expired on** once the date has passed. An expired badge also shows an **Expired** chip unless it is still Pending, in which case it keeps its **Pending** chip instead. Use the **Status** filter to show only **Expired** badges.
 
 ## Who do I contact if a badge is incorrect?
 
