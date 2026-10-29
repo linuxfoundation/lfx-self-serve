@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 60000 });
 test('document header Download fetches its stored workbook and saves the filename', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
-  const header = page.getByTestId('mktg-document-view-header');
+  const header = page.getByTestId('mktg-document-view-title-card');
   const action = header.getByTestId('member-360-download').getByRole('button');
   await expect(action).toHaveText('Download workbook');
   await expect(page.getByTestId('member-360-download')).toHaveCount(1);
@@ -120,7 +120,7 @@ test('at 390px the workbook header action wraps without page overflow and stays 
   await page.setViewportSize({ width: 390, height: 1000 });
   await setupMember360(page, { stored: true });
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
-  const header = page.getByTestId('mktg-document-view-header');
+  const header = page.getByTestId('mktg-document-view-title-card');
   const action = header.getByTestId('member-360-download').getByRole('button');
   await expect(action).toBeVisible();
   await expect(action).toHaveText('Download workbook');
