@@ -155,6 +155,23 @@ export function orgClaReviewCopyFilename(claGroupName?: string): string {
  * `id` is empty because no signature exists. Nothing keys off it here: the document offer reads
  * `signed`, and the list lookup is bypassed entirely.
  */
+export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup {
+  return {
+    id: '',
+    claGroupId: selection.claGroupId,
+    claGroupName: selection.claGroupName,
+    projects: [{ projectName: selection.projectName, projectSfid: selection.projectSfid }],
+    signed: false,
+    status: 'not-started',
+    needsClaManager: false,
+    claManagersCount: 0,
+    viewerIsClaManager: false,
+    // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely
+    // has no approval criteria, because it has no signature for them to hang off.
+    approvalCriteriaCount: 0,
+  };
+}
+
 /**
  * The unsigned overview built from a catalogue read of the address (#2293).
  *
@@ -175,23 +192,6 @@ export function orgClaCatalogueGroup(option: ClaGroupOption): OrgClaGroup {
     needsClaManager: false,
     claManagersCount: 0,
     viewerIsClaManager: false,
-    approvalCriteriaCount: 0,
-  };
-}
-
-export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup {
-  return {
-    id: '',
-    claGroupId: selection.claGroupId,
-    claGroupName: selection.claGroupName,
-    projects: [{ projectName: selection.projectName, projectSfid: selection.projectSfid }],
-    signed: false,
-    status: 'not-started',
-    needsClaManager: false,
-    claManagersCount: 0,
-    viewerIsClaManager: false,
-    // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely
-    // has no approval criteria, because it has no signature for them to hang off.
     approvalCriteriaCount: 0,
   };
 }

@@ -18,6 +18,7 @@ import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
   isHttpsUrl,
+  hyphenatedClaGroupId,
   isOrgClaDesigneeLfLoginRequired,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
@@ -615,31 +616,25 @@ export class OrgClaService {
   }
 
   /**
-   * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
-   *
-   * Not the signed-document path: that list-checks the organization's signed rows, and an
-   * unsigned overview is precisely a group that is not on that list. The gate is the Org Lens
-   * grant on the path organization (the route) plus a well-formed group id (the controller).
-   * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
-   * runs on the default gateway token with no impersonation branch.
-   *
-   * The hop always sends `claType=ccla&watermark=true` and does not take those as
-   * client query params. Whether the bytes are actually watermarked is upstream's.
-   */
-  /**
    * One CLA Group from the same unscoped catalogue as sign-options (#2293).
    *
    * Returns null on upstream 404, including a gateway 404 when the producer route is not
    * deployed yet, so the page can show its not-found empty state instead of a load error.
    * Any other upstream failure is rethrown.
    *
+   * The id is sent in the lower-case hyphenated spelling, because the producer matches it
+   * literally and the controller accepts every spelling `CLA_GROUP_ID_PATTERN` does. A 200 must
+   * echo the requested group: an omitted or different `claGroupID` is a 502, the same rule the
+   * corporate signing hand-off applies, so the page never names a group the address did not.
+   *
    * `projectSfid` is appended the same way `getSignOptions` appends it, from the field the
    * catalogue already resolved. Absence means the group cannot be signed from here.
    */
   public async getClaGroupCatalogue(req: Request, claGroupId: string): Promise<ClaGroupOption | null> {
+    const requestedId = hyphenatedClaGroupId(claGroupId);
     let result: EasyClaSearchResult | null;
     try {
-      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(claGroupId)}`, {
+      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(requestedId)}`, {
         operation: 'org_cla_group_catalogue',
         service: SERVICE,
         errorMessage: 'Failed to fetch CLA group',
@@ -652,12 +647,35 @@ export class OrgClaService {
       throw error;
     }
 
-    if (!result?.claGroupID?.trim()) return null;
+    const echoed = result?.claGroupID?.trim();
+    if (!result || !echoed || !isSameClaGroup(echoed, requestedId)) {
+      logger.warning(req, 'org_cla_group_catalogue', 'upstream answered for a different or unnamed CLA Group', {
+        requested_cla_group_id: requestedId,
+        returned_cla_group_id: echoed || null,
+      });
+      throw new MicroserviceError('Upstream answered the catalogue read for a different CLA Group', 502, 'CLA_GROUP_CATALOGUE_MISMATCH', {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+      });
+    }
+
     const option = toClaGroupOption(result);
     const projectSfid = result.projectSFID?.trim();
     return projectSfid ? { ...option, projectSfid } : option;
   }
 
+  /**
+   * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
+   *
+   * Not the signed-document path: that list-checks the organization's signed rows, and an
+   * unsigned overview is precisely a group that is not on that list. The gate is the Org Lens
+   * grant on the path organization (the route) plus a well-formed group id (the controller).
+   * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
+   * runs on the default gateway token with no impersonation branch.
+   *
+   * The hop always sends `claType=ccla&watermark=true` and does not take those as
+   * client query params. Whether the bytes are actually watermarked is upstream's.
+   */
   public async getCclaPreview(req: Request, claGroupId: string): Promise<Buffer> {
     const params = new URLSearchParams({ claType: 'ccla', watermark: 'true' });
     return gatewayFetchBinary(req, `${claServiceBaseUrl(SERVICE)}/v4/template/${encodeURIComponent(claGroupId)}/preview?${params.toString()}`, {

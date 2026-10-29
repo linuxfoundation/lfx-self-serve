@@ -202,6 +202,9 @@ export class OrgClasController {
       }
 
       const option = await this.orgClaService.getClaGroupCatalogue(req, claGroupId);
+      // The 404 included: before the producer route deploys every lookup misses, and a cached miss
+      // would keep a valid link on the not-found state after it lands.
+      res.setHeader('Cache-Control', 'no-store');
       if (!option) {
         logger.success(req, 'get_org_cla_group_catalogue', startTime, { org_uid: orgUid, cla_group_id: claGroupId, found: false });
         res.status(404).json({ code: 'CLA_GROUP_NOT_FOUND' });

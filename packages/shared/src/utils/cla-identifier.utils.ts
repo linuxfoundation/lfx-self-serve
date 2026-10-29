@@ -22,6 +22,17 @@ export function canonicalClaGroupId(value: unknown): string {
 }
 
 /**
+ * A CLA Group id in the lower-case hyphenated spelling the producer stores, for an upstream path
+ * that the producer matches literally. Empty for anything that is not CLA-Group-shaped.
+ */
+export function hyphenatedClaGroupId(value: unknown): string {
+  const bare = canonicalClaGroupId(value);
+  if (!bare) return '';
+
+  return `${bare.slice(0, 8)}-${bare.slice(8, 12)}-${bare.slice(12, 16)}-${bare.slice(16, 20)}-${bare.slice(20)}`;
+}
+
+/**
  * Whether two CLA Group identifiers name the same group, allowing for the spellings the producer
  * accepts. Two unrecognizable values are never "the same": both canonicalise to empty, and an
  * empty canonical form is treated as no answer rather than as a match.

@@ -1486,12 +1486,8 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * A pasted, bookmarked or linked group address arrives with nothing, and nothing here can
-     * rebuild it — the list read returns signed agreements only, and there is no
-     * fetch-a-group-by-id read to fall back on.
-     *
-     * It now stays on that address rather than redirecting to the list (#2364), because the group
-     * address is the one a named signing overview will claim and the list is not an answer to it.
+     * A pasted, bookmarked or linked group address arrives with no picker choice, so the page names
+     * it from the catalogue read (#2293) instead.
      */
     it('names a pasted group from the catalogue and offers Start and the review copy', async () => {
       getClaGroupCatalogue.mockReturnValue(
@@ -1533,7 +1529,8 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
     });
 
-    it('hides Start when the pasted group does not offer a corporate CLA', async () => {
+    // The CLA service refuses the corporate template for such a group, so the review copy would only fail.
+    it('hides Start and the review copy when the pasted group does not offer a corporate CLA', async () => {
       getClaGroupCatalogue.mockReturnValue(
         of({
           claGroupId: PREVIEW_GROUP_ID,
@@ -1549,8 +1546,72 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render();
 
       expect(byTestId(fixture, 'org-easycla-detail-start-cla')).toBeNull();
-      expect(byTestId(fixture, 'org-easycla-detail-unsignable')?.textContent).toContain('does not offer a corporate CLA');
-      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-unsignable')?.textContent).toContain(CCLA_SIGN_COPY.picker.cclaDisabledReason);
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).toBeNull();
+    });
+
+    // A compact or upper-case address names the same group; the BFF hands upstream the stored spelling.
+    it.each([
+      ['compact', PREVIEW_GROUP_ID.replaceAll('-', '')],
+      ['upper-case', PREVIEW_GROUP_ID.toUpperCase()],
+    ])('names a pasted group from a %s address', async (_label, spelling) => {
+      paramMap.next(convertToParamMap({ claGroupId: spelling }));
+      getClaGroupCatalogue.mockReturnValue(
+        of({
+          claGroupId: PREVIEW_GROUP_ID,
+          claGroupName: 'Cascade CLA',
+          projectName: 'Cascade',
+          projectSfid: 'a09410000182dD2AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+
+      expect(getClaGroupCatalogue).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, spelling);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(startButton(fixture)?.disabled).toBe(false);
+    });
+
+    /**
+     * Picker choice for one group, then a catalogue group on the same instance, then another
+     * organization. The picker choice no longer names the page, so it must not refuse Start either:
+     * an enabled Start that drops the click is the failure.
+     */
+    it('opens the flow from a catalogue group after leaving a picker choice and switching organization', async () => {
+      getClaGroups.mockImplementation((orgUid: string) => of({ orgUid, claGroups: [claGroup()] }));
+      getClaGroupCatalogue.mockImplementation((_org: string, id: string) =>
+        of({
+          claGroupId: id,
+          claGroupName: 'Second CLA',
+          projectName: 'Second',
+          projectSfid: 'a09410000182dD9AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+      const dialogs = recordDialogs();
+
+      const fixture = await render(previewing());
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      selectedAccount.set(OTHER_ORG);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Second CLA');
+      expect(startButton(fixture)?.disabled).toBe(false);
+
+      startButton(fixture)?.click();
+
+      expect(dialogs.length).toBe(1);
     });
 
     it('reports an upstream failure as a load error, not as a missing group', async () => {
@@ -1590,6 +1651,11 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
     });
 
+    /**
+     * An address the catalogue does not know stays on that address rather than redirecting to the
+     * list (#2364), because the group address is the one the signing overview claims and the list
+     * is not an answer to it.
+     */
     it('stays on the address when it carries no selection, rather than leaving for the list', async () => {
       const fixture = await render();
 

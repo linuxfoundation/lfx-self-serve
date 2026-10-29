@@ -233,7 +233,7 @@ export interface ClaGroupOption {
   /**
    * Salesforce id of the project a corporate signature is requested against (#1983).
    *
-   * **Set only by the Organization Lens sign-options route.** The Me-lens search omits it: that
+   * **Set only by the Organization Lens sign-options and CLA Group catalogue routes.** The Me-lens search omits it: that
    * hand-off is keyed on `claGroupId` alone, and a field no template reads still ships to the
    * browser inside the transferred state.
    *
