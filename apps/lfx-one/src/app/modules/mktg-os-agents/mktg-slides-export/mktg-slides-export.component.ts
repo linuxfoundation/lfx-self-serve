@@ -7,6 +7,7 @@ import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, si
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_SLIDES_EXPORT_ASSET_LABELS,
@@ -45,9 +46,9 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
 // the app page.
 @Component({
   selector: 'lfx-mktg-slides-export',
-  imports: [DatePipe, ButtonComponent, MessageComponent],
+  imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Hidden while there is nothing to show, so an empty panel takes no gap in the page's column.
+  // Reserve the first lookup's line; hide an empty panel only once the server answers.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -136,7 +137,8 @@ export class MktgSlidesExportComponent {
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
   /** The failed check's line shows while nothing else is on the panel. */
   protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
-  public readonly visible = computed(() => this.phase() !== 'idle' || this.last() !== null || this.lookupFailed());
+  protected readonly lookupPending = computed(() => Boolean(this.lastTarget()) && !this.lookupSettled() && !this.lookupFailed() && this.phase() === 'idle');
+  public readonly visible = computed(() => this.lookupPending() || this.phase() !== 'idle' || this.last() !== null || this.lookupFailed());
 
   private run: Subscription | null = null;
   /** "Check again" after a failed read of the last export. */
