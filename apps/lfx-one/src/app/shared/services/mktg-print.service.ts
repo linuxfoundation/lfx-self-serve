@@ -26,13 +26,40 @@ export class MktgPrintService {
 
   /** Numbers each print request: a request whose number is no longer current after the font wait was cleared (or superseded) and never prints. */
   private request = 0;
+  private readonly preparations = new Map<string, Promise<void>>();
+
+  /** Preload once per typeface/weight set, before a user's print gesture. */
+  public prepare(fontFamily: string | null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
+    if (!isPlatformBrowser(this.platformId) || !fontFamily) return Promise.resolve();
+    const family = fontFamily.replace(/["']/g, '');
+    const normalized = [...new Set(weights)].sort((a, b) => a - b);
+    const key = JSON.stringify([family, normalized]);
+    let preparation = this.preparations.get(key);
+    if (!preparation) {
+      preparation = this.loadFont(family, normalized);
+      this.preparations.set(key, preparation);
+    }
+    return preparation;
+  }
+
+  /** Must be called directly from the click task: WebKit requires user activation. */
+  public printNow(bodyClass: string): void {
+    this.request++;
+    const view = this.document.defaultView;
+    if (!isPlatformBrowser(this.platformId) || !view) return;
+    const body = this.document.body;
+    body.classList.add(bodyClass);
+    view.addEventListener('afterprint', () => body.classList.remove(bodyClass), { once: true });
+    view.print();
+  }
 
   /**
    * Prints the document the body class shows, once the given typeface (if
    * any) has loaded in the given weights or the wait has run out. The class stays while the dialog
    * is up (the preview renders from it) and goes when the print ends. A
    * {@link clear} during the font wait cancels the print: the view that asked
-   * for it is gone.
+   * for it is gone. Safari caveat: this asynchronous compatibility method loses
+   * user activation; click handlers must prepare ahead and call printNow instead.
    */
   public async print(bodyClass: string, fontFamily: string | null = null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
     // SSR guard: window and the print dialog are browser-only (ssr-safety rule).
@@ -41,16 +68,11 @@ export class MktgPrintService {
       return;
     }
     const request = ++this.request;
-    if (fontFamily) {
-      await this.loadFont(fontFamily, weights);
-    }
+    await this.prepare(fontFamily, weights);
     if (request !== this.request) {
       return;
     }
-    const body = this.document.body;
-    body.classList.add(bodyClass);
-    view.addEventListener('afterprint', () => body.classList.remove(bodyClass), { once: true });
-    view.print();
+    this.printNow(bodyClass);
   }
 
   /** Takes the print class off the body and cancels a print still waiting for its font: for a view that goes while its print is under way. */
