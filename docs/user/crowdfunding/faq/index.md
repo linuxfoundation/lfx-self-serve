@@ -4,7 +4,7 @@ description: Frequently asked questions about crowdfunding initiatives and donat
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, faq, initiatives, donations, recurring, refunds]
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
@@ -27,15 +27,15 @@ LFX Crowdfunding supports four fund types:
 
 ## What happens to my recurring donors when I archive an initiative?
 
-Archiving an initiative stops the initiative from accepting new donations, but it does not automatically cancel existing recurring subscriptions. Donors who have active recurring donations to the initiative will continue to be charged on their billing cycle until they manually cancel their subscriptions. If you archive an initiative, notify your recurring donors so they can cancel their subscriptions through [Manage Recurring Donations](../manage-recurring-donations/).
+Archiving an initiative stops it from accepting new donations and cancels all active recurring donations to it, so donors are not charged again. This cannot be undone: if you later activate the initiative, donors must subscribe again. See [Manage Initiatives](../manage-initiatives/#archive-an-initiative).
 
 ## How do I cancel a recurring donation I made?
 
-To cancel a recurring donation, go to **Crowdfunding → Donations** in LFX Self Serve, find the donation in the recurring donations list, open its detail page, and select **Cancel Recurring Donation**. Cancellation stops all future charges immediately. Past charges are not refunded. See [Manage Recurring Donations](../manage-recurring-donations/) for full steps.
+To cancel a recurring donation, go to **Crowdfunding → Donations** in LFX Self Serve and find the donation in the **Recurring Donations** list. Open its detail page and select **Cancel**, or select the **More options** menu (⋯) on its entry and choose **Cancel**. Then select **Cancel Donation** to confirm. Cancellation stops all future charges immediately. Past charges are not refunded, and the subscription stays in the list marked **Canceled**. See [Manage Recurring Donations](../manage-recurring-donations/) for full steps.
 
-## Why is a charge on my recurring donation showing as Failed?
+## What if a charge on my recurring donation can't be processed?
 
-A charge fails when the linked payment method cannot be processed — for example, because the card is expired, declined, or has been removed from your account. To resolve it, check that your saved payment method is valid and up to date under **Crowdfunding → Donations → Payment Methods**. See [Manage Payment Methods](../manage-payment-methods/) for steps to add or update a card.
+A charge fails when the linked payment method cannot be processed — for example, because the card is expired, declined, or has been removed from your account. To resolve it, check that your saved card is valid and up to date in the **Payment Methods** section of the **Crowdfunding → Donations** page. See [Manage Payment Methods](../manage-payment-methods/) for steps to add or update a card.
 
 ## Can I get a refund for a crowdfunding donation?
 
