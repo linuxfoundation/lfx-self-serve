@@ -116,6 +116,9 @@ export class UserSearchComponent {
   // to the rejection itself.
   public readonly onRejectedSelection = output<UserSearchOption>();
   public readonly onManualEntry = output<void>();
+  // Emitted on every keystroke with the text in the box, for consumers that treat typed text as a value
+  // in its own right. Picks (which write an object) and programmatic label syncs never fire it.
+  public readonly onTextChange = output<string>();
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
   public readonly onClear = output<void>();
@@ -233,6 +236,18 @@ export class UserSearchComponent {
           if (emailControlValue && emailControlValue.trim()) {
             this.userSearchForm.get('userSearch')?.setValue(emailControlValue, { emitEvent: false });
           }
+        }
+      });
+
+    // PrimeNG writes typed text into the control through its value accessor on every keystroke, so this is the
+    // only per-keystroke signal (completeMethod waits out `delay` and `minLength`). Programmatic writes use
+    // `emitEvent: false` and a pick writes an object, so only real typing (and a clear's '') reaches consumers.
+    this.userSearchForm
+      .get('userSearch')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        if (typeof value === 'string') {
+          this.onTextChange.emit(value);
         }
       });
 

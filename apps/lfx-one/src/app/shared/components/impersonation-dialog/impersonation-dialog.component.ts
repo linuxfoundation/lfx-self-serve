@@ -155,6 +155,21 @@ export class ImpersonationDialogComponent {
     this.error.set('');
   }
 
+  protected onNameSearchTyped(text: string): void {
+    // Whatever is typed is the target as typed: the directory only indexes committee members and matches
+    // names, not emails, so a pasted email or username may never surface as a result. The exchange resolves
+    // it exactly and a missing user fails there with a message. Emptying the box leaves the target alone,
+    // the same as the clear icon (onNameSearchCleared).
+    const term = text.trim();
+    if (!term) return;
+
+    // Record the label before writing the target so the valueChanges guard sees them match and keeps the text.
+    this.nameSearchPickedUsername.set(term);
+    this.nameSearchLabel.set(text);
+    this.targetUserForm.controls.targetUser.setValue(term);
+    this.error.set('');
+  }
+
   protected onNameSearchCleared(): void {
     // Only the shown name goes; the target keeps whatever it holds until the admin changes it.
     this.nameSearchPickedUsername.set(null);
