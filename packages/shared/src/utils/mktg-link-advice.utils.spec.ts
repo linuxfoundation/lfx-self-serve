@@ -9,9 +9,14 @@ describe('Marketing intake link advice', () => {
   it('uses the operator-approved LF-wide sharing copy without promising public access', () => {
     expect(MKTG_DRIVE_SHARING_HINT).toBe('Share Google Drive files with everyone at the Linux Foundation so Marketing OS can use them.');
     expect(MKTG_INTAKE_LINK_ADVICE.drivePrivate).toBe('Share it with everyone at the Linux Foundation, or paste its text.');
+    expect(MKTG_INTAKE_LINK_ADVICE.driveFolder).toBe(
+      "Marketing OS can't open Google Drive folders. Link each file instead, shared with everyone at the Linux Foundation."
+    );
   });
   it.each(['/drive/folders/synthetic', '/drive/u/2/folders/synthetic'])('recognizes Drive folder %s', (path) => {
-    expect(describeMktgLinkAdvice(`https://drive.google.com${path}`)).toBe('drive-folder');
+    const url = `https://drive.google.com${path}`;
+    expect(describeMktgLinkAdvice(url)).toBe('drive-folder');
+    expect(mktgLinkWarnings({ url })['url']).toBe(MKTG_INTAKE_LINK_ADVICE.driveFolder);
   });
   it.each([
     'https://drive.google.com/file/d/synthetic/view',
@@ -20,6 +25,7 @@ describe('Marketing intake link advice', () => {
     ...['document', 'presentation', 'spreadsheets'].map((kind) => `https://docs.google.com/${kind}/d/synthetic/edit`),
   ])('advises on potentially private %s', (url) => {
     expect(describeMktgLinkAdvice(url)).toBe('drive-private');
+    expect(mktgLinkWarnings({ url })['url']).toBe(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
   });
   it.each([
     '',
@@ -52,6 +58,6 @@ describe('Marketing intake link advice', () => {
       list: MKTG_INTAKE_LINK_ADVICE.duplicate,
     });
     expect(mktgLinkWarnings({ pending: 'https://project.example/a/' }, ['https://project.example/a'])['pending']).toBe(MKTG_INTAKE_LINK_ADVICE.duplicate);
-    expect(mktgLinkWarnings({ url: 'https://drive.google.com/drive/folders/synthetic' })['url']).toBe(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(mktgLinkWarnings({ url: 'https://drive.google.com/drive/folders/synthetic' })['url']).toBe(MKTG_INTAKE_LINK_ADVICE.driveFolder);
   });
 });

@@ -6,6 +6,7 @@ export const MKTG_DRIVE_SHARING_HINT = 'Share Google Drive files with everyone a
 
 /** Advisory copy only: these messages never change intake validity. */
 export const MKTG_INTAKE_LINK_ADVICE = {
+  driveFolder: "Marketing OS can't open Google Drive folders. Link each file instead, shared with everyone at the Linux Foundation.",
   drivePrivate: 'Share it with everyone at the Linux Foundation, or paste its text.',
   duplicate: 'This link is already added above.',
 } as const;

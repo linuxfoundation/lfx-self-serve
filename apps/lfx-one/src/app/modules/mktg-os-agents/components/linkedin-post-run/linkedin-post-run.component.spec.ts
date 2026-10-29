@@ -717,7 +717,7 @@ describe('LinkedIn profile and post surface', () => {
     component['source'].set('url');
     component['contentForm'].controls.url.setValue('https://drive.google.com/drive/folders/synthetic');
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
     expect(component['contentForm'].valid).toBe(true);
     component['contentForm'].controls.url.setValue('https://project.example/article');

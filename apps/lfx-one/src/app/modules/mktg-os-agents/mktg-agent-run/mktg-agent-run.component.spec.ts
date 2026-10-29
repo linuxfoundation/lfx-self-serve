@@ -3303,7 +3303,7 @@ describe('MktgAgentRunComponent', () => {
       const url = 'https://drive.google.com/drive/folders/synthetic';
       component['intakeForm'].patchValue({ project_name: 'Synthetic project', website_url: url, deck_url: url + '/?usp=sharing' });
       await fixture.whenStable();
-      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
       expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
       expect(component['submitDisabled']()).toBe(false);
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-submit-button"] button')?.disabled).toBe(false);

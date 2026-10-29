@@ -69,7 +69,7 @@ describe('MktgIntakeDocumentsComponent', () => {
     component['linkForm'].controls.url.setValue(url + '/?usp=sharing');
     await fixture.whenStable();
     expect(host().querySelector('[data-testid="mktg-intake-documents-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
-    expect(host().textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(host().textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-intake-documents-add-link"] button')?.disabled).toBe(false);
     component['onAddLink']();
     fixture.componentRef.setInput('earlierUrls', []);
