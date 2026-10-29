@@ -1,10 +1,34 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 <div class="flex min-w-0 flex-col gap-1 text-sm [overflow-wrap:anywhere]" data-testid="mktg-comment-thread">
-  <p class="text-xs text-gray-500">{{ author() }} · {{ comment().createdAt | date: 'd MMM' }} · on {{ field() }}</p>
-  <p class="whitespace-pre-wrap break-words text-gray-900">{{ comment().text }}</p>
-  <p class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700">{{ status() }}</p>
-  @if (comment().resolution) {
-    <p class="whitespace-pre-wrap break-words text-gray-700" data-testid="mktg-comment-resolution">{{ comment().resolution }}</p>
-  }
+  <div class="flex min-w-0 items-center gap-2" data-testid="mktg-comment-summary">
+    <p class="min-w-0 flex-1 truncate text-xs text-gray-500" data-testid="mktg-comment-preview">
+      {{ author() }} · {{ comment().createdAt | date: 'd MMM' }} · on {{ field() }} · <span class="text-gray-900">{{ preview() }}</span>
+    </p>
+    <div class="shrink-0 whitespace-nowrap">
+      <p class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700">{{ status() }}</p>
+    </div>
+    <lfx-button
+      class="shrink-0"
+      [icon]="expanded() ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"
+      ariaLabel="Details"
+      [ariaExpanded]="expanded()"
+      [ariaControls]="detailsId"
+      size="small"
+      [text]="true"
+      severity="secondary"
+      styleClass="!h-6 !w-6 !p-0"
+      (onClick)="expanded.set(!expanded())"
+      data-testid="mktg-comment-toggle" />
+  </div>
+  <div [id]="detailsId" [hidden]="!expanded()" data-testid="mktg-comment-details">
+    @if (expanded()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <p class="whitespace-pre-wrap break-words text-gray-900" data-testid="mktg-comment-body">{{ comment().text }}</p>
+        @if (comment().resolution) {
+          <p class="whitespace-pre-wrap break-words text-gray-700" data-testid="mktg-comment-resolution">{{ comment().resolution }}</p>
+        }
+      </div>
+    }
+  </div>
 </div>

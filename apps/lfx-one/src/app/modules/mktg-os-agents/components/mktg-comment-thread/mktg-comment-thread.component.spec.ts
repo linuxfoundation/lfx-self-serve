@@ -7,6 +7,51 @@ import { describe, expect, it } from 'vitest';
 import { MktgCommentThreadComponent } from './mktg-comment-thread.component';
 
 describe('MktgCommentThreadComponent', () => {
+  it('previews only the first line and uses a native disclosure button with a stable controlled region', () => {
+    const fixture = TestBed.createComponent(MktgCommentThreadComponent);
+    fixture.componentRef.setInput('comment', mktgCommentFixture({ text: 'First line\r\nFull explanation\nMore detail' }));
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const button = element.querySelector('button');
+    const details = element.querySelector<HTMLElement>('[data-testid="mktg-comment-details"]');
+    expect(button?.getAttribute('type')).toBe('button');
+    expect(button?.getAttribute('aria-label')).toBe('Details');
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(button?.getAttribute('aria-controls')).toBe(details?.id);
+    expect(button?.disabled).toBe(false);
+    expect(button?.tabIndex).toBe(0);
+    expect(details?.hidden).toBe(true);
+    expect(element.querySelector('[data-testid="mktg-comment-preview"]')?.textContent).toContain('First line');
+    expect(element.textContent).not.toContain('Full explanation');
+    const change = [] as boolean[];
+    fixture.componentInstance.expanded.subscribe((value) => change.push(value));
+    button?.click();
+    fixture.detectChanges();
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    expect(details?.hidden).toBe(false);
+    expect(details?.textContent).toContain('Full explanation');
+    expect(element.querySelector('button')).toBe(button);
+    button?.click();
+    fixture.detectChanges();
+    expect(details?.hidden).toBe(true);
+    expect(details?.textContent).not.toContain('Full explanation');
+    expect(change).toEqual([true, false]);
+  });
+
+  it('keeps details idrefs unique when the same comment appears in the field and the panel', () => {
+    const fixtures = [TestBed.createComponent(MktgCommentThreadComponent), TestBed.createComponent(MktgCommentThreadComponent)];
+    for (const fixture of fixtures) fixture.componentRef.setInput('comment', mktgCommentFixture());
+    const ids = fixtures.map((fixture) => {
+      fixture.detectChanges();
+      const element = fixture.nativeElement as HTMLElement;
+      const id = element.querySelector('[data-testid="mktg-comment-details"]')?.id;
+      expect(id).toBeTruthy();
+      expect(element.querySelector('button')?.getAttribute('aria-controls')).toBe(id);
+      return id;
+    });
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
   it('shows role attribution, date, field and open status as plain text', () => {
     const fixture = TestBed.createComponent(MktgCommentThreadComponent);
     fixture.componentRef.setInput('comment', mktgCommentFixture({ text: '<img src=x onerror=alert(1)>' }));
@@ -33,7 +78,7 @@ describe('MktgCommentThreadComponent', () => {
     expect(badge?.className).toBe('inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700');
     expect(badge?.closest('a, button')).toBeNull();
   });
-  it('distinguishes absent attribution and shows sent/resolved context without interpreting resolution markup', () => {
+  it('distinguishes absent attribution and reveals resolution as plain text only on expansion', () => {
     const fixture = TestBed.createComponent(MktgCommentThreadComponent);
     fixture.componentRef.setInput('comment', mktgCommentFixture({ author: { name: null }, status: 'resolved', resolution: '<script>plain result</script>' }));
     fixture.detectChanges();
@@ -41,6 +86,10 @@ describe('MktgCommentThreadComponent', () => {
     expect(element.textContent).toContain('name unavailable');
     expect(element.textContent).toContain('mf.positioning');
     expect(element.textContent).toContain('Resolved by the agent');
+    expect(element.querySelector('[data-testid="mktg-comment-resolution"]')).toBeNull();
+    element.querySelector('button')?.click();
+    fixture.detectChanges();
+    expect(element.querySelector('[data-testid="mktg-comment-resolution"]')?.textContent).toBe('<script>plain result</script>');
     expect(element.querySelector('script')).toBeNull();
   });
 });

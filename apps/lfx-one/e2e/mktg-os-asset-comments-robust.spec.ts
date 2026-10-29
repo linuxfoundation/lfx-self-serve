@@ -188,11 +188,16 @@ test.describe('asset comments structure', () => {
     await field.getByRole('textbox').fill('Newer text typed while saving.');
     fixture.releaseSave();
     const panel = page.getByTestId('mktg-comments-panel');
-    await expect(panel.getByText('First captured comment.', { exact: true })).toBeVisible();
+    const firstThread = panel.getByTestId('mktg-comment-thread').nth(0);
+    await firstThread.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(firstThread.getByTestId('mktg-comment-body')).toHaveText('First captured comment.');
     await expect(field.getByRole('textbox')).toHaveValue('Newer text typed while saving.');
     fixture.state.holdSave = false;
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(panel.getByText('Newer text typed while saving.', { exact: true })).toBeVisible();
+    const secondThread = panel.getByTestId('mktg-comment-thread').nth(1);
+    await secondThread.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(secondThread.getByTestId('mktg-comment-body')).toHaveText('Newer text typed while saving.');
+    await expect(firstThread.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-expanded', 'true');
     expect(fixture.state.posts[0]['clientRequestId']).not.toBe(fixture.state.posts[1]['clientRequestId']);
     await expect(field.getByRole('textbox')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('field-draft-survives-tab-and-ack.png'), fullPage: true });
@@ -218,7 +223,8 @@ test.describe('asset comments structure', () => {
     await expect(field.getByRole('textbox')).toHaveValue('Keep this synthetic draft.');
     expect(fixture.state.posts).toHaveLength(1);
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(panel).toContainText('Keep this synthetic draft.');
+    await panel.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(panel.getByTestId('mktg-comment-body')).toHaveText('Keep this synthetic draft.');
     expect(fixture.state.posts[0]['clientRequestId']).toBe(fixture.state.posts[1]['clientRequestId']);
     await page.screenshot({ path: test.info().outputPath('comment-save-restored.png'), fullPage: true });
   });
