@@ -596,6 +596,22 @@
         </section>
 
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
+          @if (commentScope(); as scope) {
+            @if (!railReady()) {
+              <lfx-mktg-skeleton
+                variant="card"
+                [rows]="2"
+                class="min-h-96 rounded-xl border border-gray-200 bg-white p-4"
+                data-testid="mktg-document-view-comments-skeleton" />
+            }
+            <lfx-mktg-comments-panel
+              class="block"
+              [class.hidden]="!railReady()"
+              [scope]="scope"
+              [content]="commentContent()"
+              [priorVersion]="current.revision.draftVersion ?? null"
+              (ready)="onRedraftReady(scope, $event)" />
+          }
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
@@ -683,22 +699,6 @@
             <p id="mktg-document-view-make-current-help" class="sr-only">{{ makeCurrentHint }}</p>
           </div>
 
-          @if (commentScope(); as scope) {
-            @if (!railReady()) {
-              <lfx-mktg-skeleton
-                variant="card"
-                [rows]="2"
-                class="min-h-96 rounded-xl border border-gray-200 bg-white p-4"
-                data-testid="mktg-document-view-comments-skeleton" />
-            }
-            <lfx-mktg-comments-panel
-              class="block"
-              [class.hidden]="!railReady()"
-              [scope]="scope"
-              [content]="commentContent()"
-              [priorVersion]="current.revision.draftVersion ?? null"
-              (ready)="onRedraftReady(scope, $event)" />
-          }
           @if (current.type.agentKey === frameworkKey) {
             @if (!railReady()) {
               <lfx-mktg-skeleton

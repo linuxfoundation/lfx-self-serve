@@ -2901,8 +2901,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-comments-skeleton')).not.toBeNull();
     expect(query('mktg-document-view-downstream-skeleton')).not.toBeNull();
     expect(query('mktg-document-view-about-skeleton')).not.toBeNull();
-    expect(revision && comments && revision.compareDocumentPosition(comments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(comments && downstream && comments.compareDocumentPosition(downstream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(comments && revision && comments.compareDocumentPosition(revision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(revision && downstream && revision.compareDocumentPosition(downstream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(downstream && about && downstream.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     loading.set(false);
     commentsError.set('Synthetic comments could not be loaded.');
@@ -2951,8 +2951,17 @@ describe('MktgDocumentViewComponent', () => {
         .filter((card) => card.tagName !== 'LFX-MKTG-SKELETON')
         .map((card) => card.getAttribute('data-testid') ?? card.tagName);
     const downstreamHost = about?.parentElement?.querySelector('lfx-mktg-downstream');
-    const order = ['mktg-document-view-revisions', 'LFX-MKTG-COMMENTS-PANEL', 'LFX-MKTG-DOWNSTREAM', 'mktg-document-view-about'];
+    const order = ['LFX-MKTG-COMMENTS-PANEL', 'mktg-document-view-revisions', 'LFX-MKTG-DOWNSTREAM', 'mktg-document-view-about'];
     expect(railOrder()).toEqual(order);
+    expect(Array.from(about?.parentElement?.children ?? []).map((card) => card.getAttribute('data-testid') ?? card.tagName)).toEqual([
+      'mktg-document-view-comments-skeleton',
+      'LFX-MKTG-COMMENTS-PANEL',
+      'mktg-document-view-revisions',
+      'mktg-document-view-downstream-skeleton',
+      'LFX-MKTG-DOWNSTREAM',
+      'mktg-document-view-about-skeleton',
+      'mktg-document-view-about',
+    ]);
     expect(about?.classList.contains('hidden')).toBe(true);
     expect(query('mktg-document-view-comments-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
     expect(query('mktg-document-view-downstream-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);

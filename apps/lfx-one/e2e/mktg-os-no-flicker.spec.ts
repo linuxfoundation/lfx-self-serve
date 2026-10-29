@@ -130,6 +130,13 @@ test('the first framework content settles with its last-export answer and the ra
   await expect(page.getByTestId('mktg-slides-export-last-link')).toBeVisible();
   await expect(page.getByTestId('mktg-slides-export-last-link')).toHaveText(/Open the last export/);
   await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  expect(
+    await page.locator('section[aria-label="Revision details"]').evaluate((rail) =>
+      Array.from(rail.children)
+        .filter((card) => card.tagName !== 'LFX-MKTG-SKELETON')
+        .map((card) => card.getAttribute('data-testid') ?? card.tagName)
+    )
+  ).toEqual(['LFX-MKTG-COMMENTS-PANEL', 'mktg-document-view-revisions', 'LFX-MKTG-DOWNSTREAM', 'mktg-document-view-about']);
   await expect(page.getByTestId('mktg-document-view-content-skeleton')).toHaveCount(0);
   await expect(tabs).toBeVisible();
   const before = await tabs.boundingBox();
