@@ -145,12 +145,15 @@ export interface FaqFormDocument {
   text?: string;
 }
 
-/**
- * The agent's `faq_intake_form` as a draft — what the BFF renders into the
- * one text message it sends (src/form.ts). Every text passes through
- * verbatim. A redraft from comments and a check of a hand-edited version
- * (the form's `revision`) are later work, so the BFF never sends one.
- */
+/** A comments-only redraft of the immutable FAQ, matching the agent's form. */
+export interface FaqFormRevision {
+  mode: 'redraft';
+  prior_version: number;
+  previous: FaqContent;
+  comments: { field: string; comment: string }[];
+}
+
+/** The agent's `faq_intake_form`, rendered as one text message (src/form.ts). */
 export interface FaqFormPayload {
   type: 'faq_intake_form';
   project_name: string;
@@ -167,6 +170,8 @@ export interface FaqFormPayload {
   notes?: string;
   /** The approved messaging framework's content (`{ mf, icp, mh, nums }`). */
   messaging_framework?: Record<string, unknown>;
+  /** Absent on a draft; supplied only from the server-authorized stored revision. */
+  revision?: FaqFormRevision;
 }
 
 /** What the BFF layers onto the validated answers to build the form. */

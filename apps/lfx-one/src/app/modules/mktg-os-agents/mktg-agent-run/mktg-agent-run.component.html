@@ -16,7 +16,26 @@
   }
 }
 @if (agent && intake && !intake.oneOffDocument) {
-  <div [ngClass]="pageClass" data-testid="mktg-agent-run-page">
+  @if (publicReceiver()) {
+    <div [ngClass]="pageClass" data-testid="mktg-run-public-progress">
+      <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
+      <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
+      <lfx-mktg-run-progress
+        [project]="publicProject()"
+        [agentKey]="publicAgentKey()"
+        [documentId]="livingDocumentId"
+        [runId]="publicRunId()"
+        [runPage]="true"
+        (landed)="onPublicLanding()"
+        (failed)="onPublicLanding(true)"
+        (questions)="onPublicQuestions()" />
+      @if (errorText()) {
+        <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
+        <lfx-button label="Open asset" (onClick)="onPublicLanding(!!navigation()?.runId)" data-testid="mktg-agent-run-open-asset" />
+      }
+    </div>
+  }
+  <div [ngClass]="pageClass" [style.display]="publicReceiver() ? 'none' : null" data-testid="mktg-agent-run-page">
     <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->
@@ -26,7 +45,7 @@
             <i [class]="agent.icon" aria-hidden="true"></i>
           </span>
           <div class="flex flex-col min-w-0">
-            <span class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ assetName }}</span>
+            <h1 class="text-sm font-semibold text-gray-900 truncate" data-testid="mktg-agent-run-name">{{ assetName }}</h1>
             <span class="text-xs text-gray-400 truncate">{{ agentTagline }}</span>
           </div>
         </div>
@@ -34,7 +53,7 @@
 
       <!-- Body -->
       <div class="flex flex-col bg-gradient-to-b from-white to-gray-50">
-        @if (hasWaitingNotice()) {
+        @if (hasWaitingNotice() && phase() === 'form') {
           <section class="m-6 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="mktg-run-waiting-notice">
             @if (hasWaitingNotice()) {
               <p class="text-sm font-medium text-gray-900">{{ waitingRunMessage() }}</p>
@@ -451,18 +470,14 @@
             }
 
             @case ('running') {
-              <ng-template #leaveNote>
+              <p class="px-6 pt-5 text-sm text-gray-500" role="status" data-testid="mktg-agent-run-status">
                 @if (hasAcknowledgement()) {
-                  <p
-                    class="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800"
-                    data-testid="mktg-agent-run-leave-note">
-                    <i class="fa-light fa-clock" aria-hidden="true"></i>
-                    You can leave this page — the agent keeps working.
-                  </p>
+                  <span data-testid="mktg-run-activity-title">{{ intake.liveActivity ? activityTitle() : 'Writing the asset…' }}</span>
+                  <span data-testid="mktg-agent-run-leave-note"> You can leave this page — the agent keeps working.</span>
                 } @else {
-                  <p class="text-sm text-gray-500" data-testid="mktg-agent-run-starting-note">Starting the agent — stay on this page for a few seconds.</p>
+                  <span data-testid="mktg-agent-run-starting-note">Getting started… Stay on this page for a few seconds.</span>
                 }
-              </ng-template>
+              </p>
               @if (intake.liveActivity) {
                 <!-- What the agent is doing, step by step, as it happens: the feed alone in the page frame, as on the asset view (hand test, 18 Oct). -->
                 <div data-testid="mktg-agent-run-live">
@@ -471,20 +486,16 @@
                     [title]="activityTitle()"
                     [startedAt]="activityStartedAt()"
                     [icon]="agent.icon"
-                    [iconClass]="agentIconClass">
-                    <ng-container run-status-note [ngTemplateOutlet]="leaveNote" />
-                  </lfx-mktg-run-activity>
+                    [iconClass]="agentIconClass"
+                    [showHeader]="false" />
                 </div>
-              } @else {
-                <div class="px-7 py-10 text-sm text-gray-500" data-testid="mktg-agent-run-running" role="status">Opening the asset page…</div>
-                <ng-container [ngTemplateOutlet]="leaveNote" />
               }
             }
 
             @case ('questions') {
               <div data-testid="mktg-agent-run-questions">
-                <p class="px-6 pt-4 text-xs text-gray-500" data-testid="mktg-run-questions-return-note">
-                  Stay on this page to answer. If you leave, come back through Documents › Started runs › Answer the questions.
+                <p class="px-6 pt-4 text-xs text-gray-500" role="status" data-testid="mktg-run-questions-return-note">
+                  Waiting for your answers. Stay on this page to answer. If you leave, come back through Documents › Started runs › Answer the questions.
                 </p>
                 <lfx-mktg-run-questions
                   [questions]="pendingQuestions()"

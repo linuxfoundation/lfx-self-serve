@@ -61,6 +61,7 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -396,7 +397,15 @@ app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
 app.use('/login', authRateLimiter);
 
+// Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
+// document must also never leak the page URL via Referer to anything it links to or loads (#4363).
+app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);

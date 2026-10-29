@@ -1,44 +1,70 @@
 ---
-title: Manage Committees
-description: How to view and manage project committees in LFX Self Serve.
-audience: [maintainer, board-member, executive-director]
+title: Manage Groups
+description: How to view a group's tabs, edit a group, manage members and applications, import members from a CSV, and delete a group.
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-10-20
+last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** roles. Use the Committees section to view committee membership, update details, and manage your project's governance groups.
+This article applies to managers of a group, and to users with write access to the selected foundation or project. Use the Groups section to view a group's details, update it, and manage its members.
 
-## View all committees
+## View all groups
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Groups** from the left navigation sidebar.
-3. The committees dashboard lists all committees for your active project or foundation context.
-4. Select a committee name to open its detail view.
+3. The page lists the groups for your active lens: your own memberships in **Me**, or all groups for the project or foundation in the **Project** and **Foundation** lenses.
+4. Select a group name to open it.
 
-## View committee details
+## The group page
 
-The committee detail view (route: `/groups/:id`) shows:
+A group's page (route: `/groups/:id`) shows its name, a **Public** or **Private** tag, your membership badge, and tabs. Tabs depend on your access:
 
-- Committee name and description
-- Current members and their roles
+| Tab           | Who sees it                                                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Overview**  | Everyone who can open the group                                                                             |
+| **About**     | Everyone who can open the group                                                                             |
+| **Members**   | Managers and auditors, anyone when Member Visibility is **Basic Profile**, and members who can send invites |
+| **Votes**     | Members and managers, only when the group has voting enabled                                                |
+| **Meetings**  | Members and managers; also visitors when the group's calendar is public                                     |
+| **Surveys**   | Members and managers                                                                                        |
+| **Documents** | Everyone who can open the group                                                                             |
+| **Settings**  | Managers and auditors (auditors view only)                                                                  |
+
+See [Group Overview and About](../group-overview-and-about/) for the first two tabs and [Group Settings](../group-settings/) for the last.
 
 To link directly to a tab, append `?tab=members` to the group URL for the Members roster, or use `tab=votes`, `tab=meetings`, or `tab=documents` for those tabs. Missing or invalid tab values open Overview. A recognized tab that is not visible to you also falls back to Overview; deep links do not change your access to the group.
 
-## Edit a committee
+## Edit a group
 
-1. Open a committee from the committees dashboard.
-2. Select the edit option from the committee detail page.
-3. Update the committee name, description, or other fields.
-4. Save your changes.
+1. Open the group.
+2. Select **Edit Group** in the header. The button appears for managers who also have write access to the group's project or foundation; other managers can use the **Settings** tab instead. The edit page (route: `/groups/:id/edit`) is the same four-step wizard used to create a group, filled in with the group's current values.
+3. Move between steps freely; in edit mode the steps are not locked in order. See [Create a Group](../create-committee/) for what each step contains.
+4. On the last step, select **Update Group** to save your changes together with any staged member changes.
+
+To change only the name, type, parent, join mode, features, or chat channel, you can also use the group's **Settings** tab, which saves with **Save Changes**. Changing the group type there asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. Associated mailing lists are managed on the **Settings** tab and save as soon as you confirm them, without **Save Changes**.
 
 ## Add or remove members
 
-1. Open the committee you want to update.
-2. Navigate to the members section of the committee detail view.
-3. Select the add member option, search for the person by name or email, and confirm.
-4. Save your changes.
+1. Open the group and go to the **Members** tab.
+2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. Members who can only send invitations see **Invite Someone** instead.
+3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
+
+The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
+
+### Pending invitations
+
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog.
+
+### Pending applications
+
+In a group whose join mode is **Apply & Review**, managers see a **Pending Applications** section whenever applications are waiting.
+
+1. Select **Approve** on an application and confirm. The applicant becomes a member.
+2. Or select **Reject**, optionally add a note, and select **Reject Application**.
+
+See [Join, Apply to, and Leave a Group](../join-and-leave-a-group/) for what the applicant sees.
 
 ## Import members from a CSV
 
@@ -85,11 +111,23 @@ People already in the group or already staged in the form are skipped. Imports u
 - If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, missing-invitation, and rate-limit errors during cleanup also stop new member requests, but never resubmit the members already added.
 - Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
 
-## Switch project context
+## Delete a group
 
-Committees are scoped to a specific project or foundation. Use the lens switcher in the top navigation to change between your **Foundation**, **Project**, or **Me** views. The committees list updates automatically to reflect the selected context.
+Managers can delete a group themselves.
+
+1. Open the group and go to the **Settings** tab.
+2. In the **Danger Zone** at the bottom, select **Delete Group**.
+3. Confirm in the **Delete Group** dialog.
+
+Deleting permanently removes the group and its associated meetings, votes, surveys, and member records. It cannot be undone, so confirm that you have the right group first.
+
+## Switch context
+
+Groups are scoped to a project or foundation. Use the lens switcher in the top navigation to change between your **Foundation**, **Project**, or **Me** views. The list updates to match the selected context.
 
 ## Related
 
-- [Create a Committee](../create-committee/) — steps to create a new committee
-- [Votes](../../votes/) — run polls for committee decisions
+- [Create a Group](../create-committee/) — steps to create a new group
+- [Group Settings](../group-settings/) — join mode, mailing lists, features, and deletion
+- [Group Overview and About](../group-overview-and-about/) — the first two tabs
+- [Votes](../../votes/) — run polls for group decisions
