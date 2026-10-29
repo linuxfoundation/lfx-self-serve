@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<header class="flex items-start gap-3" data-testid="vote-link-header">
+  @if (logoUrl(); as url) {
+    <img
+      [src]="url"
+      [alt]="project()?.name + ' logo'"
+      (error)="onLogoError()"
+      class="h-10 w-10 flex-shrink-0 rounded object-contain"
+      data-testid="vote-link-project-logo" />
+  } @else {
+    <img src="/images/logo_lfx.svg" alt="LFX" class="h-10 w-auto flex-shrink-0" data-testid="vote-link-lfx-mark" />
+  }
+  <div class="flex min-w-0 flex-1 flex-col gap-1">
+    @if (project(); as p) {
+      <p class="text-sm font-medium text-slate-600 break-words" data-testid="vote-link-project-name">{{ p.name }}</p>
+    }
+    <h1 class="text-xl font-semibold text-slate-900 break-words" data-testid="vote-link-title">{{ title() }}</h1>
+    @if (statusLabel() || endTime()) {
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
+        @if (statusLabel()) {
+          <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800" data-testid="vote-link-status">{{ statusLabel() }}</span>
+        }
+        @if (endTime(); as end) {
+          <span data-testid="vote-link-deadline">Closes {{ end | date: 'MMM d, y, h:mm a (z)' }}</span>
+        }
+      </div>
+    }
+  </div>
+</header>

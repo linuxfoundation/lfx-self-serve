@@ -504,9 +504,15 @@ export interface VoteLinkBallotState {
   comment_responses?: CommentResponseInput[];
 }
 
-/** Response of POST /vote_links/ballot — deliberately carries no project, committee, creator or counts. */
+/**
+ * Response of POST /vote_links/ballot — carries no committee, creator or counts. The voting service adds the project
+ * key (lfx-v2-voting-service#76: `project_uid` required, `project_slug` optional); both are typed optional until that
+ * release ships, and a missing key renders the page unbranded. Branding itself never comes from this payload.
+ */
 export interface VoteLinkBallot {
   vote_uid: string;
+  project_uid?: string;
+  project_slug?: string;
   name: string;
   description?: string;
   status: string;
@@ -1228,4 +1234,11 @@ export interface VoteMailingListReminderListOption {
 }
 
 /** Page states of the login-free vote link ballot page (#4363). */
+/** One line of the thank-you screen's recap: a question prompt and what the voter chose for it. */
+export interface VoteAnswerSummaryLine {
+  question_id: string;
+  prompt: string;
+  answer: string;
+}
+
 export type VoteLinkState = 'loading' | 'ready' | 'not-open' | 'submitted' | 'updated' | 'invalid' | 'ended' | 'removed' | 'error';

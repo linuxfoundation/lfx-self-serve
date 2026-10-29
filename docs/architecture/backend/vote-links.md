@@ -30,6 +30,12 @@ A voter can open a personalized link, `https://app.lfx.dev/votes/{vote_uid}#vote
 
 `publicApiRateLimiter` (100 requests per minute per IP, per pod) applies. A board of 30 opening links behind one office IP makes about 60 calls (a ballot read and a submit each), inside the budget.
 
+## Project branding and the thank-you screen (#4692)
+
+The ballot payload carries `project_uid` (and optionally `project_slug`) from the voting service (lfx-v2-voting-service#76); both are typed optional until that release ships. `VoteLinkBallotComponent` calls `GET /public/api/projects/:identifier/summary` with `project_uid`, falling back to `project_slug`, and shows the returned logo and name in `lfx-vote-link-header`. The route returns only `{ name, slug, logo_url, is_foundation }`, reads the project through the query service with an M2M token, and answers a non-public or Formation - Confidential project exactly like an unknown identifier (non-cacheable 404). Branding never comes from the voting service, nothing public maps a vote uid to a project, and a missing key or a summary 404 renders the page unbranded with the LFX mark. A 503 on the ballot call itself (for example the voting service cannot map the project) is the try-again error state, not an unbranded ballot.
+
+After a successful submit or update, `lfx-vote-link-thank-you` replaces the form. It recaps one line per question from the in-memory submission, or says the ballot is secret on a pseudo-anonymous vote (a missing `pseudo_anonymity` counts as secret), and shows the deadline in the viewer's locale. It has no navigation, sign-in prompt or identity.
+
 ## Send ballots now
 
 `POST /api/votes/:uid/send-ballots` (writer-only via `assertVoteWrite`) re-resolves the members who haven't voted from the voters index, sends their `vote_response` uids to `bulk_resend` with `personalized_links: true` in batches of `VOTE_SEND_BALLOTS_BATCH_SIZE`, and returns `{ sent, skipped }`. ITX rejects a whole call if any recipient is invalid, so a rejected batch counts as skipped and the rest still go out; the call fails only when nothing was sent. It logs counts only (no actor identifier). A rejected batch (4xx) counts as skipped and the rest go out; a timeout or 5xx stops the run, since that batch may already be queued, and the unsent remainder counts as skipped. The UI (`lfx-vote-send-ballots`) disables the action for `VOTE_SEND_BALLOTS_COOLDOWN_MS` after a send. That cooldown is a UX guard only, per component instance: the BFF has no per-vote cooldown beyond `voteWriteRateLimiter`.
