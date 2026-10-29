@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px label gap, 10px bar. -->
+@if (showLabel()) {
+  <div class="mb-[8px] flex justify-between copy-13 tabular-nums text-ui-neutral-600" data-testid="ui-progress-label">
+    <span>{{ label() }}</span>
+    <span data-testid="ui-progress-value">{{ displayValue() }}</span>
+  </div>
+}
+<div
+  role="progressbar"
+  class="relative h-[10px] w-full overflow-hidden rounded-ui-full bg-ui-neutral-alpha-100"
+  [attr.aria-label]="label()"
+  [attr.aria-valuenow]="clampedValue()"
+  aria-valuemin="0"
+  [attr.aria-valuemax]="max()"
+  [attr.aria-valuetext]="valueText() || null"
+  data-testid="ui-progress-bar">
+  <span [class]="fillClasses()" [style.width.%]="percent()" data-testid="ui-progress-fill"></span>
+</div>
