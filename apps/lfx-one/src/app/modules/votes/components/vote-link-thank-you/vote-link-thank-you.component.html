@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex min-h-[70dvh] flex-col items-center justify-center gap-5 text-center" role="status" data-testid="vote-link-thank-you">
+  <span class="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600" aria-hidden="true">
+    <i class="fa-light fa-check text-3xl"></i>
+  </span>
+  <h1 class="text-2xl font-semibold text-slate-900" data-testid="vote-link-thank-you-heading">{{ updated() ? 'Your vote is updated' : 'Your vote is in' }}</h1>
+
+  <div class="flex flex-col gap-1">
+    @if (project(); as p) {
+      <p class="text-sm font-medium text-slate-600 break-words" data-testid="vote-link-thank-you-project">{{ p.name }}</p>
+    }
+    <p class="text-base text-slate-900 break-words" data-testid="vote-link-thank-you-title">{{ title() }}</p>
+  </div>
+
+  <div class="w-full rounded-lg border border-slate-200 bg-white p-4 text-left flex flex-col gap-3" data-testid="vote-link-thank-you-recap">
+    @if (secret()) {
+      <p class="text-base font-medium text-slate-900" data-testid="vote-link-thank-you-secret">Your ballot is secret</p>
+    } @else if (abstained()) {
+      <p class="text-base font-medium text-slate-900" data-testid="vote-link-thank-you-abstained">You abstained</p>
+    } @else {
+      @for (line of answers(); track line.question_id) {
+        <div class="flex flex-col gap-0.5" [attr.data-testid]="'vote-link-thank-you-answer-' + line.question_id">
+          <p class="text-sm text-slate-600 break-words">{{ line.prompt }}</p>
+          <p class="text-base font-medium text-slate-900 break-words">{{ line.answer }}</p>
+        </div>
+      }
+    }
+  </div>
+
+  @if (endTime(); as end) {
+    <p class="text-sm text-slate-600" data-testid="vote-link-thank-you-deadline">
+      Voting closes {{ end | date: 'MMM d, y, h:mm a (z)' }}. You can change your vote until then from the same link.
+    </p>
+  }
+</section>

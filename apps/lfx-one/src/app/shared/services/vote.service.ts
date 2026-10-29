@@ -31,6 +31,7 @@ import {
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  PublicProjectSummary,
   VoteLinkBallot,
   VoteLinkResponseRequest,
   VoteReminderRecipient,
@@ -354,6 +355,20 @@ export class VoteService {
    */
   public getLinkBallot(voteToken: string): Observable<VoteLinkBallot> {
     return this.http.post<VoteLinkBallot>('/public/api/votes/link-ballot', { vote_token: voteToken }).pipe(take(1));
+  }
+
+  /** Anonymous branding lookup for the vote link page (#4692); a 404 (hidden or unknown project) is a branding miss, not an error. */
+  public getPublicProjectSummary(identifier: string): Observable<PublicProjectSummary | null> {
+    return this.http.get<PublicProjectSummary>(`/public/api/projects/${encodeURIComponent(identifier)}/summary`).pipe(
+      take(1),
+      catchError((error: unknown) => {
+        // A 404 is the expected miss for a hidden or unknown project; anything else is worth a trace. Status only.
+        if (!(error instanceof HttpErrorResponse && error.status === 404)) {
+          console.warn('Project branding lookup failed; rendering unbranded', error instanceof HttpErrorResponse ? error.status : 'unknown');
+        }
+        return of(null);
+      })
+    );
   }
 
   /** First submission (`update: false`, POST) or change (`update: true`, PUT) of a ballot by vote link token. */

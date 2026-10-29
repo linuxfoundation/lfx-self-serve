@@ -84,13 +84,13 @@ describe('VoteBallotFormComponent (#4363)', () => {
     await render(baseBallot({ poll_type: 'majority' }));
 
     expect(el().querySelector('[cdkDropList]')).toBeNull();
-    expect(el().querySelectorAll('lfx-radio-button')).toHaveLength(3);
+    expect(el().querySelectorAll('p-radiobutton, p-radioButton')).toHaveLength(3);
   });
 
   it('renders a ranked ballot with up/down buttons of at least 44px, and emits ranked_choices in order', async () => {
     await render(baseBallot({ poll_type: 'instant_runoff_vote' }));
 
-    expect(el().querySelectorAll('lfx-radio-button')).toHaveLength(0);
+    expect(el().querySelectorAll('p-radiobutton, p-radioButton')).toHaveLength(0);
     for (const choice of CHOICES) {
       for (const dir of ['up', 'down']) {
         const button = byId(`vote-link-rank-${dir}-${choice.choice_id}`)!;
@@ -229,6 +229,87 @@ describe('VoteBallotFormComponent (#4363)', () => {
       submit();
 
       expect(emitted[0].commentResponses).toBeUndefined();
+    });
+  });
+
+  describe('phone polish (#4692)', () => {
+    it('reads each question prompt at 18px or larger', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-question-prompt')?.className).toContain('text-[18px]');
+    });
+
+    it('renders every choice as a full-row card of at least 44px and marks the selected one', async () => {
+      await render(baseBallot());
+      const card = (id: string) => byId(id)!.querySelector('[data-selected]') as HTMLElement;
+      expect(card('vote-link-choice-c-a').className).toContain('min-h-[44px]');
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('false');
+
+      (el().querySelector('#vote-link-choice-c-a') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('true');
+      expect(card('vote-link-choice-c-a').className).toContain('border-blue-600');
+      expect(card('vote-link-choice-c-b').getAttribute('data-selected')).toBe('false');
+    });
+
+    it('shows "Select one answer" and disables Submit until a choice is made', async () => {
+      await render(baseBallot());
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Select one answer');
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(true);
+
+      (el().querySelector('#vote-link-choice-c-b') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(byId('vote-link-submit-helper')).toBeNull();
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    it('words the helper for the question shape: multiple choice, then several questions', async () => {
+      const multi = baseBallot({ poll_questions: [{ question_id: 'q1', prompt: 'Which?', type: 'multiple_choice', choices: CHOICES }] });
+      await render(multi);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Select at least one answer');
+
+      const two = baseBallot({
+        poll_questions: [
+          { question_id: 'q1', prompt: 'First?', type: 'single_choice', choices: CHOICES },
+          { question_id: 'q2', prompt: 'Second?', type: 'single_choice', choices: CHOICES },
+        ],
+      });
+      await render(two);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Answer every question to submit');
+    });
+
+    it('needs no selection to abstain', async () => {
+      await render(baseBallot());
+      (el().querySelector('#vote-link-abstain') as HTMLInputElement).click();
+      fixture.detectChanges();
+
+      expect(byId('vote-link-submit-helper')).toBeNull();
+    });
+
+    it('pins Submit above the home-indicator safe area', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-footer')?.className).toContain('env(safe-area-inset-bottom)');
+    });
+
+    it('keeps comment prompts collapsed behind "Add a comment" until opened', async () => {
+      await render(baseBallot());
+      expect(byId('vote-link-add-comment-p1')?.textContent).toContain('Add a comment');
+      expect(el().querySelector('textarea')).toBeNull();
+
+      click('vote-link-add-comment-p1');
+
+      expect(el().querySelector('textarea')).not.toBeNull();
+      expect(byId('vote-link-add-comment-p1')).toBeNull();
+    });
+
+    it('opens a prompt that already has a prefilled comment', async () => {
+      await render(baseBallot(), votedState());
+
+      expect(byId('vote-link-add-comment-p1')).toBeNull();
+      expect(el().querySelector('textarea')).not.toBeNull();
     });
   });
 });

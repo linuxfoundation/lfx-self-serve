@@ -9,21 +9,24 @@ import { Meta } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
-import { VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
-import { normalizePollStatus } from '@lfx-one/shared/utils';
+import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
+import { buildVoteAnswerSummary, normalizePollStatus } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
 import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
+import { VoteLinkHeaderComponent } from '../components/vote-link-header/vote-link-header.component';
+import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vote-link-thank-you.component';
 
 /**
  * Login-free ballot page (#4363). The vote link token lives only in this component's `token` signal: it is read once
  * from the URL fragment in the browser, dropped from the address bar with `history.replaceState`, and sent only in
  * request bodies. It is never written to storage, a service, analytics, error reporting or logs. The page shows the
- * vote title, description and questions only: no navbar, no user menu, nothing about the recipient.
+ * vote title, description and questions only: no navbar, no user menu, nothing about the recipient. When the ballot
+ * names a project, its public branding (name and logo) is fetched anonymously; a miss just leaves the page unbranded.
  */
 @Component({
   selector: 'lfx-vote-link-ballot',
-  imports: [ButtonComponent, VoteBallotFormComponent],
+  imports: [ButtonComponent, VoteBallotFormComponent, VoteLinkHeaderComponent, VoteLinkThankYouComponent],
   templateUrl: './vote-link-ballot.component.html',
 })
 export class VoteLinkBallotComponent implements OnInit, OnDestroy {
@@ -46,6 +49,19 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Submit with PUT (the ballot exists) or POST (first submission). */
   protected readonly updateMode = signal<boolean>(false);
   protected readonly abstainedLast = signal<boolean>(false);
+  /** Public branding for the ballot's project; null while loading, when the ballot names no project, or on any miss. */
+  protected readonly project = signal<PublicProjectSummary | null>(null);
+  /** What the voter just submitted, kept in memory only to recap it on the thank-you screen. */
+  private readonly lastSubmission = signal<VoteBallotSubmission | null>(null);
+
+  protected readonly answerLines = computed(() => {
+    const submission = this.lastSubmission();
+    return submission ? buildVoteAnswerSummary(this.ballot()?.poll_questions ?? [], submission) : [];
+  });
+  /** The page shows the project header only while a ballot is on screen; every other state is a centred message. */
+  protected readonly showHeader = computed(() => this.state() === 'ready' || this.state() === 'not-open');
+  protected readonly showStandaloneMark = computed(() => !this.showHeader() && this.state() !== 'submitted' && this.state() !== 'updated');
+  protected readonly statusLabel = computed(() => (this.state() === 'ready' ? 'Open' : ''));
 
   protected readonly showUpdatePrompt = computed(() => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing());
 
@@ -88,6 +104,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     };
 
     this.submitting.set(true);
+    this.lastSubmission.set(submission);
     this.send(body, this.updateMode(), true);
   }
 
@@ -129,6 +146,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (ballot) => {
           this.ballot.set(ballot);
+          this.loadProject(ballot);
           this.updateMode.set(!!ballot.ballot?.already_voted);
           if (ballot.ballot?.voter_removed) {
             this.state.set('removed');
@@ -142,6 +160,16 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
         },
         error: (err: unknown) => this.handleError(err, this.errorText(err)),
       });
+  }
+
+  /** Branding is best effort: no project key, a hidden or unknown project, or any failure (the service maps them to null) leaves the page unbranded. */
+  private loadProject(ballot: VoteLinkBallot): void {
+    const identifier = ballot.project_uid || ballot.project_slug;
+    if (!identifier) return;
+    this.voteService
+      .getPublicProjectSummary(identifier)
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((project) => this.project.set(project));
   }
 
   private handleError(err: unknown, message: string): void {
@@ -174,6 +202,8 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private startFromFragment(): void {
     this.cancel$.next();
     this.ballot.set(null);
+    this.project.set(null);
+    this.lastSubmission.set(null);
     this.editing.set(false);
     this.updateMode.set(false);
     this.submitting.set(false);
