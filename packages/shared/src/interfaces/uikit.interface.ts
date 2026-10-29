@@ -47,3 +47,9 @@ export interface UiModalConfig<D = unknown> {
 
 /** Which side of its host a uikit tooltip prefers. */
 export type UiTooltipSide = 'top' | 'right' | 'bottom' | 'left';
+
+/** Size of a uikit toggle: `default` 28x16, `medium` 36x20 or `large` 44x24. */
+export type UiToggleSize = 'default' | 'medium' | 'large';
+
+/** Colour of a uikit toggle when on. `warning` and `danger` flag settings with consequences. */
+export type UiToggleTone = 'accent' | 'warning' | 'danger';

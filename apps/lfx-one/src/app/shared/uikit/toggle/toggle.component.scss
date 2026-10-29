@@ -1,0 +1,45 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Track sizes drive the thumb size and travel, so they live here with the thumb (exact px, not rem; 14px root).
+.ui-toggle {
+  --tg-w: 28px;
+  --tg-h: 16px;
+  width: var(--tg-w);
+  height: var(--tg-h);
+
+  &.ui-toggle-medium {
+    --tg-w: 36px;
+    --tg-h: 20px;
+  }
+
+  &.ui-toggle-large {
+    --tg-w: 44px;
+    --tg-h: 24px;
+  }
+
+  // Thumb inset 2px, with the library's soft two-layer shadow (no token for it).
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(var(--tg-h) - 4px);
+    height: calc(var(--tg-h) - 4px);
+    border-radius: var(--ui-radius-full);
+    background: var(--ui-white);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 43, 0.2),
+      0 0 0 0.5px rgba(15, 23, 43, 0.1);
+  }
+
+  &:checked::after {
+    transform: translateX(calc(var(--tg-w) - var(--tg-h)));
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    &::after {
+      transition: transform var(--ui-duration-slow) var(--ui-ease);
+    }
+  }
+}
