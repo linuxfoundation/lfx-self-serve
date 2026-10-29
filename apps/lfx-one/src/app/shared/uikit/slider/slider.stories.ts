@@ -15,6 +15,12 @@ export default meta;
 type Story = StoryObj<UiSliderComponent>;
 
 export const Default: Story = {};
-export const WithUnit: Story = { args: { valueText: '60%' } };
+// valueText must follow value, so this story binds both to one local.
+export const WithUnit: Story = {
+  render: () => ({
+    props: { v: 60 },
+    template: `<div class="w-[420px]"><lfx-ui-slider label="Alert threshold" [(value)]="v" [valueText]="v + '%'" /></div>`,
+  }),
+};
 export const Stepped: Story = { args: { label: 'Sample size', min: 0, max: 1000, step: 100, value: 300 } };
 export const Disabled: Story = { args: { label: 'Disabled', value: 25, disabled: true } };

@@ -86,6 +86,34 @@ describe('UiSliderComponent', () => {
     expect(fixture.componentInstance.value()).toBe(64);
   });
 
+  it('does not show binary noise for fractional steps', async () => {
+    await set('max', 1);
+    await set('step', 0.1);
+    range().value = '0.3';
+    range().dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe(0.3);
+    expect(output().textContent?.trim()).toBe('0.3');
+  });
+
+  it('keeps fractional minima exact', async () => {
+    await set('min', 0.5);
+    await set('max', 2);
+    await set('step', 0.1);
+    await set('value', 1.2);
+
+    expect(output().textContent?.trim()).toBe('1.2');
+  });
+
+  it('gives each instance its own ids', () => {
+    const other = TestBed.createComponent(UiSliderComponent);
+    other.componentRef.setInput('label', 'Other');
+    other.detectChanges();
+
+    expect((other.nativeElement as HTMLElement).querySelector('input')?.id).not.toBe(range().id);
+  });
+
   it('emits the snapped value after interaction', async () => {
     await set('step', 10);
     range().value = '47';

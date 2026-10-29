@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, numberAttribute, Signal, signal } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 
@@ -19,8 +20,7 @@ import { ControlValueAccessor, NgControl } from '@angular/forms';
   host: { class: 'block min-w-0' },
 })
 export class UiSliderComponent implements ControlValueAccessor {
-  private static nextId = 0;
-
+  protected readonly inputId = inject(_IdGenerator).getId('lfx-ui-slider-');
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
 
   /** Visible label. It names the slider for assistive technology. */
@@ -38,7 +38,6 @@ export class UiSliderComponent implements ControlValueAccessor {
   /** The current value. Supports two-way binding with `[(value)]`. */
   public readonly value = model<number>(0);
 
-  protected readonly inputId = `lfx-ui-slider-${UiSliderComponent.nextId++}`;
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
   /** The value as shown: snapped to the nearest step from `min`, then clamped to the range. */
@@ -84,17 +83,19 @@ export class UiSliderComponent implements ControlValueAccessor {
     return computed(() => this.snap(this.value()));
   }
 
-  /** Rounds to the nearest step from `min`, then clamps to `[min, max]`. */
-  private snap(raw: number): number {
-    const step = this.step();
-    const stepped = step > 0 ? Math.round((raw - this.min()) / step) * step + this.min() : raw;
-    return Math.min(Math.max(stepped, this.min()), this.max());
-  }
-
   private initPercent(): Signal<number> {
     return computed(() => {
       const span = this.max() - this.min();
       return span > 0 ? ((this.snapped() - this.min()) / span) * 100 : 0;
     });
+  }
+
+  /** Rounds to the nearest step from `min`, then clamps to `[min, max]`, trimming binary noise such as 0.30000000000000004. */
+  private snap(raw: number): number {
+    const step = this.step();
+    const decimals = (n: number): number => (String(n).split('.')[1] ?? '').length;
+    const precision = Math.max(decimals(step), decimals(this.min()));
+    const stepped = step > 0 ? Number((Math.round((raw - this.min()) / step) * step + this.min()).toFixed(precision)) : raw;
+    return Math.min(Math.max(stepped, this.min()), this.max());
   }
 }
