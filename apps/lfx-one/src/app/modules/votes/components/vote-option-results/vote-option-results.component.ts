@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 import { VoteResultsOption } from '@lfx-one/shared/interfaces';
 
 /** Option result rows for one generic question — `live` (leading highlight), `final` (creator, white track) or `voter-final` (voter, slate-100 track). */
 @Component({
   selector: 'lfx-vote-option-results',
+  imports: [NgTemplateOutlet],
   templateUrl: './vote-option-results.component.html',
   host: { class: 'contents' },
 })

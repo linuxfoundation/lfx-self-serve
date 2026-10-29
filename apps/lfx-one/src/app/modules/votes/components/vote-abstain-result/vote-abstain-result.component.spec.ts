@@ -91,9 +91,9 @@ describe('VoteAbstainResultComponent', () => {
       expect(emitted).toBe(1);
     });
 
-    it('renders no link when nobody abstained', () => {
+    it.each(['live', 'final'] as const)('renders no link when nobody abstained in the %s variant', (variant) => {
       fixture.componentRef.setInput('showVoterLinks', true);
-      render(stats(0, 0), 'final');
+      render(stats(0, 0), variant);
 
       expect(viewLink()).toBeNull();
       expect(fixture.nativeElement.textContent).toContain('0 abstentions');

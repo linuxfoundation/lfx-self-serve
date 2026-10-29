@@ -790,9 +790,14 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([q], [], true, false)[0].text).toBe('No choices selected');
   });
 
-  it('names the closed winner', () => {
+  it('names the closed leader without declaring an elected winner', () => {
     const q = question('q-1', [option('a', 'Yes', 8, 80, { isWinner: true, isLeading: true }), option('b', 'No', 2, 20)]);
-    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes won with 80%');
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes received the most votes with 80%');
+  });
+
+  it('uses neutral wording for a closed plurality-only leader', () => {
+    const q = question('q-1', [option('a', 'Yes', 4, 40, { isWinner: true, isLeading: true }), option('b', 'No', 3, 30), option('c', 'Later', 3, 30)]);
+    expect(buildVoteResultsSummary([q], [], true, true)[0].text).toBe('Yes received the most votes with 40%');
   });
 
   it('reports a closed tie', () => {
@@ -810,8 +815,15 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true)[0].text).toBe('Most first choices: a (5 voters)');
   });
 
-  it('reports a ranked tie at the top', () => {
-    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 3, b: 3, c: 1 })], false, false)[0].text).toBe('Most first choices: a and b (3 each)');
+  it.each([
+    [false, 1, 'voter'],
+    [false, 3, 'voters'],
+    [true, 1, 'voter'],
+    [true, 3, 'voters'],
+  ] as const)('reports a ranked tie with voter units (closed=%s, count=%i)', (isClosed, count, unit) => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: count, b: count, c: 0 })], false, isClosed)[0].text).toBe(
+      `Most first choices: a and b (${count} ${unit} each)`
+    );
   });
 
   it('says no rankings are recorded when nobody ranked a first choice', () => {

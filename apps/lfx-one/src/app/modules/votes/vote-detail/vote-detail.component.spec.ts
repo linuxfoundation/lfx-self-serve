@@ -1956,6 +1956,17 @@ describe('VoteDetailComponent', () => {
       expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
     });
 
+    it('preserves long leading-choice text with word-breaking protection', async () => {
+      const results = makeMethodResults();
+      const label = 'SyntheticPackageIdentifier'.repeat(20);
+      results.poll_results[0].question.choices[0].choice_text = label;
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toContain(label);
+      expect(testId(fixture, 'vote-detail-overview-summary-question-1')?.classList).toContain('break-words');
+    });
+
     it.each([
       { status: PollStatus.ACTIVE, message: 'No votes recorded yet.' },
       { status: PollStatus.ENDED, message: 'No votes were submitted.' },
@@ -2018,11 +2029,28 @@ describe('VoteDetailComponent', () => {
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[0]).toMatchObject({ value: '2 / 4', subLine: '50% participation · 2 abstentions' });
     });
 
-    it('names the winner once the vote has closed', async () => {
-      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+    it.each([PollType.GENERIC, PollType.MAJORITY])('names the closed %s leader without declaring an elected winner', async (pollType) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
       const fixture = await setup();
 
-      expect(summary(fixture)).toMatch(/^Yes won with \d+%$/);
+      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
+    });
+
+    it.each([PollType.GENERIC, PollType.MAJORITY])('does not declare a 40-percent %s leader the winner', async (pollType) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
+      const results = makeMethodResults();
+      results.num_recipients = 10;
+      results.num_votes_cast = 10;
+      results.poll_results[0].question.choices.push({ choice_id: 'choice-later', choice_text: 'Later' });
+      results.poll_results[0].generic_choice_votes = [
+        { choice_id: 'choice-yes', vote_count: 4, percentage: 40 },
+        { choice_id: 'choice-no', vote_count: 3, percentage: 30 },
+        { choice_id: 'choice-later', vote_count: 3, percentage: 30 },
+      ];
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setup();
+
+      expect(summary(fixture)).toBe('Yes received the most votes with 40%');
     });
 
     it('summarizes a ranked vote by first choices', async () => {
@@ -2050,7 +2078,7 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup();
 
       expect(testId(fixture, 'vote-detail-you-voted')?.textContent?.trim()).toBe('Your vote is included in these results.');
-      expect(summary(fixture)).toMatch(/^Yes won with \d+%$/);
+      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
     });
 
     it('opens the Results tab from "View full results"', async () => {

@@ -391,8 +391,8 @@ function joinNames(names: string[]): string {
 
 /**
  * Builds the one-line-per-question results summary shown on the vote detail Overview
- * @description Generic and majority votes read the leader/winner/tie markers from `questions`; ranked votes have no
- * winner field, so they use the choice(s) with the most rank-1 votes. Abstentions are not part of the summary.
+ * @description Generic and majority votes read the leader/tie markers from `questions` without declaring an elected
+ * winner or inferring quorum/threshold rules. Ranked votes use the choice(s) with the most rank-1 votes. Abstentions are not part of the summary.
  * @param questions - Processed plurality questions from `buildVoteResultsQuestions`
  * @param rankedQuestions - Ranked views from `buildRankedQuestionViews`
  * @param isGeneric - Whether the vote renders the plurality layout (otherwise the ranked views are summarised)
@@ -416,7 +416,7 @@ export function buildVoteResultsSummary(
 
       let text = isClosed ? 'No rankings recorded' : 'No rankings recorded yet';
       if (topCount > 0 && leaders.length > 1) {
-        text = `Most first choices: ${joinNames(leaders.map((row) => row.text))} (${topCount} each)`;
+        text = `Most first choices: ${joinNames(leaders.map((row) => row.text))} (${topCount} ${topCount === 1 ? 'voter' : 'voters'} each)`;
       } else if (topCount > 0) {
         text = `Most first choices: ${leaders[0].text} (${topCount} ${topCount === 1 ? 'voter' : 'voters'})`;
       }
@@ -433,7 +433,7 @@ export function buildVoteResultsSummary(
     if (question.totalVotes > 0 && leaders.length > 1) {
       text = `Tied: ${joinNames(leaders.map((option) => option.text))} (${percentage}% each)`;
     } else if (question.totalVotes > 0 && leaders.length === 1) {
-      text = `${leaders[0].text} ${isClosed ? 'won' : 'leads'} with ${percentage}%`;
+      text = `${leaders[0].text} ${isClosed ? 'received the most votes' : 'leads'} with ${percentage}%`;
     }
 
     return { questionId: question.questionId, question: question.question, text };

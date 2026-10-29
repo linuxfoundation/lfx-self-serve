@@ -10,25 +10,7 @@
             {{ option.text }}
           </span>
           <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
-            @if (showVoterLinks() && option.voteCount > 0) {
-              <button
-                type="button"
-                class="text-blue-600 hover:underline py-1"
-                [attr.aria-label]="
-                  option.voteCount +
-                  (option.voteCount === 1 ? ' vote' : ' votes') +
-                  ' for ' +
-                  option.text +
-                  ', view ' +
-                  (option.voteCount === 1 ? 'voter' : 'voters')
-                "
-                (click)="viewVoters.emit(option.choiceId)"
-                [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
-                {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-              </button>
-            } @else {
-              {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-            }
+            <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
             · {{ option.percentage }}%
           </span>
         </div>
@@ -78,25 +60,7 @@
               [class.text-green-700]="option.isWinner"
               [class.text-amber-700]="option.isTied"
               [class.text-slate-700]="!option.isWinner && !option.isTied">
-              @if (showVoterLinks() && option.voteCount > 0) {
-                <button
-                  type="button"
-                  class="text-blue-600 hover:underline py-1"
-                  [attr.aria-label]="
-                    option.voteCount +
-                    (option.voteCount === 1 ? ' vote' : ' votes') +
-                    ' for ' +
-                    option.text +
-                    ', view ' +
-                    (option.voteCount === 1 ? 'voter' : 'voters')
-                  "
-                  (click)="viewVoters.emit(option.choiceId)"
-                  [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
-                  {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-                </button>
-              } @else {
-                {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
-              }
+              <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
             </span>
             <span
               class="text-sm"
@@ -120,3 +84,20 @@
     }
   }
 </div>
+
+<ng-template #count let-option>
+  @if (showVoterLinks() && option.voteCount > 0) {
+    <button
+      type="button"
+      class="text-blue-600 hover:underline py-1"
+      [attr.aria-label]="
+        option.voteCount + (option.voteCount === 1 ? ' vote' : ' votes') + ' for ' + option.text + ', view ' + (option.voteCount === 1 ? 'voter' : 'voters')
+      "
+      (click)="viewVoters.emit(option.choiceId)"
+      [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
+      {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+    </button>
+  } @else {
+    {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+  }
+</ng-template>
