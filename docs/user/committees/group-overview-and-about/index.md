@@ -4,7 +4,7 @@ description: What the Overview and About tabs show on a group's page, including 
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, overview, about, charter, chairs, calendar]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Committees
 ---
 
@@ -35,6 +35,8 @@ Members see open votes and surveys they still need to respond to, with **View Al
 ### Weekly brief
 
 Members with access to engagement data may also see an AI-written weekly brief card. It isn't available to everyone yet.
+
+Managers can select **Email Group Members** to email the current brief to all members of the group. The email goes to the group's members, not the mailing list's subscribers, and it doesn't appear in the mailing list's history. The button is available only when the group has a mailing list configured, and only project writers can use it. Managers who aren't project writers see it disabled with a note to ask a project administrator. If sharing access can't be verified, the button stays disabled with an error message and a **Retry** action.
 
 ### Recent Activity
 
