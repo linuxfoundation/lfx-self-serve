@@ -80,6 +80,18 @@
         [ariaLabel]="employmentLabel"
         dataTest="org-people-contributors-employment-filter" />
     </div>
+    <div class="w-full md:w-52">
+      <lfx-select
+        [form]="filterForm"
+        control="teamMembers"
+        size="small"
+        [options]="teamMembersOptions"
+        styleClass="w-full"
+        [ariaLabel]="teamMembersLabel"
+        [tooltip]="teamMembersTooltip"
+        tooltipPosition="top"
+        dataTest="org-people-contributors-team-members-filter" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"
@@ -90,6 +102,10 @@
       </button>
     }
   </div>
+
+  @if (response().teamMembersUnavailable) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-contributors-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
 
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-contributors-error">

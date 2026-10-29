@@ -99,7 +99,7 @@ export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
  */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
   'People with at least one code contribution (commit, pull request, review or comment) in LF projects over the past 365 days, ' +
-  'credited to the employer they had at the time, so people who have since left are included. Bots excluded.';
+  'credited to the employer they had at the time, so people who have since left are included. Bots and CDP team members excluded.';
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =

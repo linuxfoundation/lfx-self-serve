@@ -26,6 +26,7 @@ import {
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_ANY_PROJECT_LABEL,
@@ -36,6 +37,11 @@ import {
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_TEAM_MEMBERS_LABEL,
+  ORG_TEAM_MEMBERS_OPTIONS,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
@@ -57,6 +63,8 @@ import type {
   OrgLensTimeRangeOption,
   OrgProjectScope,
   OrgProjectScopeOption,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -65,7 +73,9 @@ import {
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
+  orgTeamMembersUrlParam,
   parseOrgLensTimeRange,
+  parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
 } from '@lfx-one/shared/utils';
@@ -116,6 +126,10 @@ export class OrgContributionsComponent {
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly anyProjectLabel = ORG_ANY_PROJECT_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
+  protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
+  protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
   private readonly initialCodeFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.initialParams.get(name)));
@@ -128,6 +142,12 @@ export class OrgContributionsComponent {
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
+    teamMembers: new FormControl<OrgTeamMembersFilter>(
+      parseOrgTeamMembersFilter(this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS,
+      {
+        nonNullable: true,
+      }
+    ),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -230,7 +250,8 @@ export class OrgContributionsComponent {
       this.isCsvParamNormalized('employees') ||
       (rawFoundation !== null && rawFoundation !== this.filterForm.controls.foundation.value) ||
       this.isRangeParamNormalized() ||
-      this.isCommitFilterParamNormalized()
+      this.isCommitFilterParamNormalized() ||
+      this.isTeamMembersParamNormalized()
     ) {
       afterNextRender(() => this.syncUrl(this.query()));
     }
@@ -280,6 +301,17 @@ export class OrgContributionsComponent {
       .subscribe((foundation) => {
         if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
       });
+
+    // `?teamMembers=` follows a query-only navigation too; the guard skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgTeamMembersFilter(params.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((teamMembers) => {
+        if (teamMembers !== this.filterForm.controls.teamMembers.value) this.filterForm.patchValue({ teamMembers });
+      });
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
@@ -301,6 +333,7 @@ export class OrgContributionsComponent {
       // The Code tab's Maintainer pills and counts follow the range, project type and code count the page shows.
       range: query.dateRange,
       codeFilters: { projectScope: query.projectScope, commitScope: query.commitScope, metric: query.metric },
+      teamMembers: query.teamMembers,
     });
   }
 
@@ -345,6 +378,7 @@ export class OrgContributionsComponent {
       employees: [],
       projectScope: DEFAULT_ORG_COMMIT_FILTERS.projectScope,
       metric: DEFAULT_ORG_CODE_MEASURE,
+      teamMembers: DEFAULT_ORG_TEAM_MEMBERS,
     });
   }
 
@@ -366,6 +400,7 @@ export class OrgContributionsComponent {
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      teamMembers: values.teamMembers ?? DEFAULT_ORG_TEAM_MEMBERS,
       sort: this.sort(),
       dir: this.dir(),
       commitSort: this.commitSort(),
@@ -383,6 +418,7 @@ export class OrgContributionsComponent {
       query.foundation.length > 0 ||
       query.projects.length > 0 ||
       query.employees.length > 0 ||
+      query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS ||
       !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
     );
   }
@@ -510,8 +546,8 @@ export class OrgContributionsComponent {
    * filters the user has already left.
    */
   private reconcileSelections(res: OrgContributionsResponse, query: OrgContributionsQuery): void {
-    const { dateRange, projectScope, foundation } = this.filterForm.getRawValue();
-    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation) {
+    const { dateRange, projectScope, foundation, teamMembers } = this.filterForm.getRawValue();
+    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation || teamMembers !== query.teamMembers) {
       return;
     }
     const control = this.filterForm.controls.foundation;
@@ -551,6 +587,7 @@ export class OrgContributionsComponent {
         foundation: query.foundation || null,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
+        [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(query.teamMembers),
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
         commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,
@@ -633,6 +670,11 @@ export class OrgContributionsComponent {
   // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten to its canonical form.
   private isCommitFilterParamNormalized(): boolean {
     return !orgCommitFiltersUrlMatches(orgCommitFiltersFor(this.initialCodeFilters), (name) => this.initialParams.get(name));
+  }
+
+  private isTeamMembersParamNormalized(): boolean {
+    const raw = this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM);
+    return raw !== null && raw !== orgTeamMembersUrlParam(this.filterForm.controls.teamMembers.value);
   }
 
   private parseInitialPage(): number {

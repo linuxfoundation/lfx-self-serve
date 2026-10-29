@@ -74,4 +74,6 @@ export interface ContributionsRaw {
   foundationOptionRows: ContributionsFoundationOptionRow[];
   projectOptionRows: ContributionsProjectOptionRow[];
   employeeOptionRows: ContributionsEmployeeOptionRow[];
+  /** Exclude team members was asked but the flag column is missing: the rows include team members, and the payload is never cached. */
+  teamMembersUnavailable?: true;
 }

@@ -3,6 +3,7 @@
 
 import {
   DEFAULT_ORG_EMPLOYMENT,
+  DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
   ORG_CONTRIBUTOR_PROJECT_COLUMNS,
   ORG_CONTRIBUTOR_ROW_COLUMNS,
@@ -23,6 +24,7 @@ import type {
   OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
@@ -30,6 +32,7 @@ import { toIsoDate } from '../helpers/date-format.helper';
 import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
+import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -51,22 +54,27 @@ export class OrgPeopleContributorsService {
    * classifies them current or former — the list, the Contributors tile and the Projects/Foundations stats and options
    * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
    * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
-   * roles. `all` (the default) reads no classification and filters nothing.
+   * roles. `all` (the default) reads no classification and filters nothing. `teamMembers: 'exclude'`
+   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile, the Projects/Foundations stats
+   * and options, and the roles — LFX Insights leaves team members' roles unattributed (no organization), so they never
+   * reach a company's Maintainer roles. While the flag is not in the warehouse, team members stay in and the response
+   * says so (`teamMembersUnavailable`).
    */
   public async getContributors(
     accountId: string,
     timeRange: OrgLensTimeRange,
     filters: OrgCommitFilters,
-    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT
+    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
   ): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
     // `people-contributors:v5:{timeRange}:{projectScope}` (lfx-self-serve#4482): the rows no longer carry the
-    // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric and employment only pick after
-    // the read, so they share the entry.
-    const [rows, roles, employmentKeys] = await Promise.all([
+    // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric, employment and team members
+    // only pick after the read, so they share the entry.
+    const [rows, roles, employmentKeys, teamMemberKeys] = await Promise.all([
       withOrgCompactCache(
         accountId,
         `people-contributors:v5:${timeRange}:${filters.projectScope}`,
@@ -84,9 +92,15 @@ export class OrgPeopleContributorsService {
         (value) => value !== null
       ),
       readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
+      readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers),
     ]);
-    const keptRows = employmentKeys === null ? rows : rows.filter((row) => employmentKeys.has(row.PERSON_KEY));
-    return buildResponse(accountId, timeRange, filters, keptRows, roles);
+    const excluded = teamMemberKeys.excluded;
+    const keptRows = rows.filter(
+      (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (excluded === null || !excluded.has(row.PERSON_KEY))
+    );
+    const keptRoles = roles === null || excluded === null ? roles : roles.filter((role) => !excluded.has(role.PERSON_KEY));
+    const response = buildResponse(accountId, timeRange, filters, keptRows, keptRoles);
+    return teamMemberKeys.unavailable ? { ...response, teamMembersUnavailable: true } : response;
   }
 
   /**

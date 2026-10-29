@@ -4,6 +4,7 @@
 import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgContributorFoundationOption } from './org-people-contributors.interface';
+import type { OrgTeamMembersFilter } from './org-people.interface';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Source of truth is LFX Insights
 // (CrowdSource pipeline ingesting GitHub / GitLab / Gerrit). All shapes here are
@@ -92,6 +93,8 @@ export interface OrgContributionCommitRow {
 
 /** Bundled GET response for `/api/orgs/:orgUid/lens/contributions`. Server-paginated. */
 export interface OrgContributionsResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   /** Echo of the window the BFF aggregated over — lets the client drop late responses. */
   dateRange: OrgLensTimeRange;
@@ -124,6 +127,8 @@ export interface OrgContributionsQuery extends OrgCommitFilters {
   projects: string[];
   /** Selected employee ids (Crowd.dev member_id values). */
   employees: string[];
+  /** Exclude (default) or include people flagged as team members from every count, option list and table. */
+  teamMembers: OrgTeamMembersFilter;
   sort: ContributionsSortColumn;
   dir: ContributionsSortDirection;
   commitSort: ContributionsCommitSortColumn;

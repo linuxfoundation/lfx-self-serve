@@ -15,17 +15,17 @@ export const ORG_LF_MAINTAINER_ROLES_LABEL = 'LF maintainer roles';
 /** Hint on the "—" shown in place of a Maintainer/Contributor role when the maintainer roles cannot be read. */
 export const ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT = 'Maintainer data is currently unavailable';
 
-/** The counting rule for People → Contributors' tile, which follows the range but not the Employment filter (lfx-self-serve#4627). */
+/** The counting rule for People → Contributors' tile: it follows the range and the Team members filter, not the Employment filter (lfx-self-serve#4627, #4685). */
 export const ORG_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment filter.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. Team members are left out unless included. It does not follow the Employment filter.";
 
 /** The counting rule for the Overview card: LF projects, past 365 days. */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days. The chart shows the roles held in each month.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days, team members left out. The chart shows the roles held in each month.";
 
 /** The counting rule per project on the Overview and in the Memberships projects drawer: LF projects, past 365 days. */
 export const ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in LF projects over the past 365 days, team members left out.";
 
 /** The window of the Overview's maintainer counts (card headline, Foundations & Projects, Memberships drawer). */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = '365d';

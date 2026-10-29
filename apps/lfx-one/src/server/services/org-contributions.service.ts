@@ -21,12 +21,14 @@ import type {
   OrgContributionsQuery,
   OrgContributionsResponse,
   OrgLensTimeRange,
+  SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -53,13 +55,20 @@ export class OrgContributionsService {
     }
 
     // `v5`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559), and filter arrays
-    // delimited by JSON in the signature.
+    // delimited by JSON in the signature. A payload read while the team-member flag is missing (Exclude asked, team
+    // members served, lfx-self-serve#4685) is never stored.
     const raw = await withOrgCache(
       accountId,
       `contributions:v5:${contributionsSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchContributionsRaw(accountId, query),
-      isContributionsRaw
+      async () => {
+        const read = await readWithOrgTeamMembersFallback(query.teamMembers, 'get_org_lens_contributions', (teamMembers) =>
+          this.fetchContributionsRaw(accountId, { ...query, teamMembers })
+        );
+        return read.teamMembersUnavailable ? { ...read.value, teamMembersUnavailable: true as const } : read.value;
+      },
+      isContributionsRaw,
+      (value) => !value.teamMembersUnavailable
     );
 
     const kpis = mapKpis(raw.kpiRows[0]);
@@ -79,6 +88,7 @@ export class OrgContributionsService {
       employeeOptions: raw.employeeOptionRows.map(mapEmployeeOption),
       totalRecords,
       commitsTotalRecords,
+      ...(raw.teamMembersUnavailable ? { teamMembersUnavailable: true as const } : {}),
     };
   }
 
@@ -129,7 +139,7 @@ export class OrgContributionsService {
         ${scope.employeePredicate}
         ${kpiSearch.predicate}
     `;
-    return this.snowflakeService.execute<ContributionsKpiRow>(sql, [accountId, ...scope.binds, ...kpiSearch.binds]);
+    return this.snowflakeService.execute<ContributionsKpiRow>(sql, [accountId, ...scope.binds, ...kpiSearch.binds], scope.queryOptions);
   }
 
   /** Metric `code`: the commits KPI field carries the code-contribution activity total. */
@@ -148,7 +158,7 @@ export class OrgContributionsService {
         ${scope.employeePredicate}
         ${kpiSearch.predicate}
     `;
-    return this.snowflakeService.execute<ContributionsKpiRow>(sql, [accountId, ...scope.binds, ...kpiSearch.binds]);
+    return this.snowflakeService.execute<ContributionsKpiRow>(sql, [accountId, ...scope.binds, ...kpiSearch.binds], scope.queryOptions);
   }
 
   private async fetchRepositories(
@@ -162,8 +172,22 @@ export class OrgContributionsService {
     const orderBy = repoOrderByColumn(query.sort);
     const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
 
+    // `org_repo_first_commit_ts` is the repo's lifetime first authored commit by anyone; under Exclude team members
+    // (lfx-self-serve#4685) the first commit is read the same way — every project, any branch — without them.
+    const excludeTeamMembers = query.teamMembers === 'exclude';
     const sql = `
-      WITH repo_agg AS (
+      WITH ${
+        excludeTeamMembers
+          ? `repo_first AS (
+        SELECT repository_url, MIN(activity_ts) AS first_commit_ts
+        FROM ${PLATINUM_TABLE}
+        WHERE account_id = ?
+          ${orgTeamMembersPredicate(query.teamMembers)}
+        GROUP BY repository_url
+      ),`
+          : ''
+      }
+      repo_rows AS (
         SELECT
           repository_url,
           ANY_VALUE(repository_path) AS repository_path,
@@ -173,7 +197,7 @@ export class OrgContributionsService {
           ANY_VALUE(project_logo) AS project_logo,
           ANY_VALUE(source) AS source,
           COUNT(DISTINCT commit_id) AS commits,
-          MIN(org_repo_first_commit_ts) AS first_commit_ts,
+          ${excludeTeamMembers ? '' : 'MIN(org_repo_first_commit_ts) AS first_commit_ts,'}
           MAX(activity_ts) AS last_commit_ts
         FROM ${PLATINUM_TABLE}
         WHERE account_id = ?
@@ -184,6 +208,9 @@ export class OrgContributionsService {
           ${scope.employeePredicate}
           ${repoSearch.predicate}
         GROUP BY repository_url
+      ),
+      repo_agg AS (
+        ${excludeTeamMembers ? 'SELECT r.*, f.first_commit_ts FROM repo_rows r LEFT JOIN repo_first f ON f.repository_url = r.repository_url' : 'SELECT * FROM repo_rows'}
       )
       SELECT
         repository_url,
@@ -201,7 +228,8 @@ export class OrgContributionsService {
       ORDER BY ${orderBy} ${sortDir}, repository_url ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, ...scope.binds, ...repoSearch.binds]);
+    const binds = [...(excludeTeamMembers ? [accountId] : []), accountId, ...scope.binds, ...repoSearch.binds];
+    return this.snowflakeService.execute<ContributionsRepoRow>(sql, binds, scope.queryOptions);
   }
 
   /**
@@ -224,6 +252,7 @@ export class OrgContributionsService {
         SELECT repository_url, MIN(activity_date) AS first_commit_ts
         FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
+          ${orgTeamMembersPredicate(query.teamMembers)}
         GROUP BY repository_url
       ),
       repo_agg AS (
@@ -264,7 +293,7 @@ export class OrgContributionsService {
       ORDER BY ${orderBy} ${sortDir}, r.repository_url ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, accountId, ...scope.binds, ...repoSearch.binds]);
+    return this.snowflakeService.execute<ContributionsRepoRow>(sql, [accountId, accountId, ...scope.binds, ...repoSearch.binds], scope.queryOptions);
   }
 
   private async fetchCommits(
@@ -319,7 +348,7 @@ export class OrgContributionsService {
       ORDER BY ${orderBy} ${sortDir}, commit_id ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds]);
+    return this.snowflakeService.execute<ContributionsCommitRow>(sql, [accountId, ...scope.binds, ...commitSearch.binds], scope.queryOptions);
   }
 
   /**
@@ -341,7 +370,7 @@ export class OrgContributionsService {
       GROUP BY foundation_id
       ORDER BY foundation_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsFoundationOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsFoundationOptionRow>(sql, [accountId], codeScope.queryOptions);
   }
 
   /**
@@ -364,7 +393,7 @@ export class OrgContributionsService {
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId], scope.queryOptions);
   }
 
   private async fetchCodeProjectOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsProjectOptionRow[] }> {
@@ -383,7 +412,7 @@ export class OrgContributionsService {
       GROUP BY project_id
       ORDER BY commits DESC, project_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId]);
+    return this.snowflakeService.execute<ContributionsProjectOptionRow>(sql, [accountId], scope.queryOptions);
   }
 
   private async fetchEmployeeOptionRows(accountId: string, scope: ScopeFilters): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
@@ -401,7 +430,7 @@ export class OrgContributionsService {
       GROUP BY member_id
       ORDER BY commits DESC, member_display_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds]);
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds], scope.queryOptions);
   }
 
   /** Metric `code`: each member's code-contribution activities in the window, project scope and picked foundation. */
@@ -420,7 +449,7 @@ export class OrgContributionsService {
       GROUP BY member_id
       ORDER BY commits DESC, member_display_name ASC
     `;
-    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds]);
+    return this.snowflakeService.execute<ContributionsEmployeeOptionRow>(sql, [accountId, ...scope.foundationBinds], scope.queryOptions);
   }
 }
 
@@ -435,6 +464,8 @@ interface ScopeFilters {
   employeePredicate: string;
   /** Foundation, project and employee binds, in the order their predicates appear. */
   binds: string[];
+  /** Snowflake options of every read: under Exclude team members, a missing flag column is expected (lfx-self-serve#4685). */
+  queryOptions: SnowflakeQueryOptions | undefined;
 }
 
 interface SearchFilter {
@@ -460,7 +491,7 @@ function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsVie
 /** Filters over `ORG_CODE_CONTRIBUTIONS` (one row per authored commit SHA). */
 function buildCommitScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   const mergedPredicate = query.commitScope === 'merged' ? 'AND is_merged = TRUE' : '';
-  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`.trim());
+  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`);
 }
 
 /** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project, foundation and member columns; commit scope has no meaning for code activity. */
@@ -468,13 +499,24 @@ function buildCodeScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   return buildScopeFilters(query, activityDatePredicate(query.dateRange), orgProjectScopePredicate(query.projectScope));
 }
 
-function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, scopePredicate: string): ScopeFilters {
+/** Every read applies `scopePredicate`, so the team-members exclusion rides along with the project (and commit) scope. */
+function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, baseScopePredicate: string): ScopeFilters {
+  const scopePredicate = `${baseScopePredicate} ${orgTeamMembersPredicate(query.teamMembers)}`.trim();
   const foundationBinds: string[] = query.foundation ? [query.foundation] : [];
   const foundationPredicate = query.foundation ? 'AND foundation_id = ?' : '';
   const binds: string[] = [...foundationBinds];
   const projectPredicate = projectFilterPredicate(query.projects, binds);
   const employeePredicate = employeeFilterPredicate(query.employees, binds);
-  return { datePredicate, scopePredicate, foundationPredicate, foundationBinds, projectPredicate, employeePredicate, binds };
+  return {
+    datePredicate,
+    scopePredicate,
+    foundationPredicate,
+    foundationBinds,
+    projectPredicate,
+    employeePredicate,
+    binds,
+    queryOptions: orgTeamMembersQueryOptions(query.teamMembers),
+  };
 }
 
 function buildKpiSearchFilter(query: OrgContributionsQuery): SearchFilter {
@@ -619,6 +661,7 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     query.foundation,
     [...query.projects].sort(),
     [...query.employees].sort(),
+    query.teamMembers,
   ];
   return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 }
