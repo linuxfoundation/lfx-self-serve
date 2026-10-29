@@ -8,6 +8,7 @@ import {
   HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES,
   HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
 } from '@lfx-one/shared/constants';
 
@@ -30,6 +31,9 @@ import type {
   HealthMetricsOverviewEngagementSplit,
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEvents,
+  HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletters,
+  HealthMetricsOverviewNewsletterSend,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsPeriod,
   HealthMetricsOverviewOutstandingBalance,
@@ -48,6 +52,8 @@ const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE
 const BOARD_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE';
 const BOARD_MEMBERS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE_MEMBERS';
 const OVERVIEW_KPIS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS';
+const NEWSLETTER_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY';
+const NEWSLETTER_BY_NEWSLETTER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER';
 
 /** Upper-cased Snowflake keys; period columns are aliased `<COLUMN>_<RANGE>`. */
 type WideRow = Record<string, unknown>;
@@ -368,6 +374,82 @@ export class HealthMetricsOverviewService {
     };
   }
 
+  /** The newsletter summary for each period, and every newsletter with engagement data, latest first. */
+  public async getNewsletters(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewNewsletters> {
+    const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
+      [
+        'subscribers_count',
+        'subscribers_growth_pct',
+        'subscribers_growth_baseline_date',
+        'newsletters_sent_count',
+        'avg_open_rate',
+        'avg_click_to_open_rate',
+        'high_engagement_subscribers_count',
+        'medium_engagement_subscribers_count',
+        'low_engagement_subscribers_count',
+        'high_engagement_subscribers_pct',
+        'medium_engagement_subscribers_pct',
+        'low_engagement_subscribers_pct',
+        'engagement_newsletters_considered_count',
+        'most_engaging_newsletter_name',
+        'most_engaging_newsletter_click_to_open_rate',
+      ].map((column) => periodSelect(column, range))
+    );
+
+    const summarySql = `
+      SELECT
+        ${columns.join(',\n        ')}
+      FROM ${NEWSLETTER_SUMMARY_VIEW}
+      WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
+      LIMIT 1
+    `;
+    const newslettersSql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        sent_date,
+        open_rate,
+        click_rate
+      FROM ${NEWSLETTER_BY_NEWSLETTER_VIEW}
+      WHERE foundation_slug = ?
+        AND has_engagement_data = TRUE
+      -- Latest first, so a capped read keeps the newest; the card puts them back in date order.
+      ORDER BY sent_date DESC NULLS LAST, newsletter_key ASC
+      LIMIT ${HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1}
+    `;
+
+    const [summary, sends] = await Promise.all([
+      executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
+        view: NEWSLETTER_SUMMARY_VIEW,
+        operation: 'get_overview_newsletters',
+        clientMessage: 'Newsletter engagement is unavailable right now.',
+      }),
+      executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
+        view: NEWSLETTER_BY_NEWSLETTER_VIEW,
+        operation: 'get_overview_newsletters',
+        clientMessage: 'Newsletter engagement is unavailable right now.',
+      }),
+    ]);
+
+    if (sends.rows.length > HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP) {
+      logger.warning(req, 'get_overview_newsletters', 'Overview newsletters hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP,
+      });
+    }
+
+    const row = summary.rows[0];
+    return {
+      measured: !!row,
+      periods: byRange((range) => (row ? mapNewsletterPeriod(row, range) : null)),
+      newsletters: sends.rows
+        .slice(0, HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP)
+        .map(mapNewsletterSend)
+        .filter((send): send is HealthMetricsOverviewNewsletterSend => send !== null),
+    };
+  }
+
   /** The registrations view keys events by foundation id, so the slug resolves through the at-a-glance rollup. */
   private async getUpcomingEvents(req: Request, query: HealthMetricsOverviewQuery): Promise<UpcomingEventRow[]> {
     const sql = `
@@ -583,6 +665,41 @@ function mapBoardMember(row: WideRow): HealthMetricsOverviewBoardMember {
     logoUrl: typeof row['LOGO_URL'] === 'string' ? row['LOGO_URL'] : null,
     lastAttendedDate: toIsoDate(row['LAST_ATTENDED_DATE'] as Date | string | null),
     attendance,
+  };
+}
+
+function mapNewsletterPeriod(row: WideRow, range: HealthMetricsL2Range): HealthMetricsOverviewNewsletterPeriod {
+  return {
+    subscribers: periodNumber(row, 'SUBSCRIBERS_COUNT', range),
+    subscribersGrowth: periodNumber(row, 'SUBSCRIBERS_GROWTH_PCT', range),
+    growthBaselineDate: toIsoDate(row[`SUBSCRIBERS_GROWTH_BASELINE_DATE_${range}`] as Date | string | null),
+    newslettersSent: periodNumber(row, 'NEWSLETTERS_SENT_COUNT', range),
+    avgOpenRate: periodNumber(row, 'AVG_OPEN_RATE', range),
+    avgClickToOpenRate: periodNumber(row, 'AVG_CLICK_TO_OPEN_RATE', range),
+    highEngagement: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    mediumEngagement: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    lowEngagement: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    highEngagementShare: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    mediumEngagementShare: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    lowEngagementShare: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    newslettersConsidered: periodNumber(row, 'ENGAGEMENT_NEWSLETTERS_CONSIDERED_COUNT', range),
+    mostEngagingName: periodText(row, 'MOST_ENGAGING_NEWSLETTER_NAME', range),
+    mostEngagingClickToOpenRate: periodNumber(row, 'MOST_ENGAGING_NEWSLETTER_CLICK_TO_OPEN_RATE', range),
+  };
+}
+
+/** A newsletter without a key cannot be told apart from another, so it is dropped. */
+function mapNewsletterSend(row: WideRow): HealthMetricsOverviewNewsletterSend | null {
+  const key = typeof row['NEWSLETTER_KEY'] === 'string' ? row['NEWSLETTER_KEY'].trim() : '';
+  if (!key) return null;
+  const name = typeof row['NEWSLETTER_NAME'] === 'string' ? row['NEWSLETTER_NAME'].trim() : '';
+
+  return {
+    key,
+    name: name || 'Untitled newsletter',
+    sentDate: toIsoDate(row['SENT_DATE'] as Date | string | null),
+    openRate: toNullableNumber(row['OPEN_RATE']),
+    clickRate: toNullableNumber(row['CLICK_RATE']),
   };
 }
 
