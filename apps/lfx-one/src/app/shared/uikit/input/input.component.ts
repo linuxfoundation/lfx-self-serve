@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { _IdGenerator } from '@angular/cdk/a11y';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, Signal, signal } from '@angular/core';
-import { ControlValueAccessor, NgControl } from '@angular/forms';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { COMPOSITION_BUFFER_MODE, ControlValueAccessor, NgControl } from '@angular/forms';
 import { UiInputMode, UiInputSize, UiInputType } from '@lfx-one/shared/interfaces';
 
 import { UiErrorComponent } from '../error/error.component';
@@ -23,6 +24,10 @@ import { UiErrorComponent } from '../error/error.component';
 export class UiInputComponent implements ControlValueAccessor {
   private readonly baseId = inject(_IdGenerator).getId('lfx-ui-input-');
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
+  private readonly platformId = inject(PLATFORM_ID);
+  // Same default as Angular's DefaultValueAccessor: Android keyboards wrap ordinary typing in composition events, so buffering would lag a word behind.
+  private readonly bufferComposition: boolean =
+    inject(COMPOSITION_BUFFER_MODE, { optional: true }) ?? !(isPlatformBrowser(this.platformId) && /android (\d+)/.test(navigator.userAgent.toLowerCase()));
 
   /** Visible label above the field. Without one, set `ariaLabel`. */
   public readonly label = input<string>('');
@@ -107,7 +112,7 @@ export class UiInputComponent implements ControlValueAccessor {
   }
 
   protected onCompositionStart(): void {
-    this.composing = true;
+    this.composing = this.bufferComposition;
   }
 
   protected onCompositionEnd(event: Event): void {
@@ -141,12 +146,14 @@ export class UiInputComponent implements ControlValueAccessor {
       const rest =
         'edge [&:hover:not(:focus-within)]:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       const ring = this.error() ? dangerHalo : rest;
+      // forced-colors: shadows vanish, so a real border keeps the field visible and an outline on the wrapper (not clipped by it) marks focus.
+      const forced = `forced-colors:border ${this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]'} forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]`;
       const heights = { tiny: 'h-ui-tiny', small: 'h-ui-small', medium: 'h-ui-medium' };
       // Exact px radii (8 and 10px have no token); 14px root.
       const radii = { tiny: 'rounded-[8px]', small: 'rounded-[10px]', medium: 'rounded-ui-sm' };
       const shape = `${heights[this.size()]} ${this.rounded() ? 'rounded-ui-full' : radii[this.size()]}`;
       const fill = this.isDisabled() ? 'bg-ui-neutral-50 cursor-not-allowed' : 'bg-ui-background-100';
-      return `flex w-full items-stretch overflow-hidden text-ui-neutral-900 transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${shape} ${fill} ${ring}`;
+      return `flex w-full items-stretch overflow-hidden text-ui-neutral-900 transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${shape} ${fill} ${ring} ${forced}`;
     });
   }
 

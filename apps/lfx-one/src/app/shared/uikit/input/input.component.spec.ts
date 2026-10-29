@@ -3,8 +3,8 @@
 
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { COMPOSITION_BUFFER_MODE, FormControl, ReactiveFormsModule } from '@angular/forms';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiInputComponent } from './input.component';
 
@@ -85,6 +85,17 @@ describe('UiInputComponent', () => {
 
     expect(host.querySelector('[data-testid="ui-input-prefix"]')?.textContent).toContain('https://');
     expect(host.querySelector('[data-testid="ui-input-suffix"] i')?.className).toContain('fa-link');
+  });
+
+  it('keeps a visible border and focus outline in forced-colors mode', async () => {
+    expect(wrapper().className).toContain('forced-colors:border-[color:CanvasText]');
+    expect(wrapper().className).toContain('forced-colors:focus-within:outline-[color:Highlight]');
+
+    await set('error', 'Use lowercase letters only.');
+    expect(wrapper().className).toContain('forced-colors:border-[color:CanvasText]');
+
+    await set('disabled', true);
+    expect(wrapper().className).toContain('forced-colors:border-[color:GrayText]');
   });
 
   it('sizes the wrapper by the size input', async () => {
@@ -207,5 +218,55 @@ describe('UiInputComponent', () => {
       expect(formField().value).toBe('istio');
       expect(formField().disabled).toBe(true);
     });
+  });
+});
+
+describe('UiInputComponent composition buffering', () => {
+  const create = async (token?: boolean): Promise<{ fixture: ComponentFixture<UiInputComponent>; seen: string[]; field: HTMLInputElement }> => {
+    TestBed.configureTestingModule({
+      imports: [UiInputComponent],
+      providers: token === undefined ? [] : [{ provide: COMPOSITION_BUFFER_MODE, useValue: token }],
+    });
+    const fixture = TestBed.createComponent(UiInputComponent);
+    const seen: string[] = [];
+    fixture.componentInstance.registerOnChange((v) => seen.push(v));
+    await fixture.whenStable();
+    const field = (fixture.nativeElement as HTMLElement).querySelector('input') as HTMLInputElement;
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    field.value = 'kube';
+    field.dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+    return { fixture, seen, field };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('buffers by default off Android', async () => {
+    const { seen } = await create();
+
+    expect(seen).toEqual([]);
+  });
+
+  it('does not buffer on Android, where ordinary typing is composition', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/126.0 Mobile');
+    const { seen, fixture } = await create();
+
+    expect(seen).toEqual(['kube']);
+    expect(fixture.componentInstance.value()).toBe('kube');
+  });
+
+  it('follows COMPOSITION_BUFFER_MODE: false', async () => {
+    const { seen } = await create(false);
+
+    expect(seen).toEqual(['kube']);
+  });
+
+  it('follows COMPOSITION_BUFFER_MODE: true even on Android', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/126.0 Mobile');
+    const { seen } = await create(true);
+
+    expect(seen).toEqual([]);
   });
 });
