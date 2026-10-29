@@ -6,6 +6,12 @@
   font-family: var(--font-inter), sans-serif;
 }
 
+@media print {
+  .lfx-brand-kit-portrait {
+    page: mktg-framework;
+  }
+}
+
 .kit-chapter {
   display: table;
   width: 100%;
