@@ -42,7 +42,7 @@ describe('createVisibilityPoll', () => {
 
   it('distinguishes scheduled polling from discovery on open and visible/focus return', () => {
     Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
-    const fetch = vi.fn((_poll: boolean) => of(1));
+    const fetch = vi.fn(() => of(1));
     const sub = createVisibilityPoll(doc, fetch, options).subscribe();
     expect(fetch).toHaveBeenLastCalledWith(false);
     vi.advanceTimersByTime(5000);
