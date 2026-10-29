@@ -198,7 +198,9 @@ export class MktgCommentsPanelComponent {
           }
         },
         error: (error: unknown) => {
-          if (owner === this.comments.draftScopeKey()) this.showError(error);
+          if (owner !== this.comments.draftScopeKey()) return;
+          this.runEnded.set(true);
+          this.showError(error);
         },
         complete: () => {
           if (owner !== this.comments.draftScopeKey()) return;
