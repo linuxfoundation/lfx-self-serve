@@ -3,6 +3,9 @@
 
 <div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
   <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
+  @if (loading() && !isAeoDocument()) {
+    <p class="sr-only" role="status" aria-busy="true" data-testid="mktg-document-view-loading">Loading the document…</p>
+  }
   <div class="flex flex-col gap-5 mt-3">
     <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->

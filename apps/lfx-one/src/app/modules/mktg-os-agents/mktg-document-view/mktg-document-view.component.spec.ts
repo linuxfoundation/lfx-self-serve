@@ -393,6 +393,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-action-loading')).not.toBeNull();
     expect(query('mktg-document-view-title-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
     expect(query('mktg-document-view-action-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
+    expect(query('mktg-document-view-loading')?.textContent).toBe('Loading the document…');
+    expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
+    expect(query('mktg-document-view-loading')?.getAttribute('aria-busy')).toBe('true');
+    expect(query('mktg-document-view-loading')?.classList.contains('sr-only')).toBe(true);
     expect(query('mktg-document-view-title')).toBeNull();
     expect(query('mktg-document-view-run-again')).toBeNull();
     read.next({ ...revisionResponse(LATEST), sidecar: kitSidecar() });
@@ -400,6 +404,7 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(query('mktg-document-view-title-loading')).toBeNull();
     expect(query('mktg-document-view-action-loading')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
     expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('TestOrbit Brand kit');
     expectTitleCardRunAgain();
   });
