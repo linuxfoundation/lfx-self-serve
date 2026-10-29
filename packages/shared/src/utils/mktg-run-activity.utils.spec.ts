@@ -130,6 +130,31 @@ describe('every registered agent advances from event evidence', () => {
       });
     }
   );
+  it.each([false, true])('keeps mixed FAQ price lookup/finalize in research (explicit table=%s)', (explicit) => {
+    const table = explicit ? MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES['faq'] : undefined;
+    const mixed = JSON.stringify({
+      type: 'llm_done',
+      created_at: '2026-10-29T10:00:02Z',
+      body: JSON.stringify([
+        { type: 'tool_use', id: 'price', name: 'membership_tier_prices' },
+        { type: 'tool_use', id: 'premature-finalize', name: 'finalize_faq' },
+      ]),
+    });
+    const prefix = [JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:01Z' }), mixed];
+    const researching = buildMktgRunActivity(prefix, table);
+    expect(researching).toEqual([expect.objectContaining({ kind: 'lfx', status: 'running' })]);
+    expect(researching.some((step) => step.kind === 'writing' || step.kind === 'checking')).toBe(false);
+    const finalized = buildMktgRunActivity(
+      [
+        ...prefix,
+        JSON.stringify({ type: 'llm_done', created_at: '2026-10-29T10:00:03Z', body: JSON.stringify({ type: 'tool_use', id: 'final', name: 'finalize_faq' }) }),
+      ],
+      table
+    );
+    expect(finalized.find((step) => step.kind === 'lfx')?.status).toBe('done');
+    expect(finalized.find((step) => step.kind === 'writing')?.status).toBe('done');
+    expect(finalized.at(-1)).toMatchObject({ kind: 'checking', status: 'running' });
+  });
   it('shows FAQ price lookups as LFX and Jina searches without sending their query', () => {
     const activity = buildMktgRunActivity([
       JSON.stringify({

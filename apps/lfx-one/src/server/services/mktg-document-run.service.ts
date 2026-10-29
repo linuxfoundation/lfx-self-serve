@@ -587,7 +587,9 @@ export class MktgDocumentRunService {
         candidates.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
           try {
             const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
-            return stored.record.creatorSubject === subject ? row : null;
+            const record = stored.record;
+            if (record.creatorSubject !== subject || (record.state !== 'writing' && record.state !== 'questions' && record.state !== 'storing')) return null;
+            return mktgRunProgress(record, undefined, undefined, subject);
           } catch (err) {
             if (err instanceof ResourceNotFoundError) return null;
             if (row.agentKey === 'member-360') memberLookupFailed = true;
@@ -602,7 +604,8 @@ export class MktgDocumentRunService {
       );
       runs.push(...batch.filter((row): row is MktgDocumentRunProgress => row !== null));
     }
-    return { runs, ...(memberLookupFailed && runs.length === 0 ? { progressUnavailable: true } : {}) };
+    const unavailable = snapshot.progressUnavailable === true || (memberLookupFailed && runs.length === 0);
+    return { runs, ...(unavailable ? { progressUnavailable: true } : {}) };
   }
 
   /** Creator-only public selector; the private Guild session never leaves the BFF. */

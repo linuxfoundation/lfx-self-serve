@@ -254,11 +254,33 @@ describe('MktgDocumentRunService core', () => {
     });
     await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [], progressUnavailable: true });
   });
-  it('does not make unrelated stale brand-kit coverage an unknown owned Member lookup', async () => {
+  it.each(['discarded', 'superseded', 'completed', 'failed'])('excludes a cached writing row whose live state is %s', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [] });
+  });
+  it.each(['questions', 'storing'])('projects the live %s record instead of the cached writing row', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    stored().metadata['started-at'] = '2026-10-19T12:01:00Z';
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    expect(own.runs).toHaveLength(1);
+    expect(own.runs[0]).toMatchObject({ runId: hash(session), state, startedAt: '2026-10-19T12:01:00Z' });
+    expect(JSON.stringify(own)).not.toMatch(/creatorSubject|sessionId|synthetic-member-owner/);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+  });
+  it('preserves discovery uncertainty when no owned-run candidate was returned', async () => {
+    await expect(service.ownProgress(memberOwner, project, { runs: [], progressUnavailable: true })).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('preserves an unavailable snapshot even when its visible rows belong to another agent', async () => {
     await service.start(req, project, 'brand-kit', 'unrelated-stale-brand');
     const snapshot = await service.readProgress(req, project);
     expect(snapshot.runs.some((row) => row.agentKey === 'brand-kit')).toBe(true);
-    expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [] });
+    expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [], progressUnavailable: true });
   });
   it('looks up only active Member candidates and treats a vanished record as not owned', async () => {
     await waitingMember();

@@ -160,7 +160,9 @@ function platformStep(toolName: string, input: UnknownRecord, startedAt: string,
 }
 
 /** Research calls prevent a mixed finalize response from authorizing the asset handoff. */
-function isResearchTool(toolName: string): boolean {
+function isResearchTool(toolName: string, agentTools?: Readonly<Record<string, MktgRunActivityToolDefinition>>): boolean {
+  const definition = agentTools?.[toolName] ?? Object.values(MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES).find((table) => table[toolName])?.[toolName];
+  if (definition) return definition.kind === 'reading' || definition.kind === 'search' || definition.kind === 'lfx';
   if (toolName === MKTG_RUN_ACTIVITY_TOOLS.inspectLogos) return true;
   if (MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(toolName) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(toolName)) return false;
   return (
@@ -281,7 +283,8 @@ export function buildMktgRunActivity(payloads: string[], agentTools?: Readonly<R
 
   /** Unknown work after observed research advances a generic stage, never a tool-name/prose label. */
   const appendFallback = (name: string, startedAt: string, status: MktgRunActivityStatus, endedAt = '', local = false, checkingAllowed = true): boolean => {
-    if (!name || MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(name) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(name) || isResearchTool(name)) return false;
+    if (!name || MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(name) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(name) || isResearchTool(name, agentTools))
+      return false;
     if (name.startsWith('finalize_')) {
       if (!checkingAllowed) return true;
       if (!writingStart) writingStart = modelStart || startedAt;
@@ -343,7 +346,7 @@ export function buildMktgRunActivity(payloads: string[], agentTools?: Readonly<R
 
     if (type === 'llm_done') {
       const tools = toolCalls(event);
-      const stillResearching = tools.some(isResearchTool);
+      const stillResearching = tools.some((tool) => isResearchTool(tool, agentTools));
       const asksQuestions = tools.includes(MKTG_RUN_ACTIVITY_TOOLS.askRequester);
       for (const tool of tools) {
         if (appendAgentTool(tool, createdAt, 'running', '', true, !stillResearching && !asksQuestions)) continue;
