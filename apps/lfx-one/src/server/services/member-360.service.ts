@@ -12,6 +12,7 @@ import {
   MEMBER_360_INVALID_RESULT,
   MEMBER_360_DEFINITE_SEND_HTTP_STATUSES,
   MEMBER_360_DEFINITE_CONNECT_CODES,
+  MEMBER_360_ACTIVITY_TOOLS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SHA256_REGEX,
@@ -144,7 +145,7 @@ export class Member360Service {
     // Raw candidates supply privacy masks only, never authoritative output.
     const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
     const redactActivity = createMember360Redactor(contacts);
-    const activity = buildMktgRunActivity(payloads).map((step) => ({
+    const activity = buildMktgRunActivity(payloads, MEMBER_360_ACTIVITY_TOOLS).map((step) => ({
       ...step,
       label: redactActivity(step.label),
       ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),

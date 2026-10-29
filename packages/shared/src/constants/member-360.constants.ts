@@ -3,6 +3,7 @@
 
 import { MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS, MKTG_ONE_OFF_STOPPED_MESSAGE } from './mktg-one-off.constants';
 import type { Member360FailureReason, Member360SortColumn } from '../interfaces/member-360.interface';
+export { MEMBER_360_ACTIVITY_LABELS, MEMBER_360_ACTIVITY_TOOLS } from './mktg-run-activity.constants';
 
 // Mirrored from marketing-os-agents main 45734bc6, agents/member-360/src/model.ts.
 export const CATEGORY_KEYS = ['committees', 'events', 'speaking', 'content', 'community_programs', 'marketing_social'] as const;

@@ -8,6 +8,7 @@ import {
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
   MEMBER_360_MAX_BYTES,
+  MEMBER_360_ACTIVITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
 import type { Member360FinalizeReceipt } from '@lfx-one/shared/interfaces';
@@ -22,6 +23,7 @@ import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.moc
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { logger } from './logger.service';
+import { member360ActivityReplay } from '@lfx-one/shared/utils/__fixtures__/member-360-activity.fixture';
 import { MicroserviceError } from '../errors';
 
 const mocks = vi.hoisted(() => ({
@@ -632,6 +634,16 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_slug: 'other-foundation' })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('projects Member-specific Writing and Checking labels from its recorded tool sequence', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue(member360ActivityReplay().slice(0, -1));
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.activity?.filter((step) => step.kind === 'writing' || step.kind === 'checking').map((step) => [step.label, step.status])).toEqual([
+      [MEMBER_360_ACTIVITY_LABELS.writing, 'done'],
+      [MEMBER_360_ACTIVITY_LABELS.checking, 'running'],
+    ]);
+    expect(JSON.stringify(result.activity)).not.toMatch(/never-render|record_member_actions|score_member_360|finalize_member_360|Writing the framework/);
+    expect(Member360Service.toRunResult(result).activity).toEqual(result.activity);
   });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
     mocks.getRawEventPayloads.mockResolvedValue(
