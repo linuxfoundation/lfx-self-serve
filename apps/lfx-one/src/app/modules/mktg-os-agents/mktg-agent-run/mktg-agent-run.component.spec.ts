@@ -1604,6 +1604,19 @@ describe('MktgAgentRunComponent', () => {
       runs: [{ runId, project: PROJECT_1.uid, agentKey: type.agentKey, documentId: 'living', state, startedAt: '2026-10-28T10:00:00Z' }],
     });
 
+    it('renders the public identity skeleton on SSR without flashing the private intake', async () => {
+      await configure('server', type.catalogAgentId, { run: runId });
+      userSignal.set(null);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-run-public-identity-loading')?.getAttribute('aria-busy')).toBe('true');
+      expect(query('mktg-agent-run-page')?.style.display).toBe('none');
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(TestBed.inject(MktgDocumentStoreService).getDocument).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
+    });
+
     it.each(['writing', 'questions'] as const)('opens public %s progress without starting or resuming a private run', async (state) => {
       await configure('browser', type.catalogAgentId, { run: runId });
       vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record(state)));
@@ -1649,36 +1662,63 @@ describe('MktgAgentRunComponent', () => {
       expect(generate).not.toHaveBeenCalled();
     });
 
-    it.each([false, true])('keeps public landing recovery visible without identity and retries only navigation (failed=%s)', async (failed) => {
+    it.each([false, true].flatMap((failed) => [false, true].map((opened) => ({ failed, opened }))))(
+      'holds public landing on a skeleton until identity resolves (failed=$failed, opened=$opened)',
+      async ({ failed, opened }) => {
+        await configure('browser', type.catalogAgentId, { run: runId });
+        userSignal.set(null);
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(opened);
+        const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
+        if (failed) reader.failed.emit();
+        else reader.landed.emit();
+        await fixture.whenStable();
+        expect(query('mktg-run-public-identity-loading')).not.toBeNull();
+        expect(query('mktg-run-public-progress')?.querySelector<HTMLElement>('lfx-mktg-run-progress')?.style.display).toBe('none');
+        expect(query('mktg-run-public-error')).toBeNull();
+        expect(query('mktg-agent-run-open-asset')).toBeNull();
+        expect(component['errorText']()).toBe('');
+        expect(component['navigation']()?.runId).toBe(failed ? runId : undefined);
+        expect(navigate).not.toHaveBeenCalled();
+        userSignal.set({ sub: 'synthetic-signed-in' } as User);
+        await fixture.whenStable();
+        // No second landed/failed output: the first authenticated identity resumes
+        // the saved public destination rather than resetting it away.
+        expect(query('mktg-run-public-identity-loading')).toBeNull();
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(
+          ['..', 'documents', type.agentKey, 'living'],
+          expect.objectContaining({ queryParams: expect.objectContaining({ run: failed ? runId : null }), replaceUrl: true })
+        );
+        if (opened) {
+          expect(component['navigation']()).toBeNull();
+          expect(query('mktg-run-public-error')).toBeNull();
+        } else {
+          expect(query('mktg-run-public-error')?.textContent).toContain('could not be opened');
+          query('mktg-agent-run-open-asset')?.querySelector('button')?.click();
+          await fixture.whenStable();
+          expect(navigate).toHaveBeenCalledTimes(2);
+        }
+        expect(host().textContent).not.toContain('Sign in before opening this run');
+        expect(generate).not.toHaveBeenCalled();
+        expect(answerQuestions).not.toHaveBeenCalled();
+      }
+    );
+
+    it('discards a pre-auth public destination when its project changes before identity resolves', async () => {
       await configure('browser', type.catalogAgentId, { run: runId });
       userSignal.set(null);
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
-      component['onPublicLanding'](failed);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+      component['onPublicLanding'](true);
+      activeContext.set(PROJECT_2);
       await fixture.whenStable();
-      expect(query('mktg-run-public-error')?.textContent).toContain('Sign in before opening this run');
-      expect(query('mktg-agent-run-open-asset')).not.toBeNull();
-      expect(component['navigation']()?.runId).toBe(failed ? runId : undefined);
-      expect(navigate).not.toHaveBeenCalled();
       userSignal.set({ sub: 'synthetic-signed-in' } as User);
       await fixture.whenStable();
-      // Identity changes reset private state. The fresh public reader observes
-      // the same terminal run again and can now attempt its public destination.
-      const reader = fixture.debugElement.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
-      if (failed) reader.failed.emit();
-      else reader.landed.emit();
-      await fixture.whenStable();
-      expect(query('mktg-run-public-error')?.textContent).toContain('could not be opened');
-      navigate.mockClear();
-      query('mktg-agent-run-open-asset')?.querySelector('button')?.click();
-      await fixture.whenStable();
-      expect(navigate).toHaveBeenCalledWith(
-        ['..', 'documents', type.agentKey, 'living'],
-        expect.objectContaining({ queryParams: expect.objectContaining({ run: failed ? runId : null }), replaceUrl: true })
-      );
+      expect(component['navigation']()).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
       expect(generate).not.toHaveBeenCalled();
-      expect(answerQuestions).not.toHaveBeenCalled();
     });
 
     it.each([false, true])('continues only this browser’s matching questions attempt (matching=%s)', async (matching) => {
@@ -1700,7 +1740,14 @@ describe('MktgAgentRunComponent', () => {
         },
       });
       vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(of(record('questions')));
+      const identity = userSignal();
+      userSignal.set(null);
       activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['publicReceiver']()).toBe(true);
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-run-public-identity-loading')).not.toBeNull();
+      userSignal.set(identity);
       await fixture.whenStable();
       expect(component['publicReceiver']()).toBe(!matching);
       expect(component['phase']()).toBe(matching ? 'questions' : 'form');

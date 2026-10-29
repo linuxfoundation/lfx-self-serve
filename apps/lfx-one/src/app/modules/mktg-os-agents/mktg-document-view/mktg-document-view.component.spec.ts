@@ -125,7 +125,7 @@ describe('MktgDocumentViewComponent', () => {
   let harness: RouterTestingHarness;
   let subject: ReturnType<typeof signal<string>>;
   const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
-  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+  const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
   let resolveBrandKit: Mock;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
@@ -303,7 +303,8 @@ describe('MktgDocumentViewComponent', () => {
     pending.load.mockReset().mockReturnValue(null);
     pending.waitForStorage.mockReset();
     pending.clear.mockClear();
-    print.print.mockReset().mockResolvedValue(undefined);
+    print.prepare.mockReset().mockResolvedValue(undefined);
+    print.printNow.mockReset();
     print.clear.mockClear();
     print.ensureFontStylesheet.mockClear();
 
@@ -835,6 +836,10 @@ describe('MktgDocumentViewComponent', () => {
       store.getRevision.mockReturnValue(of(report));
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(query('mktg-document-view-overall')?.textContent).toContain('6.0');
+      const regions = harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-live-state"]');
+      expect(regions).toHaveLength(1);
+      expect(regions?.[0].textContent?.trim()).toBe('Ready.');
+      expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
       expect(query('mktg-document-view-overall')?.classList.contains('text-amber-700')).toBe(true);
       expect(query('mktg-document-view-verdict')?.textContent).toContain('A useful baseline');
       expect(query('mktg-document-view-scorecard')?.querySelectorAll('[data-testid^="mktg-document-view-score-"]')).toHaveLength(6);
@@ -1100,8 +1105,11 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-print')?.textContent).toContain('Revision 2');
       expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
       expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe('/project/mktg-os-agents/families/website-web?project=testorbit');
+      expect(print.prepare).toHaveBeenCalledWith('Inter');
+      expect(print.printNow).not.toHaveBeenCalled();
       query('mktg-document-view-download')?.querySelector('button')?.click();
-      expect(print.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+      // Same call stack, with no stability/font/network await after the click.
+      expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
       harness.fixture.destroy();
       expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     });
@@ -1196,7 +1204,9 @@ describe('MktgDocumentViewComponent', () => {
     sessionStorage.clear();
     store.getDocument.mockReturnValue(of(memberProgress('writing')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
-    expect(query('mktg-run-activity-title')?.textContent?.trim()).toBe('Working on Member 360');
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe('Member 360 Agent is working on your report.');
     expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
     expect(query('mktg-run-activity-phase-questions')).toBeNull();
     expect(query('member-360-result')).toBeNull();
@@ -1290,7 +1300,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
     expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toContain('The agent is waiting for input.');
     expect(query('mktg-document-view-live-state')?.textContent).toBe('The agent is waiting for input.');
-    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
     expect(query('mktg-document-view-error')).toBeNull();
     expect(query('mktg-document-view-intake-link')).toBeNull();
     store.getDocument.mockClear();
@@ -1490,6 +1502,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(regions?.[0].getAttribute('role')).toBe('status');
     expect(regions?.[0].getAttribute('aria-live')).toBe('polite');
     expect(regions?.[0].textContent?.trim()).toBeTruthy();
+    expect(regions?.[0].closest('lfx-mktg-run-progress')).toBeNull();
+    expect(progressReader().announceState()).toBe(false);
   });
 
   it.each(
@@ -1499,23 +1513,25 @@ describe('MktgDocumentViewComponent', () => {
         MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.tracksDocumentRun &&
         MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
     )
-  )('uses shared-receiver one-off writing and saving wording for $itemLabel', async (type) => {
+  )('keeps one heading and leave line with writing/saving fallback when no feed exists for $itemLabel', async (type) => {
     const documentId = 'run-' + 'a'.repeat(24);
     const progress = { ...started('writing'), agentKey: type.agentKey, documentId };
     const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [progress] };
     store.getDocument.mockReturnValue(of(response));
     await render(`/documents/${type.agentKey}/${documentId}`);
-    expect(query('mktg-document-view-live-state')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
-    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`Writing the ${type.itemLabel}.`);
+    const noun = type.agentKey === 'linkedin-post' ? 'post' : 'report';
+    expect(query('mktg-document-view-live-state')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
+    expect(query('mktg-document-view-run')?.querySelector('h2')?.textContent).toBe(`${type.agentName} is working on your ${noun}.`);
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Writing…');
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('It will appear here when it is ready.');
+    expect(query('mktg-document-view-run')?.querySelectorAll('h2')).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
+    expect(query('mktg-document-view-run')?.textContent).toContain('It will appear here when it is ready.');
     store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...progress, state: 'storing' }] }));
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['onRefreshProgress']();
     await settle();
-    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Written');
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving…');
-    expect(query('mktg-document-view-run-steps')?.textContent).not.toContain('revision');
+    expect(query('mktg-document-view-run')?.textContent?.match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
   });
 
   it.each(['writing', 'questions', 'storing'] as const)('redirects living %s progress and renders no live document blocks', async (state) => {
@@ -1528,7 +1544,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     expect(progressReader().headless()).toBe(true);
     expect(query('mktg-document-view-run')).toBeNull();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
@@ -2047,7 +2063,7 @@ describe('MktgDocumentViewComponent', () => {
     events.next({ type: 'submitted' });
     events.next(writingActivity());
     await settle();
-    expect(query('mktg-document-view-live-state')).toBeNull();
+    expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
     expect(progressReader().runState()).toBe('writing');
     const run: MktgStoredAgentRun = {
       agentId: pending.request.agentId,
@@ -2126,7 +2142,7 @@ describe('MktgDocumentViewComponent', () => {
         vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
         expect(store.getDocument).toHaveBeenCalledTimes(1);
         expect(progressReader().runState()).toBe('questions');
-        expect(query('mktg-document-view-live-state')).toBeNull();
+        expect(query('mktg-document-view-live-state')?.textContent?.trim()).toBe('');
       }
       if (state === 'failed') {
         expect(query('mktg-document-view-failure-reply')?.textContent).toBe(started(state).failureText);
@@ -3881,7 +3897,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(download?.disabled).toBe(false);
     download?.click();
     await settle();
-    expect(print.print).toHaveBeenCalled();
+    expect(print.printNow).toHaveBeenCalled();
     expect(content?.classList.contains('hidden')).toBe(true);
   });
 

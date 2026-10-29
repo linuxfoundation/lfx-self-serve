@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { LINKEDIN_POST_INTAKE, MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import { MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.constants';
 import type { MktgFamilyActionContext } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
@@ -89,6 +90,32 @@ describe('One rule for every family action', () => {
       link: { commands: ['../../', catalogAgentId], queryParams: {} },
     });
   });
+  it('enables the LinkedIn activity feed without changing Member 360’s dedicated receiver flag', () => {
+    expect(LINKEDIN_POST_INTAKE.liveActivity).toBe(true);
+    expect(MKTG_AGENT_INTAKES['member-360'].liveActivity).toBeUndefined();
+  });
+  it.each(MKTG_DOCUMENT_TYPES.filter((type) => type.kind !== 'living' && type.catalogAgentId && isMktgFamilyAgentAvailable(type.catalogAgentId)))(
+    'uses a neutral in-progress caption for $agentKey without changing questions or destinations',
+    (type) => {
+      for (const state of ['writing', 'storing', 'questions'] as const) {
+        const run = {
+          agentKey: type.agentKey,
+          state,
+          project: 'synthetic',
+          documentId: 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        };
+        expect(resolveMktgFamilyRun(type.agentKey, [run])).toMatchObject({
+          caption: state === 'questions' ? 'Waiting for your answers' : 'In progress…',
+          link:
+            state === 'questions'
+              ? { commands: [type.catalogAgentId], queryParams: {} }
+              : { commands: ['documents', type.agentKey, run.documentId], queryParams: { run: run.runId } },
+        });
+      }
+    }
+  );
   it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
     const run = {
       agentKey: 'foundation-message' as const,

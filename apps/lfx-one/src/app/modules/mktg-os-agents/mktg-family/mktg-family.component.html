@@ -24,7 +24,7 @@
               (onClick)="rebuildPanel()?.start()"
               data-testid="mktg-family-rebuild" />
           } @else if (header.kind === 'export') {
-            <lfx-button [label]="header.label" [ariaLabel]="header.label" (onClick)="exportPanel()?.focusDownload()" data-testid="mktg-family-run" />
+            <lfx-button [label]="header.label" [ariaLabel]="header.label" (onClick)="focusExport()" data-testid="mktg-family-run" />
           } @else {
             <!-- Keep modifier clicks on the inner anchor from reaching the host's RouterLink directive. -->
             <lfx-button

@@ -419,9 +419,13 @@ describe('Marketing family page', () => {
     families.update((items) => items.map((item) => ({ ...item, rows: item.rows.map((row) => ({ ...row, state: 'approved' })) })));
     await harness.fixture.whenStable();
     const panel = harness.routeDebugElement?.query(By.directive(MktgFamilyExportActionsComponent))?.componentInstance as MktgFamilyExportActionsComponent;
+    const visible = vi.spyOn(panel, 'isRendered').mockReturnValue(false);
     const reveal = vi.spyOn(panel, 'focusDownload').mockImplementation(() => undefined);
     const primary = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
     expect(primary?.textContent).toContain('Export the kit');
+    primary?.click();
+    expect(reveal).not.toHaveBeenCalled();
+    visible.mockReturnValue(true);
     primary?.click();
     expect(reveal).toHaveBeenCalledOnce();
   });

@@ -135,14 +135,29 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prints all four approved assets with one family cover and contents', async ({ page }, info) => {
-  await openFamilyExports(page, { allAssets: true });
+test('Download PDF prepares all four assets then opens print synchronously on the explicit preview click', async ({ page }, info) => {
+  const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   await page.evaluate(() => {
     window.print = () => {
       document.body.dataset['familyPrintClass'] = document.body.className;
     };
   });
-  await page.getByTestId('family-export-pdf').getByRole('button').click();
+  const pdf = page.getByTestId('family-export-pdf').getByRole('button');
+  await pdf.click();
+  await expect(pdf).toBeDisabled();
+  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
+  controls.releasePrint();
+  await expect(pdf).toHaveText('Open print preview');
+  await expect(page.getByTestId('family-export-pdf-ready')).toHaveText('Your PDF is ready — click to open the print preview');
+  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
+  // Keep a JS stack around the entire click dispatch. Inspect before returning:
+  // even a resolved Promise/await would run too late to satisfy this assertion.
+  const synchronousClass = await pdf.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error('Missing synthetic PDF button');
+    button.click();
+    return document.body.dataset['familyPrintClass'] ?? '';
+  });
+  expect(synchronousClass).toContain(MKTG_FAMILY_PRINT_BODY_CLASS);
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
   await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
   await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
@@ -172,7 +187,10 @@ test('Download PDF prints all four approved assets with one family cover and con
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
   await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2', '01.3', '01.4']);
+  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
+  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
+  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
+  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
   await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
   for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
@@ -186,4 +204,33 @@ test('Download PDF prints all four approved assets with one family cover and con
   await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
+});
+
+test('Export the kit reveals and focuses format choices without choosing one or shifting the card', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openFamilyExports(page, { approvedFamily: true });
+  const card = page.getByTestId('family-export-actions');
+  const pdf = card.getByTestId('family-export-pdf').getByRole('button');
+  await expect(pdf).toBeEnabled();
+  const before = await card.boundingBox();
+  let starts = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/family/start')) starts++;
+  });
+  await page.evaluate(() => {
+    window.print = () => {
+      document.body.dataset['unexpectedPrint'] = 'yes';
+    };
+  });
+  await page.getByTestId('mktg-family-run').getByRole('button', { name: 'Export the kit' }).click();
+  await expect(card).toHaveClass(/lfx-mktg-export-highlight/);
+  await expect(pdf).toBeFocused();
+  await expect(card.getByTestId('family-export-format-hint')).toHaveText('Choose a format: Download PDF or Export to Google Slides');
+  await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(card).toHaveCSS('animation-name', 'none');
+  const after = await card.boundingBox();
+  expect(after?.height).toBe(before?.height);
+  expect(starts).toBe(0);
+  await expect(page.locator('body')).not.toHaveAttribute('data-unexpected-print');
+  await page.screenshot({ path: info.outputPath('export-format-choices.png'), fullPage: true });
 });

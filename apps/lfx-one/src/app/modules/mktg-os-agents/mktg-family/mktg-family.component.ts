@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser, Location } from '@angular/common';
-import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -56,7 +56,7 @@ export class MktgFamilyComponent {
   // Writable signals
   private readonly navigationIntent = signal<MktgRebuildNavigationIntent | null>(null);
   protected readonly rebuildPanel = viewChild(MktgRebuildComponent);
-  protected readonly exportPanel = viewChild(MktgFamilyExportActionsComponent);
+  protected readonly exportPanels = viewChildren(MktgFamilyExportActionsComponent);
   protected readonly rebuildFamilyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
@@ -113,6 +113,12 @@ export class MktgFamilyComponent {
         )
         .subscribe();
     }
+  }
+
+  protected focusExport(): void {
+    this.exportPanels()
+      .find((panel) => panel.isRendered())
+      ?.focusDownload();
   }
 
   protected rebuildStarted(): void {
