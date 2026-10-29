@@ -11,6 +11,7 @@ import {
   inject,
   Injector,
   input,
+  output,
   PLATFORM_ID,
   Signal,
   TemplateRef,
@@ -123,6 +124,7 @@ export class MktgFrameworkViewComponent {
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
   public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly exportLookupAnswered = output<string>();
   public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);

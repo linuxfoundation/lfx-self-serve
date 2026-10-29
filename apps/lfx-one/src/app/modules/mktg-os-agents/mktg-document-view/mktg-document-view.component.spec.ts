@@ -3689,7 +3689,7 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it.each(['history', 'empty', 'error'] as const)(
-    'reserves the last-export line before the rail reveals, then settles the %s answer in place',
+    'settles the exportable content and rail in one paint with a first %s export-history answer',
     async (answer) => {
       useFrameworkRevision();
       const comments = TestBed.inject(MktgDocumentCommentsService);
@@ -3709,6 +3709,10 @@ describe('MktgDocumentViewComponent', () => {
       const panel = query('mktg-slides-export-panel');
       const exporter = query('mktg-framework-view-slides-export');
       const placeholder = query('mktg-slides-export-lookup-loading');
+      const content = query('mktg-document-view-content');
+      expect(content?.classList.contains('hidden')).toBe(true);
+      expect(query('mktg-document-view-content-skeleton')).not.toBeNull();
+      expect(placeholder?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
       expect(tabs).not.toBeNull();
       expect(panel).not.toBeNull();
       expect(exporter?.classList.contains('hidden')).toBe(false);
@@ -3718,7 +3722,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(panel && tabs && panel.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       pendingDownstream.next({ project: PROJECT.uid, groups: [] });
       await settle();
-      expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
+      expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(true);
+      expect(content?.classList.contains('hidden')).toBe(true);
       expect(query('mktg-slides-export-panel')).toBe(panel);
       expect(query('mktg-slides-export-lookup-loading')).toBe(placeholder);
       expect(query('mktg-framework-view-tabs')).toBe(tabs);
@@ -3753,6 +3758,9 @@ describe('MktgDocumentViewComponent', () => {
       }
       await settle();
       expect(query('mktg-slides-export-lookup-loading')).toBeNull();
+      expect(query('mktg-document-view-content-skeleton')).toBeNull();
+      expect(content?.classList.contains('hidden')).toBe(false);
+      expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
       expect(query('mktg-framework-view-tabs')).toBe(tabs);
       if (answer === 'history') {
         expect(query('mktg-slides-export-panel')).toBe(panel);
@@ -3769,6 +3777,73 @@ describe('MktgDocumentViewComponent', () => {
       expect(slidesExport.last).toHaveBeenCalledTimes(1);
     }
   );
+
+  it('empty first lookup: no export line ever shown and tabs settle with the later rail answer', async () => {
+    useFrameworkRevision();
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    const commentsLoaded = signal(true);
+    vi.spyOn(comments, 'loaded').mockImplementation(commentsLoaded);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    const pendingDownstream = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(pendingDownstream);
+    await render('/documents/foundation-message/living');
+    const content = query('mktg-document-view-content');
+    const tabs = query('mktg-framework-view-tabs');
+    expect(content?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-content-skeleton')).not.toBeNull();
+    expect(query('mktg-slides-export-lookup-loading')).toBeNull();
+    expect(query('mktg-slides-export-panel')).toBeNull();
+    pendingDownstream.next({ project: PROJECT.uid, groups: [] });
+    await settle();
+    expect(content?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-content-skeleton')).toBeNull();
+    expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-slides-export-panel')).toBeNull();
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    await settle();
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    expect(query('mktg-slides-export-panel')).toBeNull();
+    commentsLoaded.set(false);
+    await settle();
+    expect(content?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-content-skeleton')).toBeNull();
+    expect(slidesExport.start).not.toHaveBeenCalled();
+  });
+
+  it('settles an empty Brand Kit export lookup before its content and comments first paint', async () => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    const pendingLast = new Subject<MktgSlidesExportLastResponse>();
+    slidesExport.last.mockReturnValue(pendingLast);
+    await render('/documents/brand-kit/living');
+    const content = query('mktg-document-view-content');
+    const tabs = query('brand-kit-web-view-tabs');
+    expect(content?.classList.contains('hidden')).toBe(true);
+    expect(tabs).not.toBeNull();
+    expect(query('mktg-document-view-content-skeleton')).not.toBeNull();
+    pendingLast.next({ last: null, latestRevision: null });
+    pendingLast.complete();
+    await settle();
+    expect(content?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-slides-export-panel')).toBeNull();
+    expect(query('mktg-document-view-content-skeleton')).toBeNull();
+    expect(query('brand-kit-web-view-tabs')).toBe(tabs);
+    expect(slidesExport.last).toHaveBeenCalledTimes(1);
+    expect(slidesExport.start).not.toHaveBeenCalled();
+  });
 
   it('keeps document and last-export reads alive when user context resolves before approved bytes', async () => {
     const pendingApproved = new Subject<MktgRevisionResponse>();

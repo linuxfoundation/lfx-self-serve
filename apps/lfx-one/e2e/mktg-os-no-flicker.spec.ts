@@ -29,7 +29,7 @@ test('living document lands with its catalog title and resolved action, never Ru
   await expect(page.getByTestId('mktg-document-view-run-again')).toHaveText('Create a new version');
 });
 
-test('the last-export answer fills its reserved line without moving the framework tabs', async ({ page }) => {
+test('the first framework content settles with its last-export answer and the rail', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setupKit(page, { loaded: true, approvedFramework: true });
   const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
@@ -65,19 +65,57 @@ test('the last-export answer fills its reserved line without moving the framewor
     }
   );
   await openKit(page, '/documents/foundation-message/living');
-  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toBeVisible();
-  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-content-skeleton')).toBeVisible();
+  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toBeHidden();
+  await expect(page.getByTestId('mktg-document-view-about')).toBeHidden();
   const tabs = page.getByTestId('mktg-framework-view-tabs');
+  await expect(tabs).toBeHidden();
+  await page.screenshot({ path: test.info().outputPath('export-history-pending.png'), fullPage: true });
+  release();
+  await expect(page.getByTestId('mktg-slides-export-last-link')).toBeVisible();
+  await expect(page.getByTestId('mktg-slides-export-last-link')).toHaveText(/Open the last export/);
+  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-content-skeleton')).toHaveCount(0);
+  await expect(tabs).toBeVisible();
   const before = await tabs.boundingBox();
   expect(before).not.toBeNull();
   if (!before) throw new Error('Missing synthetic framework tabs');
-  await page.screenshot({ path: test.info().outputPath('export-history-pending.png'), fullPage: true });
-  release();
-  await expect(page.getByTestId('mktg-slides-export-last-link')).toHaveText(/Open the last export/);
-  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toHaveCount(0);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   const after = await tabs.boundingBox();
   expect(after).not.toBeNull();
   if (!after) throw new Error('Missing settled framework tabs');
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+});
+
+test('an empty first export lookup shows no line and settles the tabs without a later collapse', async ({ page }) => {
+  await setupKit(page, { loaded: true, approvedFramework: true });
+  let release = () => {};
+  const hold = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/slides-export/last',
+    async (route) => {
+      await hold;
+      await kitJson(route, { last: null, latestRevision: null });
+    }
+  );
+  await openKit(page, '/documents/foundation-message/living');
+  const tabs = page.getByTestId('mktg-framework-view-tabs');
+  await expect(page.getByTestId('mktg-document-view-content-skeleton')).toBeVisible();
+  await expect(tabs).toBeHidden();
+  await expect(page.getByTestId('mktg-slides-export-panel')).toBeHidden();
+  await page.screenshot({ path: test.info().outputPath('empty-export-pending.png'), fullPage: true });
+  release();
+  await expect(tabs).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  await expect(page.getByTestId('mktg-slides-export-panel')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toHaveCount(0);
+  const before = await tabs.boundingBox();
+  expect(before).not.toBeNull();
+  if (!before) throw new Error('Missing synthetic empty-export tabs');
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const after = await tabs.boundingBox();
+  expect(after).not.toBeNull();
+  if (!after) throw new Error('Missing settled empty-export tabs');
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
 });
 

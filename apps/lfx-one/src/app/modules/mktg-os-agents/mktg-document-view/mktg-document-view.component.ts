@@ -3,7 +3,20 @@
 
 import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  linkedSignal,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -244,6 +257,7 @@ export class MktgDocumentViewComponent {
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
   protected readonly downstreamSettledKey = signal('');
+  protected readonly exportLookupAnsweredKey = signal('');
   protected readonly retrying = signal(false);
   protected readonly submittingGeneration = signal(false);
   private readonly reloads = signal(0);
@@ -301,6 +315,11 @@ export class MktgDocumentViewComponent {
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
   protected readonly railReady = this.initRailReady();
+  /** Once painted, keep this document's content in place during later refreshes. */
+  protected readonly contentReady = linkedSignal({
+    source: () => ({ key: JSON.stringify(this.exportLookupTarget()), ready: this.railReady() }),
+    computation: (current, previous) => current.ready || Boolean(previous?.source.key === current.key && previous.value),
+  });
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -551,6 +570,8 @@ export class MktgDocumentViewComponent {
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
               this.downstreamSettledKey.set('');
+              const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
+              if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -1298,7 +1319,9 @@ export class MktgDocumentViewComponent {
           !!(this.documentComments.loaded() || this.documentComments.loadError()));
       const downstreamReady =
         view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
-      return commentsReady && downstreamReady;
+      const exportLookup = this.exportLookupTarget();
+      const exportReady = !exportLookup || this.exportLookupAnsweredKey() === JSON.stringify(exportLookup);
+      return commentsReady && downstreamReady && exportReady;
     });
   }
 

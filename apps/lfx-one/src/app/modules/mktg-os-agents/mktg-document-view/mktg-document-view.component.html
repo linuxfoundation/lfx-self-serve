@@ -433,7 +433,19 @@
     } @else if (proseView(); as current) {
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
-        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
+        @if (exportLookupTarget() && !contentReady()) {
+          <lfx-mktg-skeleton
+            variant="card"
+            [rows]="3"
+            class="min-h-80 rounded-xl border border-gray-200 bg-white p-6"
+            data-testid="mktg-document-view-content-skeleton" />
+        }
+        <!-- Readers stay mounted while the whole exportable document area waits for its first answers. -->
+        <section
+          aria-label="Document content"
+          class="flex min-w-0 flex-col gap-3"
+          [class.hidden]="exportLookupTarget() && !contentReady()"
+          data-testid="mktg-document-view-content">
           @if (isAeoDocument() && current.aeoGeoReport?.report) {
             <ng-container [ngTemplateOutlet]="auditReport" />
           }
@@ -518,6 +530,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-framework" />
@@ -556,6 +569,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-brand-kit" />
@@ -706,7 +720,7 @@
               (settled)="downstreamSettledKey.set($event)" />
           }
 
-          <!-- Reveal the entire lower rail together, only after both reads have an answer. -->
+          <!-- Reveal the lower rail and exportable content together after all first reads answer. -->
           @if (!railReady()) {
             <lfx-mktg-skeleton
               variant="card"

@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -65,6 +65,8 @@ export class MktgSlidesExportComponent {
   public readonly lookupTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed revision is a Draft, independent of the approved export target. */
   public readonly viewingDraft = input(false);
+  /** A measured history answer (including an error), keyed to the viewed document. */
+  public readonly lookupAnswered = output<string>();
 
   // === Signals ===
   public readonly phase = signal<MktgSlidesExportPhase>('idle');
@@ -160,6 +162,7 @@ export class MktgSlidesExportComponent {
         .subscribe((response) => {
           if (!response) {
             this.lookupFailed.set(true);
+            this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
             return;
           }
           this.lookupFailed.set(false);
@@ -174,6 +177,7 @@ export class MktgSlidesExportComponent {
           }
           this.latest.set(response.latestRevision);
           this.lookupSettled.set(true);
+          this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
         });
     }
     this.destroyRef.onDestroy(() => this.run?.unsubscribe());
