@@ -8,16 +8,19 @@
   aria-hidden="true"
   data-testid="ui-gauge-ring">
   <circle class="fill-none stroke-ui-neutral-alpha-200" cx="50" cy="50" [attr.r]="radius" stroke-width="10" />
-  <circle
-    [class]="arcClasses()"
-    cx="50"
-    cy="50"
-    [attr.r]="radius"
-    stroke-width="10"
-    stroke-linecap="round"
-    [attr.stroke-dasharray]="circumference"
-    [attr.stroke-dashoffset]="dashOffset()"
-    data-testid="ui-gauge-arc" />
+  <!-- Round caps would draw a dot at 0, so the arc only renders with a value or while indeterminate. -->
+  @if (indeterminate() || clampedValue() > 0) {
+    <circle
+      [class]="arcClasses()"
+      cx="50"
+      cy="50"
+      [attr.r]="radius"
+      stroke-width="10"
+      stroke-linecap="round"
+      [attr.stroke-dasharray]="circumference"
+      [attr.stroke-dashoffset]="dashOffset()"
+      data-testid="ui-gauge-arc" />
+  }
 </svg>
 @if (valueVisible()) {
   <span class="relative text-[length:calc(var(--size)*0.26)] font-medium tabular-nums text-ui-neutral-900" data-testid="ui-gauge-value">{{

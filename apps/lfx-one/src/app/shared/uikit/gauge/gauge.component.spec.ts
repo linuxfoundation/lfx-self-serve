@@ -44,9 +44,38 @@ describe('UiGaugeComponent', () => {
     const circumference = 2 * Math.PI * 42;
     expect(Number(arc().getAttribute('stroke-dasharray'))).toBeCloseTo(circumference, 5);
     expect(Number(arc().getAttribute('stroke-dashoffset'))).toBeCloseTo(circumference * 0.08, 5);
+  });
 
+  it('draws no arc at 0, so the round caps leave no dot', async () => {
     await set('value', 0);
-    expect(Number(arc().getAttribute('stroke-dashoffset'))).toBeCloseTo(circumference, 5);
+    expect(arc()).toBeNull();
+    expect(value()?.textContent?.trim()).toBe('0');
+
+    await set('value', -3);
+    expect(arc()).toBeNull();
+
+    await set('indeterminate', true);
+    expect(arc()).not.toBeNull();
+  });
+
+  it('treats a non-finite value as 0', async () => {
+    await set('value', NaN);
+    expect(host.getAttribute('aria-valuenow')).toBe('0');
+    expect(host.getAttribute('aria-valuetext')).toBe('0 percent');
+    expect(value()?.textContent?.trim()).toBe('0');
+    expect(arc()).toBeNull();
+  });
+
+  it('rounds a fractional value for the number, the value text and the level', async () => {
+    await set('value', 200 / 3);
+    expect(value()?.textContent?.trim()).toBe('67');
+    expect(host.getAttribute('aria-valuenow')).toBe('67');
+    expect(host.getAttribute('aria-valuetext')).toBe('67 percent');
+    expect(arc().getAttribute('class')).toContain('stroke-ui-success-600');
+
+    await set('value', 100 / 3);
+    expect(value()?.textContent?.trim()).toBe('33');
+    expect(arc().getAttribute('class')).toContain('stroke-ui-danger-600');
   });
 
   it('clamps the value to 0 to 100', async () => {

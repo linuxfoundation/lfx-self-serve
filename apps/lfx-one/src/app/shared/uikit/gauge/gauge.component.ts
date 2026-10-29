@@ -24,7 +24,7 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
   },
 })
 export class UiGaugeComponent {
-  /** Percentage from 0 to 100. Clamped. Ignored while `indeterminate`. */
+  /** Percentage from 0 to 100. Clamped and rounded to a whole number; a non-finite value counts as 0. Ignored while `indeterminate`. */
   public readonly value = input<number>(0);
   /** Accessible name. Pair the gauge with a visible label such as "Health score". */
   public readonly label = input.required<string>();
@@ -61,7 +61,10 @@ export class UiGaugeComponent {
   }
 
   private initClampedValue(): Signal<number> {
-    return computed(() => Math.min(Math.max(this.value(), 0), 100));
+    return computed(() => {
+      const value = Number.isFinite(this.value()) ? this.value() : 0;
+      return Math.round(Math.min(Math.max(value, 0), 100));
+    });
   }
 
   private initDashOffset(): Signal<number> {
