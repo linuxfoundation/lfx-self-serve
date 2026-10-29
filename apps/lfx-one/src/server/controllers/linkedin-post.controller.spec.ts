@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   attribution: vi.fn(),
   track: vi.fn(),
   record: vi.fn(),
+  resume: vi.fn(),
   claim: vi.fn(),
   share: vi.fn(),
   answer: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public ownedOneOffResult = mocks.ownedResult;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
+    public resumeAfterQuestions = mocks.resume;
     public claimSessionAnswers = mocks.claim;
   },
 }));
