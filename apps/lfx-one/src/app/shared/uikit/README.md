@@ -22,6 +22,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-search-input` | `UiSearchInputComponent` | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                             |
 | `lfx-ui-badge`        | `UiBadgeComponent`       | Count badge, neutral or accent tone                                                                                        |
 | `lfx-ui-status-dot`   | `UiStatusDotComponent`   | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                        |
+| `lfx-ui-skeleton`     | `UiSkeletonComponent`    | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                       |
 
 ## Design tokens
 
