@@ -13,7 +13,13 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { PlausibleService } from '@services/plausible.service';
 import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
-import { ORG_COMMITS_DEFINITION, ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE, ORG_LENS_FOUNDATIONS_INITIAL_STATE } from '@lfx-one/shared/constants';
+import {
+  ORG_COMMITS_DEFINITION,
+  ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE,
+  ORG_LENS_FOUNDATIONS_INITIAL_STATE,
+  ORG_LF_MAINTAINER_ROLES_LABEL,
+  ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION,
+} from '@lfx-one/shared/constants';
 import type { OrgLensFoundationRow, OrgLensFoundationsAndProjectsResponse, OrgLensFoundationsSectionState } from '@lfx-one/shared/interfaces';
 
 import { FoundationRowComponent } from './components/foundation-row.component';
@@ -41,6 +47,8 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
+  protected readonly maintainerRolesLabel = ORG_LF_MAINTAINER_ROLES_LABEL;
+  protected readonly maintainerRolesDefinition = ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION;
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 

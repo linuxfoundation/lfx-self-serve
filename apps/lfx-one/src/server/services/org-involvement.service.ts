@@ -7,10 +7,15 @@ import {
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgFoundationCoverageResponse,
   OrgInvolvementMaintainersMonthlyResponse,
+  OrgMaintainerRolesCountRow,
+  OrgMaintainerRolesMonthlyRow,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_COMMIT_FILTERS, ORG_LENS_DEFAULT_TIME_RANGE, ORG_OVERVIEW_MAINTAINER_ROLES_RANGE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 
+import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -25,21 +30,8 @@ interface FoundationCoverageRow {
 }
 
 interface ContributorsMonthlyRow {
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
   MONTH_START_DATE: Date;
   UNIQUE_CONTRIBUTORS: number;
-  TOTAL_ACTIVE_CONTRIBUTORS: number;
-}
-
-interface MaintainersMonthlyRow {
-  ACCOUNT_ID: string;
-  ACCOUNT_NAME: string;
-  METRIC_MONTH: Date;
-  ACTIVE_MAINTAINERS: number;
-  ACTIVE_PROJECTS: number;
-  TOTAL_MAINTAINERS_YEARLY: number;
-  TOTAL_PROJECTS_YEARLY: number;
 }
 
 interface EventAttendanceMonthlyRow {
@@ -95,9 +87,11 @@ export class OrgInvolvementService {
   }
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    // `contributors:v2`: the headline is now the live People -> Contributors default count, not the monthly table's
+    // frozen 12-month total, so a `contributors` entry must not be read.
     return withOrgCache(
       accountId,
-      'contributors',
+      'contributors:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributorsMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -105,12 +99,20 @@ export class OrgInvolvementService {
   }
 
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+    // `maintainer-roles:v1`: maintainer roles replaced the people count (lfx-self-serve#4482), so a `maintainers` entry must not be read.
+    // Set by the fetcher, read by `storable`: a card read while a roles table is missing is served, never stored.
+    let rolesMissing = false;
     return withOrgCache(
       accountId,
-      'maintainers',
+      'maintainer-roles:v1',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchMaintainersMonthly(accountId),
-      OrgInvolvementService.hasAccountId
+      async () => {
+        const fetched = await this.fetchMaintainersMonthly(accountId);
+        rolesMissing = fetched.rolesMissing;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !rolesMissing
     );
   }
 
@@ -179,64 +181,80 @@ export class OrgInvolvementService {
     };
   }
 
+  /**
+   * Overview Active Contributors card. The headline is the People -> Contributors default tile, counted live with the
+   * same rule — distinct people with code in LF projects, the past 365 days to today — so the two agree; the frozen
+   * 12-month total of ORG_CONTRIBUTORS_MONTHLY (calendar months, built once a day) drifted from it. The trend stays the
+   * monthly table's distinct contributors per month. Either read failing fails the card, as before.
+   */
   private async fetchContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    const query = `
+    const headlineQuery = `
+      SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id = ?
+        ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
+    `;
+    const trendQuery = `
       SELECT
-        ACCOUNT_ID,
         MONTH_START_DATE,
-        UNIQUE_CONTRIBUTORS,
-        TOTAL_ACTIVE_CONTRIBUTORS
+        UNIQUE_CONTRIBUTORS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<ContributorsMonthlyRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return { accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] };
-    }
-
-    const firstRow = result.rows[0];
+    const [headline, trend] = await Promise.all([
+      this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(headlineQuery, [accountId]),
+      this.snowflakeService.execute<ContributorsMonthlyRow>(trendQuery, [accountId]),
+    ]);
 
     return {
-      accountId: firstRow.ACCOUNT_ID,
-      totalActiveContributors: firstRow.TOTAL_ACTIVE_CONTRIBUTORS || 0,
-      monthlyData: result.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
-      monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      accountId,
+      totalActiveContributors: headline.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
+      monthlyData: trend.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+      monthlyLabels: trend.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }
 
-  private async fetchMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
-    const query = `
+  /**
+   * Overview Maintainers card. The headline counts LF roles overlapping the past 365 days to today with the same rule
+   * as People -> Contributors, so the two default views agree (the monthly table stops at the last complete month).
+   * The trend is the roles held in each month.
+   */
+  private async fetchMaintainersMonthly(accountId: string): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
+    const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
+    const headlineQuery = `
+      SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      WHERE ACCOUNT_ID = ?
+        AND ${overlap.sql}
+        ${orgProjectScopePredicate('lf', 'IS_LF_PROJECT')}
+    `;
+    const trendQuery = `
       SELECT
-        ACCOUNT_ID,
-        ACCOUNT_NAME,
         METRIC_MONTH,
-        ACTIVE_MAINTAINERS,
-        ACTIVE_PROJECTS,
-        TOTAL_MAINTAINERS_YEARLY,
-        TOTAL_PROJECTS_YEARLY
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINERS_MONTHLY
+        ACTIVE_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
       WHERE ACCOUNT_ID = ?
       ORDER BY METRIC_MONTH ASC
     `;
 
-    const result = await this.snowflakeService.execute<MaintainersMonthlyRow>(query, [accountId]);
-
-    if (result.rows.length === 0) {
-      return { accountId, accountName: '', totalMaintainersYearly: 0, totalProjectsYearly: 0, monthlyData: [], monthlyLabels: [] };
-    }
-
-    const firstRow = result.rows[0];
+    // Each part degrades on its own: a missing roles table answers an unavailable (null) headline, a missing monthly
+    // table an empty trend — never an error.
+    const [headline, trend] = await Promise.all([
+      readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', headlineQuery, [accountId, ...overlap.binds]),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_MONTHLY', trendQuery, [accountId]),
+    ]);
 
     return {
-      accountId: firstRow.ACCOUNT_ID,
-      accountName: firstRow.ACCOUNT_NAME,
-      totalMaintainersYearly: firstRow.TOTAL_MAINTAINERS_YEARLY || 0,
-      totalProjectsYearly: firstRow.TOTAL_PROJECTS_YEARLY || 0,
-      monthlyData: result.rows.map((row) => row.ACTIVE_MAINTAINERS || 0),
-      monthlyLabels: result.rows.map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      response: {
+        accountId,
+        maintainerRoles: headline === null ? null : (headline[0]?.MAINTAINER_ROLES ?? 0),
+        monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      },
+      rolesMissing: headline === null || trend === null,
     };
   }
 

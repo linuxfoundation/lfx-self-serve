@@ -20,7 +20,10 @@ export class AllEmployeesService {
     return this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/former`, { params: { range, ...filters } });
   }
 
-  public getEmployeeDetail(orgUid: string, personKey: string): Observable<OrgAllEmployeeDetail> {
-    return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`);
+  /** `range` is the window the Maintainer pills on the expanded row follow — the page range. */
+  public getEmployeeDetail(orgUid: string, personKey: string, range: OrgLensTimeRange): Observable<OrgAllEmployeeDetail> {
+    return this.http.get<OrgAllEmployeeDetail>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(personKey)}/detail`, {
+      params: { range },
+    });
   }
 }

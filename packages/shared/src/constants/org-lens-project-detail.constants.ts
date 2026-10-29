@@ -7,6 +7,7 @@ import type {
   OrgLensProjectBand,
   OrgLensProjectDetailTab,
   OrgLensProjectHealth,
+  OrgLensTimeRange,
   TagSeverity,
 } from '../interfaces';
 import { lfxColors } from './colors.constants';
@@ -33,6 +34,13 @@ export const PD_TIME_RANGE_TYPE: Record<OrgLensLeaderboardTimeRange, string> = {
   '1y': 'last_365_days',
   '2y': 'last_2_years',
   all: 'alltime',
+};
+
+/** The Org Lens range each toggle covers, for the reads that take one (the maintainer roles overlap window). */
+export const PD_ORG_LENS_TIME_RANGE: Record<OrgLensLeaderboardTimeRange, OrgLensTimeRange> = {
+  '1y': '365d',
+  '2y': '730d',
+  all: 'all',
 };
 
 export const PD_HEALTH_TAG: Record<OrgLensProjectHealth, { label: string; bg: string; text: string }> = {

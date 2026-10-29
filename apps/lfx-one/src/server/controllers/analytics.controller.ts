@@ -1992,7 +1992,7 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/org-involvement-maintainers-monthly
-   * Get cross-foundation maintainers monthly for an organization
+   * The organization's maintainer roles in LF projects: past-12-month headline and monthly trend
    * Query params: accountId (required)
    */
   public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -2005,8 +2005,7 @@ export class AnalyticsController {
 
       logger.success(req, 'get_org_involvement_maintainers_monthly', startTime, {
         account_id: accountId,
-        total_maintainers: response.totalMaintainersYearly,
-        total_projects: response.totalProjectsYearly,
+        maintainer_roles: response.maintainerRoles,
         monthly_data_points: response.monthlyData.length,
       });
 

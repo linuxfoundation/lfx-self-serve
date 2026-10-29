@@ -10,7 +10,9 @@ import {
   BASE_LINE_CHART_OPTIONS,
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
+  ORG_MAINTAINER_ROLES_LABEL,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
 } from '@lfx-one/shared/constants';
 import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -97,14 +99,7 @@ export class OrgOverviewInvolvementComponent {
   private initializeMaintainersData(): Signal<OrgInvolvementMaintainersMonthlyResponse> {
     return this.buildOrgDataSignal(
       (id) => this.analyticsService.getMaintainersMonthly(id),
-      (accountId) => ({
-        accountId,
-        accountName: '',
-        totalMaintainersYearly: 0,
-        totalProjectsYearly: 0,
-        monthlyData: [],
-        monthlyLabels: [],
-      }),
+      (accountId) => ({ accountId, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }),
       this.maintainersLoading
     );
   }
@@ -154,7 +149,7 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private initializeMaintainersCard(): Signal<DashboardMetricCard> {
-    return computed(() => this.transformMaintainers(this.maintainersData(), this.getMetricConfig('Maintainers')));
+    return computed(() => this.transformMaintainers(this.maintainersData(), this.getMetricConfig(ORG_MAINTAINER_ROLES_LABEL)));
   }
 
   private initializeEventAttendeesCard(): Signal<DashboardMetricCard> {
@@ -251,13 +246,14 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private transformMaintainers(data: OrgInvolvementMaintainersMonthlyResponse, metric: DashboardMetricCard): DashboardMetricCard {
-    const projectLabel = data.totalProjectsYearly === 1 ? 'project' : 'projects';
     return {
       ...metric,
       loading: this.maintainersLoading(),
-      value: data.totalMaintainersYearly.toString(),
-      subtitle: `Employees stewarding ${data.totalProjectsYearly} ${projectLabel} across foundations`,
-      chartOptions: this.createBarChartOptions('Maintainers'),
+      // `null` means the roles are unavailable (roles table missing or the read failed): a dash, never zero.
+      value: data.maintainerRoles === null ? '—' : String(data.maintainerRoles),
+      subtitle: 'In LF projects over the past 365 days',
+      tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+      chartOptions: this.createBarChartOptions(ORG_MAINTAINER_ROLES_LABEL),
       chartData:
         data.monthlyData.length > 0
           ? {
