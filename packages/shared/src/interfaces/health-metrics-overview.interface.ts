@@ -507,6 +507,8 @@ export interface HealthMetricsOverviewNewsletterPointView {
   clickYPct: string;
   /** "Name · Mon D, YYYY · open N%, click N%", the point's tooltip and its screen-reader text. */
   label: string;
+  /** Which way the tooltip extends from the point, so one at either end stays inside the card. */
+  tipAlign: 'start' | 'center' | 'end';
 }
 
 /** A month label under the first newsletter sent in that month. */
@@ -532,7 +534,7 @@ export interface HealthMetricsOverviewNewsletterEngagementRowView {
   dotClass: string;
   countLabel: string;
   pctLabel: string;
-  /** The segment's share of the bar; 0 draws none. */
+  /** The segment's share of the bar, as its flex-grow ratio; 0 draws none. */
   widthPct: number;
 }
 

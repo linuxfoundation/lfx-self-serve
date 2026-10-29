@@ -788,6 +788,8 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
 
     expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
     expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
+    // Tooltips at either end open inward.
+    expect(chart?.points.map((point) => point.tipAlign)).toEqual(['start', 'center', 'end']);
     // The scale tops out at 50%, the highest open rate rounded up to the next 10%.
     expect(chart?.points.map((point) => point.openYPct)).toEqual(['40.00', '20.00', '0.00']);
     expect(chart?.points[0]?.clickYPct).toBe('94.00');
@@ -801,6 +803,11 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     // The click line skips the newsletter without a click rate rather than drawing it at zero.
     expect(chart?.clickPath.split('L')).toHaveLength(2);
     expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
+  });
+
+  it('scales to a click rate above every open rate, so neither line is clipped', () => {
+    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.2, 0.4)] };
+    expect(buildHealthMetricsOverviewNewsletterView(clicky, 'YTD').chart?.points[0]).toMatchObject({ openYPct: '50.00', clickYPct: '0.00' });
   });
 
   it('tops the scale out at an exact tenth rather than the next one', () => {
@@ -841,6 +848,14 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(
       buildHealthMetricsOverviewNewsletterView({ ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(null) }, 'YTD').isEmpty
     ).toBe(true);
+  });
+
+  it('names the baseline year when it is not the period’s', () => {
+    const earlier = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: `${year - 1}-03-09` }),
+    };
+    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.label).toBe(`39% since Mar ${year - 1}`);
   });
 
   it('drops the growth month and the basis when the view gives neither', () => {

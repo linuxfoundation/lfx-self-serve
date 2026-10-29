@@ -363,11 +363,8 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;
 
-/** The fill under the newsletter card's open rate line: the progress blue at 10%. */
-export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_AREA_FILL = `${lfxColors.blue[500]}1A`;
-
-/** The forecast range band behind the predicted line: the progress blue at 10%. */
-export const HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL = `${lfxColors.blue[500]}1A`;
+/** The progress blue at 10%: the trend chart's forecast band and the fill under the newsletter card's open rate. */
+export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {

@@ -77,7 +77,12 @@ describe('OverviewNewsletterCardComponent', () => {
     expect(text('overview-newsletter-kpis-subscribers-value')).toBe('1,458');
     expect(text('overview-newsletter-kpis-cto-value')).toBe('9%');
     expect(query('overview-newsletter-chart')).not.toBeNull();
-    expect(query('overview-newsletter-open-n1')?.getAttribute('title')).toBe(`Monthly: Hello · Aug 24, ${YEAR} · open 37%, click 2%`);
+    // Each open point takes focus, and its tooltip carries the same words as its accessible name.
+    const point = query('overview-newsletter-open-n1');
+    expect(point?.getAttribute('tabindex')).toBe('0');
+    expect(point?.getAttribute('aria-label')).toBe(`Monthly: Hello · Aug 24, ${YEAR} · open 37%, click 2%`);
+    expect(text('overview-newsletter-tip-n1')).toBe(`Monthly: Hello · Aug 24, ${YEAR} · open 37%, click 2%`);
+    expect(query('overview-newsletter-tip-n1')?.className).toContain('left-0');
     const high = [...(query('overview-newsletter-engagement-high')?.children ?? [])].map((cell) => cell.textContent?.trim());
     expect(high).toEqual(['HighOpened 7+ newsletters and clicked a link', '175', '12%']);
     const mostEngaging = [...(query('overview-newsletter-most-engaging')?.children ?? [])].map((cell) => cell.textContent?.trim());

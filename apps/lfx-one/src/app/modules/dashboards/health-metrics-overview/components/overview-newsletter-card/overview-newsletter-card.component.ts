@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
   HEALTH_METRICS_OVERVIEW_CREATE_NEWSLETTER_LINK,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
-  HEALTH_METRICS_OVERVIEW_NEWSLETTER_AREA_FILL,
+  HEALTH_METRICS_OVERVIEW_PROGRESS_TINT,
   HEALTH_METRICS_OVERVIEW_STROKES,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewNewsletterView } from '@lfx-one/shared/utils';
@@ -20,12 +21,12 @@ import { OverviewCardComponent } from '../overview-card/overview-card.component'
 import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-explore-link.component';
 import { OverviewKpiStripComponent } from '../overview-kpi-strip/overview-kpi-strip.component';
 
-import type { HealthMetricsOverviewNewsletterView } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewNewsletterPointView, HealthMetricsOverviewNewsletterView } from '@lfx-one/shared/interfaces';
 
 /** Newsletters sent in the period: the summary, each newsletter's open and click rate, and how engaged subscribers are. */
 @Component({
   selector: 'lfx-overview-newsletter-card',
-  imports: [OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
+  imports: [NgClass, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
   templateUrl: './overview-newsletter-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })
@@ -38,7 +39,13 @@ export class OverviewNewsletterCardComponent {
   protected readonly emptyCopy = HEALTH_METRICS_OVERVIEW_EMPTY_COPY.newsletter;
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly fills = HEALTH_METRICS_OVERVIEW_FILL_CLASSES;
-  protected readonly areaFill = HEALTH_METRICS_OVERVIEW_NEWSLETTER_AREA_FILL;
+  protected readonly areaFill = HEALTH_METRICS_OVERVIEW_PROGRESS_TINT;
+  /** A point's tooltip opens inward at either end of the chart, so it stays inside the card. */
+  protected readonly tipAlignClass: Record<HealthMetricsOverviewNewsletterPointView['tipAlign'], string> = {
+    start: 'left-0',
+    center: 'left-1/2 -translate-x-1/2',
+    end: 'right-0',
+  };
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNewsletters({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewNewsletterView | null>(() => {
     const newsletters = this.read.data();

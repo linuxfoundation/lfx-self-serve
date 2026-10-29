@@ -59,6 +59,7 @@ import type {
   HealthMetricsOverviewNewsletterChartView,
   HealthMetricsOverviewNewsletterEngagementRowView,
   HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletterPointView,
   HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewNewsletterView,
   HealthMetricsOverviewNps,
@@ -394,7 +395,7 @@ export function buildHealthMetricsOverviewNewsletterView(
     kpis: [
       {
         ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
-        delta: buildPctDelta(period?.subscribersGrowth ?? null, true, growthSince(period?.growthBaselineDate ?? null)),
+        delta: buildPctDelta(period?.subscribersGrowth ?? null, true, growthSince(period?.growthBaselineDate ?? null, getYearForRange(range))),
       },
       kpi('sent', 'Newsletters sent', formatCount(period?.newslettersSent)),
       kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null, false)),
@@ -601,10 +602,12 @@ function buildTrendChart(
   };
 }
 
-/** " since Jun" from the growth baseline; none when the view gives no baseline. */
-function growthSince(baselineDate: string | null): string {
+/** " since Jun" from the growth baseline, with its year when that is not the period's; none without a baseline. */
+function growthSince(baselineDate: string | null, periodYear: number): string {
   const month = baselineDate ? formatIsoMonth(baselineDate) : '';
-  return month ? ` since ${month}` : '';
+  if (!baselineDate || !month) return '';
+  const baselineYear = baselineDate.slice(0, 4);
+  return ` since ${month}${baselineYear === String(periodYear) ? '' : ` ${baselineYear}`}`;
 }
 
 /** "Jun" from an ISO date; empty for one that is not a date. */
@@ -615,7 +618,7 @@ function formatIsoMonth(iso: string): string {
 
 /**
  * One point per newsletter sent in the period's year, oldest first and evenly spaced, as the design spaces them. The
- * read only carries newsletters with engagement data. The scale tops out at the highest open rate rounded up to the next 10%.
+ * read only carries newsletters with engagement data. The scale tops out at the highest rate of either line, rounded up to the next 10%.
  */
 function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
   const sends = newsletters.newsletters
@@ -624,7 +627,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   if (!sends.length) return null;
 
   // Rounded to a tenth of a point first, so a peak of exactly 70% tops out at 70% rather than 80%.
-  const peak = Math.round(Math.max(...sends.map((send) => send.openRate as number)) * 1000) / 1000;
+  const peak = Math.round(Math.max(...sends.flatMap((send) => [send.openRate as number, send.clickRate ?? 0])) * 1000) / 1000;
   const top = Math.min(1, Math.max(0.1, Math.ceil(peak * 10) / 10));
   const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
@@ -648,6 +651,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
       xPct: ((point.x / 600) * 100).toFixed(2),
       openYPct: ((point.openY / 200) * 100).toFixed(2),
       clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
+      tipAlign: tipAlign(point.x / 600),
       label: [
         point.send.name,
         point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : '',
@@ -663,6 +667,12 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
       return [{ label: formatIsoMonth(`${month}-01`), xPct: ((point.x / 600) * 100).toFixed(2) }];
     }),
   };
+}
+
+/** A point near either edge opens its tooltip inward. */
+function tipAlign(fraction: number): HealthMetricsOverviewNewsletterPointView['tipAlign'] {
+  if (fraction < 0.2) return 'start';
+  return fraction > 0.8 ? 'end' : 'center';
 }
 
 /** High / Medium / Low with the view's share of each; a level too small to see keeps a sliver of the bar. */
