@@ -97,10 +97,11 @@ export class OrgLensNavigationService {
    *
    * The query is preserved across the rewrite — a filter, a `?sig=` picker choice, a `utm_*` all
    * still describe the page — with two exceptions. A switch drops `?employees=`: the selection came
-   * from the previous organization's roster (`ORG_LENS_SWITCH_PARAMS_RESET`), and Back does not
-   * restore it. Leaving an EasyCLA address, on either mount, drops the corporate-signing return
-   * parameters `?org=` and `?signed=`. Those describe a trip opened for one organization and never
-   * belong to another (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
+   * from the previous organization's roster (`ORG_LENS_SWITCH_PARAMS_RESET`); Back returns to the
+   * pre-switch URL, where pages that follow `?employees=` may restore it. Leaving an EasyCLA
+   * address, on either mount, drops the corporate-signing return parameters `?org=` and
+   * `?signed=`. Those describe a trip opened for one organization and never belong to another
+   * (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent

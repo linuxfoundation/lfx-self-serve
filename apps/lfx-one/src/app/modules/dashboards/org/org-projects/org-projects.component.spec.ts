@@ -483,12 +483,8 @@ describe('OrgProjectsComponent — Employees filter', () => {
     ]);
     const harness = await RouterTestingHarness.create(url);
     router = TestBed.inject(Router);
-    const page = (): OrgProjectsComponent => harness.routeDebugElement?.componentInstance as OrgProjectsComponent;
-    expect(
-      page()
-        ['sortedProjects']()
-        .map((p) => p.name)
-    ).toEqual(['Alpha']);
+    let page = harness.routeDebugElement?.componentInstance as OrgProjectsComponent;
+    expect(page['sortedProjects']().map((p) => p.name)).toEqual(['Alpha']);
 
     selectedAccount.set(ORG_B);
     TestBed.inject(OrgLensNavigationService).navigateToSelectedOrg('switch');
@@ -496,14 +492,12 @@ describe('OrgProjectsComponent — Employees filter', () => {
     harness.detectChanges();
     await harness.fixture.whenStable();
 
+    // The legacy address re-mounts the page under the addressed route, so read the instance again.
+    page = harness.routeDebugElement?.componentInstance as OrgProjectsComponent;
     expect(router.url).toBe('/org/org-b/projects?utm_source=x');
-    expect(page()['filterForm'].controls.employees.value).toEqual([]);
-    expect(
-      page()
-        ['sortedProjects']()
-        .map((p) => p.name)
-        .sort()
-    ).toEqual(['Delta', 'Echo']);
+    expect(page['filterForm'].controls.employees.value).toEqual([]);
+    const names = page['sortedProjects']().map((p) => p.name);
+    expect(names.sort()).toEqual(['Delta', 'Echo']);
   });
 
   it('clears the Employees selection, in the form and the URL, when the organization changes', async () => {
