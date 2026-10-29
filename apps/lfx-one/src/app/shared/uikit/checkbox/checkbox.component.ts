@@ -25,7 +25,7 @@ export class UiCheckboxComponent implements ControlValueAccessor {
   public readonly label = input<string>('');
   /** Accessible name. Required when `label` is empty, or the checkbox is announced without a name. Ignored when `label` is set. */
   public readonly ariaLabel = input<string>('');
-  /** Native `name`, used when the checkbox is inside a plain HTML form. */
+  /** Native `name` attribute. Native form reset is not supported; use `[(checked)]` or reactive forms. */
   public readonly name = input<string>('');
   /** Disables the checkbox. With reactive forms, disable the control instead (Angular warns when `[disabled]` sits next to `formControl`). */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
