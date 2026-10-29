@@ -456,19 +456,30 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
   return rows.map(({ step, pages }) => (pages > 1 ? { ...step, detail: `${pages} pages` } : step));
 }
 
-/** The feed header's phases: under way, done, passed over, or not reached yet. */
+/**
+ * The feed header's phases: under way, done, passed over, or not reached yet.
+ *
+ * The furthest phase the run has reached is under way until a later phase
+ * starts, whether or not one of its steps is running at this instant: an
+ * agent reads its sources in waves (a few pages, a model turn, a few more),
+ * and a phase that went done between waves and active again on the next one
+ * flickered through the whole read (Joan's hand test, 29 Oct 2026). Earlier
+ * phases are done, or passed over when nothing of theirs happened; later
+ * ones pending. The feed is shown only while the run is live, so the last
+ * phase never needs to read done here.
+ */
 export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
   const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
   const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
   return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
-    const steps = activity.filter((step) => phase.kinds.includes(step.kind));
+    const reached = activity.some((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
-    if (steps.some((step) => step.status === 'running')) {
+    if (position === lastReached) {
       state = 'active';
-    } else if (steps.length > 0) {
-      state = 'done';
+    } else if (position < lastReached) {
+      state = reached ? 'done' : 'skipped';
     } else {
-      state = position < lastReached ? 'skipped' : 'pending';
+      state = 'pending';
     }
     return { id: phase.id, label: phase.label, state };
   });
