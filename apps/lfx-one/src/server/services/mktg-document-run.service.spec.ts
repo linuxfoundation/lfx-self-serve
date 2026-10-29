@@ -234,6 +234,34 @@ describe('MktgDocumentRunService core', () => {
     await service.startForOneOff(memberOwner, 'member-360', project, session);
     stored().metadata['state'] = 'questions';
   }
+  it('filters the same public snapshot per viewer without adding identity fields or caching ownership', async () => {
+    await waitingMember();
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as Request;
+    await service.startForOneOff(other, 'member-360', project, 'other-session');
+    const snapshot = await service.readProgress(req, project);
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    const theirs = await service.ownProgress(other, project, snapshot);
+    expect(own.runs.map((row) => row.runId)).toEqual([hash(session)]);
+    expect(theirs.runs.map((row) => row.runId)).toEqual([hash('other-session')]);
+    expect(own).toEqual({ runs: snapshot.runs.filter((row) => row.runId === hash(session)) });
+    for (const secret of ['creatorSubject', 'startedBy', 'ownerToken', 'sessionId', 'synthetic-member-owner'])
+      expect(JSON.stringify(own)).not.toContain(secret);
+    flows.get.mockImplementationOnce(() => {
+      throw new Error('Synthetic storage unavailable');
+    });
+    await expect(service.ownProgress(memberOwner, project, snapshot)).rejects.toThrow('Synthetic storage unavailable');
+  });
+  it('resolves a private Member session only for the stored creator after writer authorization', async () => {
+    await waitingMember();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).resolves.toBe(session);
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as Request;
+    await expect(service.ownedMember360Session(other, project, hash(session))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.ownedMember360Session(other, project, hash('missing'))).rejects.toMatchObject({ statusCode: 404 });
+    flows.project.mockResolvedValueOnce({ uid: project, writer: false });
+    flows.get.mockClear();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).rejects.toMatchObject({ statusCode: 403 });
+    expect(flows.get).not.toHaveBeenCalled();
+  });
   it('lets exactly one concurrent Member answer claim win a body-version CAS', async () => {
     await waitingMember();
     flows.author.mockResolvedValue({ name: 'Synthetic writer' });

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
+import { ResourceNotFoundError } from '../errors';
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   sendAnswers: vi.fn(),
   claim: vi.fn(),
   commitClaim: vi.fn(),
+  owned: vi.fn(),
   user: 'synthetic-subject' as string | undefined,
 }));
 vi.mock('../services/mktg-document-run.service', () => ({
@@ -27,6 +29,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public prepareMember360QuestionsClaim = mocks.claim;
+    public ownedMember360Session = mocks.owned;
   },
 }));
 vi.mock('../services/member-360.service', async (original) => {
@@ -49,6 +52,7 @@ describe('Member 360 HTTP boundary', () => {
     mocks.user = 'synthetic-subject';
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.owned.mockResolvedValue('session-1');
     mocks.claim.mockResolvedValue(mocks.commitClaim);
     mocks.sendAnswers.mockImplementation(async (_req, _body, claim: () => Promise<void>) => {
       await claim();
@@ -60,6 +64,41 @@ describe('Member 360 HTTP boundary', () => {
     ownerToken: createSessionOwnerToken('synthetic-subject', 'member-360:sample-project:session-1'),
     questionsId: 'a'.repeat(64),
     answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' }],
+  });
+  it('reads an owned public selector without returning private proof fields', async () => {
+    const response = { status: 'pending', activity: [] };
+    mocks.result.mockResolvedValue(response);
+    const req = { body: { project: 'sample-project', runId: 'b'.repeat(64) } } as Request;
+    const json = vi.fn();
+    const next = vi.fn();
+    await new Member360Controller().result(req, { json } as unknown as Response, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.owned).toHaveBeenCalledWith(req, 'sample-project', 'b'.repeat(64));
+    expect(mocks.result).toHaveBeenCalledWith(req, 'session-1', 'sample-project');
+    expect(json).toHaveBeenCalledWith(response);
+    expect(JSON.stringify(json.mock.calls)).not.toMatch(/sessionId|ownerToken|creatorSubject/);
+  });
+  it('claims and answers an owned selector through the unchanged answer validator and CAS', async () => {
+    const { sessionId: _session, ownerToken: _token, ...body } = answersBody();
+    const req = { body: { ...body, runId: 'b'.repeat(64) } } as Request;
+    const next = vi.fn();
+    const res = { set: vi.fn().mockReturnThis(), json: vi.fn() };
+    await new Member360Controller().answers(req, res as unknown as Response, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.claim).toHaveBeenCalledWith(req, 'sample-project', 'session-1', body.questionsId);
+    expect(mocks.commitClaim).toHaveBeenCalledOnce();
+    expect(mocks.sendAnswers.mock.calls[0]?.[1]).toEqual(answersBody());
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+  it.each(['result', 'answers'] as const)('refuses another creator with an existence-neutral 404 on %s', async (method) => {
+    mocks.owned.mockRejectedValue(new ResourceNotFoundError('Marketing OS run', 'b'.repeat(64)));
+    const req = { body: { project: 'sample-project', runId: 'b'.repeat(64) } } as Request;
+    const next = vi.fn();
+    await new Member360Controller()[method](req, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+    expect(mocks.result).not.toHaveBeenCalled();
+    expect(mocks.sendAnswers).not.toHaveBeenCalled();
+    expect(mocks.claim).not.toHaveBeenCalled();
   });
   it('claims the validated creator questions before sending on the same tracked session', async () => {
     const req = { body: answersBody() } as Request;

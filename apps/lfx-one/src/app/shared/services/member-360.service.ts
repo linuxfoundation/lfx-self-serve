@@ -40,30 +40,36 @@ export class Member360Service {
     );
   }
 
-  public questions(pending: MktgPendingGeneration): Observable<Member360Result> {
+  public questions(pending: MktgPendingGeneration, runId?: string): Observable<Member360Result> {
     return this.http
-      .post<Member360Result>(`${MEMBER_360_API}/result`, {
-        sessionId: pending.attempt?.session.sessionId,
-        ownerToken: pending.attempt?.session.ownerToken,
-        project: pending.request.projectUid,
-      })
+      .post<Member360Result>(
+        `${MEMBER_360_API}/result`,
+        runId
+          ? { project: pending.request.projectUid, runId }
+          : {
+              sessionId: pending.attempt?.session.sessionId,
+              ownerToken: pending.attempt?.session.ownerToken,
+              project: pending.request.projectUid,
+            }
+      )
       .pipe(take(1));
   }
 
-  public answer(pending: MktgPendingGeneration, questionsId: string, answers: MktgRunAnswer[]): Observable<unknown> {
+  public answer(pending: MktgPendingGeneration, questionsId: string, answers: MktgRunAnswer[], runId?: string): Observable<unknown> {
     const subject = this.attempts.subject();
     const session = pending.attempt?.session;
     return this.http
       .post(`${MEMBER_360_API}/answers`, {
         project: pending.request.projectUid,
-        sessionId: session?.sessionId,
-        ownerToken: session?.ownerToken,
+        ...(runId ? { runId } : { sessionId: session?.sessionId, ownerToken: session?.ownerToken }),
         questionsId,
         answers: answers.map(({ key, ...answer }) => ({ ...answer, id: key })),
       })
       .pipe(
         take(1),
-        tap(() => this.attempts.save({ ...pending, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: questionsId }, subject))
+        tap(() => {
+          if (pending.attempt) this.attempts.save({ ...pending, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: questionsId }, subject);
+        })
       );
   }
 

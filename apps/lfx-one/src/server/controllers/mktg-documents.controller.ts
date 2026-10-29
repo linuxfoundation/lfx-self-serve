@@ -123,7 +123,9 @@ export class MktgDocumentsController {
       const progress = await this.documentRuns.readProgress(req, project, undefined, undefined, req.query['poll'] === '1');
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
-      res.json({ ...documents, ...progress });
+      const selected = req.query['ownRuns'] === '1' ? await this.documentRuns.ownProgress(req, project, progress) : progress;
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ ...documents, ...selected });
     } catch (error) {
       next(error);
     }

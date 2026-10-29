@@ -10,6 +10,8 @@ import { MktgRunAttemptService } from './mktg-run-attempt.service';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { Member360Service } from './member-360.service';
+import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { MktgPendingGeneration } from '@lfx-one/shared/interfaces';
 
 describe('Member360Service dedicated transports', () => {
   let api: Member360Service;
@@ -68,6 +70,34 @@ describe('Member360Service dedicated transports', () => {
     expect(TestBed.inject(MktgRunAttemptService).load('sample-project', 'member-360', session.documentId)?.answeredQuestionsId).toBe('b'.repeat(64));
   });
 
+  it('uses only public selectors for server-owned runs and never fabricates or persists a capability', () => {
+    const pending: MktgPendingGeneration = {
+      request: {
+        projectUid: 'sample-project',
+        agentId: 'member-360',
+        documentId: 'run-0123456789abcdef01234567',
+        intake: MKTG_AGENT_INTAKES['member-360'],
+        answers: {},
+      },
+      state: 'questions',
+      updatedAt: new Date().toISOString(),
+    };
+    const runId = 'a'.repeat(64);
+    api.questions(pending, runId).subscribe();
+    const read = http.expectOne('/api/mktg-agents/member-360/result');
+    expect(read.request.body).toEqual({ project: 'sample-project', runId });
+    read.flush({ status: 'pending' });
+    api.answer(pending, 'b'.repeat(64), [{ key: 'window', text: 'Use the current window.', origin: 'accepted' }], runId).subscribe();
+    const write = http.expectOne('/api/mktg-agents/member-360/answers');
+    expect(write.request.body).toEqual({
+      project: 'sample-project',
+      runId,
+      questionsId: 'b'.repeat(64),
+      answers: [{ id: 'window', text: 'Use the current window.', origin: 'accepted' }],
+    });
+    write.flush({ success: true });
+    expect(localStorage.length).toBe(0);
+  });
   it('passes URI-encoded tracker filenames in the upload header, never the URL', () => {
     const filename = 'Q3+sponsors — draft.csv';
     api.parseTracker('sample-project', new File(['company\nSample Org'], filename)).subscribe();

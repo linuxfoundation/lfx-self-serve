@@ -3,7 +3,7 @@
 
 import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
 
-import { MEMBER_360_MAX_BYTES, MEMBER_360_MAX_TRACKERS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import { MEMBER_360_MAX_BYTES, MEMBER_360_MAX_TRACKERS, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_STARTED_RUN_ID_REGEX } from '@lfx-one/shared/constants';
 import { Member360Session } from '@lfx-one/shared/interfaces';
 import { member360GenerateSchema, member360AnswersSchema } from '@lfx-one/shared/server';
 import { NextFunction, Request, Response } from 'express';
@@ -55,7 +55,7 @@ export class Member360Controller {
     try {
       const user = getEffectiveSub(req);
       if (!user) throw new AuthenticationError('Sign in to see this run.', { operation, service: 'member_360' });
-      const { sessionId, ownerToken, project } = (req.body ?? {}) as Record<string, unknown>;
+      const { sessionId, ownerToken, project } = await this.resolveOwnedSelector(req, user, req.body);
       if (
         typeof sessionId !== 'string' ||
         !/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId) ||
@@ -83,7 +83,7 @@ export class Member360Controller {
     try {
       const user = getEffectiveSub(req);
       if (!user) throw new AuthenticationError('Sign in to answer this run.', { operation, service: 'member_360' });
-      const parsed = member360AnswersSchema.safeParse(req.body);
+      const parsed = member360AnswersSchema.safeParse(await this.resolveOwnedSelector(req, user, req.body));
       if (!parsed.success) throw this.invalid('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
       const { project, sessionId, ownerToken, questionsId } = parsed.data;
       if (!verifySessionOwnerToken(ownerToken, user, `member-360:${project}:${sessionId}`)) {
@@ -104,6 +104,25 @@ export class Member360Controller {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Only a stored creator may exchange an opaque run selector for server-internal proof. */
+  private async resolveOwnedSelector(req: Request, user: string, input: unknown): Promise<Record<string, unknown>> {
+    const body = input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+    if (body['runId'] === undefined) return body;
+    const { runId, project, ...payload } = body;
+    if (
+      typeof runId !== 'string' ||
+      !MKTG_STARTED_RUN_ID_REGEX.test(runId) ||
+      typeof project !== 'string' ||
+      !MKTG_ARTIFACT_PARTITION_REGEX.test(project) ||
+      body['sessionId'] !== undefined ||
+      body['ownerToken'] !== undefined
+    ) {
+      throw this.invalid('runId', 'Use a recorded run and project, or the original creator capability.');
+    }
+    const sessionId = await this.runs.ownedMember360Session(req, project, runId);
+    return { ...payload, project, sessionId, ownerToken: createSessionOwnerToken(user, `member-360:${project}:${sessionId}`) };
   }
 
   private invalid(field: string, message: string): ServiceValidationError {

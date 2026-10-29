@@ -63,6 +63,108 @@ for (const choice of ['Open it', 'Discard and start over'])
     await page.screenshot({ path: info.outputPath('member-active-run-choice.png'), fullPage: true });
   });
 
+for (const state of ['writing', 'questions', 'none'] as const)
+  test(`Member page lands directly on the viewer's server-owned ${state} screen`, async ({ page }, info) => {
+    await setupMember360(page); // Includes suppressCookieBanner, synthetic writer rights and feature flag.
+    let release: () => void = () => undefined;
+    const roster = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const detail = member360Progress(state === 'questions' ? 'questions' : 'writing');
+    let resultReads = 0;
+    let starts = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.endsWith('/member-360/generate')) starts++;
+    });
+    await page.route('**/api/mktg-agents/documents?*', async (route) => {
+      expect(new URL(route.request().url()).searchParams.get('ownRuns')).toBe('1');
+      await roster;
+      await json(route, { project: 'sample-project', groups: [], runs: state === 'none' ? [] : detail.runs });
+    });
+    await stubMember360Progress(page, () => detail);
+    await page.route('**/api/mktg-agents/member-360/result', (route) => {
+      resultReads++;
+      expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', runId: 'b'.repeat(64) });
+      return json(
+        route,
+        state === 'questions'
+          ? {
+              status: 'needs_input',
+              questionsId: 'c'.repeat(64),
+              questions: [
+                {
+                  key: 'window',
+                  label: 'Tracker window',
+                  question: 'Which analysis window should this tracker cover?',
+                  why: 'The date is missing.',
+                  suggestedAnswer: 'Use the chosen analysis window.',
+                  basis: [],
+                },
+              ],
+            }
+          : { status: 'pending', activity: detail.runs?.[0]?.activity }
+      );
+    });
+    await page.evaluate(() => {
+      const modes: string[] = [];
+      new MutationObserver(() => {
+        const root = document.querySelector('[data-testid="member-360-run-page"]');
+        if (!root) return;
+        let mode = '';
+        if (root.querySelector('[data-testid="mktg-skeleton"]')) mode = 'loading';
+        else if (root.querySelector('[data-testid="mktg-run-questions"]')) mode = 'questions';
+        else if (root.querySelector('[data-testid="member-360-generating"]')) mode = 'writing';
+        else if (root.querySelector('[data-testid="member-360-intake"]')) mode = 'none';
+        if (mode && modes.at(-1) !== mode) {
+          modes.push(mode);
+          document.documentElement.dataset['memberBootModes'] = modes.join(',');
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    await openMember360(page);
+    await expect(page.getByTestId('mktg-skeleton')).toBeVisible();
+    await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
+    expect(resultReads).toBe(0);
+    release();
+    if (state === 'none') await expect(page.getByTestId('member-360-intake')).toBeVisible();
+    else if (state === 'questions') await expect(page.getByTestId('mktg-run-questions')).toContainText('Which analysis window');
+    else await expect(page.getByTestId('mktg-run-activity-title')).toHaveText('Member 360 is working on your report.');
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset['memberBootModes'])).toBe(`loading,${state}`);
+    expect(starts).toBe(0);
+    await page.screenshot({ path: info.outputPath(`member-owned-${state}-settled.png`), fullPage: true });
+  });
+
+test('an unavailable initial roster stays neutral and Refresh loads the correct intake', async ({ page }, info) => {
+  await setupMember360(page); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+  let available = false;
+  await page.route('**/api/mktg-agents/documents?*', (route) =>
+    available ? json(route, { project: 'sample-project', groups: [], runs: [] }) : route.fulfill({ status: 503, body: '{}' })
+  );
+  await openMember360(page);
+  await expect(page.getByTestId('mktg-skeleton')).toBeVisible();
+  await expect(page.getByTestId('member-360-state-error')).toContainText('The run state could not be checked.');
+  await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+  available = true;
+  await page.getByTestId('member-360-state-refresh').getByRole('button').click();
+  await expect(page.getByTestId('member-360-intake')).toBeVisible();
+  await expect(page.getByTestId('mktg-skeleton')).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('member-roster-recovered.png'), fullPage: true });
+});
+
+test('a non-writer sees the access message without a private run lookup or form', async ({ page }, info) => {
+  await setupMember360(page, { writer: false }); // Includes suppressCookieBanner and synthetic access stubs.
+  let privateReads = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/member-360/result')) privateReads++;
+  });
+  await openMember360(page);
+  await expect(page.getByTestId('member-360-no-access')).toContainText('You need write access');
+  await expect(page.getByTestId('member-360-intake')).toHaveCount(0);
+  expect(privateReads).toBe(0);
+  await page.screenshot({ path: info.outputPath('member-no-access.png'), fullPage: true });
+});
+
 test('Kit → Member family → run has fixed linked parents and browser Back', async ({ page }, info) => {
   // setupMember360 calls suppressCookieBanner and stubs project rights and all domain APIs.
   await setupMember360(page);
@@ -213,8 +315,8 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   });
   await stubMember360Progress(page, () => member360Progress('writing'));
   await create.click();
-  await expect(page).toHaveURL(new RegExp(`/documents/member-360/${MEMBER_360_DOCUMENT_ID}`));
-  await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+  await expect(page).toHaveURL(/\/mktg-os-agents\/member-360\?/);
+  await expect(page.getByTestId('member-360-generating')).toBeVisible();
   await page.screenshot({ path: info.outputPath('first-run-no-comparison.png'), fullPage: true });
 });
 
@@ -241,7 +343,7 @@ test('Generate stays on the run page until the creator poll confirms stored read
   await expect(page.getByTestId('member-360-generating')).toBeVisible();
   await expect.poll(() => intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackers: [] });
   await expect(page).toHaveURL(/\/mktg-os-agents\/member-360\?/);
-  await expect(page.getByTestId('mktg-run-activity-title')).toHaveText('Working on Member 360');
+  await expect(page.getByTestId('mktg-run-activity-title')).toHaveText('Member 360 is working on your report.');
   await expect(page.getByTestId('mktg-run-activity-step-step-10')).toContainText('Searching the web', { timeout: 20000 });
   await expect(page.getByTestId('mktg-run-activity-phase-questions')).toHaveCount(0);
   await expect(page.getByTestId('mktg-run-activity-phase-research')).toHaveAttribute('aria-current', 'step');
@@ -252,6 +354,7 @@ test('Generate stays on the run page until the creator poll confirms stored read
   await expect(page.getByTestId('member-360-result')).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('generating-live-feed.png'), fullPage: true });
   stored = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page.getByTestId('member-360-result')).toBeVisible({ timeout: 20000 });
   await expect(page).not.toHaveURL(/revision=/);
   await expect(page.getByTestId('member-360-result-history')).toContainText('this run');
@@ -418,7 +521,7 @@ for (const state of ['resume', 'send-error', 'already-answered', 'load-error', '
         await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
       } else {
         await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
-        await expect(page.getByTestId('member-360-generating')).toContainText('Working on Member 360');
+        await expect(page.getByTestId('member-360-generating')).toContainText('Member 360 is working on your report.');
         if (state === 'already-answered')
           await expect(page.getByTestId('member-360-answered-notice')).toContainText('Synthetic writer already answered these — the agent is writing');
       }

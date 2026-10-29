@@ -14,11 +14,11 @@ import { Member360Service } from '@services/member-360.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { of, throwError, NEVER } from 'rxjs';
+import { of, throwError, NEVER, Subject } from 'rxjs';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
-import { MktgPendingGeneration, Member360Result } from '@lfx-one/shared/interfaces';
+import { MktgPendingGeneration, Member360Result, MktgDocumentDetailResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Member360RunComponent } from './member-360-run.component';
@@ -31,7 +31,27 @@ describe('Member360RunComponent', () => {
     activeProject: signal({ writer: true }),
     canWrite: signal(true),
   };
+  function progress(state: 'writing' | 'storing' | 'questions' | 'failed' = 'writing'): MktgDocumentDetailResponse {
+    return {
+      project: 'sample-project',
+      type: member360DocumentType(),
+      documentId: 'run-0123456789abcdef01234567',
+      approvedCurrent: null,
+      revisions: [],
+      runs: [
+        {
+          project: 'sample-project',
+          agentKey: 'member-360',
+          documentId: 'run-0123456789abcdef01234567',
+          runId: 'b'.repeat(64),
+          state,
+          startedAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
   const documents = {
+    getDocument: vi.fn<MktgDocumentStoreService['getDocument']>(() => of(progress())),
     listDocuments: vi.fn<MktgDocumentStoreService['listDocuments']>(() => of({ project: 'sample-project', groups: [] })),
     getRevision: vi.fn(() => of(member360Revision())),
   };
@@ -82,6 +102,7 @@ describe('Member360RunComponent', () => {
     run.questions.mockReset().mockReturnValue(NEVER);
     run.answer.mockReset().mockReturnValue(of({ success: true }));
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
+    documents.getDocument.mockReset().mockReturnValue(of(progress()));
     run.generate.mockReturnValue(of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' }));
     run.generate.mockClear();
     await TestBed.configureTestingModule({
@@ -103,6 +124,7 @@ describe('Member360RunComponent', () => {
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
   it.each(['open', 'discard', 'finished'] as const)('handles an active-run conflict and the %s choice without rebuilding inputs', async (choice) => {
     await render();
@@ -159,6 +181,141 @@ describe('Member360RunComponent', () => {
     }
   });
 
+  function serverQuestions(): Member360Result {
+    return {
+      status: 'needs_input',
+      questionsId: 'c'.repeat(64),
+      questions: [
+        {
+          key: 'window',
+          label: 'Window',
+          question: 'Which server-confirmed window should this tracker cover?',
+          why: 'Missing date.',
+          suggestedAnswer: 'Use the current analysis window.',
+          basis: [],
+        },
+      ],
+    };
+  }
+  it('renders only the neutral skeleton before the first server response', async () => {
+    const response = new Subject<{ project: string; groups: [] }>();
+    documents.listDocuments.mockReturnValue(response);
+    fixture = TestBed.createComponent(Member360RunComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
+    expect(fixture.nativeElement.textContent.trim()).toBe('');
+    response.next({ project: 'sample-project', groups: [] });
+    response.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+  });
+  it.each(['writing', 'storing', 'questions', 'landed', 'missing'] as const)('uses the server %s state rather than a cached questions hint', async (state) => {
+    const hint = capability();
+    if (!hint.attempt) throw new Error('Missing fixture attempt');
+    hint.state = 'questions';
+    hint.pendingQuestions = {
+      attempt: hint.attempt,
+      questionsId: 'd'.repeat(64),
+      questions: [
+        {
+          key: 'old',
+          label: 'Old',
+          question: 'Cached-only question must never render?',
+          why: 'Old hint.',
+          suggestedAnswer: 'Cached-only suggestion.',
+          basis: [],
+        },
+      ],
+    };
+    attempts.latestPending.mockReturnValue({ documentId: hint.request.documentId, state: 'questions' });
+    attempts.load.mockReturnValue(hint);
+    run.questions.mockReturnValue(of(serverQuestions()));
+    const response = new Subject<MktgDocumentDetailResponse>();
+    documents.getDocument.mockReturnValue(response);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
+    if (state === 'missing') response.error(new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } }));
+    else {
+      response.next(state === 'landed' ? member360Revision() : progress(state));
+      response.complete();
+    }
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Cached-only');
+    if (state === 'landed') expect(navigate).toHaveBeenCalledWith(['../documents/member-360', hint.request.documentId], expect.anything());
+    else if (state === 'missing') {
+      expect(attempts.clear).toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    } else if (state === 'questions') expect(fixture.nativeElement.textContent).toContain('Which server-confirmed window');
+    else {
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('Member 360 is working on your report.');
+    }
+    expect(run.generate).not.toHaveBeenCalled();
+  });
+  it('rechecks on focus and visibility without resetting same-turn edits or restoring stale questions', async () => {
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'questions' });
+    run.questions.mockImplementation(() => {
+      const result = serverQuestions();
+      return of(result);
+    });
+    documents.getDocument.mockReturnValue(of(progress('questions')));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    await render();
+    const answer: HTMLTextAreaElement = fixture.nativeElement.querySelector('lfx-mktg-run-questions textarea');
+    answer.value = 'Keep this typed answer during a focus recheck.';
+    answer.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    const before = run.questions.mock.calls.length;
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(run.questions.mock.calls.length).toBeGreaterThan(before);
+    expect(fixture.nativeElement.querySelector('lfx-mktg-run-questions textarea').value).toBe(answer.value);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    documents.getDocument.mockReturnValue(of(progress('writing')));
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Member 360 is working on your report.');
+  });
+  it.each(['writing', 'questions', 'none'] as const)('lands on the server-owned %s screen without a local attempt', async (state) => {
+    attempts.load.mockReturnValue(null);
+    const response = new Subject<{ project: string; groups: []; runs: MktgDocumentDetailResponse['runs'] }>();
+    documents.listDocuments.mockReturnValue(response);
+    run.questions.mockReturnValue(of(state === 'questions' ? serverQuestions() : { status: 'pending' }));
+    documents.getDocument.mockReturnValue(of(progress(state === 'questions' ? 'questions' : 'writing')));
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
+    response.next({ project: 'sample-project', groups: [], runs: state === 'none' ? [] : progress(state).runs });
+    response.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(documents.listDocuments).toHaveBeenCalledWith('sample-project', true, true);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
+    if (state === 'none') {
+      expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+      expect(run.questions).not.toHaveBeenCalled();
+    } else {
+      expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
+      expect(fixture.componentInstance['pending']()?.attempt).toBeUndefined();
+      expect(run.questions).toHaveBeenCalledWith(expect.anything(), 'b'.repeat(64));
+      expect(!!fixture.nativeElement.querySelector('[data-testid="mktg-run-questions"]')).toBe(state === 'questions');
+      expect(attempts.save).not.toHaveBeenCalled();
+    }
+    expect(run.generate).not.toHaveBeenCalled();
+  });
   it('fixes the project and defaults to a twelve-month window with empty run history', async () => {
     await render();
     const project = fixture.nativeElement.querySelector('[data-testid="member-360-project"]');
@@ -386,7 +543,9 @@ describe('Member360RunComponent', () => {
   });
   it('stays on the run page and opens its document only after stored readiness', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-    run.questions.mockReturnValueOnce(of({ status: 'pending', activity: [] })).mockReturnValue(of({ status: 'ready', stored: true }));
+    run.questions
+      .mockReturnValueOnce(of({ status: 'pending', activity: [] }))
+      .mockReturnValue(of({ status: 'ready', stored: true, documentId: 'run-0123456789abcdef01234567' }));
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     await render();
     fixture.componentInstance.form.controls.compare.setValue(false);
@@ -400,7 +559,7 @@ describe('Member360RunComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(navigate).toHaveBeenCalledWith(
       ['../documents/member-360', 'run-0123456789abcdef01234567'],
-      expect.objectContaining({ queryParams: { revision: null, generation: null, run: 'b'.repeat(64) } })
+      expect.objectContaining({ queryParams: { revision: null, generation: null, run: null } })
     );
   });
   it('keeps the accepted capability after navigation without polling or navigating again', async () => {
@@ -437,6 +596,8 @@ describe('Member360RunComponent', () => {
       ],
     };
     if (state === 'empty') questions.questions = [];
+    if (state === 'answer' || state === 'send-error' || state === 'already-answered' || state === 'empty')
+      documents.getDocument.mockReturnValue(of(progress('questions')));
     run.questions.mockReturnValue(of(state === 'failed' ? { status: 'failed', message: 'The agent ended without a report.' } : questions));
     if (state === 'poll-error') run.questions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     if (state === 'send-error') run.answer.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
@@ -454,6 +615,7 @@ describe('Member360RunComponent', () => {
     fixture.detectChanges();
     if (state === 'answer' || state === 'send-error' || state === 'already-answered') {
       expect(fixture.nativeElement.querySelector('[data-testid="member-360-questions"]').textContent).toContain('Member 360 needs your answers to finish.');
+      if (state !== 'send-error') documents.getDocument.mockReturnValue(of(progress('writing')));
       fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -476,14 +638,17 @@ describe('Member360RunComponent', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'writing' });
     run.questions.mockReturnValue(of({ status: 'pending' }));
+    const old = progress();
+    for (const run of old.runs ?? []) run.startedAt = new Date(Date.now() - MEMBER_360_RUN_CEILING_MS).toISOString();
+    documents.getDocument.mockReturnValue(of(old));
     await render();
-    fixture.componentInstance['startedAt'].set(Date.now() - MEMBER_360_RUN_CEILING_MS);
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Still running');
     expect(run.generate).not.toHaveBeenCalled();
+    const before = run.questions.mock.calls.length;
     await vi.advanceTimersByTimeAsync(MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS);
-    expect(run.questions).toHaveBeenCalledTimes(2);
+    expect(run.questions).toHaveBeenCalledTimes(before + 1);
     expect(fixture.componentInstance['result']()?.status).toBe('pending');
   });
   it('reports a submission failure and allows retry', async () => {
@@ -496,22 +661,18 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('could not be started');
     expect(button().disabled).toBe(false);
   });
-  it('explains a failed comparison on press without disabling Create, and keeps Retry history', async () => {
+  it('does not guess a form when the initial server snapshot fails, and offers a safe refresh', async () => {
     documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     await render();
-    expect(button().disabled).toBe(false);
-    button().click();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]')?.textContent).toContain('Choose No comparison or retry history.');
+    expect(button()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('The run state could not be checked.');
     expect(run.generate).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.textContent).toContain('Run history could not be loaded');
     documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [] }));
-    const retry = Array.from(fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>).find((element) =>
-      element.textContent?.includes('Retry history')
-    )!;
-    retry.click();
+    fixture.nativeElement.querySelector('[data-testid="member-360-state-refresh"] button').click();
     await fixture.whenStable();
     fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
     expect(button().disabled).toBe(false);
   });
 });

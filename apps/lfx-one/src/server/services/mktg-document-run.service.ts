@@ -541,6 +541,42 @@ export class MktgDocumentRunService {
     };
   }
 
+  /** Per-request ownership filter: cached public rows never carry or determine creator identity. */
+  public async ownProgress(req: Request, project: string, snapshot: MktgDocumentRunSnapshot): Promise<MktgDocumentRunSnapshot> {
+    const subject = getEffectiveSub(req);
+    if (!subject) throw new AuthorizationError('Sign in to read your runs.');
+    const runs: MktgDocumentRunProgress[] = [];
+    for (let offset = 0; offset < snapshot.runs.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        snapshot.runs.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
+          const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
+          return stored.record.creatorSubject === subject ? row : null;
+        })
+      );
+      runs.push(...batch.filter((row): row is MktgDocumentRunProgress => row !== null));
+    }
+    return { ...snapshot, runs };
+  }
+
+  /** Creator-only public selector; the private Guild session never leaves the BFF. */
+  public async ownedMember360Session(req: Request, project: string, runId: string): Promise<string> {
+    if (!MKTG_STARTED_RUN_ID_REGEX.test(runId)) throw ServiceValidationError.forField('runId', 'Select a recorded run.');
+    const canonical = await this.resolveProject(req, project);
+    const stored = await this.read(req, canonical, `${this.prefix(canonical)}${runId}.json`);
+    const subject = getEffectiveSub(req);
+    if (
+      !stored ||
+      !subject ||
+      stored.record.creatorSubject !== subject ||
+      stored.record.agentKey !== 'member-360' ||
+      stored.record.state === 'discarded' ||
+      stored.record.state === 'superseded'
+    ) {
+      throw new ResourceNotFoundError('Marketing OS run', runId);
+    }
+    return stored.record.sessionId;
+  }
+
   /** Selected-run details alone may expose a closed marker; never reconcile or resolve an author here. */
   public async readClosedProgress(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
