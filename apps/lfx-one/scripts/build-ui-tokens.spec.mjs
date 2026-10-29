@@ -37,11 +37,12 @@ describe('ui-tokens.css', () => {
     expect(edited).not.toBe(await generatedAsCommitted());
   });
 
-  it('resolves references and escapes dots in names', () => {
+  it('resolves references and escapes non-identifier characters in names', () => {
     expect(resolveValue('{azure-500}')).toBe('var(--ui-azure-500)');
     expect(resolveValue('0 0 0 2px {white}, 0 0 0 4px #009aff')).toBe('0 0 0 2px var(--ui-white), 0 0 0 4px #009aff');
     expect(varName('spacing-0.5')).toBe('--ui-spacing-0\\.5');
     expect(varName('ui-neutral-900')).toBe('--ui-neutral-900');
     expect(varName('font-display')).toBe('--ui-font-display');
+    expect(varName('odd\\name')).toBe('--ui-odd\\\\name');
   });
 });

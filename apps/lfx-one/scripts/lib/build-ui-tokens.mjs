@@ -11,10 +11,10 @@ const THEMES = ['light', 'dark'];
 /**
  * Custom-property name for a token. Every name carries the `--ui-` prefix (role colours already start with `ui-`),
  * so the library's `--spacing-6`, `--font-display` and the like cannot collide with app CSS.
- * A dot (`spacing-0.5`) is not an identifier character, so it is escaped.
+ * Any character outside `[A-Za-z0-9_-]` (e.g. the dot in `spacing-0.5`) is backslash-escaped, backslashes included.
  */
 export function varName(name) {
-  return `--${name.startsWith('ui-') ? '' : 'ui-'}${name.replace(/\./g, '\\.')}`;
+  return `--${name.startsWith('ui-') ? '' : 'ui-'}${name.replace(/[^A-Za-z0-9_-]/g, (c) => `\\${c}`)}`;
 }
 
 /** Resolves a `{azure-500}` reference to `var(--ui-azure-500)`; any other value is already a literal. */
