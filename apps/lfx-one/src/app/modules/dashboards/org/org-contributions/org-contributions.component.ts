@@ -84,7 +84,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
 import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, describeContributionsWindow } from './org-contributions.util';
@@ -177,10 +177,16 @@ export class OrgContributionsComponent {
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
+  // The resolved org the Employees selection belongs to (null until the first org resolves); the org-change clear moves it.
+  private readonly employeesOrgUid = signal<string | null>(null);
+  // The org-change clear, which reaches the filter values at once instead of after the debounce.
+  private readonly employeesCleared$ = new Subject<void>();
+
   // Filter form mirrored into a signal; debounce so per-keystroke search doesn't thrash the request graph.
-  private readonly filterValues = toSignal(this.filterForm.valueChanges.pipe(debounceTime(250)), {
-    initialValue: this.filterForm.getRawValue(),
-  });
+  private readonly filterValues = toSignal(
+    merge(this.filterForm.valueChanges.pipe(debounceTime(250)), this.employeesCleared$.pipe(map(() => this.filterForm.getRawValue()))),
+    { initialValue: this.filterForm.getRawValue() }
+  );
 
   // Composed filter + pagination state — the single source of truth fed to both the URL and the BFF.
   protected readonly query: Signal<OrgContributionsQuery> = computed(() => this.initQuery());
@@ -316,16 +322,22 @@ export class OrgContributionsComponent {
       });
 
     // The Employees selection came from the previous org's roster, so a change between two resolved orgs (a switch,
-    // or Back/Forward across one) clears it; the switch navigation strips `?employees=` too. Clearing also restarts
-    // the debounce, so a pick still pending from the previous org never reaches the next org's request or URL.
+    // or Back/Forward across one) clears it; the switch navigation strips `?employees=` too. `initQuery` sends no
+    // Employees from the moment the org changes until this runs; the clear then reaches the filter values at once, not
+    // after the debounce, and restarting the debounce drops a pick still pending from the previous org.
     this.orgUid$
       .pipe(
-        filter((uid) => !!uid),
+        filter((uid): uid is string => !!uid),
         distinctUntilChanged(),
-        skip(1),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.filterForm.controls.employees.setValue([]));
+      .subscribe((uid) => {
+        const previous = this.employeesOrgUid();
+        this.employeesOrgUid.set(uid);
+        if (previous === null) return;
+        this.filterForm.controls.employees.setValue([]);
+        this.employeesCleared$.next();
+      });
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
@@ -402,6 +414,9 @@ export class OrgContributionsComponent {
 
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
+    const selectionOrgUid = this.employeesOrgUid();
+    // Between an org change and its clear, the selection still holds the previous org's people: send none.
+    const staleEmployees = selectionOrgUid !== null && selectionOrgUid !== this.accountContext.selectedAccount().uid;
     return {
       ...orgCommitFiltersFor({
         projectScope: values.projectScope ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope,
@@ -413,7 +428,7 @@ export class OrgContributionsComponent {
       foundation: values.foundation ?? '',
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
-      employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      employees: staleEmployees ? [] : (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       teamMembers: values.teamMembers ?? DEFAULT_ORG_TEAM_MEMBERS,
       sort: this.sort(),
       dir: this.dir(),
@@ -438,17 +453,18 @@ export class OrgContributionsComponent {
   }
 
   private initResponse(): Signal<OrgContributionsResponse> {
+    // The org and the query are read together, so an org change and the Employees it drops reach one request.
+    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query() }));
     return toSignal(
       combineLatest([
-        this.orgUid$,
-        toObservable(this.query).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
+        toObservable(request).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
         toObservable(this.retryTrigger),
       ]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, query]) => {
+        switchMap(([{ orgUid, query }]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });

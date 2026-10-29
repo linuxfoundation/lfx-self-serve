@@ -732,6 +732,22 @@ describe('OrgContributionsComponent', () => {
       expect(getContributions).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ employees: ['e-1'] }));
       expect(navigate).not.toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ employees: 'e-1' }) }));
     });
+
+    // The clear must reach the request at once: the debounced filter values still hold the previous org's settled pick.
+    it("sends no Employees on the first request for the new organization, before the clear's debounce", async () => {
+      const { fixture, getContributions, selectedAccount } = await render(null);
+      fixture.componentInstance['filterForm'].controls.employees.setValue(['e-1']);
+      await pastDebounce(fixture);
+      expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ employees: ['e-1'] }));
+
+      selectedAccount.set(ORG_B);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const requestsForB = (getContributions.mock.calls as unknown as [string, { employees: string[] }][]).filter(([uid]) => uid === 'org-uid-2');
+      expect(requestsForB.length).toBeGreaterThan(0);
+      expect(requestsForB[0][1].employees).toEqual([]);
+    });
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {
