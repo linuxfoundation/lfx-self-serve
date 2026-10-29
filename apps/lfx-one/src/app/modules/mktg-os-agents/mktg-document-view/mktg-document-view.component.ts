@@ -849,7 +849,9 @@ export class MktgDocumentViewComponent {
   // === Protected methods ===
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
-    const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
+    // A verified ACK may arrive before its run= URL replacement. The hint selects a row; only that server row authorizes the redirect.
+    const selectedRunId = this.runParam() || this.handoffRunId();
+    const run = cycle.detail.runs?.find((entry) => entry.runId === selectedRunId);
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
     if (this.publicProgressPolling() && cycle.detail.progressUnavailable && !this.view()) {
       this.loading.set(true);

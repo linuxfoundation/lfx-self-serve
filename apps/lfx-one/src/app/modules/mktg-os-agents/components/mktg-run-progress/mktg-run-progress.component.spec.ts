@@ -274,6 +274,20 @@ describe('MktgRunProgressComponent', () => {
     expect(answer).not.toHaveBeenCalled();
   });
 
+  it('keeps the same canonical reader when its host starts watching confirmed questions', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledOnce();
+    fixture.componentRef.setInput('watchQuestions', true);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fixture.componentInstance.selectedRun()?.state).toBe('questions');
+  });
+
   it('checks a questions row every ten seconds and preserves unsent edits until the server moves to writing', async () => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));

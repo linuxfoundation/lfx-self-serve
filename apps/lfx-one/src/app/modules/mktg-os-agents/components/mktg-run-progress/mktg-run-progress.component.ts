@@ -205,7 +205,6 @@ export class MktgRunProgressComponent {
       polling: this.polling(),
       loadRevision: this.loadRevision(),
       revisionId: this.revisionId(),
-      watchQuestions: this.watchQuestions(),
       continuous: this.continuous(),
       refresh: this.refreshKey(),
       reload: this.reload(),
@@ -433,7 +432,7 @@ export class MktgRunProgressComponent {
                   this.runState() === 'writing' ||
                   this.runState() === 'storing' ||
                   cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || request.watchQuestions);
+                const questions = this.runPage() && (this.selectedRun()?.state === 'questions' || this.watchQuestions());
                 const local = this.localProgress();
                 if (!active && !questions && !request.continuous && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
                 let delay: number = questions ? MKTG_RUN_POLL.questionsIntervalMs : MKTG_RUN_POLL.intervalMs;

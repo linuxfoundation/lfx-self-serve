@@ -1543,6 +1543,25 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run-steps')).toBeNull();
   });
 
+  it('uses the accepted locator to select server proof before its run URL replacement arrives', async () => {
+    const response = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(response);
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['handoffRunId'].set('b'.repeat(64));
+    await settle();
+    expect(component['runParam']()).toBe('');
+    response.next({ ...detail, current: null, revisions: [], runs: [started('writing')] });
+    await settle();
+    expect(navigate).toHaveBeenCalledWith(
+      ['/mktg-os-agents', BRAND_KIT.catalogAgentId],
+      expect.objectContaining({ queryParams: expect.objectContaining({ run: 'b'.repeat(64) }), replaceUrl: true })
+    );
+    expect(query('brand-kit-web-view')).toBeNull();
+    expect(store.getDocument).toHaveBeenCalledOnce();
+  });
+
   it.each(['cancelled', 'rejected'])('retries the same public run redirect after navigation is %s', async (outcome) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const response = { ...detail, runs: [started('writing')] };
