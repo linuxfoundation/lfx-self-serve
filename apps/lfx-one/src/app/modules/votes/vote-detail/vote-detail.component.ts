@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
+import { isPlatformServer, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -45,9 +45,7 @@ import {
   buildVoteResultsQuestions,
   canVoterFetchVoteResults,
   computeVoteParticipationStats,
-  formatVoteDeadline,
   getRecentCommentResponses,
-  getUserTimezone,
   isRankedPollType,
   mergeCommentResults,
   normalizePollStatus,
@@ -138,9 +136,6 @@ export class VoteDetailComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
-  // Resolved once per browser session — SSR has no `Intl` zone, so dates fall back to UTC there.
-  private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
-
   /** Re-runs the vote load: `retry` shows the skeleton again, `refresh` (after a ballot) reloads in place. */
   private readonly reload$ = new BehaviorSubject<'retry' | 'refresh'>('retry');
 
@@ -197,11 +192,6 @@ export class VoteDetailComponent {
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
   /** Pseudo-anonymous totals, abstentions and comments are held until the vote ends (#3916) — a missing `num_abstained` must not read as 0. */
   protected readonly resultsHeld: Signal<boolean> = computed(() => this.voteResults()?.results_held === true);
-  /** The scheduled close in the viewer's time zone, for the held panel. */
-  protected readonly closeText: Signal<string> = computed(() => {
-    const end = this.vote()?.end_time;
-    return end ? formatVoteDeadline(end, this.viewerTimezone) : '';
-  });
 
   // === Computed Signals ===
   /** Voters tab: a manager (never while the access check runs) on a vote that is open or closed, never a draft. */

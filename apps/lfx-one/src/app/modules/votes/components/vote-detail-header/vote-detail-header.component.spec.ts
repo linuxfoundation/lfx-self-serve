@@ -63,6 +63,17 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-invited')).toBe('12 invited voters');
   });
 
+  it('renders group and method as plain meta-row text, not chips', () => {
+    render();
+
+    const meta = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-meta"]') as HTMLElement;
+    expect(meta.querySelector('[data-testid="vote-detail-header-group"]')?.textContent).toContain('Synthetic Steering Committee');
+    expect(meta.querySelector('[data-testid="vote-detail-header-method"]')?.textContent).toContain('Plurality vote');
+    expect(exists('vote-detail-header-tags')).toBe(false);
+    expect(fixture.nativeElement.querySelector('lfx-tag[data-testid="vote-detail-header-group"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-tag[data-testid="vote-detail-header-method"]')).toBeNull();
+  });
+
   it.each([undefined, null])('shows unavailable privacy for missing metadata (%s)', (privacy) => {
     const vote = makeVote();
     // A malformed/partial payload can carry null even though the typed contract does not.
