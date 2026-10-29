@@ -13,12 +13,13 @@ import { UiRadioComponent } from './radio.component';
   selector: 'lfx-ui-test-model-host',
   imports: [UiRadioGroupComponent, UiRadioComponent],
   template:
-    '<lfx-ui-radio-group [label]="label()" [ariaLabel]="ariaLabel()" [disabled]="disabled()" [(value)]="value"> <lfx-ui-radio value="public" label="Public" /><lfx-ui-radio value="members" label="Members only" /><lfx-ui-radio value="enterprise" label="Enterprise" [disabled]="true" /> </lfx-ui-radio-group>',
+    '<lfx-ui-radio-group [label]="label()" [ariaLabel]="ariaLabel()" [disabled]="disabled()" [name]="name()" [(value)]="value"> <lfx-ui-radio value="public" label="Public" /><lfx-ui-radio value="members" label="Members only" /><lfx-ui-radio value="enterprise" label="Enterprise" [disabled]="true" /> </lfx-ui-radio-group>',
 })
 class ModelHostComponent {
   public readonly label = signal('Visibility');
   public readonly ariaLabel = signal('');
   public readonly disabled = signal(false);
+  public readonly name = signal('');
   public readonly value = signal<string | null>('public');
 }
 
@@ -66,6 +67,13 @@ describe('UiRadioGroupComponent and UiRadioComponent', () => {
       expect(inputs().every((input) => input.type === 'radio')).toBe(true);
       expect(new Set(inputs().map((input) => input.name)).size).toBe(1);
       expect(inputs()[0].name).not.toBe('');
+    });
+
+    it('uses an explicit name instead of the generated one', async () => {
+      fixture.componentInstance.name.set('visibility');
+      await fixture.whenStable();
+
+      expect(inputs().every((input) => input.name === 'visibility')).toBe(true);
     });
 
     it('checks the option matching the group value', () => {
@@ -144,11 +152,18 @@ describe('UiRadioGroupComponent and UiRadioComponent', () => {
       expect(fixture.componentInstance.control.value).toBe('public');
     });
 
-    it('marks the control touched on blur', async () => {
-      inputs()[0].dispatchEvent(new Event('blur'));
+    it('marks the control touched when focus leaves the group', async () => {
+      inputs()[0].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
       await fixture.whenStable();
 
       expect(fixture.componentInstance.control.touched).toBe(true);
+    });
+
+    it('does not mark the control touched when focus moves between options', async () => {
+      inputs()[0].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: inputs()[1] }));
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.control.touched).toBe(false);
     });
 
     it('applies the control disabled state', async () => {

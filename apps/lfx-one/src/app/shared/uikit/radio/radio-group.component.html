@@ -2,7 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact px, not rem; 14px root: 12px between the legend and the options, and between options. -->
-<fieldset role="radiogroup" class="m-0 min-w-0 border-0 p-0" [attr.aria-label]="label() ? null : ariaLabel() || null" data-testid="ui-radio-group-fieldset">
+<fieldset
+  role="radiogroup"
+  class="m-0 min-w-0 border-0 p-0"
+  [attr.aria-label]="label() ? null : ariaLabel() || null"
+  (focusout)="onFocusOut($event)"
+  data-testid="ui-radio-group-fieldset">
   @if (label()) {
     <legend class="label-13 mb-[12px] p-0 text-ui-neutral-600" data-testid="ui-radio-group-legend">{{ label() }}</legend>
   }
