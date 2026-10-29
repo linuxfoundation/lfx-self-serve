@@ -23,6 +23,9 @@ export const FOUNDATION_MESSAGE_PRINT_ONLY_CLASS = 'lfx-framework-print-only';
  */
 export const FOUNDATION_MESSAGE_PRINT_TAB_IDS = ['framework', 'icps', 'message-house', 'numbers'] as const;
 
+/** Printed marker for an unanswered FAQ; independent of the screen's tab labels. */
+export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
+
 /** The document's title on the cover and in the running heads. */
 export const FOUNDATION_MESSAGE_PRINT_TITLE = 'Messaging Framework';
 

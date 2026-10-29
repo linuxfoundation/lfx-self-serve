@@ -294,6 +294,11 @@
                   </div>
                 </div>
 
+                @if (detail.maintainerRolesUnavailable) {
+                  <p class="text-xs text-gray-500" data-testid="person-detail-drawer-code-maintainer-unavailable">
+                    Maintainer roles: — (maintainer data is currently unavailable)
+                  </p>
+                }
                 <ul class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
                   @for (project of detail.code; track project.projectId) {
                     <li class="flex items-center justify-between gap-3 px-4 py-3" [attr.data-testid]="'person-detail-drawer-code-project-' + project.projectId">

@@ -184,6 +184,8 @@ export class EventAttendeesComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'events',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.filterForm.controls.timeRange.value,
     });
   }
 

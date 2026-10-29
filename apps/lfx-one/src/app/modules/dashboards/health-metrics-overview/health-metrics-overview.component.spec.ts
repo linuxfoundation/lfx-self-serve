@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
+import { HealthMetricsBlankCardComponent } from '../components/health-metrics-blank-card/health-metrics-blank-card.component';
 import { OverviewCardComponent } from './components/overview-card/overview-card.component';
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
 
@@ -99,7 +100,7 @@ describe('HealthMetricsOverviewComponent blank state', () => {
       imports: [HealthMetricsOverviewComponent],
       providers: [HealthMetricsChromeService, { provide: UserService, useValue: { impersonating: signal(false) } }],
     })
-      .overrideComponent(HealthMetricsOverviewComponent, { set: { imports: STUB_CARDS } })
+      .overrideComponent(HealthMetricsOverviewComponent, { set: { imports: [HealthMetricsBlankCardComponent, ...STUB_CARDS] } })
       .compileComponents();
     const fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
     fixture.detectChanges();

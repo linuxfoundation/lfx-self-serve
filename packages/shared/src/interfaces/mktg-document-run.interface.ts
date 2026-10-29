@@ -65,6 +65,8 @@ export interface MktgActiveRunStartOptions {
   discard?: unknown;
   /** Slot owner for one-offs when the caller acts on another creator's record; defaults to the caller. */
   creatorSubject?: string | null;
+  /** Server-verified continuing session; exempt only its own record from the active-slot check. */
+  continuingRunId?: string;
 }
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
@@ -134,9 +136,9 @@ export interface MktgDocumentRunProgress {
   state: Exclude<MktgStoredDocumentRunState, 'completed'>;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
-  /** Resolved display name only; absent or null when the closure actor is unknown. */
+  /** Forward-compatible display name only; this BFF does not populate it yet (linuxfoundation/lfx-self-serve#4592). */
   closedBy?: string | null;
-  /** Opaque replacement run id for this document; absent on legacy closed records. */
+  /** Forward-compatible opaque replacement run id; not populated here yet (linuxfoundation/lfx-self-serve#4592). */
   replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
@@ -187,7 +189,7 @@ export interface MktgStartedRunRecord {
   state: MktgStoredDocumentRunState;
   /** Timestamp recorded when discarded or superseded; absent on legacy records. */
   closedAt?: string;
-  /** Private closure actor; only a resolved display name may reach selected details. */
+  /** Private opaque actor stored with closure metadata; only a safe display name may reach selected details. */
   closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;

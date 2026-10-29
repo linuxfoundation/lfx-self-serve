@@ -5,6 +5,8 @@
 // brand a print is set in, and the Messaging Framework's print as its
 // template binds it.
 
+import type { BoilerplatesLengthRow } from './boilerplates.interface';
+import type { FaqGroupView } from './faq.interface';
 import type {
   FoundationMessageAudienceRow,
   FoundationMessageAvoidRow,
@@ -16,6 +18,18 @@ import type {
   FoundationMessagePillarView,
   FoundationMessageViewTab,
 } from './foundation-message.interface';
+
+/** Boilerplates in contract order, set in the same brand as the framework. */
+export interface BoilerplatesPrintView {
+  brand: MktgPrintBrand;
+  lengths: BoilerplatesLengthRow[];
+}
+
+/** FAQ groups, including questions that still need an answer. */
+export interface FaqPrintView {
+  brand: MktgPrintBrand;
+  groups: FaqGroupView[];
+}
 
 /** Where a print's brand comes from: the project's stored Brand Kit, or the LF look when the project has none. */
 export type MktgPrintBrandSource = 'kit' | 'lf';

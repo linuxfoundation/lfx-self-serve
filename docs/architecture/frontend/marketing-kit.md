@@ -134,8 +134,9 @@ navigation state, never a URL write command. See [the API and sequencing contrac
 
 `lfx-mktg-family-export-actions` uses the required `familyId` and stable
 `family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
-PDF composes the approved framework print and kit book; boilerplates/FAQ are
-provisionally omitted with an explicit note because they have no print rendering.
+PDF composes all four approved-current assets — framework, brand kit, boilerplates
+and FAQ — in exporter order, with one family cover and contents. All share one
+portrait layout; the kit's landscape artwork scales to fit portrait pages.
 Slides exports the supported approved family assets and branding, offers Update or
 Create for an existing deck, shows progress and a dated revision-linked last export,
 and marks changed approved member sets stale. Families without an export target render only

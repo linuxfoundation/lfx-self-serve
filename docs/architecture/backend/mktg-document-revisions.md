@@ -171,11 +171,11 @@ export. No personal identity is written into export records.
 
 The Family page eagerly checks last export independently of its document-list read.
 A failed check disables export rather than guessing Create. Download PDF composes
-the existing approved framework print and kit book, in exporter order, using the
-family print body class and each rendering's named page size. Boilerplates and FAQ
-are provisionally omitted from PDF because no print layouts exist; the UI says so.
-Slides still exports those approved assets. Neither export changes the on-screen
-asset rendering or grants Google Drive access.
+the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
+with one family cover and contents. The family print body class selects a shared
+portrait layout; the kit's landscape artwork scales to fit portrait pages, rather
+than mixing named page sizes. Slides exports the same supported approved assets.
+Neither export changes the on-screen asset rendering or grants Google Drive access.
 
 ### Asset approval UI
 
@@ -378,14 +378,14 @@ Its ready result carries the shared exact persistence receipt as well as the exi
 flag; existing clients remain compatible.
 
 Every Generate or new catalog chat checks stored `writing`/`questions`/`storing` records: living slots use project + type + documentId; one-off slots use creator + type within the project, never another creator's run. A 409 `MKTG_RUN_ACTIVE` returns `activeRunId`, `state`, `agentKey`, `documentId`, `message`, `startedBy` (resolved only on conflict, fallback 'Another writer', response-only); stale discard ids get the same conflict.
-Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Discarded runs are excluded from listing progress and skipped before body/Guild reads during reconciliation.
-The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids.
+Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Each successful discard writes an INFO `mktg_run_discard` audit with the project/run/document/agent IDs, opaque actor and creator subjects, a self-discard flag and closure time; names, emails and session capabilities are excluded. The known actor is persisted as private `closed-by` metadata with `closed-at`, never copied into the public display-name field. A refused/replayed metadata transition does not emit a new discard audit. No replacement ID is known at this pre-create step. Discarded runs are excluded from listing progress and skipped before body/Guild reads during reconciliation.
+The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids. An explicitly selected active run is read and reconciled independently of the 128-entry navigation window, so Open it can reach an older uncached active record. A row already reconciled in the current snapshot avoids a duplicate Guild call; selected closed markers retain the lightweight metadata-only result path. After a selected run's result reconciliation, a newly observed discarded/superseded state wins over the old active snapshot, including when a pending result did not need a metadata write.
 Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
-Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
+Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Explicit null creators remain in the unknown-creator slot, never the retrying writer's slot. Catalog chat follow-ups check the stored session before sending: discarded/superseded sessions return `MKTG_RUN_CLOSED` (409), and a different active run in the slot returns `MKTG_RUN_ACTIVE`. Only the verified continuing session is exempt from its own slot check. The same pre-send check now protects Brand Kit, Framework, Boilerplates, FAQ and LinkedIn answers in this PR alone, with required project authorization; omitting project cannot skip it. The shared check recognizes creator-scoped tracked one-offs as well as living documents. The companion #4592 exact-turn answer claim remains the stronger conditional-write belt. Turn tracking also rejects retired records and excludes retired metadata from its write predicate, so a late follow-up cannot reopen them. This does not add a cross-writer atomic reservation to the existing HEAD/check/PUT store. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
 
 A validated Generate 409 opens a scoped confirmation: living intakes name the starter; dedicated LinkedIn and Member 360 intakes say "Your … run is in progress". "Open it" navigates to the returned document/run; "Discard and start over" resends the exact submitted body with only `discard: activeRunId` added. Catalog bodies and conflict handoffs are same-visit memory only, never persisted as future discard permission or uploaded bytes. If that body cannot be replayed safely after reload, the intake asks for review/reattachment and another explicit Create. Context or identity changes invalidate the old dialog's actions. The shared guard re-sends the retained start without `discard` on open, visible timer checks and focus: a fresh 409 updates the same dialog's ownership/time and choices; an accepted start closes it, announces “The earlier run has finished — yours started.” and follows the normal start flow. Choices stay disabled while checking; focus never overlaps or cancels an in-flight start POST, and an uncertain non-409 ACK stops automatic retries rather than risking a second start.
 
-A document detail's optional validated `run` selector also reads that record's closed marker without a Guild lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded; completed runs still use their stored revision. The optional `closedBy` is a cheaply resolved display name or null, never the private subject/email (legacy unknown actors remain null). `replacedBy` is included only when the already-read progress contains a newer run for the same type and document; no extra listing/Guild lookup or guessed replacement is needed. The closed page keeps its existing plain sentence and Documents/Started runs link, without a feed, stepper or retry. Listings continue to omit closed records.
+Document and run-page detail reads forward the optional validated `run` selector to read that record's closed marker without a Guild lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded; completed runs still use their stored revision. Both surfaces use one closure-message component. `closedBy` is a cheaply resolved display name or null, never the private subject/email; legacy unknown actors remain null. `replacedBy` is supplied only when the already-read progress contains a newer run of the same type and document, without extra listing/Guild work or a guessed replacement. The document link opens that exact replacement when supplied; otherwise it says “View started runs” and opens the project's Documents/Started runs list. Closed views have no polling, feed, stepper or retry; the run page does not infer completion from a discarded row. Listings continue to omit closed records. A selected closed marker also cancels the document receiver's matching prepared/recovery stream and prevents late questions or result events from navigating away from that closed view. Both the shared living reader and the direct one-off receiver process closure metadata before attempting a revision-body read, so a body 503 cannot restore the previous active snapshot.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed`, `superseded` and
 `discarded`. Answerable questions pause the writing deadline until accepted answers renew
@@ -487,7 +487,14 @@ that revision. `POST` to the same path takes `project`, `revisionId`,
 revision membership and the source JSON's own field paths. The Brand Kit uses
 a stable JSON field key internally and captures its verbatim stored string as
 the agent's passage; caller-supplied passages, authors and timestamps are
-rejected. Framework and Boilerplates use their contract's field paths.
+rejected. Framework and Boilerplates use their contract's field paths. FAQ uses
+only answer paths `faq[g][1][q][1]`, resolved against the stored grouped tuples;
+a null answer is a valid target, but missing indexes, group names, questions and
+source labels are not. FAQ allows at most 30 comments per send, matching its agent
+form. The server renders them as `revision: { mode: 'redraft', prior_version,
+previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
+stored approved framework. The agent publishes a supplied answer with source
+label Notes; the host never edits the answer or its source itself.
 
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different

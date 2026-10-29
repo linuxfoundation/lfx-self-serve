@@ -6,10 +6,8 @@ import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsBlankCopy, HealthMetricsBlankTile, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
-  HealthMetricsOverviewBlankCopy,
-  HealthMetricsOverviewBlankTile,
   HealthMetricsOverviewEmptyCopy,
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewExploreLink,
@@ -248,10 +246,10 @@ export const HEALTH_METRICS_OVERVIEW_BLANK_COPY = {
       'A later year may have data to compare',
     ],
   },
-} as const satisfies Record<'ytd' | 'past', HealthMetricsOverviewBlankCopy>;
+} as const satisfies Record<'ytd' | 'past', HealthMetricsBlankCopy>;
 
 /** The blank card's icons, left to right: the outer tiles sit lower and tilt outward; the pulse sits centred, a size up. */
-export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsOverviewBlankTile[] = [
+export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsBlankTile[] = [
   { icon: 'fa-light fa-users', transform: 'translateY(22px) rotate(-14deg)', iconSizePx: 20 },
   { icon: 'fa-light fa-ticket', transform: 'translateY(6px) rotate(-7deg)', iconSizePx: 20 },
   { icon: 'fa-light fa-heart-pulse', transform: 'none', iconSizePx: 22 },
@@ -383,3 +381,6 @@ export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
 
 /** Board attendance at or above this share draws green; above zero amber, zero red. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE = 0.67;
+
+/** The narrowest a KPI strip item may get before the strip stacks (the design's 170px). */
+export const HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX = 170;

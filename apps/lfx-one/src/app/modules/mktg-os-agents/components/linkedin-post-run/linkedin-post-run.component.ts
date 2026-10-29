@@ -409,7 +409,8 @@ export class LinkedinPostRunComponent {
         const call = discard
           ? this.api.startForDocument(this.intake(), project, answers, setup, discard)
           : this.api.startForDocument(this.intake(), project, answers, setup);
-        this.generation = call.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        // An accepted POST outlives this view; only its bounded ACK is observed here.
+        call.pipe(take(1)).subscribe({
           next: onSession,
           error: (error: unknown) => {
             if (!current()) return;

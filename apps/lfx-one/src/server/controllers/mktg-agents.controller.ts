@@ -239,6 +239,7 @@ export class MktgAgentsController {
       if (await this.redrafts.forSession(req, validSessionId)) {
         throw new AuthorizationError('Generic chat follow-ups are refused on comments-only redraft sessions.');
       }
+      if (project) await this.documentRuns.assertRunOpen(req, project, agent.id, validSessionId);
       const turnId = randomUUID();
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       if (project) {
@@ -1434,9 +1435,9 @@ export class MktgAgentsController {
    * its URL, each tagged press, deck, doc or plan — and the project's
    * messaging framework (required: the latest stored revision's JSON, which
    * must carry the framework itself, since the agent refuses a run without
-   * one). Every submission is a fresh draft — a redraft from comments and a
-   * check of a hand-edited version are later work, so a body with feedback or
-   * a prior version is refused rather than silently ignored. Returns the
+   * one). Every submission here is a fresh draft; comment redrafts use the
+   * Documents revise endpoint. Feedback or a prior version in this body is
+   * refused rather than silently ignored. Returns the
    * session id + creator-binding owner token for polling the result.
    */
   public async generateFaq(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -1756,12 +1757,13 @@ export class MktgAgentsController {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }
 
-  /** The four creator-token transports share the public writer route's exact-turn CAS, before Guild. */
+  /** The four creator-token transports keep main's closure guard and share the exact-turn CAS before Guild. */
   private async claimOwnerAnswers(req: Request, sessionId: string, agentId: string): Promise<void> {
     const questionsId: unknown = req.body.questionsId;
     if (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))
       throw ServiceValidationError.forField('questionsId', 'A valid questions block is required.');
     const project = await this.documentRuns.resolveProject(req, req.body.project);
+    await this.documentRuns.assertRunOpen(req, project, agentId, sessionId);
     if (await this.redrafts.forSession(req, sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
     await this.documentRuns.claimSessionAnswers(req, project, sessionId, questionsId, agentId);
   }

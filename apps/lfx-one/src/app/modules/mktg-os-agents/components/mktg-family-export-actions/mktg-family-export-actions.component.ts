@@ -14,6 +14,7 @@ import {
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
+  MKTG_KIT_FAMILIES,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
@@ -32,12 +33,22 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, distinctUntilChanged, of, Subject, Subscription, startWith, switchMap } from 'rxjs';
 import { BrandKitViewComponent } from '../../brand-kit-view/brand-kit-view.component';
+import { MktgBoilerplatesPrintComponent } from '../../mktg-boilerplates-print/mktg-boilerplates-print.component';
+import { MktgFaqPrintComponent } from '../../mktg-faq-print/mktg-faq-print.component';
 import { MktgFrameworkPrintComponent } from '../../mktg-framework-print/mktg-framework-print.component';
 
 /** The Family page's named slot; document export controls are independent. */
 @Component({
   selector: 'lfx-mktg-family-export-actions',
-  imports: [DatePipe, ButtonComponent, MessageComponent, BrandKitViewComponent, MktgFrameworkPrintComponent],
+  imports: [
+    DatePipe,
+    ButtonComponent,
+    MessageComponent,
+    BrandKitViewComponent,
+    MktgFrameworkPrintComponent,
+    MktgBoilerplatesPrintComponent,
+    MktgFaqPrintComponent,
+  ],
   templateUrl: './mktg-family-export-actions.component.html',
   host: { class: 'block', '[attr.data-family-id]': 'familyId()' },
 })
@@ -56,6 +67,7 @@ export class MktgFamilyExportActionsComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly focusRequested = signal(false);
   protected readonly printOnlyClass = MKTG_FAMILY_PRINT_ONLY_CLASS;
+  protected readonly familyName = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId())?.name ?? 'Family');
 
   protected readonly lookup = signal<MktgFamilyExportLastResponse | null>(null);
   protected readonly checking = signal(true);
@@ -145,6 +157,7 @@ export class MktgFamilyExportActionsComponent {
         next: (view) => {
           if (JSON.stringify(this.target()) !== JSON.stringify(target) || !this.writer()) return;
           this.printView.set(view);
+          if (view.brand.fontUrl) this.print.ensureFontStylesheet(view.brand.fontUrl);
           afterNextRender(
             () => {
               if (this.printView() !== view || !this.writer()) return;
@@ -175,9 +188,7 @@ export class MktgFamilyExportActionsComponent {
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(
-      () => this.canExport() && !!this.lookup()?.currentMembers.some((member) => member.agentKey === 'foundation-message' || member.agentKey === 'brand-kit')
-    );
+    return computed(() => this.canExport());
   }
 
   private initMemberVersions(): Signal<string> {

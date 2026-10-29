@@ -1,12 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="grid border-y border-gray-200" [style.grid-template-columns]="'repeat(' + kpis().length + ', minmax(0, 1fr))'" [attr.data-testid]="testId()">
-  @for (kpi of kpis(); track kpi.key; let first = $first) {
-    <div
-      class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[16px]"
-      [class]="first ? 'pl-0' : 'border-l border-gray-200 pl-[20px]'"
-      [attr.data-testid]="testId() + '-' + kpi.key">
+<div class="grid border-y border-gray-200" [style.grid-template-columns]="columns()" [attr.data-layout]="layout()" [attr.data-testid]="testId()">
+  @for (kpi of kpis(); track kpi.key; let index = $index) {
+    <div class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[16px]" [class]="itemClasses()[index]" [attr.data-testid]="testId() + '-' + kpi.key">
       <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
         >{{ kpi.label }}
         @if (kpi.tip; as tip) {

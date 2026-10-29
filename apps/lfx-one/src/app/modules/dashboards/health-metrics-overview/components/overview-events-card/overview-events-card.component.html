@@ -82,8 +82,9 @@
           >{{ view.listTitle }}<lfx-overview-info-tip [text]="view.listInfo"
         /></span>
 
-        <!-- Only the table scrolls sideways, inside its own container, so the page never does. -->
-        <div class="min-w-0 overflow-x-auto" data-testid="overview-events-table-scroll">
+        <!-- Only the table scrolls sideways, inside its own container, so the page never does; `relative` keeps its
+             screen-reader-only text inside the scroll too. -->
+        <div class="relative min-w-0 overflow-x-auto" data-testid="overview-events-table-scroll">
           <div class="flex min-w-[820px] flex-col" role="table" [attr.aria-label]="view.listTitle">
             <div
               class="grid grid-cols-[minmax(180px,1fr)_minmax(120px,200px)_minmax(120px,200px)_156px] gap-[40px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"

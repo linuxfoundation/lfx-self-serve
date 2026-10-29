@@ -35,7 +35,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
-import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-member-360-run',
@@ -90,6 +90,7 @@ export class Member360RunComponent {
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   private lastScope = '';
+  private scopeVersion = 0;
   private uploadSequence = 0;
   private nextTrackerId = 0;
   private readonly scope$ = toObservable(
@@ -105,6 +106,7 @@ export class Member360RunComponent {
           tap(({ project, user }) => {
             const scope = JSON.stringify([project, user]);
             if (scope !== this.lastScope) {
+              this.scopeVersion++;
               this.confirmation.close();
               this.form.controls.trackers.setValue([]);
               this.chooser()?.clear();
@@ -185,7 +187,9 @@ export class Member360RunComponent {
       compare: this.form.controls.compare.value,
       trackers: this.trackers().map((upload) => upload.tracker),
     };
-    const current = () => !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    const version = this.scopeVersion;
+    const current = () =>
+      version === this.scopeVersion && !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
     const onSession = (session: Member360Session) => {
       if (!current()) return;
       this.router.navigate(['../documents/member-360', session.documentId], {
@@ -199,11 +203,11 @@ export class Member360RunComponent {
       this.submitting.set(true);
       this.api
         .generate(discard ? { ...body, discard } : body)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(take(1))
         .subscribe({
           next: onSession,
           error: (error: HttpErrorResponse) => {
-            if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
+            if (!current()) return;
             this.submitting.set(false);
             const conflict = error.status === 409 ? readMktgActiveRunConflict(error.error, 'member-360') : null;
             if (conflict) {
