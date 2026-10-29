@@ -45,6 +45,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
@@ -757,6 +758,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-brand-kit')).toBeNull();
   });
 
+  it('renders a late already-answered notice on the landed document without replacing its body', async () => {
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    const body = component?.['view']();
+    TestBed.inject(MktgRunAnswersService).remember(PROJECT.uid, 'brand-kit', 'living', {
+      runId: 'b'.repeat(64),
+      questionsId: 'c'.repeat(64),
+      message: 'Someone on your team already answered these — the agent is writing.',
+    });
+    await settle();
+    expect(query('mktg-document-view-answered-note')?.textContent).toContain('Someone on your team already answered these — the agent is writing.');
+    expect(component?.['view']()).toBe(body);
+  });
+
   it('re-reads a stored document on focus and observes another writer revision and approval without manual reload', async () => {
     await render('/documents/brand-kit/living');
     const next = revision(3, { latest: true });
@@ -1020,7 +1035,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getRevision).not.toHaveBeenCalled();
       if (resumable) {
         expect(pending.waitForStorage).toHaveBeenCalled();
-        expect(query('mktg-document-view-generating')).not.toBeNull();
+        expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
+        expect(query('mktg-document-view-loading')).toBeNull();
       } else {
         expect(pending.waitForStorage).not.toHaveBeenCalled();
         expect(query('mktg-document-view-error')).not.toBeNull();
@@ -1032,13 +1048,14 @@ describe('MktgDocumentViewComponent', () => {
       pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
-      expect(query('mktg-document-view-generating')).not.toBeNull();
+      expect(query('mktg-document-view-run-loading')?.getAttribute('aria-label')).toBe('Checking the run…');
+      expect(query('mktg-document-view-loading')).toBeNull();
       expect(query('mktg-document-view-document')).toBeNull();
       expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true);
       completed.next();
       completed.complete();
       await settle();
-      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-run-loading')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
       expect(pending.clear).toHaveBeenCalledWith('proj-1', 'run-012345678901234567890123');
     });
@@ -2154,7 +2171,8 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(progressReader().runState()).toBe('writing');
     expect(progressReader()['warning']()).toContain('retrying');
-    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
+    expect(query('mktg-document-view-retry')).not.toBeNull();
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     await settle();
     expect(store.getDocument).toHaveBeenCalledTimes(2);
@@ -2401,7 +2419,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(progress.observed).toBe(true);
     expect(progressReader()['warning']()).toContain('retrying');
     expect(query('mktg-document-view-refresh-progress')).toBeNull();
-    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-error')?.textContent).toContain('could not be verified');
+    expect(query('mktg-document-view-retry')?.querySelector('button')?.disabled).toBe(true);
     component['onRefreshProgress']();
     component['retryLoad']();
     await settle();
@@ -3119,14 +3138,15 @@ describe('MktgDocumentViewComponent', () => {
     component?.['notice'].set('Synthetic retained reader notice');
     component?.['restoreNotice'].set('Synthetic retained restore notice');
     document.documentElement.scrollTop = 120;
-    const reads = store.getDocument.mock.calls.length;
+    // A pinned revision is reread directly; metadata reads are intentionally bypassed on this scope.
+    const reads = store.getRevision.mock.calls.length;
     await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
     await settle();
-    expect(store.getDocument.mock.calls.length).toBeGreaterThanOrEqual(reads + 2);
-    const afterPolls = store.getDocument.mock.calls.length;
+    expect(store.getRevision.mock.calls.length).toBeGreaterThanOrEqual(reads + 2);
+    const afterPolls = store.getRevision.mock.calls.length;
     window.dispatchEvent(new Event('focus'));
     await settle();
-    expect(store.getDocument.mock.calls.length).toBeGreaterThan(afterPolls);
+    expect(store.getRevision.mock.calls.length).toBeGreaterThan(afterPolls);
     component?.['onRefreshProgress']();
     await settle();
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);

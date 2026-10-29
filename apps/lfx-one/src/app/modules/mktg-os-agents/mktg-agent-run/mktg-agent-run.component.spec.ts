@@ -862,6 +862,7 @@ describe('MktgAgentRunComponent', () => {
         updatedAt: new Date().toISOString(),
       });
       const saved = attempts.load(PROJECT_1.uid, agentId);
+      useRecordedStateFixture(agentId, 'b'.repeat(64), 'writing'); // The click now verifies the still-active record, not its hint.
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(query('mktg-run-waiting-notice')?.textContent).toContain(`This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`);
@@ -1522,6 +1523,16 @@ describe('MktgAgentRunComponent', () => {
     const events = new Subject<MktgGenerateProgress>();
     const recheck = vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict);
     recheck.mockReturnValue(events);
+    vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(
+      of({
+        project: PROJECT_1.uid,
+        type,
+        documentId: 'living',
+        revisions: [],
+        approvedCurrent: null,
+        runs: [],
+      })
+    ); // Fresh record says the former conflict ended; only then replay the retained request.
     queryParams.next(convertToParamMap({ questions: token }));
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
@@ -2391,6 +2402,7 @@ describe('MktgAgentRunComponent', () => {
       if (outcome === 'rejected') navigate.mockRejectedValue(new Error('Synthetic navigation rejection'));
       else navigate.mockResolvedValue(false);
       if (origin === 'generate') {
+        useRecordedStateFixture(intake.agentId, 'b'.repeat(64), 'writing'); // 144-D requires a live record before consent.
         generate.mockReturnValue(progress);
         component['onSubmit']();
         expect(generate).not.toHaveBeenCalled(); // The fixture seeded an active attempt; fresh Generate requires C1 consent.

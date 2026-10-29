@@ -190,6 +190,9 @@
       </div>
     }
 
+    @if (answeredNotice(); as concurrent) {
+      <lfx-message severity="info" [text]="concurrent.message" data-testid="mktg-document-view-answered-note" />
+    }
     @if (restoreNotice()) {
       <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
     }

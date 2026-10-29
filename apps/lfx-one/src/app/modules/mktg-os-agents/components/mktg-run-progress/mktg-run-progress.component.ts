@@ -261,28 +261,34 @@ export class MktgRunProgressComponent {
               if (!isPlatformBrowser(this.platformId) || !request.subject || !run || !pending) return EMPTY;
               this.answersSending.set(true);
               this.answersError.set('');
-              return this.answersService.answer(run.runId, { project: request.project, questionsId: pending.questionsId, answers }).pipe(
-                tap(() => this.acknowledgeAnswers(pending.questionsId, '', run.runId)),
-                catchError((error: HttpErrorResponse) => {
-                  if (error.status === 403) {
-                    this.answersDenied.set(true);
-                    this.answersError.set(
-                      extractErrorMessage(
-                        error,
-                        'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
-                      )
-                    );
-                  } else if (error.status === 409 || error.status === 412) {
-                    const answered = this.answeredConflict(error, run.runId, pending.questionsId);
-                    if (answered) this.acknowledgeAnswers(pending.questionsId, `${answered} already answered these — the agent is writing.`, run.runId);
-                    else this.onRefreshProgress();
-                  } else {
-                    this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
-                  }
-                  return EMPTY;
-                }),
-                finalize(() => this.answersSending.set(false))
-              );
+              return this.answersService
+                .answer(
+                  run.runId,
+                  { project: request.project, questionsId: pending.questionsId, answers },
+                  { agentKey: run.agentKey, documentId: run.documentId }
+                )
+                .pipe(
+                  tap(() => this.acknowledgeAnswers(pending.questionsId, '', run.runId)),
+                  catchError((error: HttpErrorResponse) => {
+                    if (error.status === 403) {
+                      this.answersDenied.set(true);
+                      this.answersError.set(
+                        extractErrorMessage(
+                          error,
+                          'You cannot answer this run. Project write access is required; one-off runs can only be answered by their creator.'
+                        )
+                      );
+                    } else if (error.status === 409 || error.status === 412) {
+                      const answered = this.answeredConflict(error, run.runId, pending.questionsId);
+                      if (answered) this.acknowledgeAnswers(pending.questionsId, `${answered} already answered these — the agent is writing.`, run.runId);
+                      else this.onRefreshProgress();
+                    } else {
+                      this.answersError.set('Your answers could not be sent. Check the current run before trying again.');
+                    }
+                    return EMPTY;
+                  }),
+                  finalize(() => this.answersSending.set(false))
+                );
             })
           );
         }),

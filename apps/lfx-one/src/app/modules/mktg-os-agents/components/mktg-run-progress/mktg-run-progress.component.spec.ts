@@ -288,11 +288,15 @@ describe('MktgRunProgressComponent', () => {
     const send = fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button');
     send.click();
     send.click();
-    expect(answer).toHaveBeenCalledExactlyOnceWith(runId, {
-      project: run.project,
-      questionsId: waiting.pendingQuestions.questionsId,
-      answers: [{ key: 'audience', text: 'Synthetic maintainers', origin: 'accepted' }],
-    });
+    expect(answer).toHaveBeenCalledExactlyOnceWith(
+      runId,
+      {
+        project: run.project,
+        questionsId: waiting.pendingQuestions.questionsId,
+        answers: [{ key: 'audience', text: 'Synthetic maintainers', origin: 'accepted' }],
+      },
+      { agentKey: run.agentKey, documentId: run.documentId }
+    );
     read.mockReturnValue(of(detail()));
     response.next({ runId, state: 'writing' });
     response.complete();

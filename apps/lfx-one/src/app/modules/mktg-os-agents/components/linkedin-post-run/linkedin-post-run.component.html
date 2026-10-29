@@ -95,7 +95,7 @@
         <p class="rounded-lg border border-gray-200 bg-white p-6" data-testid="mktg-linkedin-no-access">
           You need write access to this project to draft LinkedIn posts.
         </p>
-      } @else if (writer() && !runLookupFailed() && questions().length && !editing()) {
+      } @else if (writer() && questions().length && !editing()) {
         <div data-testid="mktg-linkedin-questions">
           <lfx-mktg-run-questions
             [questions]="questions()"

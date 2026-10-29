@@ -83,6 +83,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -165,6 +166,7 @@ export class MktgAgentRunComponent {
   private consumedFreshSubject: string | null = null;
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
   private guardReadSub: Subscription | null = null;
   private privateReceiptRunId = '';
   private receiptRecoveryRunId = '';
@@ -848,7 +850,8 @@ export class MktgAgentRunComponent {
     }
     if (owned?.pendingQuestions && !this.answersSending()) {
       if (!run) {
-        this.runAttempts.clear(this.publicProject(), this.agent?.id ?? '');
+        // Completion retires the question block, not the creator capability needed for its exact receipt.
+        this.runAttempts.save({ ...owned, state: 'writing', pendingQuestions: undefined });
       } else if (run && (run.state !== 'questions' || owned.pendingQuestions.questionsId !== run.pendingQuestions?.questionsId)) {
         this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: 'writing' });
       }
@@ -1106,7 +1109,9 @@ export class MktgAgentRunComponent {
             if (saved?.attempt?.runId === runId)
               this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
             const notice = `${answeredBy} already answered these — the agent is writing.`;
-            this.answeredNotice.set({ runId, questionsId: pending.questionsId, message: notice });
+            const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
+            this.answeredNotice.set(scopedNotice);
+            this.concurrentAnswers.remember(request.projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
             this.discoveredRunId.set(runId);
             this.publicReceiver.set(true);
             const observer = this.publicProgressView();
@@ -1303,6 +1308,7 @@ export class MktgAgentRunComponent {
   /** Never open a modal from a stale POST conflict without a fresh run-record read. */
   private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false, replayed = false): void {
     const subject = this.userService.user()?.sub;
+    this.activeRequest = request; // A returned conflict handoff must bind its request before the asynchronous live read/replay.
     this.readRunAtClick(conflict.activeRunId, (active) => {
       if (active?.runId === conflict.activeRunId && (active.state === 'writing' || active.state === 'questions' || active.state === 'storing')) {
         this.showConfirmedActiveConflict({ ...conflict, state: active.state, startedAt: active.startedAt }, request, rejectedDiscard);
@@ -2323,7 +2329,10 @@ export class MktgAgentRunComponent {
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
     if (progress.type === 'submitted') {
       const accepted = this.runAttempts.load(projectUid, this.agent?.id ?? '');
-      if (accepted?.attempt?.runId) this.privateReceiptRunId = accepted.attempt.runId;
+      if (accepted?.attempt?.runId) {
+        this.privateReceiptRunId = accepted.attempt.runId;
+        this.concurrentAnswers.observeRun(projectUid, this.assetType?.agentKey ?? '', MKTG_LIVING_DOCUMENT_ID, accepted.attempt.runId);
+      }
       this.conflictDiscardId = null;
       this.hasAcknowledgement.set(true);
       this.consumeFreshEntry(projectUid);

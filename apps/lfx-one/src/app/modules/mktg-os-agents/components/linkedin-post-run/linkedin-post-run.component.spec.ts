@@ -690,6 +690,7 @@ describe('LinkedIn profile and post surface', () => {
         of({
           project: 'project-one',
           groups: [],
+          creatorScoped: true, // This fixture is the BFF's authenticated ownRuns projection, independent of browser hints.
           runs: [{ project: 'project-one', agentKey: documentType.agentKey, documentId, runId: 'b'.repeat(64), state, startedAt: '2026-10-28T10:00:00Z' }],
         })
       );

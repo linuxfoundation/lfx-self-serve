@@ -11,6 +11,11 @@ import { DOCUMENT_PROJECT, documentFixture, fulfillDocumentJson, setupDocuments 
 async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   const alreadyAnswered = info.title.includes('already answered');
   const exactProduced = info.title.includes('produced revision');
+  const lateConflict = info.title.includes('late conflict');
+  let releaseConflict = () => {};
+  const conflictResponse = new Promise<void>((resolve) => {
+    releaseConflict = resolve;
+  });
   await suppressCookieBanner(page);
   await setupDocuments(page, { empty: true });
   const runId = 'c'.repeat(64);
@@ -35,9 +40,11 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     if (path === `/api/mktg-agents/runs/${runId}/answers`) {
       expect(route.request().method()).toBe('POST');
       submitted.push(route.request().postDataJSON());
-      phase = 'writing';
-      if (alreadyAnswered)
+      phase = lateConflict ? 'landed' : 'writing';
+      if (alreadyAnswered) {
+        if (lateConflict) await conflictResponse;
         return fulfillDocumentJson(route, { code: 'MKTG_RUN_ANSWERED', details: { answeredBy: 'Another Writer', answeredAt: '2026-10-28T10:01:00Z' } }, 409);
+      }
       return fulfillDocumentJson(route, { runId, state: 'writing' });
     }
     if (path.endsWith(`/documents/${type.agentKey}/living`)) {
@@ -119,6 +126,14 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('02-settled-questions.png') });
   await answer.fill('Synthetic project maintainers and contributors');
   await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
+  if (lateConflict) {
+    await expect(page.getByTestId('mktg-faq-view')).toContainText('Synthetic cross-device draft', { timeout: 20000 });
+    releaseConflict();
+    await expect(page.getByTestId('mktg-document-view-answered-note')).toContainText('Another Writer already answered these — the agent is writing.');
+    expect(submitted).toHaveLength(1);
+    await page.screenshot({ path: info.outputPath('late-conflict-on-landed-document.png'), fullPage: true });
+    return;
+  }
   await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing');
   if (alreadyAnswered) {
     await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText('Another Writer already answered these — the agent is writing.');
@@ -147,3 +162,4 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
 test('another browser answers a waiting public kit run, follows writing and lands on the current document', publicRunAnswers);
 test('another writer already answered the public run questions, so this browser follows writing without resending', publicRunAnswers);
 test('a public follower opens the recorded produced revision rather than approved current', publicRunAnswers);
+test('a late conflict after another writer already answered remains visible on the landed document', publicRunAnswers);

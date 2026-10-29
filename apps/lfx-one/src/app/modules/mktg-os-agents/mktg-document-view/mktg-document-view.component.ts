@@ -136,6 +136,7 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
@@ -258,6 +259,8 @@ export class MktgDocumentViewComponent {
   private restoreEpoch = 0;
   private loadedScope = '';
   private progressReadUnavailable = false;
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
+  protected readonly answeredNotice = computed(() => this.concurrentAnswers.notice(this.projectUid(), this.params().agentKey, this.params().documentId));
 
   protected readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
