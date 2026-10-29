@@ -147,7 +147,9 @@ test.describe('Marketing OS new run Sources', () => {
     let freshChecks = 0;
     await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) => {
       const params = new URL(route.request().url()).searchParams;
-      if (!started && params.get('refreshRun') === oldRunId && params.get('poll') === '1') freshChecks++;
+      // The real BFF forbids poll=1 with refreshRun: this is an explicit live read, not a background poll.
+      if (params.get('refreshRun')) expect(params.has('poll')).toBe(false);
+      if (!started && params.get('refreshRun') === oldRunId) freshChecks++;
       return route.fulfill({
         json: {
           ...documentFixture(),

@@ -1214,7 +1214,7 @@ export class MktgAgentRunComponent {
     };
     watch.add(
       this.documentStore
-        .getDocument(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID, true, selector, false, selector)
+        .getDocument(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID, false, selector, false, selector)
         .pipe(take(1), timeout(MKTG_RUN_POLL.timeoutMs), takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (detail) => {

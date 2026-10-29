@@ -1095,7 +1095,7 @@ describe('MktgAgentRunComponent', () => {
           })
         );
         component['onSubmit']();
-        expect(read).toHaveBeenLastCalledWith(PROJECT_1.uid, type.agentKey, 'living', true, conflict.activeRunId, false, conflict.activeRunId);
+        expect(read).toHaveBeenLastCalledWith(PROJECT_1.uid, type.agentKey, 'living', false, conflict.activeRunId, false, conflict.activeRunId);
         expect(confirmationService.confirm).not.toHaveBeenCalled();
         expect(generate).toHaveBeenCalledOnce();
         expect(attempts.load(PROJECT_1.uid, agentId)).toBeNull();
