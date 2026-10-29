@@ -26,6 +26,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-spinner`      | `UiSpinnerComponent`     | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                               |
 | `lfx-ui-note`         | `UiNoteComponent`        | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"` or `alert`               |
 | `lfx-ui-description`  | `UiDescriptionComponent` | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon              |
+| `lfx-ui-error`        | `UiErrorComponent`       | Red error message with icon, optional medium-weight label and link; three sizes; `role="alert"` unless `announce` is off   |
 
 ## Design tokens
 
