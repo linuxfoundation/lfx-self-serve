@@ -7,7 +7,21 @@ import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
-import { catchError, defer, distinctUntilChanged, EMPTY, finalize, Observable, of, shareReplay, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  defaultIfEmpty,
+  defer,
+  distinctUntilChanged,
+  EMPTY,
+  finalize,
+  Observable,
+  of,
+  shareReplay,
+  Subject,
+  switchMap,
+  takeUntil,
+  tap,
+} from 'rxjs';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectContextService } from './project-context.service';
 
@@ -86,6 +100,8 @@ export class MktgKitService {
           this.documents.set(documents);
           this.error.set('');
         }),
+        // A scope/reload cancellation must still schedule the visibility poll's next tick.
+        defaultIfEmpty(null),
         catchError((error: HttpErrorResponse) => {
           if (project === this.projectUid() && error.status === 403) this.refreshDenied.set(true);
           return error.status === 403 ? EMPTY : of(null);

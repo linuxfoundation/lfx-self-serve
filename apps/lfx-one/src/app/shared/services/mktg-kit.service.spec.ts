@@ -4,13 +4,14 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgDocumentListItem, ProjectContext } from '@lfx-one/shared/interfaces';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectContextService } from './project-context.service';
 import { MktgKitService } from './mktg-kit.service';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 describe('MktgKitService project-scoped reads', () => {
   const context = signal<ProjectContext | null>(null);
@@ -156,6 +157,41 @@ describe('MktgKitService project-scoped reads', () => {
     expect(kit.documents()).toBe(listing);
     kit.refresh().subscribe();
     expect(listDocuments).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps polling after retry cancels an in-flight refresh without needing a focus event', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { kit } = loadedKit();
+    const poll = createVisibilityPoll(document, () => kit.refresh(), {
+      intervalMs: MKTG_RUN_POLL.intervalMs,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+      shouldContinue: () => !kit.accessDenied() && !kit.refreshDenied(),
+    }).subscribe();
+    try {
+      expect(listDocuments).toHaveBeenCalledTimes(2);
+      expect(reads[1].observed).toBe(true);
+      kit.retry();
+      TestBed.tick();
+      expect(reads[1].observed).toBe(false);
+      expect(listDocuments).toHaveBeenCalledTimes(3);
+      const reloaded = empty('one');
+      reads[2].next(reloaded);
+      reads[2].complete();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      expect(listDocuments).toHaveBeenCalledTimes(4);
+      expect(kit.documents()).toBe(reloaded);
+      expect(kit.loading()).toBe(false);
+      const next = empty('one');
+      reads[3].next(next);
+      reads[3].complete();
+      expect(kit.documents()).toBe(next);
+    } finally {
+      poll.unsubscribe();
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('chooses the current project at subscription, not when a refresh observable was obtained', () => {
