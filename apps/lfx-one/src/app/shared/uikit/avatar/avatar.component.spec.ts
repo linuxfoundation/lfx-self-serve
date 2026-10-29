@@ -1,17 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiAvatarComponent } from './avatar.component';
+
+@Component({
+  selector: 'lfx-ui-avatar-test-host',
+  imports: [UiAvatarComponent],
+  template: `<lfx-ui-avatar name="Maria Santos" placeholder />`,
+})
+class TestHostComponent {}
 
 describe('UiAvatarComponent', () => {
   let fixture: ComponentFixture<UiAvatarComponent>;
   let host: HTMLElement;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [UiAvatarComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [UiAvatarComponent, TestHostComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiAvatarComponent);
     host = fixture.nativeElement as HTMLElement;
     fixture.componentRef.setInput('name', 'Maria Santos');
@@ -172,6 +180,15 @@ describe('UiAvatarComponent', () => {
     expect(host.getAttribute('aria-hidden')).toBe('true');
     expect(host.getAttribute('role')).toBeNull();
     expect(host.textContent?.trim()).toBe('');
+  });
+
+  it('turns placeholder on from a bare attribute', async () => {
+    const hosted = TestBed.createComponent(TestHostComponent);
+    await hosted.whenStable();
+
+    const avatar = (hosted.nativeElement as HTMLElement).querySelector('lfx-ui-avatar');
+    expect(avatar?.className).toContain('avatar-shimmer');
+    expect(avatar?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('hides a decorative avatar from assistive technology', async () => {

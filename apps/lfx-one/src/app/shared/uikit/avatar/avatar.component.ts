@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
+import { afterNextRender, booleanAttribute, ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
 import { UiAvatarTone } from '@lfx-one/shared/interfaces';
 
 /**
@@ -44,11 +44,11 @@ export class UiAvatarComponent {
   /** `circle` is for people; `rounded` has 8px corners, for organizations and other entities. */
   public readonly shape = input<'circle' | 'rounded'>('circle');
   /** Shows a shimmering shell while the real avatar loads. Never use it as a permanent fallback. */
-  public readonly placeholder = input<boolean>(false);
+  public readonly placeholder = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Hides the avatar from assistive technology. Set it when a visible name sits next to the avatar. */
-  public readonly decorative = input<boolean>(false);
+  public readonly decorative = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Swaps the hairline ring for a 2px ring of the page background, so avatars overlap cleanly. Set by `lfx-ui-avatar-group`. */
-  public readonly stacked = input<boolean>(false);
+  public readonly stacked = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   private readonly failedSrc = signal<string>('');
   private readonly photoEl = viewChild<ElementRef<HTMLImageElement>>('photo');
