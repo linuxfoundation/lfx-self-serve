@@ -6586,6 +6586,13 @@ export class ImplementationTabComponent implements OnInit {
     this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
     this.redditVideoGoal.set('');
     this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
+    // The lists seeded only from Reddit copy, emptied first so a brief without any opens on none
+    // rather than the previous brief's (#4648); the seed below refills them when the copy is there.
+    this.redditVariants.set([]);
+    this.redditSubreddits.set([]);
+    this.redditInterests.set([]);
+    this.redditKeywords.set([]);
+    this.redditGeoTargets.set([]);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
     // only when present, back to its default, so the seed below is all that survives a switch.
     this.resetMetaFields();
