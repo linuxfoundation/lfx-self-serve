@@ -18,9 +18,11 @@ test.describe('asset field comments', () => {
     const field = page.getByTestId('mktg-field-comments-mf.positioning');
     await field.hover();
     await field.getByRole('button', { name: 'Comment on Positioning', exact: true }).click();
+    await expect(field.getByRole('button', { name: 'Comment on Positioning', exact: true })).toBeFocused();
     await field.getByRole('textbox', { name: 'Comment on Positioning', exact: true }).fill('Make it one clause about the neutral foundation.');
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
     await expect(field.getByTestId('mktg-comment-thread')).toContainText('Make it one clause');
+    await expect(field.getByRole('button', { name: 'Comment on Positioning', exact: true })).toBeFocused();
     const status = field.getByTestId('mktg-comment-thread').getByText('Open', { exact: true });
     await expect(status).toHaveClass('inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700');
     await expect(panel).toContainText('Make it one clause');

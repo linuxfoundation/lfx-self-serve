@@ -472,8 +472,8 @@ describe('BrandKitWebViewComponent', () => {
 
     it('Download PDF marks the body for the print, asks the browser to print the book, and clears the mark when the print ends', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
-      await fixture.whenStable();
-
+      // Same tick, before any Promise continuation: Safari's activation is retained.
+      expect(print).toHaveBeenCalledOnce();
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
       expect(print).toHaveBeenCalledTimes(1);
 
@@ -481,14 +481,17 @@ describe('BrandKitWebViewComponent', () => {
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
 
-    it('Download PDF waits for the kit’s typeface in the kit’s weights before the dialog opens: the book is never laid out on screen', async () => {
+    it('prepares the kit typeface ahead of the synchronous PDF click', async () => {
       const load = vi.fn(() => Promise.resolve([]));
       Object.defineProperty(document, 'fonts', { value: { load }, configurable: true });
       try {
-        button('brand-kit-web-view-download-pdf')?.click();
+        // A newly selected approved typeface is prepared without opening a dialog.
+        const kit = brandKitTestRevision();
+        fixture.componentRef.setInput('approvedKit', { ...kit, chapters: { ...kit.chapters, type: { ...kit.chapters.type, family: 'Synthetic Font' } } });
         await fixture.whenStable();
-
-        expect(load.mock.calls).toEqual([['400 1em "Montserrat"'], ['700 1em "Montserrat"']]);
+        expect(print).not.toHaveBeenCalled();
+        expect(load.mock.calls).toEqual([['400 1em "Synthetic Font"'], ['700 1em "Synthetic Font"']]);
+        button('brand-kit-web-view-download-pdf')?.click();
         expect(print).toHaveBeenCalledTimes(1);
       } finally {
         delete (document as unknown as Record<string, unknown>)['fonts'];

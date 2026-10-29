@@ -16,6 +16,7 @@ import {
   TemplateRef,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { TooltipModule } from 'primeng/tooltip';
@@ -171,6 +172,13 @@ export class BrandKitWebViewComponent {
     // The print mark never outlives the view (a print dialog still up when
     // the page goes), and a print still waiting for its font is cancelled.
     this.destroyRef.onDestroy(() => this.printService.clear(BRAND_KIT_PRINT_BODY_CLASS));
+    toObservable(this.printFont)
+      .pipe(takeUntilDestroyed())
+      .subscribe((font) => {
+        const url = this.printView()?.fontUrl;
+        if (url) this.printService.ensureFontStylesheet(url);
+        void this.printService.prepare(font?.family ?? null, font?.weights);
+      });
   }
 
   // === Protected methods ===
@@ -224,13 +232,12 @@ export class BrandKitWebViewComponent {
   }
 
   /**
-   * Prints the native portrait chapters through the browser's print dialog
-   * ("Save as PDF"), with the approved kit's typeface. The service guards SSR.
+   * Prints the native portrait chapters inside the click, with the approved
+   * kit's typeface prepared ahead. The service guards SSR.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) return;
-    const font = this.printFont();
-    void this.printService.print(BRAND_KIT_PRINT_BODY_CLASS, font?.family ?? null, font?.weights);
+    this.printService.printNow(BRAND_KIT_PRINT_BODY_CLASS);
   }
 
   // === Private initializers ===

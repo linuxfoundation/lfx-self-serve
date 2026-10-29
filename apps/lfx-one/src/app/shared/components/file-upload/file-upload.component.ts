@@ -13,17 +13,21 @@ import {
   input,
   output,
   PLATFORM_ID,
+  signal,
   TemplateRef,
   viewChild,
 } from '@angular/core';
 import { getAcceptedFileTypesDisplay } from '@lfx-one/shared/utils';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { ButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'lfx-file-upload',
-  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule],
+  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule, ButtonComponent],
   templateUrl: './file-upload.component.html',
   styleUrl: './file-upload.component.scss',
+  // The server placeholder and browser uploader intentionally have different DOM trees.
+  host: { ngSkipHydration: 'true' },
 })
 export class FileUploadComponent {
   // Template references for content projection (follow PrimeNG slot names)
@@ -42,6 +46,8 @@ export class FileUploadComponent {
   private readonly platform = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly browser = signal(isPlatformBrowser(this.platform));
 
   // Core behavior
   public readonly mode = input<'advanced' | 'basic'>('advanced');
