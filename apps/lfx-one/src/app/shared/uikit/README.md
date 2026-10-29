@@ -24,6 +24,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-status-dot`   | `UiStatusDotComponent`   | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                        |
 | `lfx-ui-skeleton`     | `UiSkeletonComponent`    | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                       |
 | `lfx-ui-spinner`      | `UiSpinnerComponent`     | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                               |
+| `lfx-ui-note`         | `UiNoteComponent`        | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"` or `alert`               |
 
 ## Design tokens
 
