@@ -133,25 +133,27 @@ describe('Family-only source details', () => {
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(text?.classList.contains('hidden')).toBe(true);
   });
-  it('keeps Sources and Sign-off expanded across two equivalent listing refreshes without refetching or flashing loading', async () => {
+  it('keeps Sources expanded and Sign-off absent across two equivalent listing refreshes without refetching or flashing loading', async () => {
     const fixture = create();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sources-toggle"] button')?.click();
-    root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sign-off-toggle"] button')?.click();
     await fixture.whenStable();
     const sources = root.querySelector('#mktg-family-sources-list');
-    const signOff = root.querySelector('#mktg-family-sign-off-text');
+    expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+    expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
     for (let refresh = 0; refresh < 2; refresh++) {
       fixture.componentRef.setInput('family', family()); // The same server listing produces a new Family view object.
       await fixture.whenStable();
       expect(getRevision).toHaveBeenCalledExactlyOnceWith('synthetic', 'foundation-message', 'living', revisionId);
       expect(root.querySelector('#mktg-family-sources-list')).toBe(sources);
-      expect(root.querySelector('#mktg-family-sign-off-text')).toBe(signOff);
       expect(sources?.classList.contains('hidden')).toBe(false);
-      expect(signOff?.classList.contains('hidden')).toBe(false);
       expect(root.querySelector('[data-testid="mktg-family-sources-toggle"] button')?.getAttribute('aria-expanded')).toBe('true');
-      expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"] button')?.getAttribute('aria-expanded')).toBe('true');
+      expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+      expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+      expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
+      expect(root.querySelector('[data-testid="mktg-family-sources-loading"]')?.textContent).toBe('');
       expect(fixture.componentInstance['loading']()).toBe(false);
       expect(fixture.componentInstance['sources']()).not.toBeNull();
     }
